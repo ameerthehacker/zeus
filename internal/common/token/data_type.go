@@ -42,6 +42,6 @@ var DataTypes = map[DataType]bool{
 	DataTypeBoolean: true,
 }
 
-func IsDataType(tokenType TokenType) bool {
-	return DataTypes[DataType(tokenType)]
+func IsDataType(tokenValue string) bool {
+	return DataTypes[DataType(tokenValue)]
 }

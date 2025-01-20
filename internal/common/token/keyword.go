@@ -12,6 +12,6 @@ var Keywords = map[string]bool{
 	KeywordTypeFunction: true,
 }
 
-func IsKeyword(tokenType TokenType) bool {
-	return Keywords[string(tokenType)]
+func IsKeyword(tokenValue string) bool {
+	return Keywords[tokenValue]
 }

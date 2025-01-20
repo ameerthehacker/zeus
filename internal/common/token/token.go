@@ -8,6 +8,7 @@ const (
 	TokenTypeNumber TokenType = "number"
 	TokenTypeOperator TokenType = "operator"
 	TokenTypeSemicolon TokenType = ";"
+	TokenTypeColon TokenType = ":"
 	TokenTypeLeftParen TokenType = "("
 	TokenTypeRightParen TokenType = ")"
 	TokenTypeLeftBrace TokenType = "{"
@@ -16,6 +17,7 @@ const (
 	TokenTypeRightBracket TokenType = "]"
 	TokenTypeIdentifier TokenType = "identifier"
 	TokenTypeComma TokenType = ","
+	TokenTypeKeyword TokenType = "keyword"
 	TokenTypeDataType TokenType = "datatype"
 	TokenTypeEOF TokenType = "EOF"
 )
