@@ -1,19 +1,17 @@
 package token
 
-type KeywordType TokenType
-
 const (
-	KeywordTypeIf KeywordType = "if"
-	KeywordTypeElse KeywordType = "else"
-	KeywordTypeFunction KeywordType = "function"
+	KeywordTypeIf string = "if"
+	KeywordTypeElse string = "else"
+	KeywordTypeFunction string = "function"
 )
 
-var Keywords = map[KeywordType]bool{
+var Keywords = map[string]bool{
 	KeywordTypeIf: true,
 	KeywordTypeElse: true,
 	KeywordTypeFunction: true,
 }
 
 func IsKeyword(tokenType TokenType) bool {
-	return Keywords[KeywordType(tokenType)]
+	return Keywords[string(tokenType)]
 }

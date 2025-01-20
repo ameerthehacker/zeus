@@ -1,15 +1,13 @@
 package token
 
-type OperatorType TokenType
-
 const (
-	OperatorTypePlus OperatorType = "+"
-	OperatorTypeMinus OperatorType = "-"
-	OperatorTypeStar OperatorType = "*"
-	OperatorTypeSlash OperatorType = "/"
+	OperatorTypePlus string = "+"
+	OperatorTypeMinus string = "-"
+	OperatorTypeStar string = "*"
+	OperatorTypeSlash string = "/"
 )
 
-var Operators = map[OperatorType]bool{
+var Operators = map[string]bool{
 	OperatorTypePlus: true,
 	OperatorTypeMinus: true,
 	OperatorTypeStar: true,
@@ -17,5 +15,5 @@ var Operators = map[OperatorType]bool{
 }
 
 func IsOperator(tokenType TokenType) bool {
-	return Operators[OperatorType(tokenType)]
+	return Operators[string(tokenType)]
 }

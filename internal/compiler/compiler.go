@@ -14,7 +14,7 @@ func NewCompiler(source string) *Compiler {
 	return &Compiler{lexer: lexer.NewLexer(source)}
 }
 
-func (c *Compiler) Compile() []error.ZeusError {
+func (c *Compiler) Compile() []*error.ZeusError {
 	tokens, errors := c.lexer.Lex()
 
 	for _, token := range tokens {

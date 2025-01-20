@@ -1,6 +1,7 @@
 package test
 
 import (
+	"ameerthehacker/zeus/internal/common/error"
 	"ameerthehacker/zeus/internal/common/token"
 	"ameerthehacker/zeus/internal/lexer"
 	"testing"
@@ -10,27 +11,27 @@ func TestZeusLexer(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected []token.Token
-		hasError bool
+		expected []*token.Token
+		errors   []*error.ZeusError
 	}{
 		{
 			name:  "empty input",
 			input: "",
-			expected: []token.Token{
+			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(0, 0)),
 			},
 		},
 		{
 			name:  "whitespace only",
 			input: " \t\n\r",
-			expected: []token.Token{
+			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(4, 4)),
 			},
 		},
 		{
 			name:  "single tokens",
 			input: "({[)}];,",
-			expected: []token.Token{
+			expected: []*token.Token{
 				token.NewToken(token.TokenTypeLeftParen, token.NewSpan(0, 0)),
 				token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(1, 1)), 
 				token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(2, 2)),
@@ -45,7 +46,7 @@ func TestZeusLexer(t *testing.T) {
 		{
 			name:  "tokens with whitespace",
 			input: "( { } )",
-			expected: []token.Token{
+			expected: []*token.Token{
 				token.NewToken(token.TokenTypeLeftParen, token.NewSpan(0, 0)),
 				token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(2, 2)),
 				token.NewToken(token.TokenTypeRightBrace, token.NewSpan(4, 4)),
@@ -56,10 +57,35 @@ func TestZeusLexer(t *testing.T) {
 		{
 			name:     "invalid character",
 			input:    "@",
-			expected: []token.Token{
+			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(1, 1)),
 			},
-			hasError: true,
+			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "unknown token: '@'", token.NewSpan(0, 0))},
+		},
+		{
+			name: "integer number",
+			input: "123",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "123", token.NewSpan(0, 2)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(3, 3)),
+			},
+		},
+		{
+			name: "float number",
+			input: "123.456",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "123.456", token.NewSpan(0, 6)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(7, 7)),
+			},
+		},
+		{
+			name: "decimal point error",
+			input: "123.3.4",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "123.3.4", token.NewSpan(0, 6)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(7, 7)),
+			},
+			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "invalid decimal point", token.NewSpan(5, 5))},
 		},
 	}
 
@@ -68,30 +94,30 @@ func TestZeusLexer(t *testing.T) {
 			l := lexer.NewLexer(tt.input)
 			tokens, errors := l.Lex()
 
-			if tt.hasError && len(errors) == 0 {
+			if len(tt.errors) > 0 && len(errors) == 0 {
 				t.Error("expected errors but got none")
-			}
-
-			if !tt.hasError && len(errors) > 0 {
+			} else if len(tt.errors) == 0 && len(errors) > 0 {
 				t.Errorf("unexpected errors: %v", errors)
+			} else if len(tt.errors) != len(errors) {
+				t.Errorf("expected %d errors, got %d", len(tt.errors), len(errors))
+			} else {
+				for i, error := range errors {
+					expected := tt.errors[i]
+					if !error.IsEqual(expected) {
+						t.Errorf("error %s: expected %s, got %s", error, expected, error)
+					}
+				}
 			}
 
 			if len(tokens) != len(tt.expected) {
 				t.Errorf("expected %d tokens, got %d", len(tt.expected), len(tokens))
-				t.Errorf("expected %v, got %v", tt.expected, tokens)
 				return
 			}
 
 			for i, token := range tokens {
 				expected := tt.expected[i]
-				if token.Type != expected.Type {
-					t.Errorf("token %v: expected type %s, got %s", token, expected.Type, token.Type)
-				}
-				if token.Span.Start != expected.Span.Start {
-					t.Errorf("token %v: expected start %d, got %d", token, expected.Span.Start, token.Span.Start)
-				}
-				if token.Span.End != expected.Span.End {
-					t.Errorf("token %v: expected end %d, got %d", token, expected.Span.End, token.Span.End)
+				if !token.IsEqual(expected) {
+					t.Errorf("expected token %s, got %s", expected, token)
 				}
 			}
 		})
