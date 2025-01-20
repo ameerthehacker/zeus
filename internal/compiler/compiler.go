@@ -18,7 +18,7 @@ func (c *Compiler) Compile() []*error.ZeusError {
 	tokens, errors := c.lexer.Lex()
 
 	for _, token := range tokens {
-		fmt.Printf("%+v\n", token)
+		fmt.Printf("%s\n", token)
 	}
 
 	return errors
