@@ -57,11 +57,28 @@ func (l *Lexer) eatIdentifierOrKeywordOrDatatype() {
 func (l *Lexer) eatNumber() {
 	isFloat := false
 	l.start = l.cursor
+	isRadix10 := true
 
-	for !l.isEOF(0) && unicode.IsDigit(l.source[l.cursor]) {
+	isDigit := func () bool {
+		if l.isEOF(0) {
+			return false
+		}
+		index := l.cursor - l.start
+		char := unicode.ToLower(l.source[l.cursor])
+		isRadixPrefix := char == 'b' || char == 'o' || char == 'x'
+	
+		if index == 1 && (l.matchPreviousRune('0') && isRadixPrefix){
+			isRadix10 = false
+			return true
+		}
+	
+		return unicode.IsDigit(char)
+	}
+
+	for isDigit() {
 		l.advance()
 
-		if l.matchRune('.') {
+		if l.matchRune('.') && isRadix10 {
 			if isFloat {
 				l.pushError(error.NewZeusError(
 					error.ErrorSeverityError,
@@ -101,6 +118,10 @@ func (l* Lexer) matchRune(char rune) bool {
 
 func (l *Lexer) matchNextRune(char rune) bool {
 	return !l.isEOF(1) && l.source[l.cursor + 1] == char
+}
+
+func (l *Lexer) matchPreviousRune(char rune) bool {
+	return l.cursor > 0 && l.source[l.cursor - 1] == char
 }
 
 func (l *Lexer) matchNext(fn func(rune) bool) bool {
@@ -154,6 +175,9 @@ func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 			l.advance()
 		} else if char == ':' {
 			l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(l.cursor, l.cursor)))
+			l.advance()
+		} else if char == '.' {
+			l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(l.cursor, l.cursor)))
 			l.advance()
 		} else if char == '=' {
 			if l.matchNextRune('=') {

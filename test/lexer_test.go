@@ -30,7 +30,7 @@ func TestZeusLexer(t *testing.T) {
 		},
 		{
 			name:  "semantic tokens",
-			input: "({[)}];,:",
+			input: "({[)}];,:.",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeLeftParen, token.NewSpan(0, 0)),
 				token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(1, 1)), 
@@ -41,7 +41,8 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(6, 6)),
 				token.NewToken(token.TokenTypeComma, token.NewSpan(7, 7)),
 				token.NewToken(token.TokenTypeColon, token.NewSpan(8, 8)),
-				token.NewToken(token.TokenTypeEOF, token.NewSpan(9, 9)),
+				token.NewToken(token.TokenTypeDot, token.NewSpan(9, 9)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(10, 10)),
 			},
 		},
 		{
@@ -154,6 +155,28 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(4, 4)),
 			},
 			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "numerical separator must be followed by a digit", token.NewSpan(3, 3))},
+		},
+		{
+			name: "binary octal hexadecimal number",
+			input: "0b1010 0o123 0x123 0B1010 0O123 0X123",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "0b1010", token.NewSpan(0, 5)),
+				token.NewTokenWithValue(token.TokenTypeNumber, "0o123", token.NewSpan(7, 11)),
+				token.NewTokenWithValue(token.TokenTypeNumber, "0x123", token.NewSpan(13, 17)),
+				token.NewTokenWithValue(token.TokenTypeNumber, "0B1010", token.NewSpan(19, 24)),
+				token.NewTokenWithValue(token.TokenTypeNumber, "0O123", token.NewSpan(26, 30)),
+				token.NewTokenWithValue(token.TokenTypeNumber, "0X123", token.NewSpan(32, 36)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(37, 37)),
+			},
+		},
+		{
+			name: "binary octal hexadecimal number with decimal point",
+			input: "0b1010.",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "0b1010", token.NewSpan(0, 5)),
+				token.NewToken(token.TokenTypeDot, token.NewSpan(6, 6)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(7, 7)),
+			},
 		},
 		{
 			name: "decimal point error",

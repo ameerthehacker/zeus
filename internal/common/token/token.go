@@ -17,6 +17,7 @@ const (
 	TokenTypeRightBracket TokenType = "]"
 	TokenTypeIdentifier TokenType = "identifier"
 	TokenTypeComma TokenType = ","
+	TokenTypeDot TokenType = "."
 	TokenTypeKeyword TokenType = "keyword"
 	TokenTypeDataType TokenType = "datatype"
 	TokenTypeEOF TokenType = "EOF"
