@@ -34,16 +34,16 @@ func (s *Span) String() string {
 
 type Token struct {
 	Type TokenType
-	Value string
+	Value *string
 	Span *Span
 }
 
 func NewTokenWithValue(tokenType TokenType, value string, span *Span) *Token {
-	return &Token{Type: tokenType, Value: value, Span: span}
+	return &Token{Type: tokenType, Value: &value, Span: span}
 }
 
 func NewToken(tokenType TokenType, span *Span) *Token {
-	return &Token{Type: tokenType, Value: "", Span: span}
+	return &Token{Type: tokenType, Value: nil, Span: span}
 }
 
 func NewSpan(start int, end int) *Span {
@@ -51,9 +51,18 @@ func NewSpan(start int, end int) *Span {
 }
 
 func (t *Token) String() string {
-	return fmt.Sprintf("{Type: %s, Value: %s, Span: %s}", t.Type, t.Value, t.Span)
+	if t.Value == nil {
+		return fmt.Sprintf("{Type: %s, Span: %s}", t.Type, t.Span)
+	}
+	return fmt.Sprintf("{Type: %s, Value: %s, Span: %s}", t.Type, *t.Value, t.Span)
 }
 
 func (t *Token) IsEqual(other *Token) bool {
-	return t.Type == other.Type && t.Value == other.Value && t.Span.Start == other.Span.Start && t.Span.End == other.Span.End
+	isValueEqual := true
+
+	if t.Value != nil && other.Value != nil {
+		isValueEqual = *t.Value == *other.Value
+	}
+
+	return t.Type == other.Type && isValueEqual && t.Span.Start == other.Span.Start && t.Span.End == other.Span.End
 }
