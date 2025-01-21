@@ -139,6 +139,23 @@ func TestZeusLexer(t *testing.T) {
 			},
 		},
 		{
+			name: "numerical separator",
+			input: "123_000_000",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "123_000_000", token.NewSpan(0, 10)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(11, 11)),
+			},
+		},
+		{
+			name: "numerical separator error",
+			input: "123_",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "123_", token.NewSpan(0, 3)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(4, 4)),
+			},
+			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "numerical separator must be followed by a digit", token.NewSpan(3, 3))},
+		},
+		{
 			name: "decimal point error",
 			input: "123.3.4",
 			expected: []*token.Token{

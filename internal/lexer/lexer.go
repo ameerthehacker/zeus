@@ -23,8 +23,8 @@ func (l *Lexer) advance() {
 	l.cursor++;
 }
 
-func (l *Lexer) isEOF() bool {
-	return l.cursor >= len(l.source)
+func (l *Lexer) isEOF(offset int) bool {
+	return l.cursor + offset >= len(l.source)
 }
 
 func (l *Lexer) pushToken(token *token.Token) {
@@ -39,7 +39,7 @@ func (l *Lexer) eatIdentifierOrKeywordOrDatatype() {
 	l.start = l.cursor
 	l.advance()
 
-	for !l.isEOF() && isIdentifierRune(l.source[l.cursor]) {
+	for !l.isEOF(0) && isIdentifierRune(l.source[l.cursor]) {
 		l.advance()
 	}
 
@@ -58,10 +58,10 @@ func (l *Lexer) eatNumber() {
 	isFloat := false
 	l.start = l.cursor
 
-	for !l.isEOF() && unicode.IsDigit(l.source[l.cursor]) {
+	for !l.isEOF(0) && unicode.IsDigit(l.source[l.cursor]) {
 		l.advance()
 
-		if !l.isEOF() && rune(l.source[l.cursor]) == '.' {
+		if l.matchRune('.') {
 			if isFloat {
 				l.pushError(error.NewZeusError(
 					error.ErrorSeverityError,
@@ -70,6 +70,19 @@ func (l *Lexer) eatNumber() {
 				))
 			}
 			isFloat = true
+			l.advance()
+		}
+		// support for numerical separator // 2_00_00_000
+		if l.matchRune('_') {
+			if !l.matchNext(func(char rune) bool {
+				return unicode.IsDigit(char)
+			}) {
+				l.pushError(error.NewZeusError(
+					error.ErrorSeverityError,
+					"numerical separator must be followed by a digit",
+					token.NewSpan(l.cursor, l.cursor),
+				))
+			}
 			l.advance()
 		}
 	}
@@ -82,15 +95,23 @@ func (l *Lexer) pushError(err *error.ZeusError) {
 	l.errors = append(l.errors, err)
 }
 
-func (l *Lexer) matchNext(char rune) bool {
-	return !l.isEOF() && l.source[l.cursor + 1] == char
+func (l* Lexer) matchRune(char rune) bool {
+	return !l.isEOF(0) && l.source[l.cursor] == char
+}
+
+func (l *Lexer) matchNextRune(char rune) bool {
+	return !l.isEOF(1) && l.source[l.cursor + 1] == char
+}
+
+func (l *Lexer) matchNext(fn func(rune) bool) bool {
+	return !l.isEOF(1) && fn(l.source[l.cursor + 1])
 }
 
 func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 	l.tokens = []*token.Token{}
 	l.errors = []*error.ZeusError{}
 
-	for !l.isEOF() {
+	for !l.isEOF(0) {
 		char := l.source[l.cursor]
 
 		if unicode.IsSpace(char) || char == '\n' || char == '\t' || char == '\r' {
@@ -135,7 +156,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 			l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(l.cursor, l.cursor)))
 			l.advance()
 		} else if char == '=' {
-			if l.matchNext('=') {
+			if l.matchNextRune('=') {
 				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqualEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 				l.advance()
 			} else {
@@ -143,7 +164,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 			}
 			l.advance()
 		} else if char == '!' {
-			if l.matchNext('=') {
+			if l.matchNextRune('=') {
 				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBangEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 				l.advance()
 			} else {
@@ -151,7 +172,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 			}
 			l.advance()
 		} else if char == '>' {
-			if l.matchNext('=') {
+			if l.matchNextRune('=') {
 				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThanEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 				l.advance()
 			} else {
@@ -159,7 +180,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 			}
 			l.advance()
 		} else if char == '<' {
-			if l.matchNext('=') {
+			if l.matchNextRune('=') {
 				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThanEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 				l.advance()
 			} else {
