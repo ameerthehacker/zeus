@@ -14,22 +14,3 @@ const (
 	OperatorTypeLessThan string = "<"
 	OperatorTypeLessThanEqual string = "<="
 )
-
-var Operators = map[string]bool{
-	OperatorTypePlus: true,
-	OperatorTypeMinus: true,
-	OperatorTypeStar: true,
-	OperatorTypeSlash: true,
-	OperatorTypeEqual: true,
-	OperatorTypeBang: true,
-	OperatorTypeEqualEqual: true,
-	OperatorTypeBangEqual: true,
-	OperatorTypeGreaterThan: true,
-	OperatorTypeGreaterThanEqual: true,
-	OperatorTypeLessThan: true,
-	OperatorTypeLessThanEqual: true,
-}
-
-func IsOperator(tokenType TokenType) bool {
-	return Operators[string(tokenType)]
-}

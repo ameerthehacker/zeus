@@ -1,6 +1,6 @@
 package token
 
-type DataType TokenType
+type DataType string
 
 const (
 	// signed integer types
