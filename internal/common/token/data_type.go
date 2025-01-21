@@ -4,7 +4,6 @@ type DataType TokenType
 
 const (
 	// signed integer types
-	DataTypeInt DataType = "int"
 	DataTypeInt8 DataType = "i8"
 	DataTypeInt16 DataType = "i16"
 	DataTypeInt32 DataType = "i32"
@@ -17,7 +16,6 @@ const (
 	DataTypeUInt64 DataType = "u64"
 	DataTypeUInt128 DataType = "u128"
 	// floating point types
-	DataTypeFloat DataType = "float"
 	DataTypeFloat32 DataType = "f32"
 	DataTypeFloat64 DataType = "f64"
 	// boolean type
@@ -25,7 +23,6 @@ const (
 )
 
 var DataTypes = map[DataType]bool{
-	DataTypeInt:     true,
 	DataTypeInt8:    true,
 	DataTypeInt16:   true,
 	DataTypeInt32:   true,
@@ -36,7 +33,6 @@ var DataTypes = map[DataType]bool{
 	DataTypeUInt32:  true,
 	DataTypeUInt64:  true,
 	DataTypeUInt128: true,
-	DataTypeFloat:   true,
 	DataTypeFloat32: true,
 	DataTypeFloat64: true,
 	DataTypeBoolean: true,

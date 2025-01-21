@@ -79,12 +79,47 @@ func TestZeusLexer(t *testing.T) {
 		},
 		{
 			name: "keyword",
-			input: "if else function",
+			input: "if else function let const while return true false",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeKeyword, "if", token.NewSpan(0, 1)),
 				token.NewTokenWithValue(token.TokenTypeKeyword, "else", token.NewSpan(3, 6)),
 				token.NewTokenWithValue(token.TokenTypeKeyword, "function", token.NewSpan(8, 15)),
-				token.NewToken(token.TokenTypeEOF, token.NewSpan(16, 16)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "let", token.NewSpan(17, 19)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "const", token.NewSpan(21, 25)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "while", token.NewSpan(27, 31)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "return", token.NewSpan(33, 38)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "true", token.NewSpan(40, 43)),
+				token.NewTokenWithValue(token.TokenTypeKeyword, "false", token.NewSpan(45, 49)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(50, 50)),
+			},
+		},
+		{
+			name: "integer datatype",
+			input: "i8 i16 i32 i64 i128",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeDataType, "i8", token.NewSpan(0, 1)),
+				token.NewTokenWithValue(token.TokenTypeDataType, "i16", token.NewSpan(3, 5)),
+				token.NewTokenWithValue(token.TokenTypeDataType, "i32", token.NewSpan(7, 9)),
+				token.NewTokenWithValue(token.TokenTypeDataType, "i64", token.NewSpan(11, 13)),
+				token.NewTokenWithValue(token.TokenTypeDataType, "i128", token.NewSpan(15, 18)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(19, 19)),
+			},
+		},
+		{
+			name: "float datatype",
+			input: "f32 f64",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeDataType, "f32", token.NewSpan(0, 2)),
+				token.NewTokenWithValue(token.TokenTypeDataType, "f64", token.NewSpan(4, 6)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(7, 7)),
+			},
+		},
+		{
+			name: "boolean datatype",
+			input: "boolean",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeDataType, "boolean", token.NewSpan(0, 6)),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(7, 7)),
 			},
 		},
 		{
