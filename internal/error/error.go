@@ -1,7 +1,7 @@
 package error
 
 import (
-	"ameerthehacker/zeus/internal/common/token"
+	"ameerthehacker/zeus/internal/token"
 	"fmt"
 )
 

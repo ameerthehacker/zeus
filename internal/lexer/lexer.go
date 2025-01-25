@@ -1,8 +1,8 @@
 package lexer
 
 import (
-	"ameerthehacker/zeus/internal/common/error"
-	"ameerthehacker/zeus/internal/common/token"
+	"ameerthehacker/zeus/internal/error"
+	"ameerthehacker/zeus/internal/token"
 	"fmt"
 	"unicode"
 )
@@ -12,14 +12,22 @@ import (
 		cursor int
 		tokens []*token.Token
 		errors []*error.ZeusError
+		line int
+		column int
 	}
 
 	func NewLexer(source string) *Lexer {
-		return &Lexer{source: []rune(source), cursor: 0, tokens: []*token.Token{}}
+		return &Lexer{source: []rune(source), cursor: 0, tokens: []*token.Token{}, line: 1, column: 1}
 	}
 
 	func (l *Lexer) advance() {
 		l.cursor++;
+		l.column++;
+	}
+
+	func (l *Lexer) newLine() {
+		l.line++;
+		l.column = 1;
 	}
 
 	func (l *Lexer) isEOF(offset int) bool {
@@ -35,27 +43,32 @@ import (
 	}
 
 	func (l *Lexer) eatIdentifierOrKeywordOrDatatype() {
+		startPosition := l.getCurrentPosition()
 		start := l.cursor
-		l.advance()
+		var endPosition *token.Position = nil
 
 		for !l.isEOF(0) && isIdentifierRune(l.source[l.cursor]) {
+			endPosition = l.getCurrentPosition()
 			l.advance()
 		}
 
 		identifier := string(l.source[start:l.cursor])
+		span := token.NewSpan(*startPosition, *endPosition)
 
 		if token.IsKeyword(identifier) {
-			l.pushToken(token.NewTokenWithValue(token.TokenTypeKeyword, identifier, token.NewSpan(start, l.cursor - 1)))
+			l.pushToken(token.NewTokenWithValue(token.TokenTypeKeyword, identifier, span))
 		} else if token.IsDataType(identifier) {
-			l.pushToken(token.NewTokenWithValue(token.TokenTypeDataType, identifier, token.NewSpan(start, l.cursor - 1)))
+			l.pushToken(token.NewTokenWithValue(token.TokenTypeDataType, identifier, span))
 		} else {
-			l.pushToken(token.NewTokenWithValue(token.TokenTypeIdentifier, identifier, token.NewSpan(start, l.cursor - 1)))
+			l.pushToken(token.NewTokenWithValue(token.TokenTypeIdentifier, identifier, span))
 		}
 	}
 
 	func (l *Lexer) eatNumber() {
 		isFloat := false
 		start := l.cursor
+		startPosition := l.getCurrentPosition()
+		var endPosition *token.Position = nil
 		isRadix10 := true
 
 		isDigit := func () bool {
@@ -75,14 +88,16 @@ import (
 		}
 
 		for isDigit() {
+			endPosition = l.getCurrentPosition()
 			l.advance()
 
 			if l.matchRune('.') && isRadix10 {
 				if isFloat {
+					errorPosition := l.getCurrentPosition()
 					l.pushError(error.NewZeusError(
 						error.ErrorSeverityError,
 						"invalid decimal point",
-						token.NewSpan(l.cursor, l.cursor),
+						token.NewSpan(*errorPosition, *errorPosition),
 					))
 				}
 				isFloat = true
@@ -93,18 +108,19 @@ import (
 				if !l.matchNext(func(char rune) bool {
 					return unicode.IsDigit(char)
 				}) {
+					errorPosition := l.getCurrentPosition()
+					endPosition = errorPosition
 					l.pushError(error.NewZeusError(
 						error.ErrorSeverityError,
 						"numerical separator must be followed by a digit",
-						token.NewSpan(l.cursor, l.cursor),
+						token.NewSpan(*errorPosition, *errorPosition),
 					))
 				}
 				l.advance()
 			}
 		}
-		end := l.cursor - 1
 
-		l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(start, end)))
+		l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
 	}
 
 	func (l *Lexer) pushError(err *error.ZeusError) {
@@ -127,6 +143,10 @@ import (
 		return !l.isEOF(1) && fn(l.source[l.cursor + 1])
 	}
 
+	func (l* Lexer) getCurrentPosition() *token.Position {
+		return token.NewPosition(l.line, l.column)
+	}
+
 	func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
 		l.tokens = []*token.Token{}
 		l.errors = []*error.ZeusError{}
@@ -134,80 +154,105 @@ import (
 		for !l.isEOF(0) {
 			char := l.source[l.cursor]
 
-			if unicode.IsSpace(char) || char == '\n' || char == '\t' || char == '\r' {
+			if unicode.IsSpace(char) || char == '\t' {
 				l.advance()
+			} else if char == '\n' {
+				l.advance()
+				l.newLine()
 			} else if char == '[' {
-				l.pushToken(token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ']' {
-				l.pushToken(token.NewToken(token.TokenTypeRightBracket, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeRightBracket, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '(' {
-				l.pushToken(token.NewToken(token.TokenTypeLeftParen, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeLeftParen, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ')' {
-				l.pushToken(token.NewToken(token.TokenTypeRightParen, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeRightParen, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '{' {
-				l.pushToken(token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '}' {
-				l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ';' {
-				l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ',' {
-				l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '+' {
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypePlus, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypePlus, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '-' {
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeMinus, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeMinus, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '*' {
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeStar, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeStar, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '/' {
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeSlash, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeSlash, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ':' {
-				l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '.' {
-				l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '=' {
+				startPosition := l.getCurrentPosition()
 				if l.matchNextRune('=') {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqualEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqualEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqual, token.NewSpan(l.cursor, l.cursor)))
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqual, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '!' {
+				startPosition := l.getCurrentPosition()
 				if l.matchNextRune('=') {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBangEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBangEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBang, token.NewSpan(l.cursor, l.cursor)))
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBang, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '>' {
+				startPosition := l.getCurrentPosition()
 				if l.matchNextRune('=') {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThanEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThanEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThan, token.NewSpan(l.cursor, l.cursor)))
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '<' {
+				startPosition := l.getCurrentPosition()
 				if l.matchNextRune('=') {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThanEqual, token.NewSpan(l.cursor, l.cursor + 1)))
 					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThanEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThan, token.NewSpan(l.cursor, l.cursor)))
+					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if unicode.IsDigit(char) {
@@ -215,12 +260,14 @@ import (
 			} else if isIdentifierRune(char) {
 				l.eatIdentifierOrKeywordOrDatatype()
 			} else {
-				l.pushError(error.NewZeusError(error.ErrorSeverityError, fmt.Sprintf("unknown token: '%c'", char), token.NewSpan(l.cursor, l.cursor)))
+				position := l.getCurrentPosition()
+				l.pushError(error.NewZeusError(error.ErrorSeverityError, fmt.Sprintf("unknown token: '%c'", char), token.NewSpan(*position, *position)))
 				l.advance()
 			}
 		}
 
-		l.pushToken(token.NewToken(token.TokenTypeEOF, token.NewSpan(l.cursor, l.cursor)))
+		position := l.getCurrentPosition()
+		l.pushToken(token.NewToken(token.TokenTypeEOF, token.NewSpan(*position, *position)))
 
 		return l.tokens, l.errors
 	}

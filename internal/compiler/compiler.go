@@ -1,7 +1,7 @@
 package compiler
 
 import (
-	"ameerthehacker/zeus/internal/common/error"
+	"ameerthehacker/zeus/internal/error"
 	"ameerthehacker/zeus/internal/lexer"
 	"fmt"
 )

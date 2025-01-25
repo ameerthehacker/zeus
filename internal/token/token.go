@@ -23,13 +23,34 @@ const (
 	TokenTypeEOF TokenType = "EOF"
 )
 
+type Position struct {
+	Line int
+	Column int
+}
+
+func NewPosition(line int, column int) *Position {
+	return &Position{Line: line, Column: column}
+}
+
+func (p *Position) String() string {
+	return fmt.Sprintf("{Line: %d, Column: %d}", p.Line, p.Column)
+}
+
+func (p *Position) IsEqual(other *Position) bool {
+	return p.Line == other.Line && p.Column == other.Column
+}
+
 type Span struct {
-	Start int
-	End int
+	Start Position
+	End Position
 }
 
 func (s *Span) String() string {
-	return fmt.Sprintf("{Start: %d, End: %d}", s.Start, s.End)
+	return fmt.Sprintf("{Start: %s, End: %s}", &s.Start, &s.End)
+}
+
+func (s *Span) IsEqual(other *Span) bool {
+	return s.Start.IsEqual(&other.Start) && s.End.IsEqual(&other.End)
 }
 
 type Token struct {
@@ -46,7 +67,7 @@ func NewToken(tokenType TokenType, span *Span) *Token {
 	return &Token{Type: tokenType, Value: nil, Span: span}
 }
 
-func NewSpan(start int, end int) *Span {
+func NewSpan(start Position, end Position) *Span {
 	return &Span{Start: start, End: end}
 }
 
@@ -64,5 +85,5 @@ func (t *Token) IsEqual(other *Token) bool {
 		isValueEqual = *t.Value == *other.Value
 	}
 
-	return t.Type == other.Type && isValueEqual && t.Span.Start == other.Span.Start && t.Span.End == other.Span.End
+	return t.Type == other.Type && isValueEqual && t.Span.IsEqual(other.Span)
 }
