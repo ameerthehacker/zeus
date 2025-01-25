@@ -153,12 +153,12 @@ import (
 
 		for !l.isEOF(0) {
 			char := l.source[l.cursor]
-
-			if unicode.IsSpace(char) || char == '\t' {
-				l.advance()
-			} else if char == '\n' {
+			// unicode.IsSpace(char) true for \n and \r so we need to check for that first
+			if char == '\n' || char == '\r' {
 				l.advance()
 				l.newLine()
+			} else if unicode.IsSpace(char) {
+				l.advance()
 			} else if char == '[' {
 				position := l.getCurrentPosition()
 				l.pushToken(token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(*position, *position)))
