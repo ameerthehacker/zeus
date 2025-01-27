@@ -30,6 +30,6 @@ func (c *Compiler) Compile() []*error.ZeusError {
 	}
 
 	fmt.Printf("%s\n", expr)
-
+	
 	return []*error.ZeusError{}
 }

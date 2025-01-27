@@ -87,15 +87,17 @@ func (p *Parser) pushError(err *error.ZeusError) {
 }
 
 func (p *Parser) expectedError(expected string) {
-	var message string
-
-	if p.isEOF() {
-		message = fmt.Sprintf("expected %s", expected)
-	} else {
-		message = fmt.Sprintf("expected %s but got %s", expected, p.tokens[p.current].Type)
-	}
-
+	message := fmt.Sprintf("expected %s", expected)
 	p.pushError(error.NewZeusError(error.ErrorSeverityError, message, p.tokens[p.current].Span))
+}
+
+func (p *Parser) expectedButGotError(expected string, token *token.Token) {
+	if p.isEOF() {
+		p.expectedError(expected)
+	} else {
+		message := fmt.Sprintf("expected %s but got %s", expected, token.Type)
+		p.pushError(error.NewZeusError(error.ErrorSeverityError, message, token.Span))
+	}
 }
 
 func getPrecedence(token *token.Token) int {
@@ -117,7 +119,7 @@ func (p *Parser) ParseExpr(precedence int) (expr ast.ExprNode, errors []*error.Z
 	prefixParselet := p.prefixParselets[token.Type]
 
 	if prefixParselet == nil {
-		p.expectedError("expression")
+		p.expectedButGotError("expression", token)
 		return left, p.errors
 	}
 
