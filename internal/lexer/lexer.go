@@ -193,19 +193,19 @@ import (
 				l.advance()
 			} else if char == '+' {
 				position := l.getCurrentPosition()
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypePlus, token.NewSpan(*position, *position)))
+				l.pushToken(token.NewToken(token.TokenTypePlus, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '-' {
 				position := l.getCurrentPosition()
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeMinus, token.NewSpan(*position, *position)))
+				l.pushToken(token.NewToken(token.TokenTypeMinus, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '*' {
 				position := l.getCurrentPosition()
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeStar, token.NewSpan(*position, *position)))
+				l.pushToken(token.NewToken(token.TokenTypeStar, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '/' {
 				position := l.getCurrentPosition()
-				l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeSlash, token.NewSpan(*position, *position)))
+				l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == ':' {
 				position := l.getCurrentPosition()
@@ -220,9 +220,9 @@ import (
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqualEqual, token.NewSpan(*startPosition, *endPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeEqualEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeEqual, token.NewSpan(*startPosition, *startPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeEqual, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '!' {
@@ -230,9 +230,9 @@ import (
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBangEqual, token.NewSpan(*startPosition, *endPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeBangEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeBang, token.NewSpan(*startPosition, *startPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeBang, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '>' {
@@ -240,9 +240,9 @@ import (
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThanEqual, token.NewSpan(*startPosition, *endPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeGreaterThanEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeGreaterThan, token.NewSpan(*startPosition, *startPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeGreaterThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if char == '<' {
@@ -250,9 +250,9 @@ import (
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThanEqual, token.NewSpan(*startPosition, *endPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeLessThanEqual, token.NewSpan(*startPosition, *endPosition)))
 				} else {
-					l.pushToken(token.NewTokenWithValue(token.TokenTypeOperator, token.OperatorTypeLessThan, token.NewSpan(*startPosition, *startPosition)))
+					l.pushToken(token.NewToken(token.TokenTypeLessThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
 			} else if unicode.IsDigit(char) {
@@ -261,7 +261,7 @@ import (
 				l.eatIdentifierOrKeywordOrDatatype()
 			} else {
 				position := l.getCurrentPosition()
-				l.pushError(error.NewZeusError(error.ErrorSeverityError, fmt.Sprintf("unknown token: '%c'", char), token.NewSpan(*position, *position)))
+				l.pushError(error.NewZeusError(error.ErrorSeverityError, fmt.Sprintf("unknown token '%c'", char), token.NewSpan(*position, *position)))
 				l.advance()
 			}
 		}

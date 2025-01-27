@@ -3,6 +3,7 @@ package compiler
 import (
 	"ameerthehacker/zeus/internal/error"
 	"ameerthehacker/zeus/internal/lexer"
+	"ameerthehacker/zeus/internal/parser"
 	"fmt"
 )
 
@@ -15,11 +16,20 @@ func NewCompiler(source string) *Compiler {
 }
 
 func (c *Compiler) Compile() []*error.ZeusError {
-	tokens, errors := c.lexer.Lex()
+	tokens, lexerErrors := c.lexer.Lex()
 
-	for _, token := range tokens {
-		fmt.Printf("%s\n", token)
+	if len(lexerErrors) > 0 {
+		return lexerErrors
 	}
 
-	return errors
+	parser := parser.NewParser(tokens)
+	expr, parserErrors := parser.ParseExpr(0)
+
+	if len(parserErrors) > 0 {
+		return parserErrors
+	}
+
+	fmt.Printf("%s\n", expr)
+
+	return []*error.ZeusError{}
 }

@@ -29,3 +29,9 @@ func (e *ZeusError) IsEqual(other *ZeusError) bool {
 func (e *ZeusError) String() string {
 	return fmt.Sprintf("{Severity: %s, Message: %s, Span: %s}", e.Severity, e.Message, e.Span)
 }
+
+func Assert(condition bool, message string) {
+	if !condition {
+		panic(message)
+	}
+}

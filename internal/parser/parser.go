@@ -1,11 +1,146 @@
 package parser
 
-import "ameerthehacker/zeus/internal/token"
-
+import (
+	"ameerthehacker/zeus/internal/ast"
+	"ameerthehacker/zeus/internal/error"
+	"ameerthehacker/zeus/internal/token"
+	"fmt"
+)
 type Parser struct {
-	tokens []*token.Token
+	tokens          []*token.Token
+	current         int
+	prefixParselets map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode
+	infixParselets  map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode
+	errors          []*error.ZeusError
+}
+
+const (
+	UnaryOperatorPrecedence = 4
+)
+
+var BinaryOperatorPrecedence = map[token.TokenType]int{
+	token.TokenTypeMinus:            1,
+	token.TokenTypePlus:             1,
+	token.TokenTypeStar:             2,
+	token.TokenTypeSlash:            2,
+	token.TokenTypeEqualEqual:       3,
+	token.TokenTypeBangEqual:        3,
+	token.TokenTypeGreaterThan:      3,
+	token.TokenTypeGreaterThanEqual: 3,
+	token.TokenTypeLessThan:         3,
+	token.TokenTypeLessThanEqual:    3,
 }
 
 func NewParser(tokens []*token.Token) *Parser {
-	return &Parser{tokens: tokens}
+	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
+		expr, _ := parser.ParseExpr(UnaryOperatorPrecedence)
+		return &ast.UnaryExprNode{Operator: token.Type, Operand: &expr, Span: token.Span}
+	}
+
+	binaryOperatorParseLet := func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode {
+		right, _ := parser.ParseExpr(getPrecedence(token))
+		return &ast.BinaryExprNode{Left: &left, Right: &right, Operator: token.Type, Span: token.Span}
+	}
+
+	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
+		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
+			return &ast.NumberNode{Value: *token.Value, Span: token.Span}
+		},
+		token.TokenTypeIdentifier: func(parser *Parser, token *token.Token) ast.ExprNode {
+			return &ast.IdentifierNode{Value: *token.Value, Span: token.Span}
+		},
+		token.TokenTypeMinus: unaryOperatorParseLet,
+	}
+
+	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
+		token.TokenTypePlus:             binaryOperatorParseLet,
+		token.TokenTypeMinus:            binaryOperatorParseLet,
+		token.TokenTypeStar:             binaryOperatorParseLet,
+		token.TokenTypeSlash:            binaryOperatorParseLet,
+		token.TokenTypeEqualEqual:       binaryOperatorParseLet,
+		token.TokenTypeBangEqual:        binaryOperatorParseLet,
+		token.TokenTypeGreaterThan:      binaryOperatorParseLet,
+		token.TokenTypeGreaterThanEqual: binaryOperatorParseLet,
+		token.TokenTypeLessThan:         binaryOperatorParseLet,
+		token.TokenTypeLessThanEqual:    binaryOperatorParseLet,
+	}
+
+	return &Parser{tokens: tokens, current: 0, errors: []*error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
+}
+
+func (p *Parser) isEOF() bool {
+	return p.tokens[p.current].Type == token.TokenTypeEOF
+}
+
+func (p *Parser) peek() *token.Token {
+	return p.tokens[p.current]
+}
+
+func (p *Parser) consume() *token.Token {
+	token := p.tokens[p.current]
+	p.current++
+	return token
+}
+
+func (p *Parser) pushError(err *error.ZeusError) {
+	p.errors = append(p.errors, err)
+}
+
+func (p *Parser) expectedError(expected string) {
+	var message string
+
+	if p.isEOF() {
+		message = fmt.Sprintf("expected %s", expected)
+	} else {
+		message = fmt.Sprintf("expected %s but got %s", expected, p.tokens[p.current].Type)
+	}
+
+	p.pushError(error.NewZeusError(error.ErrorSeverityError, message, p.tokens[p.current].Span))
+}
+
+func getPrecedence(token *token.Token) int {
+	if precedence, ok := BinaryOperatorPrecedence[token.Type]; ok {
+		return precedence
+	}
+	return 0
+}
+
+func (p *Parser) ParseExpr(precedence int) (expr ast.ExprNode, errors []*error.ZeusError) {
+	var left ast.ExprNode
+
+	if p.isEOF() {
+		p.expectedError("expression")
+		return left, p.errors
+	}
+
+	token := p.consume()
+	prefixParselet := p.prefixParselets[token.Type]
+
+	if prefixParselet == nil {
+		p.expectedError("expression")
+		return left, p.errors
+	}
+
+	left = prefixParselet(p, token)
+
+	for {
+		token = p.peek()
+		infixParselet, ok := p.infixParselets[token.Type]
+	
+		// if no infix available then we are done
+		if !ok {
+			return left, p.errors
+		}
+	
+		// we are done if the next operator has less precedence than the current operator
+		nextOpPrecedence := getPrecedence(token)
+		if nextOpPrecedence <= precedence {
+			break
+		}
+
+		token = p.consume()
+		left = infixParselet(p, left, token)
+	}
+
+	return left, p.errors
 }

@@ -5,8 +5,6 @@ import "fmt"
 type TokenType string
 
 const (
-	TokenTypeNumber TokenType = "number"
-	TokenTypeOperator TokenType = "operator"
 	TokenTypeSemicolon TokenType = ";"
 	TokenTypeColon TokenType = ":"
 	TokenTypeLeftParen TokenType = "("
@@ -15,11 +13,27 @@ const (
 	TokenTypeRightBrace TokenType = "}"
 	TokenTypeLeftBracket TokenType = "["
 	TokenTypeRightBracket TokenType = "]"
-	TokenTypeIdentifier TokenType = "identifier"
 	TokenTypeComma TokenType = ","
 	TokenTypeDot TokenType = "."
 	TokenTypeKeyword TokenType = "keyword"
 	TokenTypeDataType TokenType = "datatype"
+	// operators
+	TokenTypePlus TokenType = "+"
+	TokenTypeMinus TokenType = "-"
+	TokenTypeStar TokenType = "*"
+	TokenTypeSlash TokenType = "/"
+	TokenTypeEqual TokenType = "="
+	TokenTypeBang TokenType = "!"
+	TokenTypeEqualEqual TokenType = "=="
+	TokenTypeBangEqual TokenType = "!="
+	TokenTypeGreaterThan TokenType = ">"
+	TokenTypeGreaterThanEqual TokenType = ">="
+	TokenTypeLessThan TokenType = "<"
+	TokenTypeLessThanEqual TokenType = "<="
+	// literals
+	TokenTypeNumber TokenType = "number"
+	TokenTypeIdentifier TokenType = "identifier"
+	// EOF
 	TokenTypeEOF TokenType = "EOF"
 )
 
