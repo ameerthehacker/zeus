@@ -194,46 +194,40 @@ func TestParseExpression(t *testing.T) {
 }
 
 // compareExprNodes compares two expression nodes for equality using downcasting
-func compareExprNodes(t *testing.T, a, b ast.ExprNode) {
-	// at last compare the expression spans
-	if !a.GetSpan().IsEqual(b.GetSpan()) {
-		t.Errorf("expected expressions %s , %s spans to be equal, expected: %s got: %s", a.PrettyString(), b.PrettyString(), a.GetSpan(), b.GetSpan())
-		return
+func compareExprNodes(t *testing.T, value, expectation ast.ExprNode) {
+	logExprNotEqualError := func(value, expectation ast.ExprNode) {
+		t.Errorf("expected %s, got %s", expectation.PrettyString(), value.PrettyString())
 	}
-
-	logExprNotEqualError := func(a, b ast.ExprNode) {
-		t.Errorf("expected %s, got %s", a.PrettyString(), b.PrettyString())
-	}
-	switch aNode := a.(type) {
+	switch aNode := value.(type) {
 	case *ast.NumberExprNode:
-		bNode, ok := b.(*ast.NumberExprNode)
+		bNode, ok := expectation.(*ast.NumberExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		if aNode.Value.Value != bNode.Value.Value {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 		}
 	case *ast.IdentifierExprNode:
-		bNode, ok := b.(*ast.IdentifierExprNode)
+		bNode, ok := expectation.(*ast.IdentifierExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		if aNode.Name.Value != bNode.Name.Value {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 		}
 	case *ast.UnaryExprNode:
-		bNode, ok := b.(*ast.UnaryExprNode)
+		bNode, ok := expectation.(*ast.UnaryExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		compareExprNodes(t, aNode.Expr, bNode.Expr)
 	case *ast.BinaryExprNode:
-		bNode, ok := b.(*ast.BinaryExprNode)
+		bNode, ok := expectation.(*ast.BinaryExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		compareExprNodes(t, aNode.Left, bNode.Left)
@@ -242,27 +236,33 @@ func compareExprNodes(t *testing.T, a, b ast.ExprNode) {
 			logExprNotEqualError(aNode, bNode)
 		}
 	case *ast.GroupingExprNode:
-		bNode, ok := b.(*ast.GroupingExprNode)
+		bNode, ok := expectation.(*ast.GroupingExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		compareExprNodes(t, aNode.Expr, bNode.Expr)
 	case *ast.FunctionCallExprNode:
-		bNode, ok := b.(*ast.FunctionCallExprNode)
+		bNode, ok := expectation.(*ast.FunctionCallExprNode)
 		if !ok {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 			return
 		}
 		compareExprNodes(t, aNode.Callee, bNode.Callee)
 		// compare the params
 		if len(aNode.Params) != len(bNode.Params) {
-			logExprNotEqualError(aNode, bNode)
+			logExprNotEqualError(aNode, expectation)
 		}
 		for i := range aNode.Params {
 			compareExprNodes(t, aNode.Params[i], bNode.Params[i])
 		}
 	default:
 		panic(fmt.Sprintf("unsupported node type: %T", aNode))
+	}
+
+	// at last compare the expression spans
+	if !value.GetSpan().IsEqual(expectation.GetSpan()) {
+		t.Errorf("expected expressions %s , %s spans to be equal, expected: %s got: %s", value.PrettyString(), expectation.PrettyString(), value.GetSpan(), expectation.GetSpan())
+		return
 	}
 }
