@@ -35,7 +35,7 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 func NewParser(tokens []*token.Token) *Parser {
 	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
 		expr, _ := parser.ParseExprOfPrecedence(UnaryOperatorPrecedence)
-		return &ast.UnaryExprNode{Operator: token, Operand: &expr}
+		return &ast.UnaryExprNode{Operator: token, Expr: expr}
 	}
 
 	binaryOperatorParseLet := func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode {
@@ -62,10 +62,10 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
-			return &ast.NumberNode{Value: token}
+			return &ast.NumberExprNode{Value: token}
 		},
 		token.TokenTypeIdentifier: func(parser *Parser, token *token.Token) ast.ExprNode {
-			return &ast.IdentifierNode{Name: token}
+			return &ast.IdentifierExprNode{Name: token}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
 			expr, _ := parser.ParseExprOfPrecedence(0)

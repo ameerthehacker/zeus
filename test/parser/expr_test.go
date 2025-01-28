@@ -12,15 +12,26 @@ import (
 )
 func TestParseExpression(t *testing.T) {
 	tests := []struct {
+		name        string
 		input       string
 		expected    ast.ExprNode
 		errors      []*error.ZeusError
 	}{
 		{
+			name: "unary operation",
+			input: "-name",
+			expected: &ast.UnaryExprNode{
+				Operator: token.NewToken(token.TokenTypeMinus, token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1})),
+				Expr: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "name", token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 5}))},
+			},
+			errors: []*error.ZeusError{},
+		},
+		{
+			name: "binary operation",
 			input: "1 + 2",
 			expected: &ast.BinaryExprNode{
-				Left:     &ast.NumberNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1}))},
-				Right:    &ast.NumberNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5}))},
+				Left:     &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1}))},
+				Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5}))},
 				Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 3}, token.Position{Line: 1, Column: 3})),
 			},
 			errors: []*error.ZeusError{},
@@ -28,7 +39,7 @@ func TestParseExpression(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			// Tokenize the input
 			lexer := lexer.NewLexer(test.input)
 			tokens, _ := lexer.Lex()
@@ -53,8 +64,8 @@ func compareExprNodes(t *testing.T, a , b ast.ExprNode) {
 		t.Errorf("expected %s, got %s", a.PrettyString(), b.PrettyString())
 	}
 	switch aNode := a.(type) {
-	case *ast.NumberNode:
-		bNode, ok := b.(*ast.NumberNode)
+	case *ast.NumberExprNode:
+		bNode, ok := b.(*ast.NumberExprNode)
 		if !ok {
 			logExprNotEqualError(aNode, bNode)
 			return
@@ -62,6 +73,22 @@ func compareExprNodes(t *testing.T, a , b ast.ExprNode) {
 		if aNode.Value.Value != bNode.Value.Value {
 			logExprNotEqualError(aNode, bNode)
 		}
+	case *ast.IdentifierExprNode:
+		bNode, ok := b.(*ast.IdentifierExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, bNode)
+			return
+		}
+		if aNode.Name.Value != bNode.Name.Value {
+			logExprNotEqualError(aNode, bNode)
+		}
+	case *ast.UnaryExprNode:
+		bNode, ok := b.(*ast.UnaryExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, bNode)
+			return
+		}
+		compareExprNodes(t, aNode.Expr, bNode.Expr)
 	case *ast.BinaryExprNode:
 		bNode, ok := b.(*ast.BinaryExprNode)
 		if !ok {

@@ -58,37 +58,37 @@ func (b *BinaryExprNode) Accept(visitor Visitor[any]) any {
 	return visitor.VisitBinaryExpr(b)
 }
 
-type NumberNode struct {
+type NumberExprNode struct {
 	Value *token.Token
 }
 
-func (n *NumberNode) GetSpan() *token.Span {
+func (n *NumberExprNode) GetSpan() *token.Span {
 	return n.Value.Span
 }
 
-func (n *NumberNode) Accept(visitor Visitor[any]) any {
+func (n *NumberExprNode) Accept(visitor Visitor[any]) any {
 	return visitor.VisitNumber(n)
 }
 
-func (n *NumberNode) PrettyString() string {
+func (n *NumberExprNode) PrettyString() string {
 	return n.Value.Value
 }
 
-func (n *NumberNode) String() string {
+func (n *NumberExprNode) String() string {
 	return fmt.Sprintf("{ type: NumberNode, Value: %s, Span: %s }", n.Value, n.GetSpan())
 }
 
 type UnaryExprNode struct {
 	Operator *token.Token
-	Operand  *ExprNode
+	Expr  ExprNode
 }
 
 func (u *UnaryExprNode) PrettyString() string {
-	return fmt.Sprintf("(%s%s)", u.Operator.Type, (*u.Operand).PrettyString())
+	return fmt.Sprintf("(%s%s)", u.Operator.Type, u.Expr.PrettyString())
 }
 
 func (u *UnaryExprNode) String() string {
-	return fmt.Sprintf("{ type: UnaryExprNode, Operator: %s, Operand: %s, Span: %s }", u.Operator.Type, (*u.Operand).String(), u.GetSpan())
+	return fmt.Sprintf("{ type: UnaryExprNode, Operator: %s, Operand: %s, Span: %s }", u.Operator.Type, u.Expr.String(), u.GetSpan())
 }
 
 func (u *UnaryExprNode) Accept(visitor Visitor[any]) any {
@@ -97,27 +97,27 @@ func (u *UnaryExprNode) Accept(visitor Visitor[any]) any {
 
 func (u *UnaryExprNode) GetSpan() *token.Span {
 	startPosition := u.Operator.Span.Start
-	endPosition := (*u.Operand).GetSpan().End
+	endPosition := u.Expr.GetSpan().End
 	return &token.Span{Start: startPosition, End: endPosition}
 }
 
-type IdentifierNode struct {
+type IdentifierExprNode struct {
 	Name *token.Token
 }
 
-func (i *IdentifierNode) GetSpan() *token.Span {
+func (i *IdentifierExprNode) GetSpan() *token.Span {
 	return i.Name.Span
 }
 
-func (i *IdentifierNode) PrettyString() string {
+func (i *IdentifierExprNode) PrettyString() string {
 	return i.Name.Value
 }
 
-func (i *IdentifierNode) String() string {
+func (i *IdentifierExprNode) String() string {
 	return fmt.Sprintf("{ type: IdentifierNode, Name: %s, Span: %s }", i.Name, i.GetSpan())
 }
 
-func (i *IdentifierNode) Accept(visitor Visitor[any]) any {
+func (i *IdentifierExprNode) Accept(visitor Visitor[any]) any {
 	return visitor.VisitIdentifier(i)
 }
 
@@ -153,9 +153,9 @@ func (f *FunctionCallExprNode) Accept(visitor Visitor[any]) any {
 
 type Visitor[T any] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
-	VisitNumber(node *NumberNode) T
+	VisitNumber(node *NumberExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
-	VisitIdentifier(node *IdentifierNode) T
+	VisitIdentifier(node *IdentifierExprNode) T
 	VisitGroupingExpr(node *GroupingExprNode) T
 	VisitFunctionCallExpr(node *FunctionCallExprNode) T
 }
