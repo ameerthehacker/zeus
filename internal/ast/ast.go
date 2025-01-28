@@ -71,7 +71,7 @@ func (n *NumberNode) Accept(visitor Visitor[any]) any {
 }
 
 func (n *NumberNode) PrettyString() string {
-	return *n.Value.Value
+	return n.Value.Value
 }
 
 func (n *NumberNode) String() string {
@@ -110,7 +110,7 @@ func (i *IdentifierNode) GetSpan() *token.Span {
 }
 
 func (i *IdentifierNode) PrettyString() string {
-	return *i.Name.Value
+	return i.Name.Value
 }
 
 func (i *IdentifierNode) String() string {

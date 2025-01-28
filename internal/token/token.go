@@ -2,40 +2,202 @@ package token
 
 import "fmt"
 
-type TokenType string
+type TokenType int
 
 const (
-	TokenTypeSemicolon TokenType = ";"
-	TokenTypeColon TokenType = ":"
-	TokenTypeLeftParen TokenType = "("
-	TokenTypeRightParen TokenType = ")"
-	TokenTypeLeftBrace TokenType = "{"
-	TokenTypeRightBrace TokenType = "}"
-	TokenTypeLeftBracket TokenType = "["
-	TokenTypeRightBracket TokenType = "]"
-	TokenTypeComma TokenType = ","
-	TokenTypeDot TokenType = "."
-	TokenTypeKeyword TokenType = "keyword"
-	TokenTypeDataType TokenType = "datatype"
+	TokenTypeSemicolon TokenType = iota
+	TokenTypeColon
+	TokenTypeLeftParen
+	TokenTypeRightParen
+	TokenTypeLeftBrace
+	TokenTypeRightBrace
+	TokenTypeLeftBracket
+	TokenTypeRightBracket
+	TokenTypeComma
+	TokenTypeDot
 	// operators
-	TokenTypePlus TokenType = "+"
-	TokenTypeMinus TokenType = "-"
-	TokenTypeStar TokenType = "*"
-	TokenTypeSlash TokenType = "/"
-	TokenTypeEqual TokenType = "="
-	TokenTypeBang TokenType = "!"
-	TokenTypeEqualEqual TokenType = "=="
-	TokenTypeBangEqual TokenType = "!="
-	TokenTypeGreaterThan TokenType = ">"
-	TokenTypeGreaterThanEqual TokenType = ">="
-	TokenTypeLessThan TokenType = "<"
-	TokenTypeLessThanEqual TokenType = "<="
+	operator_beg
+	TokenTypePlus
+	TokenTypeMinus
+	TokenTypeStar
+	TokenTypeSlash
+	TokenTypeEqual
+	TokenTypeBang
+	TokenTypeEqualEqual
+	TokenTypeBangEqual
+	TokenTypeGreaterThan
+	TokenTypeGreaterThanEqual
+	TokenTypeLessThan
+	TokenTypeLessThanEqual
+	operator_end
 	// literals
-	TokenTypeNumber TokenType = "number"
-	TokenTypeIdentifier TokenType = "identifier"
+	literal_beg
+	TokenTypeNumber
+	TokenTypeIdentifier
+	literal_end
+	// keywords
+	keyword_beg
+	TokenTypeLet
+	TokenTypeConst
+	TokenTypeFunction
+	TokenTypeReturn
+	TokenTypeIf
+	TokenTypeElse
+	TokenTypeWhile
+	TokenTypeTrue
+	TokenTypeFalse
+	keyword_end
+	// data types
+	datatype_beg
+	// signed integer types
+	TokenTypeInt8
+	TokenTypeInt16
+	TokenTypeInt32
+	TokenTypeInt64
+	TokenTypeInt128
+	// unsigned integer types
+	TokenTypeUInt8
+	TokenTypeUInt16
+	TokenTypeUInt32
+	TokenTypeUInt64
+	TokenTypeUInt128
+	// floating point types
+	TokenTypeFloat32
+	TokenTypeFloat64
+	// boolean type
+	TokenTypeBoolean
+	datatype_end
 	// EOF
-	TokenTypeEOF TokenType = "EOF"
+	TokenTypeEOF
 )
+
+func (t TokenType) String() string {
+	switch t {
+	case TokenTypeSemicolon:
+		return ";"
+	case TokenTypeColon:
+		return ":"
+	case TokenTypeLeftParen:
+		return "("
+	case TokenTypeRightParen:
+		return ")"
+	case TokenTypeLeftBrace:
+		return "{"
+	case TokenTypeRightBrace:
+		return "}"
+	case TokenTypeLeftBracket:
+		return "["
+	case TokenTypeRightBracket:
+		return "]"
+	case TokenTypeComma:
+		return ","
+	case TokenTypeDot:
+		return "."
+	case TokenTypePlus:
+		return "+"
+	case TokenTypeMinus:
+		return "-"
+	case TokenTypeStar:
+		return "*"
+	case TokenTypeSlash:
+		return "/"
+	case TokenTypeEqual:
+		return "="
+	case TokenTypeBang:
+		return "!"
+	case TokenTypeEqualEqual:
+		return "=="
+	case TokenTypeBangEqual:
+		return "!="
+	case TokenTypeGreaterThan:
+		return ">"
+	case TokenTypeGreaterThanEqual:
+		return ">="
+	case TokenTypeLessThan:
+		return "<"
+	case TokenTypeLessThanEqual:
+		return "<="
+	case TokenTypeNumber:
+		return "number"
+	case TokenTypeIdentifier:
+		return "identifier"
+	case TokenTypeLet:
+		return "let"
+	case TokenTypeConst:
+		return "const"
+	case TokenTypeFunction:
+		return "function"
+	case TokenTypeReturn:
+		return "return"
+	case TokenTypeIf:
+		return "if"
+	case TokenTypeElse:
+		return "else"
+	case TokenTypeWhile:
+		return "while"
+	case TokenTypeTrue:
+		return "true"
+	case TokenTypeFalse:
+		return "false"
+	case TokenTypeInt8:
+		return "i8"
+	case TokenTypeInt16:
+		return "i16"
+	case TokenTypeInt32:
+		return "i32"
+	case TokenTypeInt64:
+		return "i64"
+	case TokenTypeInt128:
+		return "i128"
+	case TokenTypeUInt8:
+		return "u8"
+	case TokenTypeUInt16:
+		return "u16"
+	case TokenTypeUInt32:
+		return "u32"
+	case TokenTypeUInt64:
+		return "u64"
+	case TokenTypeUInt128:
+		return "u128"
+	case TokenTypeFloat32:
+		return "f32"
+	case TokenTypeFloat64:
+		return "f64"
+	case TokenTypeBoolean:
+		return "boolean"
+	case TokenTypeEOF:
+		return "EOF"
+	}
+	panic(fmt.Sprintf("could not convert token type to string: %d", t))
+}
+
+var Keywords = map[string]TokenType{
+	TokenTypeLet.String(): TokenTypeLet,
+	TokenTypeConst.String(): TokenTypeConst,
+	TokenTypeFunction.String(): TokenTypeFunction,
+	TokenTypeReturn.String(): TokenTypeReturn,
+	TokenTypeIf.String(): TokenTypeIf,
+	TokenTypeElse.String(): TokenTypeElse,
+	TokenTypeWhile.String(): TokenTypeWhile,
+	TokenTypeTrue.String(): TokenTypeTrue,
+	TokenTypeFalse.String(): TokenTypeFalse,
+}
+
+var DataTypes = map[string]TokenType{
+	TokenTypeInt8.String(): TokenTypeInt8,
+	TokenTypeInt16.String(): TokenTypeInt16,
+	TokenTypeInt32.String(): TokenTypeInt32,
+	TokenTypeInt64.String(): TokenTypeInt64,
+	TokenTypeInt128.String(): TokenTypeInt128,
+	TokenTypeUInt8.String(): TokenTypeUInt8,
+	TokenTypeUInt16.String(): TokenTypeUInt16,
+	TokenTypeUInt32.String(): TokenTypeUInt32,
+	TokenTypeUInt64.String(): TokenTypeUInt64,
+	TokenTypeUInt128.String(): TokenTypeUInt128,
+	TokenTypeFloat32.String(): TokenTypeFloat32,
+	TokenTypeFloat64.String(): TokenTypeFloat64,
+	TokenTypeBoolean.String(): TokenTypeBoolean,
+}
 
 type Position struct {
 	Line int
@@ -69,16 +231,16 @@ func (s *Span) IsEqual(other *Span) bool {
 
 type Token struct {
 	Type TokenType
-	Value *string
+	Value string
 	Span *Span
 }
 
 func NewTokenWithValue(tokenType TokenType, value string, span *Span) *Token {
-	return &Token{Type: tokenType, Value: &value, Span: span}
+	return &Token{Type: tokenType, Value: value, Span: span}
 }
 
 func NewToken(tokenType TokenType, span *Span) *Token {
-	return &Token{Type: tokenType, Value: nil, Span: span}
+	return &Token{Type: tokenType, Value: "", Span: span}
 }
 
 func NewSpan(start Position, end Position) *Span {
@@ -86,18 +248,12 @@ func NewSpan(start Position, end Position) *Span {
 }
 
 func (t *Token) String() string {
-	if t.Value == nil {
+	if t.Value == "" {
 		return fmt.Sprintf("{Type: %s, Span: %s}", t.Type, t.Span)
 	}
-	return fmt.Sprintf("{Type: %s, Value: %s, Span: %s}", t.Type, *t.Value, t.Span)
+	return fmt.Sprintf("{Type: %s, Value: %s, Span: %s}", t.Type, t.Value, t.Span)
 }
 
 func (t *Token) IsEqual(other *Token) bool {
-	isValueEqual := true
-
-	if t.Value != nil && other.Value != nil {
-		isValueEqual = *t.Value == *other.Value
-	}
-
-	return t.Type == other.Type && isValueEqual && t.Span.IsEqual(other.Span)
+	return t.Type == other.Type && t.Value == other.Value && t.Span.IsEqual(other.Span)
 }

@@ -54,11 +54,13 @@ import (
 
 		identifier := string(l.source[start:l.cursor])
 		span := token.NewSpan(*startPosition, *endPosition)
+		keywordTokenType, isKeyword := token.Keywords[identifier]
+		dataTypeTokenType, isDataType := token.DataTypes[identifier]
 
-		if token.IsKeyword(identifier) {
-			l.pushToken(token.NewTokenWithValue(token.TokenTypeKeyword, identifier, span))
-		} else if token.IsDataType(identifier) {
-			l.pushToken(token.NewTokenWithValue(token.TokenTypeDataType, identifier, span))
+		if isKeyword {
+			l.pushToken(token.NewToken(keywordTokenType, span))
+		} else if isDataType {
+			l.pushToken(token.NewToken(dataTypeTokenType, span))
 		} else {
 			l.pushToken(token.NewTokenWithValue(token.TokenTypeIdentifier, identifier, span))
 		}
