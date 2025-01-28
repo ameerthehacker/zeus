@@ -70,7 +70,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 		closeParen := parser.consumeToken(token.TokenTypeRightParen)
 
-		return &ast.FunctionCallExprNode{Callee: left, Params: params, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
+		return &ast.FunctionCallExprNode{Callee: left, Params: params, Span: &token.Span{Start: left.GetSpan().Start, End: closeParen.Span.End}}
 	}
 
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
