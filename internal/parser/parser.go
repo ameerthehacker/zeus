@@ -40,15 +40,15 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	binaryOperatorParseLet := func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode {
 		right, _ := parser.ParseExprOfPrecedence(getPrecedence(token))
-		return &ast.BinaryExprNode{Left: &left, Right: &right, Operator: token}
+		return &ast.BinaryExprNode{Left: left, Right: right, Operator: token}
 	}
 
 	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
-		params := []*ast.ExprNode{}
+		params := []ast.ExprNode{}
 		
 		for {
 			right, _ := parser.ParseExprOfPrecedence(0)
-			params = append(params, &right)
+			params = append(params, right)
 			if parser.peek().Type != token.TokenTypeComma {
 				break
 			}
@@ -57,7 +57,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 		closeParen := parser.consumeToken(token.TokenTypeRightParen)
 
-		return &ast.FunctionCallExprNode{Callee: &left, Params: params, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
+		return &ast.FunctionCallExprNode{Callee: left, Params: params, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 	}
 
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
@@ -70,7 +70,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
 			expr, _ := parser.ParseExprOfPrecedence(0)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen)
-			return &ast.GroupingExprNode{Expr: &expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
+			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeMinus: unaryOperatorParseLet,
 	}
@@ -109,7 +109,7 @@ func (p *Parser) consume() *token.Token {
 func (p *Parser) consumeToken(expectedTokenType token.TokenType) *token.Token {
 	token := p.tokens[p.current]
 	if token.Type != expectedTokenType {
-		p.expectedButGotError(string(expectedTokenType), token)
+		p.expectedButGotError(expectedTokenType.String(), token)
 	}
 	p.current++
 	return token

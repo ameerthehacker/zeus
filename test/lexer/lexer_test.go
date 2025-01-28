@@ -1,9 +1,10 @@
-package test
+package lexer_test
 
 import (
 	"ameerthehacker/zeus/internal/error"
 	"ameerthehacker/zeus/internal/lexer"
 	"ameerthehacker/zeus/internal/token"
+	"ameerthehacker/zeus/test/utils"
 	"testing"
 )
 
@@ -189,33 +190,15 @@ func TestZeusLexer(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			l := lexer.NewLexer(tt.input)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			l := lexer.NewLexer(test.input)
 			tokens, errors := l.Lex()
 
-			if len(tt.errors) > 0 && len(errors) == 0 {
-				t.Error("expected errors but got none")
-			} else if len(tt.errors) == 0 && len(errors) > 0 {
-				t.Errorf("unexpected errors: %v", errors)
-			} else if len(tt.errors) != len(errors) {
-				t.Errorf("expected %d errors, got %d", len(tt.errors), len(errors))
-			} else {
-				for i, error := range errors {
-					expected := tt.errors[i]
-					if !error.IsEqual(expected) {
-						t.Errorf("error %s: expected %s, got %s", error, expected, error)
-					}
-				}
-			}
-
-			if len(tokens) != len(tt.expected) {
-				t.Errorf("expected %d tokens, got %d", len(tt.expected), len(tokens))
-				return
-			}
+			utils.CompareZeusErrors(t, errors, test.errors)
 
 			for i, token := range tokens {
-				expected := tt.expected[i]
+				expected := test.expected[i]
 				if !token.IsEqual(expected) {
 					t.Errorf("expected token %s, got %s", expected, token)
 				}
