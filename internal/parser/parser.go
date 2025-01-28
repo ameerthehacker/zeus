@@ -19,17 +19,22 @@ const (
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeMinus:            1,
-	token.TokenTypePlus:             1,
-	token.TokenTypeStar:             2,
-	token.TokenTypeSlash:            2,
-	token.TokenTypeEqualEqual:       3,
-	token.TokenTypeBangEqual:        3,
+	token.TokenTypeLeftParen:        5,
+	token.TokenTypeStar:             4,
+	token.TokenTypeSlash:            4,
+	token.TokenTypePlus:             3,
+	token.TokenTypeMinus:            3,
 	token.TokenTypeGreaterThan:      3,
 	token.TokenTypeGreaterThanEqual: 3,
 	token.TokenTypeLessThan:         3,
 	token.TokenTypeLessThanEqual:    3,
-	token.TokenTypeLeftParen:        5,
+	token.TokenTypeEqualEqual:       2,
+	token.TokenTypeBangEqual:        2,
+	token.TokenTypeEqual:            1,
+}
+
+var RightAssociativeOperators = map[token.TokenType]bool{
+	token.TokenTypeEqual: true,
 }
 
 func NewParser(tokens []*token.Token) *Parser {
@@ -39,7 +44,15 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	binaryOperatorParseLet := func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode {
-		right, _ := parser.ParseExprOfPrecedence(getPrecedence(token))
+		_, isRightAssociative := RightAssociativeOperators[token.Type]
+		precedence := getPrecedence(token)
+
+		// if the operator is right associative then we need to decrease the precedence
+		if isRightAssociative {
+			precedence--
+		}
+
+		right, _ := parser.ParseExprOfPrecedence(precedence)
 		return &ast.BinaryExprNode{Left: left, Right: right, Operator: token}
 	}
 
@@ -86,6 +99,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeGreaterThanEqual: binaryOperatorParseLet,
 		token.TokenTypeLessThan:         binaryOperatorParseLet,
 		token.TokenTypeLessThanEqual:    binaryOperatorParseLet,
+		token.TokenTypeEqual:            binaryOperatorParseLet,
 		token.TokenTypeLeftParen:        functionCallParseLet,
 	}
 
@@ -134,10 +148,13 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token) {
 }
 
 func getPrecedence(token *token.Token) int {
-	if precedence, ok := BinaryOperatorPrecedence[token.Type]; ok {
-		return precedence
+	precedence := 0
+
+	if operatorPrecedence, ok := BinaryOperatorPrecedence[token.Type]; ok {
+		precedence = operatorPrecedence
 	}
-	return 0
+
+	return precedence
 }
 
 func (p *Parser) ParseExpr() (expr ast.ExprNode, errors []*error.ZeusError) {
