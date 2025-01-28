@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"ameerthehacker/zeus/internal/compiler"
-	"ameerthehacker/zeus/internal/logger"
 	"fmt"
 	"os"
+
+	"github.com/ameerthehacker/zeus/internal/compiler"
+	"github.com/ameerthehacker/zeus/internal/logger"
 
 	"github.com/spf13/cobra"
 )

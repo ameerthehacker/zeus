@@ -1,10 +1,11 @@
 package lexer
 
 import (
-	"ameerthehacker/zeus/internal/error"
-	"ameerthehacker/zeus/internal/token"
 	"fmt"
 	"unicode"
+
+	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 
 	type Lexer struct {

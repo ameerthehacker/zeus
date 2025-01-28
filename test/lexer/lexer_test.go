@@ -1,11 +1,12 @@
 package lexer_test
 
 import (
-	"ameerthehacker/zeus/internal/error"
-	"ameerthehacker/zeus/internal/lexer"
-	"ameerthehacker/zeus/internal/test_utils"
-	"ameerthehacker/zeus/internal/token"
 	"testing"
+
+	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/lexer"
+	"github.com/ameerthehacker/zeus/internal/test_utils"
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 
 func TestZeusLexer(t *testing.T) {

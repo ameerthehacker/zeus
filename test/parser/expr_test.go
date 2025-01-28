@@ -1,14 +1,15 @@
 package expr_test
 
 import (
-	"ameerthehacker/zeus/internal/ast"
-	"ameerthehacker/zeus/internal/error"
-	"ameerthehacker/zeus/internal/lexer"
-	"ameerthehacker/zeus/internal/parser"
-	"ameerthehacker/zeus/internal/test_utils"
-	"ameerthehacker/zeus/internal/token"
 	"fmt"
 	"testing"
+
+	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/lexer"
+	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/test_utils"
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 
 type testCase struct {

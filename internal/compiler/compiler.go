@@ -1,10 +1,11 @@
 package compiler
 
 import (
-	"ameerthehacker/zeus/internal/error"
-	"ameerthehacker/zeus/internal/lexer"
-	"ameerthehacker/zeus/internal/parser"
 	"fmt"
+
+	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/lexer"
+	"github.com/ameerthehacker/zeus/internal/parser"
 )
 
 type Compiler struct {

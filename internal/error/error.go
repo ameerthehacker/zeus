@@ -1,8 +1,9 @@
 package error
 
 import (
-	"ameerthehacker/zeus/internal/token"
 	"fmt"
+
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 
 type ErrorSeverity string

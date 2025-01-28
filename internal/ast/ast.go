@@ -1,9 +1,10 @@
 package ast
 
 import (
-	"ameerthehacker/zeus/internal/token"
 	"fmt"
 	"strings"
+
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 
 type ExprNode interface {

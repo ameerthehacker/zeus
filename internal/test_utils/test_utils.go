@@ -3,7 +3,7 @@ package test_utils
 import (
 	"testing"
 
-	"ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/error"
 )
 
 func CompareZeusErrors(t *testing.T, errors, expected []*error.ZeusError) {

@@ -1,6 +1,6 @@
 package main
 
-import "ameerthehacker/zeus/cmd"
+import "github.com/ameerthehacker/zeus/cmd"
 
 func main ()  {
 	cmd.Execute()

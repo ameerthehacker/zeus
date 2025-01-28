@@ -1,10 +1,11 @@
 package parser
 
 import (
-	"ameerthehacker/zeus/internal/ast"
-	"ameerthehacker/zeus/internal/error"
-	"ameerthehacker/zeus/internal/token"
 	"fmt"
+
+	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/token"
 )
 type Parser struct {
 	tokens          []*token.Token
