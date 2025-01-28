@@ -5,8 +5,8 @@ import (
 	"ameerthehacker/zeus/internal/error"
 	"ameerthehacker/zeus/internal/lexer"
 	"ameerthehacker/zeus/internal/parser"
+	"ameerthehacker/zeus/internal/test_utils"
 	"ameerthehacker/zeus/internal/token"
-	"ameerthehacker/zeus/test/utils"
 	"fmt"
 	"testing"
 )
@@ -35,7 +35,7 @@ func TestParseExpression(t *testing.T) {
 			parser := parser.NewParser(tokens)
 			result, errors := parser.ParseExpr()
 
-			utils.CompareZeusErrors(t, errors, test.errors)
+			test_utils.CompareZeusErrors(t, errors, test.errors)
 			compareExprNodes(t, result, test.expected) 
 		})
 	}

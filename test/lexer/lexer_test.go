@@ -3,8 +3,8 @@ package lexer_test
 import (
 	"ameerthehacker/zeus/internal/error"
 	"ameerthehacker/zeus/internal/lexer"
+	"ameerthehacker/zeus/internal/test_utils"
 	"ameerthehacker/zeus/internal/token"
-	"ameerthehacker/zeus/test/utils"
 	"testing"
 )
 
@@ -195,7 +195,7 @@ func TestZeusLexer(t *testing.T) {
 			l := lexer.NewLexer(test.input)
 			tokens, errors := l.Lex()
 
-			utils.CompareZeusErrors(t, errors, test.errors)
+			test_utils.CompareZeusErrors(t, errors, test.errors)
 
 			for i, token := range tokens {
 				expected := test.expected[i]
