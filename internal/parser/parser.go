@@ -29,25 +29,48 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypeGreaterThanEqual: 3,
 	token.TokenTypeLessThan:         3,
 	token.TokenTypeLessThanEqual:    3,
+	token.TokenTypeLeftParen:        5,
 }
 
 func NewParser(tokens []*token.Token) *Parser {
 	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
-		expr, _ := parser.ParseExpr(UnaryOperatorPrecedence)
-		return &ast.UnaryExprNode{Operator: token.Type, Operand: &expr, Span: token.Span}
+		expr, _ := parser.ParseExprOfPrecedence(UnaryOperatorPrecedence)
+		return &ast.UnaryExprNode{Operator: token, Operand: &expr}
 	}
 
 	binaryOperatorParseLet := func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode {
-		right, _ := parser.ParseExpr(getPrecedence(token))
-		return &ast.BinaryExprNode{Left: &left, Right: &right, Operator: token.Type, Span: token.Span}
+		right, _ := parser.ParseExprOfPrecedence(getPrecedence(token))
+		return &ast.BinaryExprNode{Left: &left, Right: &right, Operator: token}
+	}
+
+	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
+		params := []*ast.ExprNode{}
+		
+		for {
+			right, _ := parser.ParseExprOfPrecedence(0)
+			params = append(params, &right)
+			if parser.peek().Type != token.TokenTypeComma {
+				break
+			}
+			parser.consume()
+		}
+
+		closeParen := parser.consumeToken(token.TokenTypeRightParen)
+
+		return &ast.FunctionCallExprNode{Callee: &left, Params: params, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 	}
 
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
-			return &ast.NumberNode{Value: *token.Value, Span: token.Span}
+			return &ast.NumberNode{Value: token}
 		},
 		token.TokenTypeIdentifier: func(parser *Parser, token *token.Token) ast.ExprNode {
-			return &ast.IdentifierNode{Value: *token.Value, Span: token.Span}
+			return &ast.IdentifierNode{Name: token}
+		},
+		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
+			expr, _ := parser.ParseExprOfPrecedence(0)
+			closeParen := parser.consumeToken(token.TokenTypeRightParen)
+			return &ast.GroupingExprNode{Expr: &expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeMinus: unaryOperatorParseLet,
 	}
@@ -63,6 +86,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeGreaterThanEqual: binaryOperatorParseLet,
 		token.TokenTypeLessThan:         binaryOperatorParseLet,
 		token.TokenTypeLessThanEqual:    binaryOperatorParseLet,
+		token.TokenTypeLeftParen:        functionCallParseLet,
 	}
 
 	return &Parser{tokens: tokens, current: 0, errors: []*error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
@@ -78,6 +102,15 @@ func (p *Parser) peek() *token.Token {
 
 func (p *Parser) consume() *token.Token {
 	token := p.tokens[p.current]
+	p.current++
+	return token
+}
+
+func (p *Parser) consumeToken(expectedTokenType token.TokenType) *token.Token {
+	token := p.tokens[p.current]
+	if token.Type != expectedTokenType {
+		p.expectedButGotError(string(expectedTokenType), token)
+	}
 	p.current++
 	return token
 }
@@ -107,7 +140,11 @@ func getPrecedence(token *token.Token) int {
 	return 0
 }
 
-func (p *Parser) ParseExpr(precedence int) (expr ast.ExprNode, errors []*error.ZeusError) {
+func (p *Parser) ParseExpr() (expr ast.ExprNode, errors []*error.ZeusError) {
+	return p.ParseExprOfPrecedence(0)
+}
+
+func (p *Parser) ParseExprOfPrecedence(precedence int) (expr ast.ExprNode, errors []*error.ZeusError) {
 	var left ast.ExprNode
 
 	if p.isEOF() {
