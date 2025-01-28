@@ -124,8 +124,9 @@ func (p *Parser) consumeToken(expectedTokenType token.TokenType) *token.Token {
 	token := p.tokens[p.current]
 	if token.Type != expectedTokenType {
 		p.expectedButGotError(expectedTokenType.String(), token)
+	} else {
+		p.current++
 	}
-	p.current++
 	return token
 }
 

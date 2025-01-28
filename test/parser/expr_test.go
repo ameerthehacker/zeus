@@ -182,7 +182,6 @@ func TestParseExpression(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			// Tokenize the input
 			lexer := lexer.NewLexer(test.input)
 			tokens, _ := lexer.Lex()
 			parser := parser.NewParser(tokens)
