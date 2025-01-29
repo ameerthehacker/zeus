@@ -216,7 +216,8 @@ func TestParseExpression(t *testing.T) {
 			lexer := lexer.NewLexer(test.input)
 			tokens, _ := lexer.Lex()
 			parser := parser.NewParser(tokens)
-			result, errors := parser.ParseExpr()
+			result := parser.ParseExpr()
+			errors := parser.GetErrors()
 
 			test_utils.CompareZeusErrors(t, errors, test.errors)
 			

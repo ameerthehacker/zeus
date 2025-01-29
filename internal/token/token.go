@@ -257,3 +257,7 @@ func (t *Token) String() string {
 func (t *Token) IsEqual(other *Token) bool {
 	return t.Type == other.Type && t.Value == other.Value && t.Span.IsEqual(other.Span)
 }
+
+func (t *Token) IsDataType() bool {
+	return t.Type >= datatype_beg && t.Type <= datatype_end
+}

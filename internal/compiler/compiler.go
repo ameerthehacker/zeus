@@ -24,14 +24,14 @@ func (c *Compiler) Compile() []*error.ZeusError {
 	}
 
 	parser := parser.NewParser(tokens)
-	expr, parserErrors := parser.ParseExpr()
+	program, parserErrors := parser.ParseProgram()
 
 	if len(parserErrors) > 0 {
 		return parserErrors
 	}
 
-	fmt.Printf("%s\n", expr.PrettyString())
-	fmt.Printf("%s\n", expr)
+	fmt.Printf("%s\n", program.PrettyString())
+	fmt.Printf("%s\n", program)
 	
 	return []*error.ZeusError{}
 }
