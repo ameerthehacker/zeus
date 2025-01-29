@@ -84,6 +84,27 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.FunctionCallExprNode{Callee: left, Params: params, Span: &token.Span{Start: left.GetSpan().Start, End: closeParen.Span.End}}
 	}
 
+	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
+		functionName := parser.consumeIdentifier()
+
+		// consume the params
+		params := []*ast.VarDeclNode{}
+		parser.consumeToken(token.TokenTypeLeftParen)
+		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightParen {
+			param := parser.parseVarDecl(false, ast.VarDeclTypeLet)
+			params = append(params, param)
+			parser.consumeOptionalToken(token.TokenTypeComma)
+		}
+		parser.consumeToken(token.TokenTypeRightParen)
+		// consume the return type
+		parser.consumeToken(token.TokenTypeColon)
+		dataType := parser.consumeDataType()
+		// consume the body
+		body := parser.parseBlockStmt()
+
+		return &ast.FunctionDeclExprNode{Name: functionName, Params: params, Body: body, ReturnType: dataType, Span: &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End}}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -96,6 +117,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			closeParen := parser.consumeToken(token.TokenTypeRightParen)
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
+		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus: unaryOperatorParseLet,
 	}
 
@@ -141,6 +163,20 @@ func (p *Parser) consumeToken(expectedTokenType token.TokenType) *token.Token {
 	return token
 }
 
+func (p *Parser) consumeOptionalToken(expectedTokenType token.TokenType) *token.Token {
+	token := p.tokens[p.current]
+	if token.Type != expectedTokenType {
+		return nil
+	}
+	p.current++
+	return token
+}
+
+func (p *Parser) consumeIdentifier() *ast.IdentifierExprNode {
+	token := p.consumeToken(token.TokenTypeIdentifier)
+	return &ast.IdentifierExprNode{Name: token}
+}
+
 func (p* Parser) consumeSemicolon() {
 	p.consumeToken(token.TokenTypeSemicolon)
 }
@@ -171,61 +207,92 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token) {
 	}
 }
 
-func (p *Parser) parseExprStmt() ast.ExprNode {
+func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
+	expr := p.ParseExpr()
+	
+	switch expr.(type) {
+	case *ast.FunctionDeclExprNode:
+	default:
+		p.consumeSemicolon()
+	}
+
+	return &ast.ExprStmtNode{Expr: expr}
+}
+
+func (p *Parser) parseBlockStmt() *ast.BlockStmtNode {
+	stmts := []ast.StmtNode{}
+	openBrace := p.consumeToken(token.TokenTypeLeftBrace)
+
+	for !p.isEOF() && p.peek().Type != token.TokenTypeRightBrace {
+		stmt := p.ParseStmt()
+		stmts = append(stmts, stmt)
+	}
+
+	closeBrace := p.consumeToken(token.TokenTypeRightBrace)
+	span := &token.Span{Start: openBrace.Span.Start, End: closeBrace.Span.End}
+
+	return &ast.BlockStmtNode{Statements: stmts, Span: span}
+}
+
+func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
+	returnKeyword := p.consumeToken(token.TokenTypeReturn)
 	expr := p.ParseExpr()
 	p.consumeSemicolon()
 
-	return expr
+	return &ast.ReturnStmtNode{Expr: expr, Span: &token.Span{Start: returnKeyword.Span.Start, End: expr.GetSpan().End}}
 }
 
-func (p *Parser) parseVarDecl() ast.StmtNode {
-	declTypeToken := p.consume()
-	var declType ast.VarDeclType = ast.VarDeclTypeLet
-	var initializer ast.ExprNode
-	var span *token.Span
-	// check if the declaration is a constant
-	if declTypeToken.Type == token.TokenTypeConst {
-		declType = ast.VarDeclTypeConst
+func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
+	varDeclTypeToken := p.consume()
+	varDeclType := ast.VarDeclTypeLet
+
+	if varDeclTypeToken.Type == token.TokenTypeConst {
+		varDeclType = ast.VarDeclTypeConst
 	}
 
-	identifier := p.consumeToken(token.TokenTypeIdentifier)
+	decls := []ast.VarDeclNode{}
+	
+	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
+		decl := p.parseVarDecl(true, varDeclType)
+		decls = append(decls, *decl)
+		p.consumeOptionalToken(token.TokenTypeComma)
+	}
+
+	p.consumeSemicolon()
+
+	return &ast.VarDeclStmtNode{Decls: decls}
+}
+
+func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType) *ast.VarDeclNode {
+	var initializer ast.ExprNode
+
+	identifier := p.consumeIdentifier()
 	// parse the datatype
 	p.consumeToken(token.TokenTypeColon)
 	dataType := p.consumeDataType()
 	
 	// check if the declaration has an initializer
-	if p.peek().Type == token.TokenTypeEqual {
+	if allowInitializer && p.peek().Type == token.TokenTypeEqual {
 		p.consume()
 		initializer = p.ParseExpr()
 	}
 
-	if initializer != nil {
-		span = &token.Span{Start: declTypeToken.Span.Start, End: initializer.GetSpan().End}
-	} else {
-		span = &token.Span{Start: declTypeToken.Span.Start, End: identifier.Span.End}
-	}
-
-	p.consumeSemicolon()
-
-	return &ast.VarDeclNode{DeclType: declType, Identifier: &ast.IdentifierExprNode{
-		Name: identifier,
-	}, Initializer: initializer, Span: span, DataType: dataType}
+	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, DataType: dataType}
 }
 
 func (p *Parser) ParseStmt() ast.StmtNode {
-	var stmt ast.StmtNode
-
 	switch p.peek().Type {
 	case token.TokenTypeLet:
-		fallthrough
+		return p.parseVarDeclStmt()
 	case token.TokenTypeConst:
-		stmt = p.parseVarDecl()
+		return p.parseVarDeclStmt()
+	case token.TokenTypeLeftBrace:
+		return p.parseBlockStmt()
+	case token.TokenTypeReturn:
+		return p.parseReturnStmt()
 	default:
-		expr := p.parseExprStmt()
-		stmt = &ast.ExprStmtNode{Expr: expr}
+		return p.parseExprStmt()
 	}
-
-	return stmt
 }
 
 func (p *Parser) GetErrors() []*error.ZeusError {
