@@ -243,6 +243,7 @@ func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 }
 
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
+	var span *token.Span
 	varDeclTypeToken := p.consume()
 	varDeclType := ast.VarDeclTypeLet
 
@@ -260,7 +261,13 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 
 	p.consumeSemicolon()
 
-	return &ast.VarDeclStmtNode{Decls: decls}
+	if len(decls) > 0 {
+		span = &token.Span{Start: varDeclTypeToken.Span.Start, End: decls[len(decls)-1].GetSpan().End}
+	} else {
+		span = &token.Span{Start: varDeclTypeToken.Span.Start, End: varDeclTypeToken.Span.End}
+	}
+
+	return &ast.VarDeclStmtNode{Decls: decls, Span: span}
 }
 
 func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType) *ast.VarDeclNode {

@@ -30,7 +30,7 @@ func (c *Compiler) Compile(source string) []*error.ZeusError {
 	}
 
 	fmt.Printf("%s\n", program.PrettyString())
-	// fmt.Printf("%s\n", program)
+	fmt.Printf("%s\n", program)
 	
 	return []*error.ZeusError{}
 }
