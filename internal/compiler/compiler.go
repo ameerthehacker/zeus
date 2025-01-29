@@ -8,16 +8,15 @@ import (
 	"github.com/ameerthehacker/zeus/internal/parser"
 )
 
-type Compiler struct {
-	lexer *lexer.Lexer
+type Compiler struct {}
+
+func NewCompiler() *Compiler {
+	return &Compiler{}
 }
 
-func NewCompiler(source string) *Compiler {
-	return &Compiler{lexer: lexer.NewLexer(source)}
-}
-
-func (c *Compiler) Compile() []*error.ZeusError {
-	tokens, lexerErrors := c.lexer.Lex()
+func (c *Compiler) Compile(source string) []*error.ZeusError {
+	lexer := lexer.NewLexer(source)
+	tokens, lexerErrors := lexer.Lex()
 
 	if len(lexerErrors) > 0 {
 		return lexerErrors
@@ -31,7 +30,7 @@ func (c *Compiler) Compile() []*error.ZeusError {
 	}
 
 	fmt.Printf("%s\n", program.PrettyString())
-	fmt.Printf("%s\n", program)
+	// fmt.Printf("%s\n", program)
 	
 	return []*error.ZeusError{}
 }

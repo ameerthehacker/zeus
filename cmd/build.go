@@ -22,8 +22,8 @@ func buildCmd() *cobra.Command {
 				logger.Log(logger.LogSeverityError, err.Error())
 				os.Exit(1)
 			} else {
-				compiler := compiler.NewCompiler(string(content))
-				errors := compiler.Compile()
+				compiler := compiler.NewCompiler()
+				errors := compiler.Compile(string(content))
 				for _, err := range errors {
 					fmt.Println(err)
 				}
