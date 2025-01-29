@@ -12,12 +12,12 @@ func CompareZeusErrors(t *testing.T, errors, expected []*error.ZeusError) {
 	} else if len(errors) == 0 && len(expected) > 0 {
 		t.Errorf("unexpected errors: %v", expected)
 	} else if len(errors) != len(expected) {
-		t.Errorf("expected %d errors, got %d", len(errors), len(expected))
+		t.Errorf("expected %d errors, got %d", len(expected), len(errors))
 	} else {
-		for i, error := range expected {
-			expected := errors[i]
-			if !error.IsEqual(expected) {
-				t.Errorf("error %s: expected %s, got %s", error, expected, error)
+		for i, error := range errors {
+			expectedError := expected[i]
+			if !error.IsEqual(expectedError) {
+				t.Errorf("expected error %s, got %s", expectedError, error)
 			}
 		}
 	}

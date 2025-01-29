@@ -82,7 +82,7 @@ func getHigherPrecedenceOperatorTestCase(higherPrecedenceOp, lowerPrecedenceOp t
 func TestParseExpression(t *testing.T) {
 	tests := []testCase{
 		{
-			name:  "unary operation",
+			name:  "unary expression",
 			input: "-name",
 			expected: &ast.UnaryExprNode{
 				Operator: token.NewToken(token.TokenTypeMinus, token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1})),
@@ -91,7 +91,7 @@ func TestParseExpression(t *testing.T) {
 			errors: []*error.ZeusError{},
 		},
 		{
-			name:  "binary operation",
+			name:  "binary expression",
 			input: "1 + 2",
 			expected: &ast.BinaryExprNode{
 				Left:     &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1}))},
@@ -120,6 +120,36 @@ func TestParseExpression(t *testing.T) {
 				Operator: token.NewToken(token.TokenTypeEqualEqual, token.NewSpan(token.Position{Line: 1, Column: 8}, token.Position{Line: 1, Column: 9})),
 			},
 			errors: []*error.ZeusError{},
+		},
+		{
+			name:  "parenthesized expression has the highest precedence",
+			input: "(1 + 2) * 3",
+			expected: &ast.BinaryExprNode{
+				Left:     &ast.GroupingExprNode{
+					Expr: &ast.BinaryExprNode{
+						Left:     &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 2}))},
+						Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 6}, token.Position{Line: 1, Column: 6}))},
+						Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 4}, token.Position{Line: 1, Column: 4})),
+					},
+					Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 7}),
+				},
+				Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(token.Position{Line: 1, Column: 11}, token.Position{Line: 1, Column: 11}))},
+				Operator: token.NewToken(token.TokenTypeStar, token.NewSpan(token.Position{Line: 1, Column: 9}, token.Position{Line: 1, Column: 9})),
+			},
+		},
+		{
+			name:  "parser error on invalid expression",
+			input: "1 + + 2",
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected expression but got +", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5})),
+			},
+		},
+		{
+			name:  "parser error on unclosed parenthesis",
+			input: "(1 + 2",
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected )", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
+			},
 		},
 	}
 
@@ -189,7 +219,10 @@ func TestParseExpression(t *testing.T) {
 			result, errors := parser.ParseExpr()
 
 			test_utils.CompareZeusErrors(t, errors, test.errors)
-			compareExprNodes(t, result, test.expected)
+			
+			if test.expected != nil {
+				compareExprNodes(t, result, test.expected)
+			}
 		})
 	}
 }
