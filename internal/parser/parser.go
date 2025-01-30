@@ -267,6 +267,10 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
 
+	if len(decls) == 0 {
+		p.expectedError("atleast one variable declaration")
+	}
+
 	p.consumeSemicolon()
 
 	if len(decls) > 0 {
@@ -281,7 +285,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, cxt string) *ast.VarDeclNode {
 	var initializer ast.ExprNode
 
-	identifier := p.consumeIdentifier()
+	identifier := p.consumeIdentifier(fmt.Sprintf("in %s", cxt))
 	// parse the datatype
 	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier name in %s", cxt))
 	dataType := p.consumeDataType("data type", cxt)

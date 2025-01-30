@@ -28,5 +28,6 @@ func Log(severity error.ErrorSeverity, message string) {
 }
 
 func LogZeusError(filePath string, error *error.ZeusError) {
-	fmt.Println(formatError(error.Severity, filePath, error.Message))
+	prefix := fmt.Sprintf("%s:%d:%d", filePath, error.Span.Start.Line, error.Span.Start.Column)
+	fmt.Println(formatError(error.Severity, prefix, error.Message))
 }
