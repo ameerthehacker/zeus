@@ -183,15 +183,26 @@ func (p* Parser) consumeSemicolon(extraInfo ...string) {
 }
 
 func (p *Parser) consumeDataType(dataType string, cxt string) *token.Token {
-	token := p.consume()
+	token := p.peek()
 	if !token.IsDataType() {
 		p.expectedButGotError(dataType, token, fmt.Sprintf("in %s", cxt))
+	} else {
+		p.consume()
 	}
 	return token
 }
 
 func (p *Parser) pushError(err *error.ZeusError) {
+	// if the last error is on the same line as the current error then it could be a side effect of the previous error
+	// so we don't add the error
+	if len(p.errors) > 0 {
+		lastError := p.errors[len(p.errors)-1]
+		if lastError.Span.Start.Line == err.Span.Start.Line {
+			return
+		}
+	}
 	p.errors = append(p.errors, err)
+	panic(err)
 }
 
 func (p *Parser) expectedError(expected string, extraInfo ...string) {
@@ -262,7 +273,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	decls := []ast.VarDeclNode{}
 	
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
-		decl := p.parseVarDecl(true, varDeclType, "in variable declaration")
+		decl := p.parseVarDecl(true, varDeclType, "variable declaration")
 		decls = append(decls, *decl)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
@@ -287,19 +298,64 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 
 	identifier := p.consumeIdentifier(fmt.Sprintf("in %s", cxt))
 	// parse the datatype
-	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier name in %s", cxt))
+	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier in %s", cxt))
 	dataType := p.consumeDataType("data type", cxt)
 	
 	// check if the declaration has an initializer
 	if allowInitializer && p.peek().Type == token.TokenTypeEqual {
 		p.consume()
-		initializer = p.ParseExpr()
+		initializer = p.ParseExpr("for variable initializer")
 	}
 
 	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, DataType: dataType}
 }
 
+// Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
+// this helps in preventing errors that are side effects of a previous error
+func (p* Parser) synchronize() {
+	keywords := map[token.TokenType]bool{
+		token.TokenTypeLet:         true,
+		token.TokenTypeConst:       true,
+		token.TokenTypeFunction:    true,
+	}
+	tokens := map[token.TokenType]bool{
+		token.TokenTypeSemicolon: true,
+		token.TokenTypeRightBrace: true,
+		token.TokenTypeRightParen: true,
+	}
+
+	canConsume := func(token *token.Token) bool {
+		if p.isEOF() {
+			return false
+		}
+		if _, ok := keywords[token.Type]; ok {
+			return true
+		}
+		if _, ok := tokens[token.Type]; ok {
+			return true
+		}
+		return false
+	}
+
+	for canConsume(p.peek()) {
+		p.consume()
+	}
+	// we consume tokens and not keywords
+	if _, ok := tokens[p.peek().Type]; ok {
+		p.consume()
+	}
+}
+
+func (p* Parser) handlePanic() {
+	if r := recover(); r != nil {
+		p.synchronize()
+	}
+}
+
 func (p *Parser) ParseStmt() ast.StmtNode {
+	// handle panics and synchronize the parser
+	defer p.handlePanic()
+
 	switch p.peek().Type {
 	case token.TokenTypeLet:
 		return p.parseVarDeclStmt()
@@ -335,15 +391,15 @@ func (p *Parser) ParseProgram() (*ast.ProgramNode, []*error.ZeusError) {
 	return &ast.ProgramNode{Statements: stmts}, p.errors
 }
 
-func (p *Parser) ParseExpr() ast.ExprNode {
-	return p.parseExprOfPrecedence(0)
+func (p *Parser) ParseExpr(extraInfo ...string) ast.ExprNode {
+	return p.parseExprOfPrecedence(0, extraInfo...)
 }
 
-func (p *Parser) parseExprOfPrecedence(precedence int) ast.ExprNode {
+func (p *Parser) parseExprOfPrecedence(precedence int, extraInfo ...string) ast.ExprNode {
 	var left ast.ExprNode
 
 	if p.isEOF() {
-		p.expectedError("expression")
+		p.expectedError("expression", extraInfo...)
 		return left
 	}
 
@@ -351,7 +407,7 @@ func (p *Parser) parseExprOfPrecedence(precedence int) ast.ExprNode {
 	prefixParselet := p.prefixParselets[token.Type]
 
 	if prefixParselet == nil {
-		p.expectedButGotError("expression", token)
+		p.expectedButGotError("expression", token, extraInfo...)
 		return left
 	}
 

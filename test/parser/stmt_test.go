@@ -109,6 +109,58 @@ func TestParseVarDeclStmt(t *testing.T) {
 				},
 			},
 		},
+		{
+			input: "let;",
+			errors: []*error.ZeusError{
+				{
+					Message: "expected atleast one variable declaration",
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 4},
+						End:   token.Position{Line: 1, Column: 4},
+					},
+					Severity: error.ErrorSeverityError,
+				},
+			},
+		},
+		{
+			input: "let x = 1;",
+			errors: []*error.ZeusError{
+				{
+					Message: "expected : after identifier in variable declaration but got =",
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 7},
+						End:   token.Position{Line: 1, Column: 7},
+					},
+					Severity: error.ErrorSeverityError,
+				},
+			},
+		},
+		{
+			input: "let x: = 1;",
+			errors: []*error.ZeusError{
+				{
+					Message: "expected data type in variable declaration but got =",
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 8},
+						End:   token.Position{Line: 1, Column: 8},
+					},
+					Severity: error.ErrorSeverityError,
+				},
+			},
+		},
+		{
+			input: "let x:i8 =;",
+			errors: []*error.ZeusError{
+				{
+					Message: "expected expression for variable initializer",
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 12},
+						End:   token.Position{Line: 1, Column: 12},
+					},
+					Severity: error.ErrorSeverityError,
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -119,7 +171,9 @@ func TestParseVarDeclStmt(t *testing.T) {
 			program, errors := p.ParseProgram()
 
 			test_utils.CompareZeusErrors(t, errors, test.errors)
-			test_utils.CompareStmts(t, program.Statements, []ast.StmtNode{test.expected})
+			if test.expected != nil {
+				test_utils.CompareStmts(t, program.Statements, []ast.StmtNode{test.expected})
+			}
 		})
 	}
 }
