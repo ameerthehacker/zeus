@@ -50,7 +50,7 @@ func getPrecedence(token *token.Token) int {
 
 func NewParser(tokens []*token.Token) *Parser {
 	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
-		expr := parser.ParseExprOfPrecedence(UnaryOperatorPrecedence)
+		expr := parser.parseExprOfPrecedence(UnaryOperatorPrecedence)
 		return &ast.UnaryExprNode{Operator: token, Expr: expr}
 	}
 
@@ -63,7 +63,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			precedence--
 		}
 
-		right := parser.ParseExprOfPrecedence(precedence)
+		right := parser.parseExprOfPrecedence(precedence)
 		return &ast.BinaryExprNode{Left: left, Right: right, Operator: token}
 	}
 
@@ -71,7 +71,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		params := []ast.ExprNode{}
 		
 		for {
-			right := parser.ParseExprOfPrecedence(0)
+			right := parser.parseExprOfPrecedence(0)
 			params = append(params, right)
 			if parser.peek().Type != token.TokenTypeComma {
 				break
@@ -113,7 +113,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.IdentifierExprNode{Name: token}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
-			expr := parser.ParseExprOfPrecedence(0)
+			expr := parser.parseExprOfPrecedence(0)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen)
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
@@ -324,10 +324,10 @@ func (p *Parser) ParseProgram() (*ast.ProgramNode, []*error.ZeusError) {
 }
 
 func (p *Parser) ParseExpr() ast.ExprNode {
-	return p.ParseExprOfPrecedence(0)
+	return p.parseExprOfPrecedence(0)
 }
 
-func (p *Parser) ParseExprOfPrecedence(precedence int) ast.ExprNode {
+func (p *Parser) parseExprOfPrecedence(precedence int) ast.ExprNode {
 	var left ast.ExprNode
 
 	if p.isEOF() {
