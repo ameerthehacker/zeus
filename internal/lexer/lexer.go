@@ -39,6 +39,17 @@ import (
 		l.tokens = append(l.tokens, token)
 	}
 
+	func (l* Lexer) isNewLine() bool {
+		return l.source[l.cursor] == '\n' || l.source[l.cursor] == '\r'
+	}
+
+	func (l* Lexer) consumeLine() {
+		for !l.isEOF(0) && !l.isNewLine() {
+			l.advance()
+		}
+		l.newLine()
+	}
+
 	func isIdentifierRune(char rune) bool {
 		return unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '$'
 	}
@@ -157,7 +168,7 @@ import (
 		for !l.isEOF(0) {
 			char := l.source[l.cursor]
 			// unicode.IsSpace(char) true for \n and \r so we need to check for that first
-			if char == '\n' || char == '\r' {
+			if l.isNewLine() {
 				l.advance()
 				l.newLine()
 			} else if unicode.IsSpace(char) {
@@ -207,9 +218,13 @@ import (
 				l.pushToken(token.NewToken(token.TokenTypeStar, token.NewSpan(*position, *position)))
 				l.advance()
 			} else if char == '/' {
-				position := l.getCurrentPosition()
-				l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*position, *position)))
-				l.advance()
+				if l.matchNextRune('/') {
+					l.consumeLine()
+				} else {
+					position := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*position, *position)))
+					l.advance()
+				}
 			} else if char == ':' {
 				position := l.getCurrentPosition()
 				l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(*position, *position)))

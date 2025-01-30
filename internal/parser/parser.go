@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/error"
@@ -91,14 +92,14 @@ func NewParser(tokens []*token.Token) *Parser {
 		params := []*ast.VarDeclNode{}
 		parser.consumeToken(token.TokenTypeLeftParen)
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightParen {
-			param := parser.parseVarDecl(false, ast.VarDeclTypeLet)
+			param := parser.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
 			params = append(params, param)
 			parser.consumeOptionalToken(token.TokenTypeComma)
 		}
 		parser.consumeToken(token.TokenTypeRightParen)
 		// consume the return type
-		parser.consumeToken(token.TokenTypeColon)
-		dataType := parser.consumeDataType()
+		parser.consumeToken(token.TokenTypeColon, "after function parameters")
+		dataType := parser.consumeDataType("return type", "function declaration")
 		// consume the body
 		body := parser.parseBlockStmt()
 
@@ -153,10 +154,10 @@ func (p *Parser) consume() *token.Token {
 	return token
 }
 
-func (p *Parser) consumeToken(expectedTokenType token.TokenType) *token.Token {
+func (p *Parser) consumeToken(expectedTokenType token.TokenType, extraInfo ...string) *token.Token {
 	token := p.tokens[p.current]
 	if token.Type != expectedTokenType {
-		p.expectedButGotError(expectedTokenType.String(), token)
+		p.expectedButGotError(expectedTokenType.String(), token, extraInfo...)
 	} else {
 		p.current++
 	}
@@ -172,19 +173,19 @@ func (p *Parser) consumeOptionalToken(expectedTokenType token.TokenType) *token.
 	return token
 }
 
-func (p *Parser) consumeIdentifier() *ast.IdentifierExprNode {
-	token := p.consumeToken(token.TokenTypeIdentifier)
+func (p *Parser) consumeIdentifier(extraInfo ...string) *ast.IdentifierExprNode {
+	token := p.consumeToken(token.TokenTypeIdentifier, extraInfo...)
 	return &ast.IdentifierExprNode{Name: token}
 }
 
-func (p* Parser) consumeSemicolon() {
-	p.consumeToken(token.TokenTypeSemicolon)
+func (p* Parser) consumeSemicolon(extraInfo ...string) {
+	p.consumeToken(token.TokenTypeSemicolon, extraInfo...)
 }
 
-func (p *Parser) consumeDataType() *token.Token {
+func (p *Parser) consumeDataType(dataType string, cxt string) *token.Token {
 	token := p.consume()
 	if !token.IsDataType() {
-		p.expectedButGotError("data type", token)
+		p.expectedButGotError(dataType, token, fmt.Sprintf("in %s", cxt))
 	}
 	return token
 }
@@ -193,16 +194,23 @@ func (p *Parser) pushError(err *error.ZeusError) {
 	p.errors = append(p.errors, err)
 }
 
-func (p *Parser) expectedError(expected string) {
+func (p *Parser) expectedError(expected string, extraInfo ...string) {
 	message := fmt.Sprintf("expected %s", expected)
+	if len(extraInfo) > 0 {
+		message += fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
+	}
 	p.pushError(error.NewZeusError(error.ErrorSeverityError, message, p.tokens[p.current].Span))
 }
 
-func (p *Parser) expectedButGotError(expected string, token *token.Token) {
+func (p *Parser) expectedButGotError(expected string, token *token.Token, extraInfo ...string) {
 	if p.isEOF() {
-		p.expectedError(expected)
+		p.expectedError(expected, extraInfo...)
 	} else {
-		message := fmt.Sprintf("expected %s but got %s", expected, token.Type)
+		extraInfoStr := ""
+		if len(extraInfo) > 0 {
+			extraInfoStr = fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
+		}
+		message := fmt.Sprintf("expected %s%s but got %s", expected, extraInfoStr, token.Type)
 		p.pushError(error.NewZeusError(error.ErrorSeverityError, message, token.Span))
 	}
 }
@@ -254,7 +262,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	decls := []ast.VarDeclNode{}
 	
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
-		decl := p.parseVarDecl(true, varDeclType)
+		decl := p.parseVarDecl(true, varDeclType, "in variable declaration")
 		decls = append(decls, *decl)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
@@ -270,13 +278,13 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	return &ast.VarDeclStmtNode{Decls: decls, Span: span}
 }
 
-func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType) *ast.VarDeclNode {
+func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, cxt string) *ast.VarDeclNode {
 	var initializer ast.ExprNode
 
 	identifier := p.consumeIdentifier()
 	// parse the datatype
-	p.consumeToken(token.TokenTypeColon)
-	dataType := p.consumeDataType()
+	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier name in %s", cxt))
+	dataType := p.consumeDataType("data type", cxt)
 	
 	// check if the declaration has an initializer
 	if allowInitializer && p.peek().Type == token.TokenTypeEqual {
