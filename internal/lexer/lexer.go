@@ -47,7 +47,10 @@ import (
 		for !l.isEOF(0) && !l.isNewLine() {
 			l.advance()
 		}
-		l.newLine()
+		// if we are not at the end of the file, we need to move to the next line
+		if !l.isEOF(0) {
+			l.newLine()
+		}
 	}
 
 	func isIdentifierRune(char rune) bool {

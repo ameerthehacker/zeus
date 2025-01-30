@@ -24,6 +24,13 @@ func TestZeusLexer(t *testing.T) {
 			},
 		},
 		{
+			name: "ignores comments",
+			input: "// this is a comment",
+			expected: []*token.Token{
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 21), *token.NewPosition(1, 21))),
+			},
+		},
+		{
 			name:  "whitespace only",
 			input: " \t\n\r",
 			expected: []*token.Token{

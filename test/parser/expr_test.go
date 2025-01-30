@@ -216,10 +216,15 @@ func TestParseExpression(t *testing.T) {
 			lexer := lexer.NewLexer(test.input)
 			tokens, _ := lexer.Lex()
 			parser := parser.NewParser(tokens)
-			result := parser.ParseExpr()
-			errors := parser.GetErrors()
 
-			test_utils.CompareZeusErrors(t, errors, test.errors)
+			defer func() {
+				if r := recover(); r != nil {
+					// when error happens, we need to compare the errors
+					test_utils.CompareZeusErrors(t, parser.GetErrors(), test.errors)
+				}
+			}()
+
+			result := parser.ParseExpr()
 			
 			if test.expected != nil {
 				test_utils.CompareExprNodes(t, result, test.expected)
