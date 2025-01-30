@@ -3,28 +3,30 @@ package logger
 import (
 	"fmt"
 
+	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/fatih/color"
 )
 
 const zeus = "zeus"
 
-type LogSeverity int
-
-const (
-	LogSeverityError LogSeverity = iota
-	LogSeverityWarning
-	LogSeverityInfo
-)
-
-func Log(severity LogSeverity, message string) {
+func formatError(severity error.ErrorSeverity, prefix string, message string) string {
 	severityString := ""
 	switch severity {
-	case LogSeverityError:
+	case error.ErrorSeverityError:
 		severityString = color.New(color.FgRed, color.Bold).Sprint("error:")
-	case LogSeverityWarning:
+	case error.ErrorSeverityWarning:
 		severityString = color.New(color.FgYellow, color.Bold).Sprint("warning:")
-	case LogSeverityInfo:
+	case error.ErrorSeverityInfo:
 		severityString = color.New(color.FgGreen, color.Bold).Sprint("info:")
 	}
-	fmt.Printf("%s: %s %s\n", color.New(color.Bold).Sprint(zeus), severityString, color.New(color.FgYellow, color.Bold).Sprint(message))
+
+	return fmt.Sprintf("%s: %s %s", color.New(color.Bold).Sprint(prefix), severityString, color.New(color.FgYellow, color.Bold).Sprint(message))
+}
+
+func Log(severity error.ErrorSeverity, message string) {
+	fmt.Println(formatError(severity, zeus, message))
+}
+
+func LogZeusError(filePath string, error *error.ZeusError) {
+	fmt.Println(formatError(error.Severity, filePath, error.Message))
 }

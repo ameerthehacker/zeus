@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/ameerthehacker/zeus/internal/compiler"
+	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/logger"
 
 	"github.com/spf13/cobra"
@@ -16,16 +16,24 @@ func buildCmd() *cobra.Command {
 		Short: "Build the zeus file",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			fileName := args[0]
-			content, err := os.ReadFile(fileName)
+			filePath := args[0]
+			content, err := os.ReadFile(filePath)
 			if err != nil {
-				logger.Log(logger.LogSeverityError, err.Error())
+				logger.Log(error.ErrorSeverityError, err.Error())
 				os.Exit(1)
 			} else {
-				compiler := compiler.NewCompiler()
-				errors := compiler.Compile(string(content))
-				for _, err := range errors {
-					fmt.Println(err)
+				_compiler := compiler.NewCompiler()
+				sourceFile := _compiler.CompileFile(compiler.Input{
+					Path: filePath,
+					Source: string(content),
+				})
+
+				// log the compiler errors
+				if len(sourceFile.Errors) > 0 {
+					for _, err := range sourceFile.Errors {
+						logger.LogZeusError(filePath, err)
+					}
+					os.Exit(1)
 				}
 			}
 		},

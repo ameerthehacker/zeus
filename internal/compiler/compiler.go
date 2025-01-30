@@ -1,8 +1,7 @@
 package compiler
 
 import (
-	"fmt"
-
+	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
@@ -10,27 +9,49 @@ import (
 
 type Compiler struct {}
 
+type SourceFile struct {
+	Path string
+	Source string
+	Program *ast.ProgramNode
+	Errors []*error.ZeusError
+}
+
+type Input struct {
+	Path string
+	Source string
+}
+
 func NewCompiler() *Compiler {
 	return &Compiler{}
 }
 
-func (c *Compiler) Compile(source string) []*error.ZeusError {
-	lexer := lexer.NewLexer(source)
+func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
+	lexer := lexer.NewLexer(entryPoint.Source)
 	tokens, lexerErrors := lexer.Lex()
 
 	if len(lexerErrors) > 0 {
-		return lexerErrors
+		return &SourceFile{
+			Path: entryPoint.Path,
+			Source: entryPoint.Source,
+			Errors: lexerErrors,
+		}
 	}
 
 	parser := parser.NewParser(tokens)
 	program, parserErrors := parser.ParseProgram()
 
 	if len(parserErrors) > 0 {
-		return parserErrors
+		return &SourceFile{
+			Path: entryPoint.Path,
+			Source: entryPoint.Source,
+			Errors: parserErrors,
+		}
 	}
 
-	fmt.Printf("%s\n", program.PrettyString())
-	fmt.Printf("%s\n", program)
-	
-	return []*error.ZeusError{}
+	return &SourceFile{
+		Path: entryPoint.Path,
+		Source: entryPoint.Source,
+		Program: program,
+		Errors: []*error.ZeusError{},
+	}
 }

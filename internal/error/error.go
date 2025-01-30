@@ -6,12 +6,26 @@ import (
 	"github.com/ameerthehacker/zeus/internal/token"
 )
 
-type ErrorSeverity string
+type ErrorSeverity int
 
 const (
-	ErrorSeverityError ErrorSeverity = "error"
-	ErrorSeverityWarning ErrorSeverity = "warning"
+	ErrorSeverityError ErrorSeverity = iota
+	ErrorSeverityWarning
+	ErrorSeverityInfo
 )
+
+func (e ErrorSeverity) String() string {
+	switch e {
+	case ErrorSeverityError:
+		return "error"
+	case ErrorSeverityWarning:
+		return "warning"
+	case ErrorSeverityInfo:
+		return "info"
+	default:
+		panic("unknown error severity")
+	}
+}
 
 type ZeusError struct {
 	Message string
