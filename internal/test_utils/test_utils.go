@@ -97,6 +97,24 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 		for i := range aNode.Params {
 			CompareExprNodes(t, aNode.Params[i], bNode.Params[i])
 		}
+	case *ast.FunctionDeclExprNode:
+		bNode, ok := expected.(*ast.FunctionDeclExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, expected)
+			return
+		}
+		if len(aNode.Params) != len(bNode.Params) {
+			t.Errorf("expected %d parameters, got %d", len(bNode.Params), len(aNode.Params))
+			return
+		}
+		if aNode.ReturnType.Type != bNode.ReturnType.Type {
+			t.Errorf("expected return type %s, got %s", bNode.ReturnType.Type, aNode.ReturnType.Type)
+			return
+		}
+		for i := range aNode.Params {
+			CompareVarDecl(t, *aNode.Params[i], *bNode.Params[i])
+		}
+		CompareStmtNodes(t, aNode.Body, bNode.Body)
 	default:
 		panic(fmt.Sprintf("unsupported node type: %T", aNode))
 	}
@@ -144,6 +162,20 @@ func CompareStmtNodes(t *testing.T, stmt ast.StmtNode, expected ast.StmtNode) {
 		for i := range varDeclStmt.Decls {
 			CompareVarDecl(t, varDeclStmt.Decls[i], expectedStmt.Decls[i])
 		}
+	case *ast.BlockStmtNode:
+		blockStmt, ok := stmt.(*ast.BlockStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareStmts(t, blockStmt.Statements, expectedStmt.Statements)
+	case *ast.ReturnStmtNode:
+		returnStmt, ok := stmt.(*ast.ReturnStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareExprNodes(t, returnStmt.Expr, expectedStmt.Expr)
 	default:
 		t.Errorf("unknown statement type: %s", stmt.PrettyString())
 	}

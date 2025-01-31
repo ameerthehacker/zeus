@@ -151,6 +151,45 @@ func TestParseExpression(t *testing.T) {
 				error.NewZeusError(error.ErrorSeverityError, "expected )", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
 			},
 		},
+		{
+			name: "function declaration",
+			input: "function name(a: i8, b: i8): i8 { return a + b; }",
+			expected: &ast.FunctionDeclExprNode{
+				Name: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "name", token.NewSpan(token.Position{Line: 1, Column: 10}, token.Position{Line: 1, Column: 13}))},
+				Params: []*ast.VarDeclNode{
+					{
+						Identifier: &ast.IdentifierExprNode{
+							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
+						},
+						DataType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 18}, token.Position{Line: 1, Column: 18})),
+						DeclType: ast.VarDeclTypeLet,
+						Initializer: nil,
+					},
+					{
+						Identifier: &ast.IdentifierExprNode{
+							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
+						},
+						DataType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 26})),
+						DeclType: ast.VarDeclTypeLet,
+						Initializer: nil,
+					},
+				},
+				ReturnType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 30}, token.Position{Line: 1, Column: 30})),
+				Body: &ast.BlockStmtNode{
+					Statements: []ast.StmtNode{
+						&ast.ReturnStmtNode{
+							Expr: &ast.BinaryExprNode{
+							Left: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 42}, token.Position{Line: 1, Column: 42}))},
+							Right: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 46}, token.Position{Line: 1, Column: 46}))},
+							Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 44}, token.Position{Line: 1, Column: 44})),
+						},
+						Span: token.NewSpan(token.Position{Line: 1, Column: 35}, token.Position{Line: 1, Column: 46}),
+					},
+					},
+				},
+				Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 49}),
+			},
+		},
 	}
 
 	leftAssociativeOperators := []token.TokenType{token.TokenTypePlus, token.TokenTypeMinus, token.TokenTypeStar, token.TokenTypeSlash, token.TokenTypeEqualEqual, token.TokenTypeBangEqual, token.TokenTypeGreaterThan, token.TokenTypeGreaterThanEqual, token.TokenTypeLessThan, token.TokenTypeLessThanEqual}
@@ -232,4 +271,3 @@ func TestParseExpression(t *testing.T) {
 		})
 	}
 }
-
