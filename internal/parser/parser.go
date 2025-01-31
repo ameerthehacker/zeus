@@ -15,6 +15,7 @@ type Parser struct {
 	prefixParselets map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode
 	infixParselets  map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode
 	errors          []*error.ZeusError
+	lastSyncPos     *token.Position
 }
 
 const (
@@ -198,11 +199,13 @@ func (p *Parser) pushError(err *error.ZeusError) {
 	// so we don't add the error
 	if len(p.errors) > 0 {
 		lastError := p.errors[len(p.errors)-1]
-		if lastError.Span.Start.Line == err.Span.Start.Line {
-			return
+		if lastError.Span.Start.Line != err.Span.Start.Line {
+			p.errors = append(p.errors, err)
 		}
+	} else {
+		p.errors = append(p.errors, err)
 	}
-	p.errors = append(p.errors, err)
+
 	panic(err)
 }
 
@@ -273,7 +276,7 @@ func (p *Parser) parseIfStmt() *ast.IfStmtNode {
 	ifKeyword := p.consume()
 
 	p.consumeToken(token.TokenTypeLeftParen, "after if")
-	condition := p.parseExprOfPrecedence(0, false)
+	condition := p.parseExprOfPrecedence(0, false, "in if condition")
 	p.consumeToken(token.TokenTypeRightParen, "after if condition")
 
 	thenStmt := p.ParseStmt()
@@ -342,6 +345,13 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 // Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
 // this helps in preventing errors that are side effects of a previous error
 func (p *Parser) synchronize() {
+	// this is to prevent infinite loops
+	// if we are stuck on the same token then we consume it and return to paring again
+	if p.lastSyncPos != nil && p.lastSyncPos.IsEqual(&p.peek().Span.Start) {
+		p.consume()
+		return
+	}
+
 	stopAtTokens := map[token.TokenType]bool{
 		token.TokenTypeLet:        true,
 		token.TokenTypeConst:      true,
@@ -352,6 +362,7 @@ func (p *Parser) synchronize() {
 	}
 	stopAfterTokens := map[token.TokenType]bool{
 		token.TokenTypeSemicolon: true,
+		token.TokenTypeElse:      true,
 	}
 
 	canConsume := func(token *token.Token) bool {
@@ -374,6 +385,8 @@ func (p *Parser) synchronize() {
 	if _, ok := stopAfterTokens[p.peek().Type]; ok {
 		p.consume()
 	}
+
+	p.lastSyncPos = &p.peek().Span.Start
 }
 
 func (p *Parser) handlePanic() {
