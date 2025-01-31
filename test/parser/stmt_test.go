@@ -11,10 +11,10 @@ import (
 	"github.com/ameerthehacker/zeus/internal/token"
 )
 
-func TestParseVarDeclStmt(t *testing.T) {
+func TestParserStmt(t *testing.T) {
 	tests := []struct {
 		input    string
-		expected *ast.VarDeclStmtNode
+		expected ast.StmtNode
 		errors   []*error.ZeusError
 	}{
 		{
@@ -152,12 +152,22 @@ func TestParseVarDeclStmt(t *testing.T) {
 			input: "let x:i8 =;",
 			errors: []*error.ZeusError{
 				{
-					Message: "expected expression for variable initializer",
+					Message: "expected expression for variable initializer but got ;",
 					Span: &token.Span{
-						Start: token.Position{Line: 1, Column: 12},
-						End:   token.Position{Line: 1, Column: 12},
+						Start: token.Position{Line: 1, Column: 11},
+						End:   token.Position{Line: 1, Column: 11},
 					},
 					Severity: error.ErrorSeverityError,
+				},
+			},
+		},
+		{
+			input: "return;",
+			expected: &ast.ReturnStmtNode{
+				Expr: nil,
+				Span: &token.Span{
+					Start: token.Position{Line: 1, Column: 1},
+					End:   token.Position{Line: 1, Column: 6},
 				},
 			},
 		},

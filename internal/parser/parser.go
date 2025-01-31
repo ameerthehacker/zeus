@@ -8,6 +8,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/token"
 )
+
 type Parser struct {
 	tokens          []*token.Token
 	current         int
@@ -51,7 +52,7 @@ func getPrecedence(token *token.Token) int {
 
 func NewParser(tokens []*token.Token) *Parser {
 	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
-		expr := parser.parseExprOfPrecedence(UnaryOperatorPrecedence)
+		expr := parser.parseExprOfPrecedence(UnaryOperatorPrecedence, false)
 		return &ast.UnaryExprNode{Operator: token, Expr: expr}
 	}
 
@@ -64,15 +65,15 @@ func NewParser(tokens []*token.Token) *Parser {
 			precedence--
 		}
 
-		right := parser.parseExprOfPrecedence(precedence)
+		right := parser.parseExprOfPrecedence(precedence, false)
 		return &ast.BinaryExprNode{Left: left, Right: right, Operator: token}
 	}
 
 	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
 		params := []ast.ExprNode{}
-		
+
 		for {
-			right := parser.parseExprOfPrecedence(0)
+			right := parser.parseExprOfPrecedence(0, false)
 			params = append(params, right)
 			if parser.peek().Type != token.TokenTypeComma {
 				break
@@ -86,17 +87,17 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
-		functionName := parser.consumeIdentifier()
+		functionName := parser.consumeIdentifier("for function name")
 
 		// consume the params
 		params := []*ast.VarDeclNode{}
-		parser.consumeToken(token.TokenTypeLeftParen)
+		parser.consumeToken(token.TokenTypeLeftParen, "after function name")
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightParen {
 			param := parser.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
 			params = append(params, param)
 			parser.consumeOptionalToken(token.TokenTypeComma)
 		}
-		parser.consumeToken(token.TokenTypeRightParen)
+		parser.consumeToken(token.TokenTypeRightParen, "after function parameters")
 		// consume the return type
 		parser.consumeToken(token.TokenTypeColon, "after function parameters")
 		dataType := parser.consumeDataType("return type", "function declaration")
@@ -114,12 +115,12 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.IdentifierExprNode{Name: token}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
-			expr := parser.parseExprOfPrecedence(0)
+			expr := parser.parseExprOfPrecedence(0, false)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen)
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeFunction: functionParselet,
-		token.TokenTypeMinus: unaryOperatorParseLet,
+		token.TokenTypeMinus:    unaryOperatorParseLet,
 	}
 
 	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
@@ -178,7 +179,7 @@ func (p *Parser) consumeIdentifier(extraInfo ...string) *ast.IdentifierExprNode 
 	return &ast.IdentifierExprNode{Name: token}
 }
 
-func (p* Parser) consumeSemicolon(extraInfo ...string) {
+func (p *Parser) consumeSemicolon(extraInfo ...string) {
 	p.consumeToken(token.TokenTypeSemicolon, extraInfo...)
 }
 
@@ -228,7 +229,7 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token, extraI
 
 func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
 	expr := p.ParseExpr()
-	
+
 	switch expr.(type) {
 	case *ast.FunctionDeclExprNode:
 	default:
@@ -255,10 +256,17 @@ func (p *Parser) parseBlockStmt() *ast.BlockStmtNode {
 
 func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 	returnKeyword := p.consumeToken(token.TokenTypeReturn)
-	expr := p.ParseExpr()
+	expr := p.parseExprOfPrecedence(0, true)
+	var span *token.Span
 	p.consumeSemicolon()
 
-	return &ast.ReturnStmtNode{Expr: expr, Span: &token.Span{Start: returnKeyword.Span.Start, End: expr.GetSpan().End}}
+	if expr != nil {
+		span = &token.Span{Start: returnKeyword.Span.Start, End: expr.GetSpan().End}
+	} else {
+		span = &token.Span{Start: returnKeyword.Span.Start, End: returnKeyword.Span.End}
+	}
+
+	return &ast.ReturnStmtNode{Expr: expr, Span: span}
 }
 
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
@@ -271,7 +279,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	}
 
 	decls := []ast.VarDeclNode{}
-	
+
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
 		decl := p.parseVarDecl(true, varDeclType, "variable declaration")
 		decls = append(decls, *decl)
@@ -300,7 +308,7 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 	// parse the datatype
 	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier in %s", cxt))
 	dataType := p.consumeDataType("data type", cxt)
-	
+
 	// check if the declaration has an initializer
 	if allowInitializer && p.peek().Type == token.TokenTypeEqual {
 		p.consume()
@@ -312,14 +320,14 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 
 // Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
 // this helps in preventing errors that are side effects of a previous error
-func (p* Parser) synchronize() {
+func (p *Parser) synchronize() {
 	keywords := map[token.TokenType]bool{
-		token.TokenTypeLet:         true,
-		token.TokenTypeConst:       true,
-		token.TokenTypeFunction:    true,
+		token.TokenTypeLet:      true,
+		token.TokenTypeConst:    true,
+		token.TokenTypeFunction: true,
 	}
 	tokens := map[token.TokenType]bool{
-		token.TokenTypeSemicolon: true,
+		token.TokenTypeSemicolon:  true,
 		token.TokenTypeRightBrace: true,
 		token.TokenTypeRightParen: true,
 	}
@@ -329,12 +337,12 @@ func (p* Parser) synchronize() {
 			return false
 		}
 		if _, ok := keywords[token.Type]; ok {
-			return true
+			return false
 		}
 		if _, ok := tokens[token.Type]; ok {
-			return true
+			return false
 		}
-		return false
+		return true
 	}
 
 	for canConsume(p.peek()) {
@@ -346,9 +354,14 @@ func (p* Parser) synchronize() {
 	}
 }
 
-func (p* Parser) handlePanic() {
+func (p *Parser) handlePanic() {
 	if r := recover(); r != nil {
-		p.synchronize()
+		switch r.(type) {
+		case *error.ZeusError:
+			p.synchronize()
+		default:
+			panic(r)
+		}
 	}
 }
 
@@ -392,36 +405,42 @@ func (p *Parser) ParseProgram() (*ast.ProgramNode, []*error.ZeusError) {
 }
 
 func (p *Parser) ParseExpr(extraInfo ...string) ast.ExprNode {
-	return p.parseExprOfPrecedence(0, extraInfo...)
+	return p.parseExprOfPrecedence(0, false, extraInfo...)
 }
 
-func (p *Parser) parseExprOfPrecedence(precedence int, extraInfo ...string) ast.ExprNode {
+func (p *Parser) parseExprOfPrecedence(precedence int, optional bool, extraInfo ...string) ast.ExprNode {
 	var left ast.ExprNode
 
 	if p.isEOF() {
-		p.expectedError("expression", extraInfo...)
+		if !optional {
+			p.expectedError("expression", extraInfo...)
+		}
 		return left
 	}
 
-	token := p.consume()
-	prefixParselet := p.prefixParselets[token.Type]
+	token := p.peek()
+	prefixParselet, ok := p.prefixParselets[token.Type]
 
-	if prefixParselet == nil {
-		p.expectedButGotError("expression", token, extraInfo...)
+	if !ok {
+		if !optional {
+			p.expectedButGotError("expression", token, extraInfo...)
+		}
 		return left
 	}
+
+	p.consume()
 
 	left = prefixParselet(p, token)
 
 	for {
 		token = p.peek()
 		infixParselet, ok := p.infixParselets[token.Type]
-	
+
 		// if no infix available then we are done
 		if !ok {
 			return left
 		}
-	
+
 		// we are done if the next operator has less precedence than the current operator
 		nextOpPrecedence := getPrecedence(token)
 		if nextOpPrecedence <= precedence {

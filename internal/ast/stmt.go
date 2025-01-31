@@ -160,10 +160,18 @@ func (v *VarDeclStmtNode) PrettyString() string {
 }
 
 func (r *ReturnStmtNode) String() string {
+	if r.Expr == nil {
+		return fmt.Sprintf("{ type: ReturnStmtNode, Expr: nil, Span: %s }", r.Span)
+	}
+
 	return fmt.Sprintf("{ type: ReturnStmtNode, Expr: %s, Span: %s }", r.Expr.String(), r.Span)
 }
 
 func (r *ReturnStmtNode) PrettyString() string {
+	if r.Expr == nil {
+		return "return"
+	}
+
 	return fmt.Sprintf("return %s", r.Expr.PrettyString())
 }
 

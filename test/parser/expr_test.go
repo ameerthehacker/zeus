@@ -190,6 +190,78 @@ func TestParseExpression(t *testing.T) {
 				Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 49}),
 			},
 		},
+		{
+			name: "function name missing",
+			input: "function",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected identifier for function name", token.NewSpan(token.Position{Line: 1, Column: 9}, token.Position{Line: 1, Column: 9})),
+			},
+		},
+		{
+			name: "function open parenthesis missing",
+			input: "function name",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected ( after function name", token.NewSpan(token.Position{Line: 1, Column: 14}, token.Position{Line: 1, Column: 14})),
+			},
+		},
+		{
+			name: "function closing parenthesis missing",
+			input: "function name(",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected ) after function parameters", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
+			},
+		},
+		{
+			name: "function parameter missing : after identifier",
+			input: "function name(a)",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected : after identifier in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
+			},
+		},
+		{
+			name: "function parameter data type missing",
+			input: "function name(a:)",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected data type in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
+			},
+		},
+		{
+			name: "function return type missing :",
+			input: "function name(a: i8) {}",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected : after function parameters but got {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
+			},
+		},
+		{
+			name: "function return type missing",
+			input: "function name(a: i8): {}",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected return type in function declaration but got {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
+			},
+		},
+		{
+			name: "open brace missing in function body",
+			input: "function name(a: i8): i8",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected {", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
+			},
+		},
+		{
+			name: "closing brace missing in function body",
+			input: "function name(a: i8): i8 {",
+			expected: nil,
+			errors: []*error.ZeusError{
+				error.NewZeusError(error.ErrorSeverityError, "expected }", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
+			},
+		},
 	}
 
 	leftAssociativeOperators := []token.TokenType{token.TokenTypePlus, token.TokenTypeMinus, token.TokenTypeStar, token.TokenTypeSlash, token.TokenTypeEqualEqual, token.TokenTypeBangEqual, token.TokenTypeGreaterThan, token.TokenTypeGreaterThanEqual, token.TokenTypeLessThan, token.TokenTypeLessThanEqual}
