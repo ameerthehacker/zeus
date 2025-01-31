@@ -171,6 +171,66 @@ func TestParserStmt(t *testing.T) {
 				},
 			},
 		},
+		{
+			input: "if (x == 1) { return 1; } else { return 2; }",
+			expected: &ast.IfStmtNode{
+				Condition: &ast.BinaryExprNode{
+					Left: &ast.IdentifierExprNode{Name: &token.Token{Type: token.TokenTypeIdentifier, Value: "x", Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 5},
+						End:   token.Position{Line: 1, Column: 5},
+					}}},
+					Right: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1", Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 10},
+						End:   token.Position{Line: 1, Column: 10},
+					}}},
+					Operator: &token.Token{Type: token.TokenTypeEqualEqual, Value: "==", Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 7},
+						End:   token.Position{Line: 1, Column: 8},
+					}},
+				},
+				ThenStmt: &ast.BlockStmtNode{
+					Statements: []ast.StmtNode{
+						&ast.ReturnStmtNode{
+							Expr: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1", Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 22},
+								End:   token.Position{Line: 1, Column: 22},
+							}}},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 15},
+								End:   token.Position{Line: 1, Column: 22},
+							},
+						},
+					},
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 13},
+						End:   token.Position{Line: 1, Column: 25},
+					},
+				},
+				ElseStmt: &ast.BlockStmtNode{
+					Statements: []ast.StmtNode{
+						&ast.ReturnStmtNode{
+							Expr: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "2", Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 41},
+								End:   token.Position{Line: 1, Column: 41},
+							}}},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 34},
+								End:   token.Position{Line: 1, Column: 41},
+							},
+						},
+					},
+					Span: &token.Span{
+						Start: token.Position{Line: 1, Column: 32},
+						End:   token.Position{Line: 1, Column: 44},
+					},
+				},
+				Span: &token.Span{
+					Start: token.Position{Line: 1, Column: 1},
+					End:   token.Position{Line: 1, Column: 44},
+				},
+			},
+			errors: []*error.ZeusError{},
+		},
 	}
 
 	for _, test := range tests {

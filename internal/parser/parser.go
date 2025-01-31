@@ -269,6 +269,27 @@ func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 	return &ast.ReturnStmtNode{Expr: expr, Span: span}
 }
 
+func (p *Parser) parseIfStmt() *ast.IfStmtNode {
+	ifKeyword := p.consume()
+
+	p.consumeToken(token.TokenTypeLeftParen, "after if")
+	condition := p.parseExprOfPrecedence(0, false)
+	p.consumeToken(token.TokenTypeRightParen, "after if condition")
+
+	thenStmt := p.ParseStmt()
+
+	if p.peek().Type == token.TokenTypeElse {
+		p.consume()
+		elseStmt := p.ParseStmt()
+		span := &token.Span{Start: ifKeyword.Span.Start, End: elseStmt.GetSpan().End}
+		return &ast.IfStmtNode{Condition: condition, ThenStmt: thenStmt, ElseStmt: elseStmt, Span: span}
+	}
+
+	span := &token.Span{Start: ifKeyword.Span.Start, End: thenStmt.GetSpan().End}
+
+	return &ast.IfStmtNode{Condition: condition, ThenStmt: thenStmt, Span: span}
+}
+
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	var span *token.Span
 	varDeclTypeToken := p.consume()
@@ -321,25 +342,26 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 // Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
 // this helps in preventing errors that are side effects of a previous error
 func (p *Parser) synchronize() {
-	keywords := map[token.TokenType]bool{
-		token.TokenTypeLet:      true,
-		token.TokenTypeConst:    true,
-		token.TokenTypeFunction: true,
-	}
-	tokens := map[token.TokenType]bool{
-		token.TokenTypeSemicolon:  true,
+	stopAtTokens := map[token.TokenType]bool{
+		token.TokenTypeLet:        true,
+		token.TokenTypeConst:      true,
+		token.TokenTypeFunction:   true,
 		token.TokenTypeRightBrace: true,
 		token.TokenTypeRightParen: true,
+		token.TokenTypeIf:         true,
+	}
+	stopAfterTokens := map[token.TokenType]bool{
+		token.TokenTypeSemicolon: true,
 	}
 
 	canConsume := func(token *token.Token) bool {
 		if p.isEOF() {
 			return false
 		}
-		if _, ok := keywords[token.Type]; ok {
+		if _, ok := stopAtTokens[token.Type]; ok {
 			return false
 		}
-		if _, ok := tokens[token.Type]; ok {
+		if _, ok := stopAfterTokens[token.Type]; ok {
 			return false
 		}
 		return true
@@ -349,7 +371,7 @@ func (p *Parser) synchronize() {
 		p.consume()
 	}
 	// we consume tokens and not keywords
-	if _, ok := tokens[p.peek().Type]; ok {
+	if _, ok := stopAfterTokens[p.peek().Type]; ok {
 		p.consume()
 	}
 }
@@ -378,6 +400,8 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return p.parseBlockStmt()
 	case token.TokenTypeReturn:
 		return p.parseReturnStmt()
+	case token.TokenTypeIf:
+		return p.parseIfStmt()
 	default:
 		return p.parseExprStmt()
 	}

@@ -54,11 +54,19 @@ type ReturnStmtNode struct {
 	Span *token.Span
 }
 
+type IfStmtNode struct {
+	Condition ExprNode
+	ThenStmt StmtNode
+	ElseStmt StmtNode
+	Span *token.Span
+}
+
 type StmtVisitor[T any] interface {
 	VisitExprStmt(stmt *ExprStmtNode) T
 	VisitVarDeclStmt(stmt *VarDeclStmtNode) T
 	VisitBlockStmt(stmt *BlockStmtNode) T
 	VisitReturnStmt(stmt *ReturnStmtNode) T
+	VisitIfStmt(stmt *IfStmtNode) T
 }
 
 type ExprStmtNode struct {
@@ -181,4 +189,28 @@ func (r *ReturnStmtNode) GetSpan() *token.Span {
 
 func (r *ReturnStmtNode) Accept(visitor StmtVisitor[any]) any {
 	return visitor.VisitReturnStmt(r)
+}
+
+func (i *IfStmtNode) GetSpan() *token.Span {
+	return i.Span
+}
+
+func (i *IfStmtNode) Accept(visitor StmtVisitor[any]) any {
+	return visitor.VisitIfStmt(i)
+}
+
+func (i *IfStmtNode) String() string {
+	if i.ElseStmt == nil {
+		return fmt.Sprintf("{ type: IfStmtNode, Condition: %s, ThenStmt: %s, ElseStmt: nil, Span: %s }", i.Condition.String(), i.ThenStmt.String(), i.Span)
+	}
+
+	return fmt.Sprintf("{ type: IfStmtNode, Condition: %s, ThenStmt: %s, ElseStmt: %s, Span: %s }", i.Condition.String(), i.ThenStmt.String(), i.ElseStmt.String(), i.Span)
+}
+
+func (i *IfStmtNode) PrettyString() string {
+	if i.ElseStmt == nil {
+		return fmt.Sprintf("if (%s) {\n%s\n}", i.Condition.PrettyString(), i.ThenStmt.PrettyString())
+	}
+
+	return fmt.Sprintf("if (%s) {\n%s\n} else {\n%s\n}", i.Condition.PrettyString(), i.ThenStmt.PrettyString(), i.ElseStmt.PrettyString())
 }

@@ -176,6 +176,17 @@ func CompareStmtNodes(t *testing.T, stmt ast.StmtNode, expected ast.StmtNode) {
 			return
 		}
 		CompareExprNodes(t, returnStmt.Expr, expectedStmt.Expr)
+	case *ast.IfStmtNode:
+		ifStmt, ok := stmt.(*ast.IfStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareExprNodes(t, ifStmt.Condition, expectedStmt.Condition)
+		CompareStmtNodes(t, ifStmt.ThenStmt, expectedStmt.ThenStmt)
+		if expectedStmt.ElseStmt != nil {
+			CompareStmtNodes(t, ifStmt.ElseStmt, expectedStmt.ElseStmt)
+		}
 	default:
 		t.Errorf("unknown statement type: %s", stmt.PrettyString())
 	}
