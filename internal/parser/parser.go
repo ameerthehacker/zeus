@@ -248,7 +248,9 @@ func (p *Parser) parseBlockStmt() *ast.BlockStmtNode {
 
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightBrace {
 		stmt := p.ParseStmt()
-		stmts = append(stmts, stmt)
+		if stmt != nil {
+			stmts = append(stmts, stmt)
+		}
 	}
 
 	closeBrace := p.consumeToken(token.TokenTypeRightBrace)
@@ -415,6 +417,13 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return p.parseReturnStmt()
 	case token.TokenTypeIf:
 		return p.parseIfStmt()
+	case token.TokenTypeElse:
+		if p.lastSyncPos == nil {
+			p.pushError(error.NewZeusError(error.ErrorSeverityError, "else statement must be preceded by an if statement", p.peek().Span))
+		} else {
+			p.consume()
+		}
+		return nil
 	default:
 		return p.parseExprStmt()
 	}
@@ -435,7 +444,9 @@ func (p *Parser) ParseProgram() (*ast.ProgramNode, []*error.ZeusError) {
 
 	for !p.isEOF() {
 		stmt := p.ParseStmt()
-		stmts = append(stmts, stmt)
+		if stmt != nil {
+			stmts = append(stmts, stmt)
+		}
 	}
 
 	return &ast.ProgramNode{Statements: stmts}, p.errors
