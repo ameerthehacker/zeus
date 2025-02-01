@@ -54,11 +54,13 @@ func (s *SymbolTable[T]) DeclareSymbol(name string, symbol T) {
 	s.current_scope.symbols[name] = symbol
 }
 
-func (s *SymbolTable[T]) DeclareTempSymbol(symbol T) {
+func (s *SymbolTable[T]) DeclareTempSymbol(symbol T) string {
 	error.Assert(s.current_scope != nil, "no scope to declare symbol in")
 	temp_symbol_name := "%" + strconv.Itoa(s.current_scope.temp_symbol_count)
 	s.current_scope.temp_symbol_count++
 	s.current_scope.symbols[temp_symbol_name] = symbol
+	
+	return temp_symbol_name
 }
 
 func (s *SymbolTable[T]) GetSymbol(name string) (T, bool) {
