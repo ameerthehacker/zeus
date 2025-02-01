@@ -207,7 +207,7 @@ func TestZeusLexer(t *testing.T) {
 
 			for i, token := range tokens {
 				expected := test.expected[i]
-				if !token.IsEqual(expected) {
+				if !token.Equal(expected) {
 					t.Errorf("expected token %s, got %s", expected, token)
 				}
 			}

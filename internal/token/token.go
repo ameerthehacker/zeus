@@ -212,7 +212,7 @@ func (p *Position) String() string {
 	return fmt.Sprintf("{Line: %d, Column: %d}", p.Line, p.Column)
 }
 
-func (p *Position) IsEqual(other *Position) bool {
+func (p *Position) Equal(other *Position) bool {
 	return p.Line == other.Line && p.Column == other.Column
 }
 
@@ -225,8 +225,8 @@ func (s *Span) String() string {
 	return fmt.Sprintf("{Start: %s, End: %s}", &s.Start, &s.End)
 }
 
-func (s *Span) IsEqual(other *Span) bool {
-	return s.Start.IsEqual(&other.Start) && s.End.IsEqual(&other.End)
+func (s *Span) Equal(other *Span) bool {
+	return s.Start == other.Start && s.End == other.End
 }
 
 type Token struct {
@@ -254,8 +254,8 @@ func (t *Token) String() string {
 	return fmt.Sprintf("{Type: %s, Value: %s, Span: %s}", t.Type, t.Value, t.Span)
 }
 
-func (t *Token) IsEqual(other *Token) bool {
-	return t.Type == other.Type && t.Value == other.Value && t.Span.IsEqual(other.Span)
+func (t *Token) Equal(other *Token) bool {
+	return t.Type == other.Type && t.Value == other.Value && t.Span.Equal(other.Span)
 }
 
 func (t *Token) IsDataType() bool {

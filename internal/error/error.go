@@ -37,7 +37,7 @@ func NewZeusError(severity ErrorSeverity, message string, span *token.Span) *Zeu
 	return &ZeusError{Severity: severity, Message: message, Span: span}
 }
 
-func (e *ZeusError) IsEqual(other *ZeusError) bool {
+func (e *ZeusError) Equal(other *ZeusError) bool {
 	return e.Severity == other.Severity && e.Message == other.Message && e.Span.Start == other.Span.Start && e.Span.End == other.Span.End
 }
 

@@ -18,7 +18,7 @@ func CompareZeusErrors(t *testing.T, errors, expected []*error.ZeusError) {
 	} else {
 		for i, error := range errors {
 			expectedError := expected[i]
-			if !error.IsEqual(expectedError) {
+			if !error.Equal(expectedError) {
 				t.Errorf("expected error %s, got %s", expectedError, error)
 			}
 		}
@@ -120,7 +120,7 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 	}
 
 	// at last compare the expression spans
-	if !expr.GetSpan().IsEqual(expected.GetSpan()) {
+	if !expr.GetSpan().Equal(expected.GetSpan()) {
 		t.Errorf("expected expressions %s , %s spans to be equal, expected: %s got: %s", expr.PrettyString(), expected.PrettyString(), expr.GetSpan(), expected.GetSpan())
 		return
 	}
@@ -191,7 +191,7 @@ func CompareStmtNodes(t *testing.T, stmt ast.StmtNode, expected ast.StmtNode) {
 		t.Errorf("unknown statement type: %s", stmt.PrettyString())
 	}
 
-	if !stmt.GetSpan().IsEqual(expected.GetSpan()) {
+	if !stmt.GetSpan().Equal(expected.GetSpan()) {
 		t.Errorf("expected statements %s , %s spans to be equal, expected: %s got: %s", stmt.PrettyString(), expected.PrettyString(), stmt.GetSpan(), expected.GetSpan())
 		return
 	}
@@ -204,5 +204,11 @@ func CompareStmts(t *testing.T, stmts, expectedStmts []ast.StmtNode) {
 	}
 	for i := range stmts {
 		CompareStmtNodes(t, stmts[i], expectedStmts[i])
+	}
+}
+
+func AssertEqual[T comparable](t *testing.T, a, b T) {
+	if a != b {
+		t.Errorf("expected %v, got %v", b, a)
 	}
 }

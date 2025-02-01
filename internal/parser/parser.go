@@ -349,7 +349,7 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 func (p *Parser) synchronize() {
 	// this is to prevent infinite loops
 	// if we are stuck on the same token then we consume it and return to paring again
-	if p.lastSyncPos != nil && p.lastSyncPos.IsEqual(&p.peek().Span.Start) {
+	if p.lastSyncPos != nil && p.lastSyncPos == &p.peek().Span.Start {
 		p.consume()
 		return
 	}
