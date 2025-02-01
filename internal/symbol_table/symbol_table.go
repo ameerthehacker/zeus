@@ -1,9 +1,7 @@
 package symbol_table
 
 import (
-	"strconv"
-
-	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type Table[T any] struct {
@@ -29,7 +27,7 @@ func NewSymbolTable[T any]() *SymbolTable[T] {
 
 func (s *SymbolTable[T]) EnterScope() {
 	if s.readonly {
-		error.Assert(s.current_scope_index < len(s.tables), "trying to enter non existent scope")
+		zeus_error.Assert(s.current_scope_index < len(s.tables), "trying to enter non existent scope")
 		scope := s.tables[s.current_scope_index]
 		s.current_scope = scope
 	} else {
@@ -45,26 +43,17 @@ func (s *SymbolTable[T]) EnterScope() {
 }
 
 func (s *SymbolTable[T]) ExitScope() {
-	error.Assert(s.current_scope != nil, "cannot exit global scope")
+	zeus_error.Assert(s.current_scope != nil, "cannot exit global scope")
 	s.current_scope = s.current_scope.parent
 }
 
 func (s *SymbolTable[T]) DeclareSymbol(name string, symbol T) {
-	error.Assert(s.current_scope != nil, "no scope to declare symbol in")
+	zeus_error.Assert(s.current_scope != nil, "no scope to declare symbol in")
 	s.current_scope.symbols[name] = symbol
 }
 
-func (s *SymbolTable[T]) DeclareTempSymbol(symbol T) string {
-	error.Assert(s.current_scope != nil, "no scope to declare symbol in")
-	temp_symbol_name := "%" + strconv.Itoa(s.current_scope.temp_symbol_count)
-	s.current_scope.temp_symbol_count++
-	s.current_scope.symbols[temp_symbol_name] = symbol
-	
-	return temp_symbol_name
-}
-
 func (s *SymbolTable[T]) GetSymbol(name string) (T, bool) {
-	error.Assert(s.current_scope != nil, "no scope to get symbol in")
+	zeus_error.Assert(s.current_scope != nil, "no scope to get symbol in")
 	current_scope := s.current_scope
 	var zero T
 
@@ -88,7 +77,7 @@ func (s *SymbolTable[T]) GoToGlobalScope() {
 }
 
 func (s *SymbolTable[T]) GetSymbolInCurrentScope(name string) (T, bool) {
-	error.Assert(s.current_scope != nil, "no scope to get symbol in")
+	zeus_error.Assert(s.current_scope != nil, "no scope to get symbol in")
 	symbol, ok := s.current_scope.symbols[name]
 	return symbol, ok
 }

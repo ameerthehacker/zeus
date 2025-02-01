@@ -5,18 +5,18 @@ import (
 	"testing"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/test_utils"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type testCase struct {
 	name     string
 	input    string
 	expected ast.ExprNode
-	errors   []*error.ZeusError
+	errors   []*zeus_error.ZeusError
 }
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
@@ -88,7 +88,7 @@ func TestParseExpression(t *testing.T) {
 				Operator: token.NewToken(token.TokenTypeMinus, token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 1})),
 				Expr:     &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "name", token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 5}))},
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 		{
 			name:  "binary expression",
@@ -98,7 +98,7 @@ func TestParseExpression(t *testing.T) {
 				Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5}))},
 				Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 3}, token.Position{Line: 1, Column: 3})),
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 		{
 			name:  "function call has higher precedence than equality",
@@ -119,7 +119,7 @@ func TestParseExpression(t *testing.T) {
 				},
 				Operator: token.NewToken(token.TokenTypeEqualEqual, token.NewSpan(token.Position{Line: 1, Column: 8}, token.Position{Line: 1, Column: 9})),
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 		{
 			name:  "parenthesized expression has the highest precedence",
@@ -140,15 +140,15 @@ func TestParseExpression(t *testing.T) {
 		{
 			name:  "parser error on invalid expression",
 			input: "1 + + 2",
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected expression but got +", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected expression but got +", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5})),
 			},
 		},
 		{
 			name:  "parser error on unclosed parenthesis",
 			input: "(1 + 2",
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected )", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected )", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
 			},
 		},
 		{
@@ -194,72 +194,72 @@ func TestParseExpression(t *testing.T) {
 			name: "function name missing",
 			input: "function",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected identifier for function name", token.NewSpan(token.Position{Line: 1, Column: 9}, token.Position{Line: 1, Column: 9})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected identifier for function name", token.NewSpan(token.Position{Line: 1, Column: 9}, token.Position{Line: 1, Column: 9})),
 			},
 		},
 		{
 			name: "function open parenthesis missing",
 			input: "function name",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected ( after function name", token.NewSpan(token.Position{Line: 1, Column: 14}, token.Position{Line: 1, Column: 14})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected ( after function name", token.NewSpan(token.Position{Line: 1, Column: 14}, token.Position{Line: 1, Column: 14})),
 			},
 		},
 		{
 			name: "function closing parenthesis missing",
 			input: "function name(",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected ) after function parameters", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected ) after function parameters", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
 			},
 		},
 		{
 			name: "function parameter missing : after identifier",
 			input: "function name(a)",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected : after identifier in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after identifier in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
 			},
 		},
 		{
 			name: "function parameter data type missing",
 			input: "function name(a:)",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected data type in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected data type in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
 			},
 		},
 		{
 			name: "function return type missing :",
 			input: "function name(a: i8) {}",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected : after function parameters but got {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after function parameters but got {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
 			},
 		},
 		{
 			name: "function return type missing",
 			input: "function name(a: i8): {}",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected return type in function declaration but got {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected return type in function declaration but got {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
 			},
 		},
 		{
 			name: "open brace missing in function body",
 			input: "function name(a: i8): i8",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected {", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected {", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
 			},
 		},
 		{
 			name: "closing brace missing in function body",
 			input: "function name(a: i8): i8 {",
 			expected: nil,
-			errors: []*error.ZeusError{
-				error.NewZeusError(error.ErrorSeverityError, "expected }", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
+			errors: []*zeus_error.ZeusError{
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected }", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
 			},
 		},
 	}
@@ -281,7 +281,7 @@ func TestParseExpression(t *testing.T) {
 				Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(token.Position{Line: 1, Column: 9 + 2*positionOffset}, token.Position{Line: 1, Column: 9 + 2*positionOffset}))},
 				Operator: token.NewToken(operator, token.NewSpan(token.Position{Line: 1, Column: 7 + positionOffset}, token.Position{Line: 1, Column: 7 + positionOffset})),
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		})
 	}
 
@@ -302,7 +302,7 @@ func TestParseExpression(t *testing.T) {
 				},
 				Operator: token.NewToken(operator, token.NewSpan(token.Position{Line: 1, Column: 3 + positionOffset}, token.Position{Line: 1, Column: 3 + positionOffset})),
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		})
 	}
 
@@ -316,7 +316,7 @@ func TestParseExpression(t *testing.T) {
 					name:     fmt.Sprintf("%s has lower precedence than %s", firstOp, secondOp),
 					input:    input,
 					expected: getHigherPrecedenceOperatorTestCase(secondOp, firstOp),
-					errors:   []*error.ZeusError{},
+					errors:   []*zeus_error.ZeusError{},
 				})
 			}
 		}

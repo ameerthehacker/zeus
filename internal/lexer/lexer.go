@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"unicode"
 
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 	type Lexer struct {
 		source []rune
 		cursor int
 		tokens []*token.Token
-		errors []*error.ZeusError
+		errors []*zeus_error.ZeusError
 		line int
 		column int
 	}
@@ -111,8 +111,8 @@ import (
 			if l.matchRune('.') && isRadix10 {
 				if isFloat {
 					errorPosition := l.getCurrentPosition()
-					l.pushError(error.NewZeusError(
-						error.ErrorSeverityError,
+					l.pushError(zeus_error.NewZeusError(
+						zeus_error.ErrorSeverityError,
 						"invalid decimal point",
 						token.NewSpan(*errorPosition, *errorPosition),
 					))
@@ -127,8 +127,8 @@ import (
 				}) {
 					errorPosition := l.getCurrentPosition()
 					endPosition = errorPosition
-					l.pushError(error.NewZeusError(
-						error.ErrorSeverityError,
+					l.pushError(zeus_error.NewZeusError(
+						zeus_error.ErrorSeverityError,
 						"numerical separator must be followed by a digit",
 						token.NewSpan(*errorPosition, *errorPosition),
 					))
@@ -140,7 +140,7 @@ import (
 		l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
 	}
 
-	func (l *Lexer) pushError(err *error.ZeusError) {
+	func (l *Lexer) pushError(err *zeus_error.ZeusError) {
 		l.errors = append(l.errors, err)
 	}
 
@@ -164,9 +164,9 @@ import (
 		return token.NewPosition(l.line, l.column)
 	}
 
-	func (l *Lexer) Lex() ([]*token.Token, []*error.ZeusError) {
+	func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 		l.tokens = []*token.Token{}
-		l.errors = []*error.ZeusError{}
+		l.errors = []*zeus_error.ZeusError{}
 
 		for !l.isEOF(0) {
 			char := l.source[l.cursor]
@@ -282,7 +282,7 @@ import (
 				l.eatIdentifierOrKeywordOrDatatype()
 			} else {
 				position := l.getCurrentPosition()
-				l.pushError(error.NewZeusError(error.ErrorSeverityError, fmt.Sprintf("unknown token '%c'", char), token.NewSpan(*position, *position)))
+				l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("unknown token '%c'", char), token.NewSpan(*position, *position)))
 				l.advance()
 			}
 		}

@@ -17,18 +17,6 @@ func TestSymbolTableDeclaration(t *testing.T) {
 		test_utils.AssertEqual(t, ok, true)
 	})
 
-	t.Run("temp variable should be declared", func(t *testing.T) {
-		temp_symbol_1 := symbol_table.DeclareTempSymbol(true)
-		temp_symbol_2 := symbol_table.DeclareTempSymbol(true)
-		_, ok1 := symbol_table.GetSymbol(temp_symbol_1)
-		_, ok2 := symbol_table.GetSymbol(temp_symbol_2)
-
-		test_utils.AssertEqual(t, temp_symbol_1, "%0")
-		test_utils.AssertEqual(t, temp_symbol_2, "%1")
-		test_utils.AssertEqual(t, ok1, true)
-		test_utils.AssertEqual(t, ok2, true)
-	})
-
 	t.Run("a should not be available in local scope", func(t *testing.T) {
 		symbol_table.EnterScope()
 		_, ok := symbol_table.GetSymbolInCurrentScope("a")
@@ -39,11 +27,6 @@ func TestSymbolTableDeclaration(t *testing.T) {
 		symbol_table.DeclareSymbol("b", true)
 		_, ok := symbol_table.GetSymbolInCurrentScope("b")
 		test_utils.AssertEqual(t, ok, true)
-	})
-
-	t.Run("temp variable count should restart from 0 in new scope", func(t *testing.T) {
-		temp_symbol := symbol_table.DeclareTempSymbol(true)
-		test_utils.AssertEqual(t, temp_symbol, "%0")
 	})
 
 	t.Run("b should be available in global scope", func(t *testing.T) {

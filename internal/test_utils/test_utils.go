@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/error"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
-func CompareZeusErrors(t *testing.T, errors, expected []*error.ZeusError) {
+func CompareZeusErrors(t *testing.T, errors, expected []*zeus_error.ZeusError) {
 	if len(errors) > 0 && len(expected) == 0 {
 		t.Errorf("expected errors %v but got none", errors)
 	} else if len(errors) == 0 && len(expected) > 0 {

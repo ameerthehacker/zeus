@@ -2,9 +2,9 @@ package compiler
 
 import (
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type Compiler struct {}
@@ -13,7 +13,7 @@ type SourceFile struct {
 	Path string
 	Source string
 	Program *ast.ProgramNode
-	Errors []*error.ZeusError
+	Errors []*zeus_error.ZeusError
 }
 
 type Input struct {
@@ -52,6 +52,6 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 		Path: entryPoint.Path,
 		Source: entryPoint.Source,
 		Program: program,
-		Errors: []*error.ZeusError{},
+		Errors: []*zeus_error.ZeusError{},
 	}
 }

@@ -3,10 +3,10 @@ package lexer_test
 import (
 	"testing"
 
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/test_utils"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 func TestZeusLexer(t *testing.T) {
@@ -14,7 +14,7 @@ func TestZeusLexer(t *testing.T) {
 		name     string
 		input    string
 		expected []*token.Token
-		errors   []*error.ZeusError
+		errors   []*zeus_error.ZeusError
 	}{
 		{
 			name:  "empty input",
@@ -74,7 +74,7 @@ func TestZeusLexer(t *testing.T) {
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 2), *token.NewPosition(1, 2))),
 			},
-			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "unknown token '@'", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unknown token '@'", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
 		},
 		{
 			name: "identifier",
@@ -163,7 +163,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewTokenWithValue(token.TokenTypeNumber, "123_", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 4))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 5))),
 			},
-			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "numerical separator must be followed by a digit", token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4)))},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "numerical separator must be followed by a digit", token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4)))},
 		},
 		{
 			name: "binary octal hexadecimal number",
@@ -194,7 +194,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewTokenWithValue(token.TokenTypeNumber, "123.3.4", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 7))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
-			errors: []*error.ZeusError{error.NewZeusError(error.ErrorSeverityError, "invalid decimal point", token.NewSpan(*token.NewPosition(1, 6), *token.NewPosition(1, 6)))},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "invalid decimal point", token.NewSpan(*token.NewPosition(1, 6), *token.NewPosition(1, 6)))},
 		},
 	}
 

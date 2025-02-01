@@ -4,18 +4,18 @@ import (
 	"testing"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/test_utils"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 func TestParserStmt(t *testing.T) {
 	tests := []struct {
 		input    string
 		expected ast.StmtNode
-		errors   []*error.ZeusError
+		errors   []*zeus_error.ZeusError
 	}{
 		{
 			input: "let x: i8 = 5, y: f32 = 1.5;",
@@ -57,11 +57,11 @@ func TestParserStmt(t *testing.T) {
 					End:   token.Position{Line: 1, Column: 27},
 				},
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 		{
 			input: "const x: i8 = 5;",
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 			expected: &ast.VarDeclStmtNode{
 				Decls: []ast.VarDeclNode{
 					{
@@ -88,7 +88,7 @@ func TestParserStmt(t *testing.T) {
 		},
 		{
 			input: "const x: i8;",
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 			expected: &ast.VarDeclStmtNode{
 				Decls: []ast.VarDeclNode{
 					{
@@ -111,53 +111,53 @@ func TestParserStmt(t *testing.T) {
 		},
 		{
 			input: "let;",
-			errors: []*error.ZeusError{
+			errors: []*zeus_error.ZeusError{
 				{
 					Message: "expected atleast one variable declaration",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 4},
 						End:   token.Position{Line: 1, Column: 4},
 					},
-					Severity: error.ErrorSeverityError,
+					Severity: zeus_error.ErrorSeverityError,
 				},
 			},
 		},
 		{
 			input: "let x = 1;",
-			errors: []*error.ZeusError{
+			errors: []*zeus_error.ZeusError{
 				{
 					Message: "expected : after identifier in variable declaration but got =",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 7},
 						End:   token.Position{Line: 1, Column: 7},
 					},
-					Severity: error.ErrorSeverityError,
+					Severity: zeus_error.ErrorSeverityError,
 				},
 			},
 		},
 		{
 			input: "let x: = 1;",
-			errors: []*error.ZeusError{
+			errors: []*zeus_error.ZeusError{
 				{
 					Message: "expected data type in variable declaration but got =",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 8},
 						End:   token.Position{Line: 1, Column: 8},
 					},
-					Severity: error.ErrorSeverityError,
+					Severity: zeus_error.ErrorSeverityError,
 				},
 			},
 		},
 		{
 			input: "let x:i8 =;",
-			errors: []*error.ZeusError{
+			errors: []*zeus_error.ZeusError{
 				{
 					Message: "expected expression for variable initializer but got ;",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 11},
 						End:   token.Position{Line: 1, Column: 11},
 					},
-					Severity: error.ErrorSeverityError,
+					Severity: zeus_error.ErrorSeverityError,
 				},
 			},
 		},
@@ -229,7 +229,7 @@ func TestParserStmt(t *testing.T) {
 					End:   token.Position{Line: 1, Column: 44},
 				},
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 		{
 			input: "if (x == 1) { return 1; }",
@@ -271,7 +271,7 @@ func TestParserStmt(t *testing.T) {
 					End:   token.Position{Line: 1, Column: 25},
 				},
 			},
-			errors: []*error.ZeusError{},
+			errors: []*zeus_error.ZeusError{},
 		},
 	}
 

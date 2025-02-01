@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type Parser struct {
@@ -14,7 +14,7 @@ type Parser struct {
 	current         int
 	prefixParselets map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode
 	infixParselets  map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode
-	errors          []*error.ZeusError
+	errors          []*zeus_error.ZeusError
 	lastSyncPos     *token.Position
 }
 
@@ -139,7 +139,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeLeftParen:        functionCallParseLet,
 	}
 
-	return &Parser{tokens: tokens, current: 0, errors: []*error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
+	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
 }
 
 func (p *Parser) isEOF() bool {
@@ -194,7 +194,7 @@ func (p *Parser) consumeDataType(dataType string, cxt string) *token.Token {
 	return token
 }
 
-func (p *Parser) pushError(err *error.ZeusError) {
+func (p *Parser) pushError(err *zeus_error.ZeusError) {
 	// if the last error is on the same line as the current error then it could be a side effect of the previous error
 	// so we don't add the error
 	if len(p.errors) > 0 {
@@ -214,7 +214,7 @@ func (p *Parser) expectedError(expected string, extraInfo ...string) {
 	if len(extraInfo) > 0 {
 		message += fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
 	}
-	p.pushError(error.NewZeusError(error.ErrorSeverityError, message, p.tokens[p.current].Span))
+	p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, message, p.tokens[p.current].Span))
 }
 
 func (p *Parser) expectedButGotError(expected string, token *token.Token, extraInfo ...string) {
@@ -226,7 +226,7 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token, extraI
 			extraInfoStr = fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
 		}
 		message := fmt.Sprintf("expected %s%s but got %s", expected, extraInfoStr, token.Type)
-		p.pushError(error.NewZeusError(error.ErrorSeverityError, message, token.Span))
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, message, token.Span))
 	}
 }
 
@@ -394,7 +394,7 @@ func (p *Parser) synchronize() {
 func (p *Parser) handlePanic() {
 	if r := recover(); r != nil {
 		switch r.(type) {
-		case *error.ZeusError:
+		case *zeus_error.ZeusError:
 			p.synchronize()
 		default:
 			panic(r)
@@ -419,7 +419,7 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return p.parseIfStmt()
 	case token.TokenTypeElse:
 		if p.lastSyncPos == nil {
-			p.pushError(error.NewZeusError(error.ErrorSeverityError, "else statement must be preceded by an if statement", p.peek().Span))
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "else statement must be preceded by an if statement", p.peek().Span))
 		} else {
 			p.consume()
 		}
@@ -429,17 +429,17 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 	}
 }
 
-func (p *Parser) GetErrors() []*error.ZeusError {
+func (p *Parser) GetErrors() []*zeus_error.ZeusError {
 	return p.errors
 }
 
 func (p *Parser) Reset() {
 	p.current = 0
-	p.errors = []*error.ZeusError{}
+	p.errors = []*zeus_error.ZeusError{}
 }
 
-func (p *Parser) ParseProgram() (*ast.ProgramNode, []*error.ZeusError) {
-	p.errors = []*error.ZeusError{}
+func (p *Parser) ParseProgram() (*ast.ProgramNode, []*zeus_error.ZeusError) {
+	p.errors = []*zeus_error.ZeusError{}
 	stmts := []ast.StmtNode{}
 
 	for !p.isEOF() {

@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/ameerthehacker/zeus/internal/compiler"
-	"github.com/ameerthehacker/zeus/internal/error"
 	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ func buildCmd() *cobra.Command {
 			filePath := args[0]
 			content, err := os.ReadFile(filePath)
 			if err != nil {
-				logger.Log(error.ErrorSeverityError, err.Error())
+				logger.Log(zeus_error.ErrorSeverityError, err.Error())
 				os.Exit(1)
 			} else {
 				_compiler := compiler.NewCompiler()
