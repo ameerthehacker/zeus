@@ -358,8 +358,10 @@ func (p *Parser) synchronize() {
 		token.TokenTypeLet:        true,
 		token.TokenTypeConst:      true,
 		token.TokenTypeFunction:   true,
-		token.TokenTypeRightBrace: true,
+		token.TokenTypeLeftParen:  true,
 		token.TokenTypeRightParen: true,
+		token.TokenTypeLeftBrace:  true,
+		token.TokenTypeRightBrace: true,
 		token.TokenTypeIf:         true,
 	}
 	stopAfterTokens := map[token.TokenType]bool{

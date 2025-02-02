@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/constant"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
@@ -45,11 +46,11 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 }
 
 func (b *IRBuilder) EndBasicBlock() {
-	zeus_error.Assert(b.current_block.Parent != nil, "current block is nil")
+	zeus_error.Assert(b.current_block != nil, "current block is nil")
 	b.current_block = b.current_block.Parent
 }
 
-func (b *IRBuilder) BuildBinaryOp(left, right Value, op InstrType, span *token.Span) Value {
+func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span *token.Span) constant.Value {
 	b.assertBlockExists()
 	result := b.current_block.CreateTempVariable()
 
@@ -66,7 +67,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right Value, op InstrType, span *token.S
 	return result
 }
 
-func (b *IRBuilder) BuildLoad(addr string, span *token.Span) Value {
+func (b *IRBuilder) BuildLoad(addr string, span *token.Span) constant.Value {
 	b.assertBlockExists()
 	result := b.current_block.CreateTempVariable()
 
@@ -82,7 +83,7 @@ func (b *IRBuilder) BuildLoad(addr string, span *token.Span) Value {
 	return result
 }
 
-func (b *IRBuilder) BuildVarDecl(v *Variable) Value {
+func (b *IRBuilder) BuildVarDecl(v *Variable) constant.Value {
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclVar,
 		Input: DeclareVarInstrInput{
@@ -95,7 +96,7 @@ func (b *IRBuilder) BuildVarDecl(v *Variable) Value {
 	return v
 }
 
-func (b *IRBuilder) BuildStore(addr string, value Value, span *token.Span) {
+func (b *IRBuilder) BuildStore(addr string, value constant.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeStore,
 		Input: StoreInstrInput{
@@ -105,7 +106,7 @@ func (b *IRBuilder) BuildStore(addr string, value Value, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []Variable, body *BasicBlock, return_type ValueType, span *token.Span) {
+func (b *IRBuilder) BuildFuncDecl(name string, args []Variable, body *BasicBlock, return_type constant.ValueType, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclFunc,
 		Input: DeclFuncInstrInput{
@@ -128,7 +129,7 @@ func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildCondJmp(target *BasicBlock, condition Value, span *token.Span) {
+func (b *IRBuilder) BuildCondJmp(target *BasicBlock, condition constant.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeCondJmp,
 		Input: CondJmpInstrInput{
@@ -138,7 +139,7 @@ func (b *IRBuilder) BuildCondJmp(target *BasicBlock, condition Value, span *toke
 	})
 }
 
-func (b *IRBuilder) BuildCallFunc(func_name string, args []Value, span *token.Span) Value {
+func (b *IRBuilder) BuildCallFunc(callee constant.Value, args []constant.Value, span *token.Span) constant.Value {
 	b.assertBlockExists()
 	result := b.current_block.CreateTempVariable()
 
@@ -146,7 +147,7 @@ func (b *IRBuilder) BuildCallFunc(func_name string, args []Value, span *token.Sp
 		Type: InstrTypeCallFunc,
 		Output: result,
 		Input: CallFuncInstrInput{
-			FuncName: func_name,
+			Callee: callee,
 			Args: args,
 		},
 		Span: span,
@@ -155,7 +156,7 @@ func (b *IRBuilder) BuildCallFunc(func_name string, args []Value, span *token.Sp
 	return result
 }
 
-func (b *IRBuilder) BuildReturn(value Value, span *token.Span) {
+func (b *IRBuilder) BuildReturn(value constant.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeReturn,
 		Input: ReturnInstrInput{
@@ -165,7 +166,7 @@ func (b *IRBuilder) BuildReturn(value Value, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildUnaryOp(value Value, op InstrType, span *token.Span) Value {
+func (b *IRBuilder) BuildUnaryOp(value constant.Value, op InstrType, span *token.Span) constant.Value {
 	b.assertBlockExists()
 	result := b.current_block.CreateTempVariable()
 
@@ -189,15 +190,15 @@ func toString(instrs []*Instr, indent int) string {
 		output = append(output, indent_str + instr.String())
 		switch instr.Type {
 		case InstrTypeDeclFunc:
-			input := toDeclFuncInstrInput(instr.Input)
+			input := ToDeclFuncInstrInput(instr.Input)
 			output = append(output, indent_str + fmt.Sprintf("%d:", input.Body.Id))
 			output = append(output, toString(input.Body.Instrs, indent + 1))
 		case InstrTypeJmp:
-			input := toJmpInstrInput(instr.Input)
+			input := ToJmpInstrInput(instr.Input)
 			output = append(output, indent_str + fmt.Sprintf("%d:", input.Target.Id))
 			output = append(output, toString(input.Target.Instrs, indent + 1))
 		case InstrTypeCondJmp:
-			input := toCondJmpInstrInput(instr.Input)
+			input := ToCondJmpInstrInput(instr.Input)
 			output = append(output, indent_str + fmt.Sprintf("%d:", input.Target.Id))
 			output = append(output, toString(input.Target.Instrs, indent + 1))
 		}
@@ -208,4 +209,8 @@ func toString(instrs []*Instr, indent int) string {
 
 func (b *IRBuilder) String() string {
 	return toString(b.instrs, 0)
+}
+
+func (b *IRBuilder) Print() {
+	fmt.Println(b.String())
 }

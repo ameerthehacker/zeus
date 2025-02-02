@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -47,6 +48,11 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 			Errors: parserErrors,
 		}
 	}
+
+	irBuilder := ir.NewIRBuilder()
+	irGen := ir.NewIRGen(irBuilder)
+	irGen.Generate(program)
+	irBuilder.Print()
 
 	return &SourceFile{
 		Path: entryPoint.Path,
