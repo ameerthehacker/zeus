@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/constant"
@@ -13,17 +14,24 @@ type IRBuilder struct {
 	instrs      []*Instr
 	blocks      []*BasicBlock
 	current_block *BasicBlock
+	temp_var_count int
 }
 
 func NewIRBuilder() *IRBuilder {
 	return &IRBuilder{
 		blocks:      []*BasicBlock{},
 		current_block: nil,
+		temp_var_count: 0,
 	}
 }
 
-func (b* IRBuilder) assertBlockExists() {
-	zeus_error.Assert(b.current_block != nil, "current block is nil")
+func (b *IRBuilder) CreateTempVariable() *TempVariable {
+	temp_variable_name := "%" + strconv.Itoa(b.temp_var_count)
+	b.temp_var_count++
+
+	return &TempVariable{
+		Name: temp_variable_name,
+	}
 }
 
 func (b *IRBuilder) pushInstr(instr *Instr) {
@@ -41,6 +49,18 @@ func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
 	return new_block
 }
 
+func (b *IRBuilder) BuildEnterScope() {
+	b.pushInstr(&Instr{
+		Type: InstrTypeEnterScope,
+	})
+}
+
+func (b *IRBuilder) BuildExitScope() {
+	b.pushInstr(&Instr{
+		Type: InstrTypeExitScope,
+	})
+}
+
 func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 	b.current_block = block
 }
@@ -51,8 +71,7 @@ func (b *IRBuilder) EndBasicBlock() {
 }
 
 func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span *token.Span) constant.Value {
-	b.assertBlockExists()
-	result := b.current_block.CreateTempVariable()
+	result := b.CreateTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: op,
@@ -68,8 +87,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span
 }
 
 func (b *IRBuilder) BuildLoad(addr string, span *token.Span) constant.Value {
-	b.assertBlockExists()
-	result := b.current_block.CreateTempVariable()
+	result := b.CreateTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeLoad,
@@ -140,8 +158,7 @@ func (b *IRBuilder) BuildCondJmp(target *BasicBlock, condition constant.Value, s
 }
 
 func (b *IRBuilder) BuildCallFunc(callee constant.Value, args []constant.Value, span *token.Span) constant.Value {
-	b.assertBlockExists()
-	result := b.current_block.CreateTempVariable()
+	result := b.CreateTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeCallFunc,
@@ -167,8 +184,7 @@ func (b *IRBuilder) BuildReturn(value constant.Value, span *token.Span) {
 }
 
 func (b *IRBuilder) BuildUnaryOp(value constant.Value, op InstrType, span *token.Span) constant.Value {
-	b.assertBlockExists()
-	result := b.current_block.CreateTempVariable()
+	result := b.CreateTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: op,

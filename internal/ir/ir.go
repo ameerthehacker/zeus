@@ -2,7 +2,6 @@ package ir
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
@@ -286,6 +285,9 @@ const (
 	// control flow
 	InstrTypeJmp
 	InstrTypeCondJmp
+	// scoping
+	InstrTypeEnterScope
+	InstrTypeExitScope
 )
 
 func (i InstrType) String() string {
@@ -330,6 +332,10 @@ func (i InstrType) String() string {
 		return "LOAD"
 	case InstrTypeStore:
 		return "STORE"
+	case InstrTypeEnterScope:
+		return "ENTER_SCOPE"
+	case InstrTypeExitScope:
+		return "EXIT_SCOPE"
 	default:
 		panic("unknown instruction type")
 	}
@@ -358,7 +364,6 @@ type BasicBlock struct {
 	Id int
 	Instrs []*Instr
 	Parent *BasicBlock
-	tempVariablesCount int
 }
 
 func NewBasicBlock(id int, parent *BasicBlock) *BasicBlock {
@@ -366,16 +371,6 @@ func NewBasicBlock(id int, parent *BasicBlock) *BasicBlock {
 		Id: id,
 		Instrs: []*Instr{},
 		Parent: parent,
-		tempVariablesCount: 0,
-	}
-}
-
-func (b *BasicBlock) CreateTempVariable() *TempVariable {
-	temp_variable_name := "%" + strconv.Itoa(b.tempVariablesCount)
-	b.tempVariablesCount++
-
-	return &TempVariable{
-		Name: temp_variable_name,
 	}
 }
 
@@ -396,9 +391,11 @@ func (g *IRGen) Generate(program *ast.ProgramNode) {
 }
 
 func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
+	g.ir_builder.BuildEnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
 	}
+	g.ir_builder.BuildExitScope()
 }
 
 func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
@@ -513,9 +510,7 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 	body := g.ir_builder.BuildBasicBlock()
 	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, constant.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.ir_builder.SetInsertionBlock(body)
-	for _, stmt := range expr.Body.Statements {
-		stmt.Accept(g)
-	}
+	expr.Body.Accept(g)
 	g.ir_builder.EndBasicBlock()
 
 	return &Variable{
