@@ -29,7 +29,7 @@ type StmtNode interface {
 	String() string
 	PrettyString() string
 	GetSpan() *token.Span
-	Accept(visitor StmtVisitor[any]) any
+	Accept(visitor StmtVisitor)
 }
 
 type VarDeclNode struct {
@@ -61,12 +61,12 @@ type IfStmtNode struct {
 	Span *token.Span
 }
 
-type StmtVisitor[T any] interface {
-	VisitExprStmt(stmt *ExprStmtNode) T
-	VisitVarDeclStmt(stmt *VarDeclStmtNode) T
-	VisitBlockStmt(stmt *BlockStmtNode) T
-	VisitReturnStmt(stmt *ReturnStmtNode) T
-	VisitIfStmt(stmt *IfStmtNode) T
+type StmtVisitor interface {
+	VisitExprStmt(stmt *ExprStmtNode)
+	VisitVarDeclStmt(stmt *VarDeclStmtNode)
+	VisitBlockStmt(stmt *BlockStmtNode)
+	VisitReturnStmt(stmt *ReturnStmtNode)
+	VisitIfStmt(stmt *IfStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -85,8 +85,8 @@ func (e *ExprStmtNode) GetSpan() *token.Span {
 	return e.Expr.GetSpan()
 }
 
-func (e *ExprStmtNode) Accept(visitor StmtVisitor[any]) any {
-	return visitor.VisitExprStmt(e)
+func (e *ExprStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitExprStmt(e)
 }
 
 func (v *VarDeclNode) String() string {
@@ -137,16 +137,16 @@ func (b *BlockStmtNode) GetSpan() *token.Span {
 	return b.Span
 }
 
-func (b *BlockStmtNode) Accept(visitor StmtVisitor[any]) any {
-	return visitor.VisitBlockStmt(b)
+func (b *BlockStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitBlockStmt(b)
 }
 
 func (v *VarDeclStmtNode) GetSpan() *token.Span {
 	return v.Span
 }
 
-func (v *VarDeclStmtNode) Accept(visitor StmtVisitor[any]) any {
-	return visitor.VisitVarDeclStmt(v)
+func (v *VarDeclStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitVarDeclStmt(v)
 }
 
 func (v *VarDeclStmtNode) String() string {
@@ -187,16 +187,16 @@ func (r *ReturnStmtNode) GetSpan() *token.Span {
 	return r.Span
 }
 
-func (r *ReturnStmtNode) Accept(visitor StmtVisitor[any]) any {
-	return visitor.VisitReturnStmt(r)
+func (r *ReturnStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitReturnStmt(r)
 }
 
 func (i *IfStmtNode) GetSpan() *token.Span {
 	return i.Span
 }
 
-func (i *IfStmtNode) Accept(visitor StmtVisitor[any]) any {
-	return visitor.VisitIfStmt(i)
+func (i *IfStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitIfStmt(i)
 }
 
 func (i *IfStmtNode) String() string {

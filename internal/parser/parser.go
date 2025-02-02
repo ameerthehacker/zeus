@@ -408,7 +408,7 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 
 	switch p.peek().Type {
 	case token.TokenTypeLet:
-		return p.parseVarDeclStmt()
+			fallthrough
 	case token.TokenTypeConst:
 		return p.parseVarDeclStmt()
 	case token.TokenTypeLeftBrace:

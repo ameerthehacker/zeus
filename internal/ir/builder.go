@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type IRBuilder struct {
-	symbolTable *symbol_table.SymbolTable[ValueType]
 	instrs      []*Instr
 	blocks      []*BasicBlock
 	current_block *BasicBlock
@@ -18,7 +16,6 @@ type IRBuilder struct {
 
 func NewIRBuilder() *IRBuilder {
 	return &IRBuilder{
-		symbolTable: symbol_table.NewSymbolTable[ValueType](),
 		blocks:      []*BasicBlock{},
 		current_block: nil,
 	}
@@ -205,7 +202,7 @@ func toString(instrs []*Instr, indent int) string {
 			output = append(output, toString(input.Target.Instrs, indent + 1))
 		}
 	}
-	
+
 	return strings.Join(output, "\n")
 }
 

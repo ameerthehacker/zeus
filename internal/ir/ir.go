@@ -380,7 +380,7 @@ func (g *IRGen) Generate(program *ast.ProgramNode) {
 	}
 }
 
-func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) any {
+func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	block := g.ir_builder.BuildBasicBlock()
 	g.ir_builder.SetInsertionBlock(block)
 
@@ -389,56 +389,40 @@ func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) any {
 	}
 
 	g.ir_builder.EndBasicBlock()
-
-	return nil
 }
 
-func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) any {
-	
-
-	return nil
+func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 }
 
-func (g *IRGen) VisitExprStmt(stmt *ast.ExprStmtNode) any {
-	return stmt.Expr.Accept(g)	
+func (g *IRGen) VisitExprStmt(stmt *ast.ExprStmtNode) {
 }
 
-func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) any {
-	return nil	
+func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 }
 
-func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) any {
-	return nil
+func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
 }
 
-func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) any {
-	return nil
+func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) {
 }
 
-func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) any {
-	return nil
+func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) {
 }
 
-func (g *IRGen) VisitNumberExpr(expr *ast.NumberExprNode) any {
-	return nil
+func (g *IRGen) VisitNumberExpr(expr *ast.NumberExprNode) {
 }
 
-func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) any {
-	return nil
+func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) {
 }
 
-func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) any {
-	return nil
+func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) {
 }
 
-func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) any {
-	return nil
+func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) {
 }
 
-func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) any {
-	return nil
+func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) {
 }
 
-func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) any {
-	return nil
+func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) {
 }
