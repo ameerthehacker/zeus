@@ -295,6 +295,15 @@ func (p *Parser) parseIfStmt() *ast.IfStmtNode {
 	return &ast.IfStmtNode{Condition: condition, ThenStmt: thenStmt, Span: span}
 }
 
+func (p *Parser) parseWhileStmt() *ast.WhileStmtNode {
+	whileKeyword := p.consumeToken(token.TokenTypeWhile)
+	condition := p.parseExprOfPrecedence(0, false, "in while condition")
+	body := p.ParseStmt()
+	span := &token.Span{Start: whileKeyword.Span.Start, End: body.GetSpan().End}
+	
+	return &ast.WhileStmtNode{Condition: condition, Body: body, Span: span}
+}
+
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	var span *token.Span
 	varDeclTypeToken := p.consume()
@@ -426,6 +435,8 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 			p.consume()
 		}
 		return nil
+	case token.TokenTypeWhile:
+		return p.parseWhileStmt()
 	default:
 		return p.parseExprStmt()
 	}

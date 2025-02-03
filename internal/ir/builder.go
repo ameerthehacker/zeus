@@ -7,21 +7,20 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/constant"
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type IRBuilder struct {
 	instrs      []*Instr
-	blocks      []*BasicBlock
 	current_block *BasicBlock
 	temp_var_count int
+	blocks_count int
 }
 
 func NewIRBuilder() *IRBuilder {
 	return &IRBuilder{
-		blocks:      []*BasicBlock{},
 		current_block: nil,
 		temp_var_count: 0,
+		blocks_count: 0,
 	}
 }
 
@@ -43,8 +42,12 @@ func (b *IRBuilder) pushInstr(instr *Instr) {
 }
 
 func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
-	new_block := NewBasicBlock(len(b.blocks), b.current_block)
-	b.blocks = append(b.blocks, new_block)
+	new_block := NewBasicBlock(b.blocks_count)
+	b.blocks_count++
+
+	if b.current_block != nil {
+		b.current_block.Successors = append(b.current_block.Successors, new_block)
+	}
 
 	return new_block
 }
@@ -65,11 +68,6 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 	b.current_block = block
 }
 
-func (b *IRBuilder) EndBasicBlock() {
-	zeus_error.Assert(b.current_block != nil, "current block is nil")
-	b.current_block = b.current_block.Parent
-}
-
 func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span *token.Span) constant.Value {
 	result := b.CreateTempVariable()
 
@@ -86,7 +84,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span
 	return result
 }
 
-func (b *IRBuilder) BuildLoad(addr string, span *token.Span) constant.Value {
+func (b *IRBuilder) BuildLoad(addr constant.Value, span *token.Span) constant.Value {
 	result := b.CreateTempVariable()
 
 	b.pushInstr(&Instr{
@@ -101,7 +99,7 @@ func (b *IRBuilder) BuildLoad(addr string, span *token.Span) constant.Value {
 	return result
 }
 
-func (b *IRBuilder) BuildVarDecl(v *Variable) constant.Value {
+func (b *IRBuilder) BuildVarDecl(v *VarDecl) constant.Value {
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclVar,
 		Input: DeclareVarInstrInput{
@@ -114,7 +112,7 @@ func (b *IRBuilder) BuildVarDecl(v *Variable) constant.Value {
 	return v
 }
 
-func (b *IRBuilder) BuildStore(addr string, value constant.Value, span *token.Span) {
+func (b *IRBuilder) BuildStore(addr constant.Value, value constant.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeStore,
 		Input: StoreInstrInput{
@@ -124,7 +122,7 @@ func (b *IRBuilder) BuildStore(addr string, value constant.Value, span *token.Sp
 	})
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []Variable, body *BasicBlock, return_type constant.ValueType, span *token.Span) {
+func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type constant.ValueType, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclFunc,
 		Input: DeclFuncInstrInput{
@@ -199,25 +197,29 @@ func (b *IRBuilder) BuildUnaryOp(value constant.Value, op InstrType, span *token
 }
 
 func toString(instrs []*Instr, indent int) string {
+	worklist := []*BasicBlock{}
 	output := []string{}
 	indent_str := strings.Repeat(" ", indent * 2)
+
+	appendBlock := func(block *BasicBlock) {
+		output = append(output, indent_str + fmt.Sprintf("%d:", block.Id))
+		output = append(output, toString(block.Instrs, indent + 1))
+	}
 
 	for _, instr := range instrs {
 		output = append(output, indent_str + instr.String())
 		switch instr.Type {
 		case InstrTypeDeclFunc:
 			input := ToDeclFuncInstrInput(instr.Input)
-			output = append(output, indent_str + fmt.Sprintf("%d:", input.Body.Id))
-			output = append(output, toString(input.Body.Instrs, indent + 1))
-		case InstrTypeJmp:
-			input := ToJmpInstrInput(instr.Input)
-			output = append(output, indent_str + fmt.Sprintf("%d:", input.Target.Id))
-			output = append(output, toString(input.Target.Instrs, indent + 1))
-		case InstrTypeCondJmp:
-			input := ToCondJmpInstrInput(instr.Input)
-			output = append(output, indent_str + fmt.Sprintf("%d:", input.Target.Id))
-			output = append(output, toString(input.Target.Instrs, indent + 1))
+			worklist = append(worklist, input.Body)
 		}
+	}
+
+	for len(worklist) > 0 {
+		block := worklist[0]
+		worklist = worklist[1:]
+		appendBlock(block)
+		worklist = append(worklist, block.Successors...)
 	}
 
 	return strings.Join(output, "\n")

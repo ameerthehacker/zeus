@@ -61,12 +61,19 @@ type IfStmtNode struct {
 	Span *token.Span
 }
 
+type WhileStmtNode struct {
+	Condition ExprNode
+	Body StmtNode
+	Span *token.Span
+}
+
 type StmtVisitor interface {
 	VisitExprStmt(stmt *ExprStmtNode)
 	VisitVarDeclStmt(stmt *VarDeclStmtNode)
 	VisitBlockStmt(stmt *BlockStmtNode)
 	VisitReturnStmt(stmt *ReturnStmtNode)
 	VisitIfStmt(stmt *IfStmtNode)
+	VisitWhileStmt(stmt *WhileStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -213,4 +220,20 @@ func (i *IfStmtNode) PrettyString() string {
 	}
 
 	return fmt.Sprintf("if (%s) {\n%s\n} else {\n%s\n}", i.Condition.PrettyString(), i.ThenStmt.PrettyString(), i.ElseStmt.PrettyString())
+}
+
+func (w *WhileStmtNode) GetSpan() *token.Span {
+	return w.Span
+}
+
+func (w *WhileStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitWhileStmt(w)
+}
+
+func (w *WhileStmtNode) String() string {
+	return fmt.Sprintf("{ type: WhileStmtNode, Condition: %s, Body: %s, Span: %s }", w.Condition.String(), w.Body.String(), w.Span)
+}
+
+func (w *WhileStmtNode) PrettyString() string {
+	return fmt.Sprintf("while (%s) {\n%s\n}", w.Condition.PrettyString(), w.Body.PrettyString())
 }

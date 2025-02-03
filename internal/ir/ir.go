@@ -88,11 +88,11 @@ func ToDeclareVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 }
 
 type LoadInstrInput struct {
-	Addr string
+	Addr constant.Value
 }
 
 func (i LoadInstrInput) String() string {
-	return i.Addr
+	return i.Addr.String()
 }
 
 func ToLoadInstrInput(input InstrInput) *LoadInstrInput {
@@ -107,7 +107,7 @@ func ToLoadInstrInput(input InstrInput) *LoadInstrInput {
 }
 
 type StoreInstrInput struct {
-	Addr string
+	Addr constant.Value
 	Value constant.Value
 }
 
@@ -171,7 +171,7 @@ func ToReturnInstrInput(input InstrInput) *ReturnInstrInput {
 
 type DeclFuncInstrInput struct {
 	Name string
-	Args []Variable
+	Args []VarDecl
 	Body *BasicBlock
 	ReturnType constant.ValueType
 }
@@ -245,7 +245,7 @@ func (i Constant) String() string {
 	return fmt.Sprintf("%s %s", i.ValueType, i.Value)
 }
 
-type Variable struct {
+type VarDecl struct {
 	Name string
 	ValueType constant.ValueType
 	IsConst bool
@@ -253,8 +253,21 @@ type Variable struct {
 	Span *token.Span
 }
 
-func (v Variable) String() string {
+func (v VarDecl) String() string {
 	return fmt.Sprintf("%s %s", v.ValueType, v.Name)
+}
+
+type Identifier struct {
+	Name string
+	ValueType constant.ValueType
+	Span *token.Span
+}
+
+func (v Identifier) String() string {
+	if v.ValueType != nil {
+		return fmt.Sprintf("%s %s", v.ValueType, v.Name)
+	}
+	return v.Name
 }
 
 const (
@@ -363,14 +376,14 @@ func (i *Instr) String() string {
 type BasicBlock struct {
 	Id int
 	Instrs []*Instr
-	Parent *BasicBlock
+	Successors []*BasicBlock
 }
 
-func NewBasicBlock(id int, parent *BasicBlock) *BasicBlock {
+func NewBasicBlock(id int) *BasicBlock {
 	return &BasicBlock{
 		Id: id,
 		Instrs: []*Instr{},
-		Parent: parent,
+		Successors: []*BasicBlock{},
 	}
 }
 
@@ -411,7 +424,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			isConst = true
 		}
 
-		g.ir_builder.BuildVarDecl(&Variable{
+		g.ir_builder.BuildVarDecl(&VarDecl{
 			Name: decl.Identifier.Name.Value,
 			ValueType: constant.ToValueType(decl.DataType),
 			Span: decl.Identifier.Name.Span,
@@ -431,21 +444,55 @@ func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 }
 
 func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
+	// create the conditions
 	condition := stmt.Condition.Accept(g)
+	not_condition := g.ir_builder.BuildUnaryOp(condition, InstrTypeNot, stmt.Condition.GetSpan())
+	// create the required blocks
 	then_block := g.ir_builder.BuildBasicBlock()
+	else_block := g.ir_builder.BuildBasicBlock()
+	merge_block := g.ir_builder.BuildBasicBlock()
+
+	// build jump to if block
 	g.ir_builder.BuildCondJmp(then_block, condition, stmt.Condition.GetSpan())
+	g.ir_builder.BuildCondJmp(else_block, not_condition, nil)
+
+	// generate the then block
 	g.ir_builder.SetInsertionBlock(then_block)
 	stmt.ThenStmt.Accept(g)
-	g.ir_builder.EndBasicBlock()
+	// jump to the merge block
+	g.ir_builder.BuildJmp(merge_block, nil)
 	
+	// generate the else block
+	g.ir_builder.SetInsertionBlock(else_block)
 	if stmt.ElseStmt != nil {
-		not_condition := g.ir_builder.BuildUnaryOp(condition, InstrTypeNot, stmt.Condition.GetSpan())
-		else_block := g.ir_builder.BuildBasicBlock()
-		g.ir_builder.BuildCondJmp(else_block, not_condition, nil)
-		g.ir_builder.SetInsertionBlock(else_block)
 		stmt.ElseStmt.Accept(g)
-		g.ir_builder.EndBasicBlock()
 	}
+
+	g.ir_builder.SetInsertionBlock(merge_block)
+}
+
+func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
+	
+	// create the required blocks
+	condition_block := g.ir_builder.BuildBasicBlock()
+	body_block := g.ir_builder.BuildBasicBlock()
+	merge_block := g.ir_builder.BuildBasicBlock()
+
+	// build condition block
+	g.ir_builder.SetInsertionBlock(condition_block)
+	// create the condition
+	condition := stmt.Condition.Accept(g)
+	not_condition := g.ir_builder.BuildUnaryOp(condition, InstrTypeNot, stmt.Condition.GetSpan())
+	g.ir_builder.BuildCondJmp(body_block, condition, stmt.Condition.GetSpan())
+	g.ir_builder.BuildCondJmp(merge_block, not_condition, nil)
+
+	// generate the body block
+	g.ir_builder.SetInsertionBlock(body_block)
+	stmt.Body.Accept(g)
+	g.ir_builder.BuildJmp(condition_block, nil)
+
+	// generate the merge block
+	g.ir_builder.SetInsertionBlock(merge_block)
 }
 
 func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
@@ -473,6 +520,12 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
 		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThan, expr.GetSpan())
 	case token.TokenTypeGreaterThanEqual:
 		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
+	case token.TokenTypeEqual:
+		addr := expr.Left.Accept(g)
+		value := expr.Right.Accept(g)
+		g.ir_builder.BuildStore(addr, value, expr.GetSpan())
+		return g.ir_builder.BuildLoad(addr, expr.GetSpan())
+
 	default:
 		panic(fmt.Sprintf("unknown binary operator: %s", expr.Operator.Type))
 	}
@@ -493,11 +546,11 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) constant.V
 }
 
 func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.Value {
-	params := []Variable{}
+	params := []VarDecl{}
 	param_types := []constant.ValueType{}
 
 	for _, param := range expr.Params {
-		params = append(params, Variable{
+		params = append(params, VarDecl{
 			Name: param.Identifier.Name.Value,
 			ValueType: constant.ToValueType(param.DataType),
 			IsConst: true,
@@ -511,9 +564,8 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, constant.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.ir_builder.SetInsertionBlock(body)
 	expr.Body.Accept(g)
-	g.ir_builder.EndBasicBlock()
 
-	return &Variable{
+	return &VarDecl{
 		Name: expr.Name.Name.Value,
 		ValueType: constant.FunctionType{
 			ReturnType: constant.ToValueType(expr.ReturnType),
@@ -526,7 +578,10 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 }
 
 func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) constant.Value {
-	return g.ir_builder.BuildLoad(expr.Name.Value, expr.Name.Span)
+	return g.ir_builder.BuildLoad(&Identifier{
+		Name: expr.Name.Value,
+		Span: expr.Name.Span,
+	}, expr.Name.Span)
 }
 
 func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) constant.Value {
