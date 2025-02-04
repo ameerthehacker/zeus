@@ -560,6 +560,8 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 	}
 
 	current_block := g.ir_builder.GetInsertionBlock()
+	// functions are global
+	g.ir_builder.SetInsertionBlock(nil)
 	body := g.ir_builder.BuildBasicBlock()
 	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, constant.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.ir_builder.SetInsertionBlock(body)
