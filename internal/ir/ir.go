@@ -15,14 +15,6 @@ type InstrInput interface {
 	String() string
 }
 
-type TempVariable struct {
-	Name string
-}
-
-func (t *TempVariable) String() string {
-	return t.Name
-}
-
 func panicInvalidInputType(expected string, actual InstrInput) {
 	panic(fmt.Sprintf("invalid input type: %s, but found: %+v", expected, actual))
 }
@@ -69,10 +61,14 @@ func ToUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 type DeclareVarInstrInput struct {
 	Name string
 	ValueType constant.ValueType
+	Initializer constant.Value
 	IsConst bool
 }
 
 func (i DeclareVarInstrInput) String() string {
+	if i.Initializer != nil {
+		return fmt.Sprintf("%s %s = %s", i.ValueType, i.Name, i.Initializer)
+	}
 	return fmt.Sprintf("%s %s", i.ValueType, i.Name)
 }
 
@@ -216,12 +212,13 @@ func ToJmpInstrInput(input InstrInput) *JmpInstrInput {
 }
 
 type CondJmpInstrInput struct {
-	Target *BasicBlock
+	TrueTarget *BasicBlock
+	FalseTarget *BasicBlock
 	Condition constant.Value
 }
 
 func (i CondJmpInstrInput) String() string {
-	return fmt.Sprintf("%d, %s", i.Target.Id, i.Condition)
+	return fmt.Sprintf("%s, %d, %d", i.Condition, i.TrueTarget.Id, i.FalseTarget.Id)
 }
 
 func ToCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
@@ -257,17 +254,21 @@ func (v VarDecl) String() string {
 	return fmt.Sprintf("%s %s", v.ValueType, v.Name)
 }
 
-type Identifier struct {
+type Var struct {
 	Name string
 	ValueType constant.ValueType
 	Span *token.Span
 }
 
-func (v Identifier) String() string {
+func (v Var) String() string {
 	if v.ValueType != nil {
 		return fmt.Sprintf("%s %s", v.ValueType, v.Name)
 	}
 	return v.Name
+}
+
+func (v Var) IsTempVariable() bool {
+	return strings.HasPrefix(v.Name, TEMP_VARIABLE_PREFIX)
 }
 
 const (
@@ -389,11 +390,13 @@ func NewBasicBlock(id int) *BasicBlock {
 
 type IRGen struct {
 	ir_builder *IRBuilder
+	is_lvalue_expr bool
 }
 
 func NewIRGen(ir_builder *IRBuilder) *IRGen {
 	return &IRGen{
 		ir_builder: ir_builder,
+		is_lvalue_expr: false,
 	}
 }
 
@@ -444,17 +447,15 @@ func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 }
 
 func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
-	// create the conditions
+	// create the condition
 	condition := stmt.Condition.Accept(g)
-	not_condition := g.ir_builder.BuildUnaryOp(condition, InstrTypeNot, stmt.Condition.GetSpan())
 	// create the required blocks
-	then_block := g.ir_builder.BuildBasicBlock()
-	else_block := g.ir_builder.BuildBasicBlock()
-	merge_block := g.ir_builder.BuildBasicBlock()
+	then_block := g.ir_builder.BuildSuccessorBlock()
+	else_block := g.ir_builder.BuildSuccessorBlock()
+	merge_block := g.ir_builder.BuildSuccessorBlock()
 
 	// build jump to if block
-	g.ir_builder.BuildCondJmp(then_block, condition, stmt.Condition.GetSpan())
-	g.ir_builder.BuildCondJmp(else_block, not_condition, nil)
+	g.ir_builder.BuildCondJmp(then_block, else_block, condition, stmt.Condition.GetSpan())
 
 	// generate the then block
 	g.ir_builder.SetInsertionBlock(then_block)
@@ -474,17 +475,15 @@ func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
 func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	
 	// create the required blocks
-	condition_block := g.ir_builder.BuildBasicBlock()
-	body_block := g.ir_builder.BuildBasicBlock()
-	merge_block := g.ir_builder.BuildBasicBlock()
+	condition_block := g.ir_builder.BuildSuccessorBlock()
+	body_block := g.ir_builder.BuildSuccessorBlock()
+	merge_block := g.ir_builder.BuildSuccessorBlock()
 
 	// build condition block
 	g.ir_builder.SetInsertionBlock(condition_block)
 	// create the condition
 	condition := stmt.Condition.Accept(g)
-	not_condition := g.ir_builder.BuildUnaryOp(condition, InstrTypeNot, stmt.Condition.GetSpan())
-	g.ir_builder.BuildCondJmp(body_block, condition, stmt.Condition.GetSpan())
-	g.ir_builder.BuildCondJmp(merge_block, not_condition, nil)
+	g.ir_builder.BuildCondJmp(body_block, merge_block, condition, stmt.Condition.GetSpan())
 
 	// generate the body block
 	g.ir_builder.SetInsertionBlock(body_block)
@@ -496,7 +495,9 @@ func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 }
 
 func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
+	g.is_lvalue_expr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
+	g.is_lvalue_expr = false
 	right := expr.Right.Accept(g)
 	
 	switch expr.Operator.Type {
@@ -521,10 +522,8 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
 	case token.TokenTypeGreaterThanEqual:
 		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
 	case token.TokenTypeEqual:
-		addr := expr.Left.Accept(g)
-		value := expr.Right.Accept(g)
-		g.ir_builder.BuildStore(addr, value, expr.GetSpan())
-		return g.ir_builder.BuildLoad(addr, expr.GetSpan())
+		g.ir_builder.BuildStore(left, right, expr.GetSpan())
+		return g.ir_builder.BuildLoad(left, expr.GetSpan())
 
 	default:
 		panic(fmt.Sprintf("unknown binary operator: %s", expr.Operator.Type))
@@ -560,10 +559,12 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 		param_types = append(param_types, constant.ToValueType(param.DataType))
 	}
 
+	current_block := g.ir_builder.GetInsertionBlock()
 	body := g.ir_builder.BuildBasicBlock()
 	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, constant.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.ir_builder.SetInsertionBlock(body)
 	expr.Body.Accept(g)
+	g.ir_builder.SetInsertionBlock(current_block)
 
 	return &VarDecl{
 		Name: expr.Name.Name.Value,
@@ -578,7 +579,14 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 }
 
 func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) constant.Value {
-	return g.ir_builder.BuildLoad(&Identifier{
+	if g.is_lvalue_expr {
+		return &Var{
+			Name: expr.Name.Value,
+			Span: expr.Name.Span,
+		}
+	}
+
+	return g.ir_builder.BuildLoad(&Var{
 		Name: expr.Name.Value,
 		Span: expr.Name.Span,
 	}, expr.Name.Span)

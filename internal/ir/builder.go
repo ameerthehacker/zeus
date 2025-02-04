@@ -9,6 +9,8 @@ import (
 	"github.com/ameerthehacker/zeus/internal/token"
 )
 
+const TEMP_VARIABLE_PREFIX = "%"
+
 type IRBuilder struct {
 	instrs      []*Instr
 	current_block *BasicBlock
@@ -24,13 +26,17 @@ func NewIRBuilder() *IRBuilder {
 	}
 }
 
-func (b *IRBuilder) CreateTempVariable() *TempVariable {
-	temp_variable_name := "%" + strconv.Itoa(b.temp_var_count)
+func (b *IRBuilder) createTempVariable() *Var {
+	temp_variable_name := TEMP_VARIABLE_PREFIX + strconv.Itoa(b.temp_var_count)
 	b.temp_var_count++
 
-	return &TempVariable{
+	return &Var{
 		Name: temp_variable_name,
 	}
+}
+
+func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
+	return b.current_block
 }
 
 func (b *IRBuilder) pushInstr(instr *Instr) {
@@ -41,13 +47,19 @@ func (b *IRBuilder) pushInstr(instr *Instr) {
 	}
 }
 
-func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
-	new_block := NewBasicBlock(b.blocks_count)
-	b.blocks_count++
+func (b *IRBuilder) BuildSuccessorBlock() *BasicBlock {
+	new_block := b.BuildBasicBlock()
 
 	if b.current_block != nil {
 		b.current_block.Successors = append(b.current_block.Successors, new_block)
 	}
+
+	return new_block
+}
+
+func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
+	new_block := NewBasicBlock(b.blocks_count)
+	b.blocks_count++
 
 	return new_block
 }
@@ -69,7 +81,7 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 }
 
 func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span *token.Span) constant.Value {
-	result := b.CreateTempVariable()
+	result := b.createTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: op,
@@ -85,7 +97,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right constant.Value, op InstrType, span
 }
 
 func (b *IRBuilder) BuildLoad(addr constant.Value, span *token.Span) constant.Value {
-	result := b.CreateTempVariable()
+	result := b.createTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeLoad,
@@ -105,6 +117,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) constant.Value {
 		Input: DeclareVarInstrInput{
 			Name: v.Name,
 			ValueType: v.ValueType,
+			Initializer: v.Initializer,
 		},
 		Span: v.Span,
 	})
@@ -145,18 +158,19 @@ func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildCondJmp(target *BasicBlock, condition constant.Value, span *token.Span) {
+func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlock, condition constant.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeCondJmp,
 		Input: CondJmpInstrInput{
-			Target: target,
+			TrueTarget: true_target,
+			FalseTarget: false_target,
 			Condition: condition,
 		},
 	})
 }
 
 func (b *IRBuilder) BuildCallFunc(callee constant.Value, args []constant.Value, span *token.Span) constant.Value {
-	result := b.CreateTempVariable()
+	result := b.createTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeCallFunc,
@@ -182,7 +196,7 @@ func (b *IRBuilder) BuildReturn(value constant.Value, span *token.Span) {
 }
 
 func (b *IRBuilder) BuildUnaryOp(value constant.Value, op InstrType, span *token.Span) constant.Value {
-	result := b.CreateTempVariable()
+	result := b.createTempVariable()
 
 	b.pushInstr(&Instr{
 		Type: op,
@@ -213,13 +227,13 @@ func toString(instrs []*Instr, indent int) string {
 			input := ToDeclFuncInstrInput(instr.Input)
 			worklist = append(worklist, input.Body)
 		}
-	}
 
-	for len(worklist) > 0 {
-		block := worklist[0]
-		worklist = worklist[1:]
-		appendBlock(block)
-		worklist = append(worklist, block.Successors...)
+		for len(worklist) > 0 {
+			block := worklist[0]
+			worklist = worklist[1:]
+			appendBlock(block)
+			worklist = append(worklist, block.Successors...)
+		}
 	}
 
 	return strings.Join(output, "\n")
