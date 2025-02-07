@@ -113,3 +113,12 @@ func ToValueType(t *token.Token) ValueType {
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}
 }
+
+func AsFunctionType(value ValueType) *FunctionType {
+	switch value := value.(type) {
+	case *FunctionType:
+		return value
+	default:
+		return nil
+	}
+}

@@ -34,8 +34,11 @@ func (b *IRBuilder) generateUniqueSymbolName(name string) string {
 	unique_name := name
 	count := 1
 
-	for _, ok := b.symbol_table.GetSymbol(unique_name); ok; {
-		unique_name = name + "_" + strconv.Itoa(count)
+	for {
+		if _, ok := b.symbol_table.GetSymbol(unique_name); !ok {
+			break
+		}
+		unique_name = name + strconv.Itoa(count)
 		count++
 	}
 
@@ -48,6 +51,7 @@ func (b *IRBuilder) createTempVariable() *value.Var {
 
 	return &value.Var{
 		Name: temp_variable_name,
+		ValueType: nil,
 	}
 }
 
@@ -150,6 +154,7 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 }
 
 func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) value.Value {
+	b.symbol_table.EnterScope()
 	params := []*value.Var{}
 
 	for _, arg := range args {
@@ -198,6 +203,8 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock,
 		},
 		Span: span,
 	})
+
+	b.symbol_table.ExitScope()
 
 	return fn
 }
