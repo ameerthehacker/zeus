@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ameerthehacker/zeus/internal/constant"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/value"
 )
 
 type ExprNode interface {
 	GetSpan() *token.Span
-	Accept(visitor ExprVisitor[constant.Value]) constant.Value
+	Accept(visitor ExprVisitor[value.Value]) value.Value
 	PrettyString() string
 	String() string
 }
@@ -90,7 +90,7 @@ func (g *GroupingExprNode) GetSpan() *token.Span {
 	return g.Span
 }
 
-func (g *GroupingExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (g *GroupingExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitGroupingExpr(g)
 }
 
@@ -108,7 +108,7 @@ func (b *BinaryExprNode) String() string {
 	return fmt.Sprintf("{ type: BinaryExprNode, Left: %s, Right: %s, Operator: %s, Span: %s }", b.Left.String(), b.Right.String(), b.Operator.Type, b.GetSpan())
 }
 
-func (b *BinaryExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (b *BinaryExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitBinaryExpr(b)
 }
 
@@ -116,7 +116,7 @@ func (n *NumberExprNode) GetSpan() *token.Span {
 	return n.Value.Span
 }
 
-func (n *NumberExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (n *NumberExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitNumber(n)
 }
 
@@ -136,7 +136,7 @@ func (u *UnaryExprNode) String() string {
 	return fmt.Sprintf("{ type: UnaryExprNode, Operator: %s, Operand: %s, Span: %s }", u.Operator.Type, u.Expr.String(), u.GetSpan())
 }
 
-func (u *UnaryExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (u *UnaryExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitUnaryExpr(u)
 }
 
@@ -158,7 +158,7 @@ func (i *IdentifierExprNode) String() string {
 	return fmt.Sprintf("{ type: IdentifierNode, Name: %s, Span: %s }", i.Name, i.GetSpan())
 }
 
-func (i *IdentifierExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (i *IdentifierExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitIdentifier(i)
 }
 
@@ -174,7 +174,7 @@ func (f *FunctionCallExprNode) String() string {
 	return fmt.Sprintf("{ type: FunctionCallExprNode, Callee: %s, Params: [%s], Span: %s }", f.Callee.String(), exprNodesString(f.Params, false), f.GetSpan())
 }
 
-func (f *FunctionCallExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (f *FunctionCallExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitFunctionCallExpr(f)
 }
 
@@ -193,11 +193,11 @@ func (f *FunctionDeclExprNode) String() string {
 	return fmt.Sprintf("{ type: FunctionDeclExprNode, Name: %s, Params: [%s], ReturnType: %s, Body: %s, Span: %s }", f.Name.String(), varDeclsString(f.Params, false), f.ReturnType.Type, f.Body.String(), f.GetSpan())
 }
 
-func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[constant.Value]) constant.Value {
+func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
-type ExprVisitor[T constant.Value] interface {
+type ExprVisitor[T value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
 	VisitNumber(node *NumberExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T

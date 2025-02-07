@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
-	"github.com/ameerthehacker/zeus/internal/constant"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/value"
 )
 
 type InstrType int
@@ -15,13 +15,25 @@ type InstrInput interface {
 	String() string
 }
 
+type VarDecl struct {
+	Name string
+	ValueType value.ValueType
+	IsConst bool
+	Initializer value.Value
+	Span *token.Span
+}
+
+func (v VarDecl) String() string {
+	return fmt.Sprintf("%s %s", v.ValueType, v.Name)
+}
+
 func panicInvalidInputType(expected string, actual InstrInput) {
 	panic(fmt.Sprintf("invalid input type: %s, but found: %+v", expected, actual))
 }
 
 type BinaryOpInstrInput struct {
-	Left constant.Value
-	Right constant.Value
+	Left value.Value
+	Right value.Value
 }
 
 func (i BinaryOpInstrInput) String() string {
@@ -40,14 +52,14 @@ func ToBinaryOpInstrInput(input InstrInput) *BinaryOpInstrInput {
 }
 
 type UnaryOpInstrInput struct {
-	Value constant.Value
+	Value value.Value
 }
 
 func (i UnaryOpInstrInput) String() string {
 	return i.Value.String()
 }
 
-func ToUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
+func AsUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 	switch input := input.(type) {
 	case UnaryOpInstrInput:
 		return &input
@@ -60,8 +72,8 @@ func ToUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 
 type DeclareVarInstrInput struct {
 	Name string
-	ValueType constant.ValueType
-	Initializer constant.Value
+	ValueType value.ValueType
+	Initializer value.Value
 	IsConst bool
 }
 
@@ -72,7 +84,7 @@ func (i DeclareVarInstrInput) String() string {
 	return fmt.Sprintf("%s %s", i.ValueType, i.Name)
 }
 
-func ToDeclareVarInstrInput(input InstrInput) *DeclareVarInstrInput {
+func AsDeclareVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 	switch input := input.(type) {
 	case DeclareVarInstrInput:
 		return &input
@@ -84,14 +96,14 @@ func ToDeclareVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 }
 
 type LoadInstrInput struct {
-	Addr constant.Value
+	Addr value.Value
 }
 
 func (i LoadInstrInput) String() string {
 	return i.Addr.String()
 }
 
-func ToLoadInstrInput(input InstrInput) *LoadInstrInput {
+func AsLoadInstrInput(input InstrInput) *LoadInstrInput {
 	switch input := input.(type) {
 	case LoadInstrInput:
 		return &input
@@ -103,15 +115,15 @@ func ToLoadInstrInput(input InstrInput) *LoadInstrInput {
 }
 
 type StoreInstrInput struct {
-	Addr constant.Value
-	Value constant.Value
+	Addr value.Value
+	Value value.Value
 }
 
 func (i StoreInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Addr, i.Value)
 }
 
-func ToStoreInstrInput(input InstrInput) *StoreInstrInput {
+func AsStoreInstrInput(input InstrInput) *StoreInstrInput {
 	switch input := input.(type) {
 	case StoreInstrInput:
 		return &input
@@ -123,8 +135,8 @@ func ToStoreInstrInput(input InstrInput) *StoreInstrInput {
 }
 
 type CallFuncInstrInput struct {
-	Callee constant.Value
-	Args []constant.Value
+	Callee value.Value
+	Args []value.Value
 }
 
 func (i CallFuncInstrInput) String() string {
@@ -135,7 +147,7 @@ func (i CallFuncInstrInput) String() string {
 	return fmt.Sprintf("%s(%s)", i.Callee, strings.Join(args, ", "))
 }
 
-func ToCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {
+func AsCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {
 	switch input := input.(type) {
 	case CallFuncInstrInput:
 		return &input
@@ -147,14 +159,14 @@ func ToCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {
 }
 
 type ReturnInstrInput struct {
-	Value constant.Value
+	Value value.Value
 }
 
 func (i ReturnInstrInput) String() string {
 	return i.Value.String()
 }
 
-func ToReturnInstrInput(input InstrInput) *ReturnInstrInput {
+func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {
 	switch input := input.(type) {
 	case ReturnInstrInput:
 		return &input
@@ -169,10 +181,10 @@ type DeclFuncInstrInput struct {
 	Name string
 	Args []VarDecl
 	Body *BasicBlock
-	ReturnType constant.ValueType
+	ReturnType value.ValueType
 }
 
-func ToDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
+func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
 	switch input := input.(type) {
 	case DeclFuncInstrInput:
 		return &input
@@ -200,7 +212,7 @@ func (i JmpInstrInput) String() string {
 	return fmt.Sprintf("%d", i.Target.Id)
 }
 
-func ToJmpInstrInput(input InstrInput) *JmpInstrInput {
+func AsJmpInstrInput(input InstrInput) *JmpInstrInput {
 	switch input := input.(type) {
 	case JmpInstrInput:
 		return &input
@@ -214,14 +226,14 @@ func ToJmpInstrInput(input InstrInput) *JmpInstrInput {
 type CondJmpInstrInput struct {
 	TrueTarget *BasicBlock
 	FalseTarget *BasicBlock
-	Condition constant.Value
+	Condition value.Value
 }
 
 func (i CondJmpInstrInput) String() string {
 	return fmt.Sprintf("%s, %d, %d", i.Condition, i.TrueTarget.Id, i.FalseTarget.Id)
 }
 
-func ToCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
+func AsCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
 	switch input := input.(type) {
 	case CondJmpInstrInput:
 		return &input
@@ -230,45 +242,6 @@ func ToCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
 	}
 
 	return nil
-}
-
-type Constant struct {
-	Value string
-	ValueType constant.ValueType
-	Span *token.Span
-}
-
-func (i Constant) String() string {
-	return fmt.Sprintf("%s %s", i.ValueType, i.Value)
-}
-
-type VarDecl struct {
-	Name string
-	ValueType constant.ValueType
-	IsConst bool
-	Initializer constant.Value
-	Span *token.Span
-}
-
-func (v VarDecl) String() string {
-	return fmt.Sprintf("%s %s", v.ValueType, v.Name)
-}
-
-type Var struct {
-	Name string
-	ValueType constant.ValueType
-	Span *token.Span
-}
-
-func (v Var) String() string {
-	if v.ValueType != nil {
-		return fmt.Sprintf("%s %s", v.ValueType, v.Name)
-	}
-	return v.Name
-}
-
-func (v Var) IsTempVariable() bool {
-	return strings.HasPrefix(v.Name, TEMP_VARIABLE_PREFIX)
 }
 
 const (
@@ -346,10 +319,6 @@ func (i InstrType) String() string {
 		return "LOAD"
 	case InstrTypeStore:
 		return "STORE"
-	case InstrTypeEnterScope:
-		return "ENTER_SCOPE"
-	case InstrTypeExitScope:
-		return "EXIT_SCOPE"
 	default:
 		panic("unknown instruction type")
 	}
@@ -357,7 +326,7 @@ func (i InstrType) String() string {
 
 type Instr struct {
 	Type InstrType
-	Output constant.Value
+	Output value.Value
 	Input InstrInput
 	Span   *token.Span
 }
@@ -407,16 +376,14 @@ func (g *IRGen) Generate(program *ast.ProgramNode) {
 }
 
 func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
-	g.ir_builder.BuildEnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
 	}
-	g.ir_builder.BuildExitScope()
 }
 
 func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
-		var initializer constant.Value
+		var initializer value.Value
 		isConst := false
 
 		if decl.Initializer != nil {
@@ -429,7 +396,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		g.ir_builder.BuildVarDecl(&VarDecl{
 			Name: decl.Identifier.Name.Value,
-			ValueType: constant.ToValueType(decl.DataType),
+			ValueType: value.ToValueType(decl.DataType),
 			Span: decl.Identifier.Name.Span,
 			IsConst: isConst,
 			Initializer: initializer,
@@ -494,7 +461,7 @@ func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	g.ir_builder.SetInsertionBlock(merge_block)
 }
 
-func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
+func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) value.Value {
 	g.is_lvalue_expr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
 	g.is_lvalue_expr = false
@@ -522,56 +489,66 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) constant.Value {
 	case token.TokenTypeGreaterThanEqual:
 		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
 	case token.TokenTypeEqual:
-		g.ir_builder.BuildStore(left, right, expr.GetSpan())
-		return g.ir_builder.BuildLoad(left, expr.GetSpan())
+		addr := value.AsVar(left)
+		if addr == nil {
+			panic(fmt.Sprintf("invalid lvalue: %s", left))
+		}
+
+		g.ir_builder.BuildStore(addr, right, expr.GetSpan())
+		return g.ir_builder.BuildLoad(addr, expr.GetSpan())
 
 	default:
 		panic(fmt.Sprintf("unknown binary operator: %s", expr.Operator.Type))
 	}
 }
 
-func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) constant.Value {
+func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) value.Value {
 	return expr.Expr.Accept(g)
 }
 
-func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) constant.Value {
+func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Value {
 	callee := expr.Callee.Accept(g)
-	params := []constant.Value{}
+	params := []value.Value{}
 	for _, arg := range expr.Params {
 		params = append(params, arg.Accept(g))
 	}
 
-	return g.ir_builder.BuildCallFunc(callee, params, expr.GetSpan())
+	addr := value.AsVar(callee)
+	if addr == nil {
+		panic(fmt.Sprintf("invalid callee: %s", callee))
+	}
+
+	return g.ir_builder.BuildCallFunc(addr, params, expr.GetSpan())
 }
 
-func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.Value {
+func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
 	params := []VarDecl{}
-	param_types := []constant.ValueType{}
+	param_types := []value.ValueType{}
 
 	for _, param := range expr.Params {
 		params = append(params, VarDecl{
 			Name: param.Identifier.Name.Value,
-			ValueType: constant.ToValueType(param.DataType),
+			ValueType: value.ToValueType(param.DataType),
 			IsConst: true,
 			Initializer: nil,
 			Span: param.Identifier.Name.Span,
 		})
-		param_types = append(param_types, constant.ToValueType(param.DataType))
+		param_types = append(param_types, value.ToValueType(param.DataType))
 	}
 
 	current_block := g.ir_builder.GetInsertionBlock()
 	// functions are global
 	g.ir_builder.SetInsertionBlock(nil)
 	body := g.ir_builder.BuildBasicBlock()
-	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, constant.ToValueType(expr.ReturnType), expr.Name.Name.Span)
+	g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.ir_builder.SetInsertionBlock(body)
 	expr.Body.Accept(g)
 	g.ir_builder.SetInsertionBlock(current_block)
 
 	return &VarDecl{
 		Name: expr.Name.Name.Value,
-		ValueType: constant.FunctionType{
-			ReturnType: constant.ToValueType(expr.ReturnType),
+		ValueType: value.FunctionType{
+			ReturnType: value.ToValueType(expr.ReturnType),
 			ParamTypes: param_types,
 		},
 		IsConst: true,
@@ -580,42 +557,42 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) constant.V
 	}
 }
 
-func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) constant.Value {
+func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 	if g.is_lvalue_expr {
-		return &Var{
+		return &value.Var{
 			Name: expr.Name.Value,
 			Span: expr.Name.Span,
 		}
 	}
 
-	return g.ir_builder.BuildLoad(&Var{
+	return g.ir_builder.BuildLoad(&value.Var{
 		Name: expr.Name.Value,
 		Span: expr.Name.Span,
 	}, expr.Name.Span)
 }
 
-func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) constant.Value {
-	if constant.IsFloat(expr.Value.Value) {
-		return &Constant{
+func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {
+	if value.IsFloat(expr.Value.Value) {
+		return &value.Constant{
 			Value: expr.Value.Value,
-			ValueType: constant.FloatType{
-				Size: constant.F64,
+			ValueType: value.FloatType{
+				Size: value.F64,
 			},
 			Span: expr.Value.Span,
 		}
 	} else {
-		return &Constant{
+		return &value.Constant{
 			Value: expr.Value.Value,
-			ValueType: constant.IntType{
+			ValueType: value.IntType{
 				Signed: true,
-				Size: constant.GetIntSize(expr.Value.Value),
+				Size: value.GetIntSize(expr.Value.Value),
 			},
 			Span: expr.Value.Span,
 		}
 	}
 }
 
-func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) constant.Value {
+func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
 	value := expr.Expr.Accept(g)
 
 	switch expr.Operator.Type {
