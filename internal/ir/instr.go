@@ -143,7 +143,7 @@ func (i CallFuncInstrInput) String() string {
 	for _, arg := range i.Args {
 		args = append(args, arg.String())
 	}
-	return fmt.Sprintf("%s(%s)", i.Callee, strings.Join(args, ", "))
+	return fmt.Sprintf("%s (%s)", i.Callee, strings.Join(args, ", "))
 }
 
 func AsCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {

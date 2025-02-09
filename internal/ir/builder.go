@@ -213,7 +213,7 @@ func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlo
 	})
 }
 
-func (b *IRBuilder) BuildCallFunc(callee *value.Var, args []value.Value, span *token.Span) value.Value {
+func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, span *token.Span) value.Value {
 	result := b.createTempVariable()
 
 	b.pushInstr(&Instr{

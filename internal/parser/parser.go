@@ -74,7 +74,10 @@ func NewParser(tokens []*token.Token) *Parser {
 		params := []ast.ExprNode{}
 
 		for {
-			right := parser.parseExprOfPrecedence(0, false)
+			right := parser.parseExprOfPrecedence(0, true)
+			if right == nil {
+				break
+			}
 			params = append(params, right)
 			if parser.peek().Type != token.TokenTypeComma {
 				break

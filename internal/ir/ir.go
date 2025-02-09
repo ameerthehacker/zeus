@@ -173,7 +173,7 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Valu
 		params = append(params, arg.Accept(g))
 	}
 
-	addr := value.AsVar(callee)
+	addr := value.AsFunction(callee)
 
 	return g.ir_builder.BuildCallFunc(addr, params, expr.GetSpan())
 }
