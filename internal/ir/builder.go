@@ -119,7 +119,7 @@ func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
 	return result
 }
 
-func (b *IRBuilder) BuildVarDecl(v *VarDecl) value.Value {
+func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 	unique_name := b.generateUniqueSymbolName(v.Name)
 
 	variable := &value.Var{
@@ -153,10 +153,9 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 	})
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) value.Value {
+func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
 	b.symbol_table.EnterScope()
 	params := []*value.Var{}
-
 	for _, arg := range args {
 		variable := &value.Var{
 			Name: b.generateUniqueSymbolName(arg.Name),
@@ -169,34 +168,18 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock,
 	}
 
 	fn := &value.Function{
-		Name: b.generateUniqueSymbolName(name),
+		Name:  b.generateUniqueSymbolName(name),
+		ReturnType: return_type,
 		Params: params,
-		ReturnType: return_type,
 		Span: span,
 	}
-
-	param_types := []value.ValueType{}
-	for _, param := range params {
-		param_types = append(param_types, param.ValueType)
-	}
-
-	fnType := value.FunctionType{
-		ReturnType: return_type,
-		ParamTypes: param_types,
-	}
-
-	fn_var := &value.Var{
-		Name: fn.Name,
-		ValueType: fnType,
-		Span: span,
-	}
-
-	b.symbol_table.DeclareSymbol(fn.Name, fn_var)
+	// functions are global
+	b.symbol_table.DeclareGlobalSymbol(fn.Name, fn)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclFunc,
 		Input: DeclFuncInstrInput{
-			Name: name,
+			Name: fn.Name,
 			Args: args,
 			ReturnType: return_type,
 			Body: body,

@@ -52,6 +52,11 @@ func (s *SymbolTable[T]) DeclareSymbol(name string, symbol T) {
 	s.current_scope.symbols[name] = symbol
 }
 
+func (s *SymbolTable[T]) DeclareGlobalSymbol(name string, symbol T) {
+	zeus_error.Assert(len(s.tables) > 0, "no global scope exists")
+	s.tables[0].symbols[name] = symbol
+}
+
 func (s *SymbolTable[T]) GetSymbol(name string) (T, bool) {
 	zeus_error.Assert(s.current_scope != nil, "no scope to get symbol in")
 	current_scope := s.current_scope

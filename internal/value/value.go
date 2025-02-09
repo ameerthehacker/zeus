@@ -87,6 +87,15 @@ func AsVar(value Value) *Var {
 	}
 }
 
+func AsFunction(value Value) *Function {
+	switch value := value.(type) {
+	case *Function:
+		return value
+	default:
+		return nil
+	}
+}
+
 func AsConstant(value Value) *Constant {
 	switch value := value.(type) {
 	case *Constant:
