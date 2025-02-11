@@ -30,9 +30,7 @@ func buildCmd() *cobra.Command {
 
 				// log the compiler errors
 				if len(sourceFile.Errors) > 0 {
-					for _, err := range sourceFile.Errors {
-						logger.LogZeusError(filePath, err)
-					}
+					logger.PrettyPrintError(sourceFile.Path, sourceFile.Source, sourceFile.Errors)
 					os.Exit(1)
 				}
 			}
