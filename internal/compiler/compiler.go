@@ -51,7 +51,16 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 
 	irBuilder := ir.NewIRBuilder()
 	irGen := ir.NewIRGen(irBuilder)
-	irGen.Generate(program)
+	irErrors := irGen.Generate(program)
+
+	if len(irErrors) > 0 {
+		return &SourceFile{
+			Path: entryPoint.Path,
+			Source: entryPoint.Source,
+			Errors: irErrors,
+		}
+	}
+
 	irBuilder.Print()
 
 	return &SourceFile{

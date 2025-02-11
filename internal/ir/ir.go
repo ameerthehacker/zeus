@@ -7,12 +7,14 @@ import (
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/value"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type IRGen struct {
 	ir_builder *IRBuilder
 	is_lvalue_expr bool
 	symbol_table *symbol_table.SymbolTable[value.Value]
+	errors []*zeus_error.ZeusError
 }
 
 func NewIRGen(ir_builder *IRBuilder) *IRGen {
@@ -23,12 +25,18 @@ func NewIRGen(ir_builder *IRBuilder) *IRGen {
 	}
 }
 
-func (g *IRGen) Generate(program *ast.ProgramNode) {
+func (g *IRGen) pushError(err *zeus_error.ZeusError) {
+	g.errors = append(g.errors, err)
+}
+
+func (g *IRGen) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	g.symbol_table.EnterScope()
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
 	}
 	g.symbol_table.ExitScope()
+
+	return g.errors
 }
 
 func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
@@ -41,6 +49,11 @@ func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 
 func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
+		if _, ok := g.symbol_table.GetSymbolInCurrentScope(decl.Identifier.Name.Value); ok {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", decl.Identifier.Name.Value), decl.Identifier.Name.Span))
+			return
+		}
+
 		var initializer value.Value
 		isConst := false
 
@@ -203,6 +216,10 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 	g.symbol_table.EnterScope()
 
 	for index, param := range expr.Params {
+		if _, ok := g.symbol_table.GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare parameter '%s' in the same scope", param.Identifier.Name.Value), param.Identifier.Name.Span))
+			return nil
+		}
 		g.symbol_table.DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
 	}
 
@@ -228,7 +245,8 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 	variable, ok := g.symbol_table.GetSymbol(expr.Name.Value)
 
 	if !ok {
-		panic(fmt.Sprintf("symbol %s not found", expr.Name.Value))
+		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("undefined identifier '%s'", expr.Name.Value), expr.Name.Span))
+		return nil
 	}
 
 	asFn := value.AsFunction(variable)

@@ -72,7 +72,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
 		params := []ast.ExprNode{}
-
+		
 		for {
 			right := parser.parseExprOfPrecedence(0, true)
 			if right == nil {
