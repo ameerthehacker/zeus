@@ -72,7 +72,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
 		params := []ast.ExprNode{}
-		
+
 		for {
 			right := parser.parseExprOfPrecedence(0, true)
 			if right == nil {
@@ -228,7 +228,7 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token, extraI
 		if len(extraInfo) > 0 {
 			extraInfoStr = fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
 		}
-		message := fmt.Sprintf("expected %s%s but got %s", expected, extraInfoStr, token.Type)
+		message := fmt.Sprintf("expected %s%s, but found %s", expected, extraInfoStr, token.Type)
 		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, message, token.Span))
 	}
 }

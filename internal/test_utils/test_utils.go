@@ -10,7 +10,7 @@ import (
 
 func CompareZeusErrors(t *testing.T, errors, expected []*zeus_error.ZeusError) {
 	if len(errors) > 0 && len(expected) == 0 {
-		t.Errorf("expected errors %v but got none", errors)
+		t.Errorf("expected errors %v, but found none", errors)
 	} else if len(errors) == 0 && len(expected) > 0 {
 		t.Errorf("unexpected errors: %v", expected)
 	} else if len(errors) != len(expected) {

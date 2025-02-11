@@ -141,7 +141,7 @@ func TestParseExpression(t *testing.T) {
 			name:  "parser error on invalid expression",
 			input: "1 + + 2",
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected expression but got +", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected expression, but found +", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5})),
 			},
 		},
 		{
@@ -219,7 +219,7 @@ func TestParseExpression(t *testing.T) {
 			input: "function name(a)",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after identifier in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after identifier in function parameter, but found )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
 			},
 		},
 		{
@@ -227,7 +227,7 @@ func TestParseExpression(t *testing.T) {
 			input: "function name(a:)",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected data type in function parameter but got )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected data type in function parameter, but found )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
 			},
 		},
 		{
@@ -235,7 +235,7 @@ func TestParseExpression(t *testing.T) {
 			input: "function name(a: i8) {}",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after function parameters but got {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after function parameters, but found {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
 			},
 		},
 		{
@@ -243,7 +243,7 @@ func TestParseExpression(t *testing.T) {
 			input: "function name(a: i8): {}",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected return type in function declaration but got {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected return type in function declaration, but found {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
 			},
 		},
 		{

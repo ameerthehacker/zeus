@@ -126,7 +126,7 @@ func TestParserStmt(t *testing.T) {
 			input: "let x = 1;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "expected : after identifier in variable declaration but got =",
+					Message: "expected : after identifier in variable declaration, but found =",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 7},
 						End:   token.Position{Line: 1, Column: 7},
@@ -139,7 +139,7 @@ func TestParserStmt(t *testing.T) {
 			input: "let x: = 1;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "expected data type in variable declaration but got =",
+					Message: "expected data type in variable declaration, but found =",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 8},
 						End:   token.Position{Line: 1, Column: 8},
@@ -152,7 +152,7 @@ func TestParserStmt(t *testing.T) {
 			input: "let x:i8 =;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "expected expression for variable initializer but got ;",
+					Message: "expected expression for variable initializer, but found ;",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 11},
 						End:   token.Position{Line: 1, Column: 11},
