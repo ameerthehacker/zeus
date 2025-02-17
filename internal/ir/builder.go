@@ -149,6 +149,7 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 			Addr: addr,
 			Value: value,
 		},
+		Span: span,
 	})
 }
 
@@ -209,6 +210,7 @@ func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlo
 			FalseTarget: false_target,
 			Condition: condition,
 		},
+		Span: span,
 	})
 }
 

@@ -39,7 +39,7 @@ func (i BinaryOpInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Left, i.Right)
 }
 
-func ToBinaryOpInstrInput(input InstrInput) *BinaryOpInstrInput {
+func AsBinaryOpInstrInput(input InstrInput) *BinaryOpInstrInput {
 	switch input := input.(type) {
 	case BinaryOpInstrInput:
 		return &input
@@ -94,7 +94,7 @@ func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 }
 
 type LoadInstrInput struct {
-	Addr value.Value
+	Addr *value.Var
 }
 
 func (i LoadInstrInput) String() string {
@@ -113,7 +113,7 @@ func AsLoadInstrInput(input InstrInput) *LoadInstrInput {
 }
 
 type StoreInstrInput struct {
-	Addr value.Value
+	Addr *value.Var
 	Value value.Value
 }
 

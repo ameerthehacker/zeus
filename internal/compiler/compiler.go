@@ -64,6 +64,8 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 	tc := ir.NewTypeChecker()
 	tcErrors := tc.TypeCheck(irBuilder)
 
+	irBuilder.Print()
+
 	if len(tcErrors) > 0 {
 		return &SourceFile{
 			Path: entryPoint.Path,
@@ -71,8 +73,6 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 			Errors: tcErrors,
 		}
 	}
-
-	irBuilder.Print()
 
 	return &SourceFile{
 		Path: entryPoint.Path,

@@ -3,20 +3,17 @@ package ir
 import (
 	"fmt"
 
-	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/value"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type TypeChecker struct {
-	symbol_table *symbol_table.SymbolTable[value.Value]
 	errors []*zeus_error.ZeusError
+	current_function *value.Function
 }
 
 func NewTypeChecker() *TypeChecker {
-	return &TypeChecker{
-		symbol_table: symbol_table.NewSymbolTable[value.Value](),
-	}
+	return &TypeChecker{}
 }
 
 func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
@@ -24,15 +21,9 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 }
 
 func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
-	tc.symbol_table.EnterScope()
 	func_decl := AsDeclFuncInstrInput(instr.Input)
 	params := []*value.Var{}
 	for _, param := range func_decl.Args {
-		tc.symbol_table.DeclareSymbol(param.Name, &value.Var{
-			Name: param.Name,
-			ValueType: param.ValueType,
-			Span: param.Span,
-		})
 		params = append(params, &value.Var{
 			Name: param.Name,
 			ValueType: param.ValueType,
@@ -40,20 +31,16 @@ func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 		})
 	}
 
-	tc.symbol_table.DeclareGlobalSymbol(func_decl.Name, &value.Function{
+	tc.current_function = &value.Function{
 		Params: params,
 		ReturnType: func_decl.ReturnType,
 		Span: instr.Span,
 		Name: func_decl.Name,
-	})
-
-	tc.symbol_table.ExitScope()
+	}
 }
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 	decl_var := AsDeclVarInstrInput(instr.Input)
-	tc.symbol_table.DeclareSymbol(decl_var.Variable.Name, decl_var.Variable)
-
 	if decl_var.Initializer != nil {
 		if !tc.cmpValueType(decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)) {
 			tc.pushError(&zeus_error.ZeusError{
@@ -88,12 +75,16 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 
 		return a.Size >= b.Size
 	case value.FloatType:
-		// TODO: support int type also
-		b, ok := b.(value.FloatType)
-		if !ok {
-			return false
+		bFloat, okFloat := b.(value.FloatType)
+		_, okInt := b.(value.IntType)
+
+		if okFloat {
+			return a.Size >= bFloat.Size
+		} else if okInt {
+			return true
 		}
-		return a.Size >= b.Size
+
+		return false
 	case value.BoolType:
 		_, ok := b.(value.BoolType)
 		if !ok {
@@ -124,22 +115,135 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	return false
 }
 
+func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.ValueType) value.ValueType ,cmpTypeFn func(a, b value.ValueType) bool) {
+	input := AsBinaryOpInstrInput(instr.Input)
+
+	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("invalid operands of type '%s' and '%s' for binary operation", tc.getValueType(input.Left), tc.getValueType(input.Right)),
+			Span: instr.Span,
+		})
+	}
+	
+	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right))
+}
+
+func (tc *TypeChecker) tcUnaryOp(instr *Instr, resultTypeFn func(a value.ValueType) value.ValueType, cmpTypeFn func(a value.ValueType) bool) {
+	input := AsUnaryOpInstrInput(instr.Input)
+
+	if !cmpTypeFn(tc.getValueType(input.Value)) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("invalid operand of type '%s' for unary operation", tc.getValueType(input.Value)),
+			Span: instr.Span,
+		})
+	} 
+	
+	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Value))
+}
+
+func (tc *TypeChecker) tcCondJmp(instr *Instr) {
+	input := AsCondJmpInstrInput(instr.Input)
+
+	if !value.IsBoolType(tc.getValueType(input.Condition)) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("condition must be of type bool, but found %s", tc.getValueType(input.Condition)),
+			Span: instr.Span,
+		})
+	}
+}
+
+func (tc *TypeChecker) tcLoad(instr *Instr) {
+	input := AsLoadInstrInput(instr.Input)
+	instr.Output.ValueType = input.Addr.ValueType
+}
+
+func (tc *TypeChecker) tcStore(instr *Instr) {
+	input := AsStoreInstrInput(instr.Input)
+	valueType := tc.getValueType(input.Value)
+
+	if !tc.cmpValueType(input.Addr.ValueType, valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", valueType, input.Addr.ValueType),
+			Span: instr.Span,
+		})
+	}
+}
+
+func (tc *TypeChecker) tcReturn(instr *Instr) {
+	input := AsReturnInstrInput(instr.Input)
+
+	if tc.current_function == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "return statement outside of function",
+			Span: instr.Span,
+		})
+
+		return
+	}
+
+	if !tc.cmpValueType(tc.current_function.ReturnType, tc.getValueType(input.Value)) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.current_function.ReturnType),
+			Span: instr.Span,
+		})
+	}
+}
+
 func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
-
-	tc.symbol_table.EnterScope()
-
 	builder.Walk(func(instr *Instr) {
 		switch instr.Type {
+		// jmp requires no type checking
+		case InstrTypeJmp:
 		case InstrTypeDeclFunc:
 			tc.tcFuncDecl(instr)
 		case InstrTypeDeclVar:
 			tc.tcDeclVar(instr)
+		case InstrTypeAdd:
+			fallthrough
+		case InstrTypeSub:
+			fallthrough
+		case InstrTypeMul:
+			fallthrough
+		case InstrTypeDiv:
+			tc.tcBinaryOp(instr, value.GetBiggerType, func(a, b value.ValueType) bool {
+				return value.IsNumberType(a) && value.IsNumberType(b)
+			})
+		case InstrTypeEqEq:
+			fallthrough
+		case InstrTypeNotEq:
+			fallthrough
+		case InstrTypeLessThan:
+			fallthrough
+		case InstrTypeGreaterThan:
+			fallthrough
+		case InstrTypeLessThanEq:
+			fallthrough
+		case InstrTypeGreaterThanEq:
+			tc.tcBinaryOp(instr, func(_, _ value.ValueType) value.ValueType {
+				return value.BoolType{}
+			}, func(a, b value.ValueType) bool {
+				return value.IsNumberType(a) && value.IsNumberType(b)
+			})
+		case InstrTypeNot:
+			tc.tcUnaryOp(instr, func(_ value.ValueType) value.ValueType {
+				return value.BoolType{}
+			}, value.IsBoolType)
+		case InstrTypeNeg:
+			tc.tcUnaryOp(instr, func(operandType value.ValueType) value.ValueType {
+				return operandType
+			}, value.IsNumberType)
+		case InstrTypeCondJmp:
+			tc.tcCondJmp(instr)
+		case InstrTypeLoad:
+			tc.tcLoad(instr)
+		case InstrTypeStore:
+			tc.tcStore(instr)
+		case InstrTypeReturn:
+			tc.tcReturn(instr)
 		default:
-			panic(fmt.Sprintf("unhandled instruction type: %s", instr.Type))
+			panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 		}
 	}, func(block *BasicBlock) {})
-
-	tc.symbol_table.ExitScope()
 
 	return tc.errors
 }

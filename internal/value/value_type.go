@@ -142,3 +142,53 @@ func ToFunctionType(value Function) *FunctionType {
 		ParamTypes: param_types,
 	}
 }
+
+func IsNumberType(value ValueType) bool {
+	switch value.(type) {
+	case IntType, FloatType:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsBoolType(value ValueType) bool {
+	switch value.(type) {
+	case BoolType:
+		return true
+	default:
+		return false
+	}
+}
+
+// currently supports only int and float
+func GetBiggerType(a, b ValueType) ValueType {
+	switch a := a.(type) {
+	case IntType:
+		switch b := b.(type) {
+		case IntType:
+			if a.Size >= b.Size {
+				return a
+			}
+			return b
+		case FloatType:
+			return b
+		default:
+			return a
+		}
+	case FloatType:
+		switch b := b.(type) {
+		case IntType:
+			return a
+		case FloatType:
+			if a.Size >= b.Size {
+				return a
+			}
+			return b
+		default:
+			return a
+		}
+	default:
+		return b
+	}
+}
