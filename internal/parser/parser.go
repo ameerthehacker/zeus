@@ -115,6 +115,12 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
 		},
+		token.TokenTypeTrue: func(parser *Parser, token *token.Token) ast.ExprNode {
+			return &ast.BooleanExprNode{Value: token}
+		},
+		token.TokenTypeFalse: func(parser *Parser, token *token.Token) ast.ExprNode {
+			return &ast.BooleanExprNode{Value: token}
+		},
 		token.TokenTypeIdentifier: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.IdentifierExprNode{Name: token}
 		},

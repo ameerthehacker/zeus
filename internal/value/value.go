@@ -12,6 +12,7 @@ const TEMP_VARIABLE_PREFIX = "%"
 
 type Value interface {
 	String() string
+	GetSpan() *token.Span
 }
 
 type Constant struct {
@@ -19,6 +20,10 @@ type Constant struct {
 	ValueType ValueType
 	Span *token.Span
 }
+
+func (i Constant) GetSpan() *token.Span {
+	return i.Span
+}	
 
 func (i Constant) String() string {
 	return fmt.Sprintf("%s %s", i.ValueType, i.Value)
@@ -28,6 +33,10 @@ type Var struct {
 	Name string
 	ValueType ValueType
 	Span *token.Span
+}
+
+func (v Var) GetSpan() *token.Span {
+	return v.Span
 }
 
 func (v Var) String() string {
@@ -46,6 +55,10 @@ type Function struct {
 	Params []*Var
 	ReturnType ValueType
 	Span *token.Span
+}
+
+func (f Function) GetSpan() *token.Span {
+	return f.Span
 }
 
 func (f Function) String() string {

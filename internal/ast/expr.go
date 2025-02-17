@@ -30,6 +30,10 @@ type NumberExprNode struct {
 	Value *token.Token
 }
 
+type BooleanExprNode struct {
+	Value *token.Token
+}
+
 type UnaryExprNode struct {
 	Operator *token.Token
 	Expr  ExprNode
@@ -197,11 +201,28 @@ func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[value.Value]) value.Va
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
+func (b *BooleanExprNode) GetSpan() *token.Span {
+	return b.Value.Span
+}
+
+func (b *BooleanExprNode) PrettyString() string {
+	return b.Value.Value
+}
+
+func (b *BooleanExprNode) String() string {
+	return fmt.Sprintf("{ type: BooleanNode, Value: %s, Span: %s }", b.Value, b.GetSpan())
+}
+
+func (b *BooleanExprNode) Accept(visitor ExprVisitor[value.Value]) value.Value {
+	return visitor.VisitBoolean(b)
+}
+
 type ExprVisitor[T value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
 	VisitNumber(node *NumberExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
 	VisitIdentifier(node *IdentifierExprNode) T
+	VisitBoolean(node *BooleanExprNode) T
 	VisitGroupingExpr(node *GroupingExprNode) T
 	VisitFunctionCallExpr(node *FunctionCallExprNode) T
 	VisitFunctionDeclExpr(node *FunctionDeclExprNode) T

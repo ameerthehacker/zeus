@@ -61,6 +61,17 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 		}
 	}
 
+	tc := ir.NewTypeChecker()
+	tcErrors := tc.TypeCheck(irBuilder.GetInstrs())
+
+	if len(tcErrors) > 0 {
+		return &SourceFile{
+			Path: entryPoint.Path,
+			Source: entryPoint.Source,
+			Errors: tcErrors,
+		}
+	}
+
 	irBuilder.Print()
 
 	return &SourceFile{

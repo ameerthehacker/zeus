@@ -2,11 +2,14 @@ package value
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/token"
 )
 
-type ValueType interface {}
+type ValueType interface {
+	String() string
+}
 
 type IntSize int
 
@@ -85,6 +88,14 @@ type FunctionType struct {
 	ParamTypes []ValueType
 }
 
+func (f FunctionType) String() string {
+	param_types := []string{}
+	for _, param := range f.ParamTypes {
+		param_types = append(param_types, param.String())
+	}
+	return fmt.Sprintf("(%s) => %s", strings.Join(param_types, ", "), f.ReturnType)
+}
+
 func ToValueType(t *token.Token) ValueType {
 	switch t.Type {
 	case token.TokenTypeInt8:
@@ -120,5 +131,17 @@ func AsFunctionType(value ValueType) *FunctionType {
 		return value
 	default:
 		return nil
+	}
+}
+
+func ToFunctionType(value Function) *FunctionType {
+	param_types := []ValueType{}
+	for _, param := range value.Params {
+		param_types = append(param_types, param.ValueType)
+	}
+
+	return &FunctionType{
+		ReturnType: value.ReturnType,
+		ParamTypes: param_types,
 	}
 }

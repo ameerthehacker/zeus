@@ -194,7 +194,6 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Valu
 func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
 	
 	params := []VarDecl{}
-	param_types := []value.ValueType{}
 
 	for _, param := range expr.Params {
 		params = append(params, VarDecl{
@@ -204,7 +203,6 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 			Initializer: nil,
 			Span: param.Identifier.Name.Span,
 		})
-		param_types = append(param_types, value.ToValueType(param.DataType))
 	}
 
 	current_block := g.ir_builder.GetInsertionBlock()
@@ -229,14 +227,9 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 
 	g.symbol_table.ExitScope()
 
-	return &VarDecl{
+	return &value.Var{
 		Name: expr.Name.Name.Value,
-		ValueType: value.FunctionType{
-			ReturnType: value.ToValueType(expr.ReturnType),
-			ParamTypes: param_types,
-		},
-		IsConst: true,
-		Initializer: nil,
+		ValueType: value.ToFunctionType(*fn),
 		Span: expr.Name.Name.Span,
 	}
 }
@@ -295,5 +288,20 @@ func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
 		return g.ir_builder.BuildUnaryOp(value, InstrTypeNot, expr.Operator.Span)
 	default:
 		panic(fmt.Sprintf("unknown unary operator: %s", expr.Operator.Type))
+	}
+}
+
+func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) value.Value {
+	if expr.Value.Type == token.TokenTypeTrue {
+		return &value.Constant{
+			Value: "true",
+			ValueType: value.BoolType{},
+			Span: expr.Value.Span,
+		}
+	}
+	return &value.Constant{
+		Value: "false",
+		ValueType: value.BoolType{},
+		Span: expr.Value.Span,
 	}
 }

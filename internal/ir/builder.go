@@ -133,8 +133,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclVar,
 		Input: DeclareVarInstrInput{
-			Name: unique_name,
-			ValueType: v.ValueType,
+			Variable: variable,
 			Initializer: v.Initializer,
 		},
 		Span: v.Span,
@@ -268,8 +267,7 @@ func toString(instrs []*Instr, indent int) string {
 		output = append(output, indent_str + instr.String())
 		switch instr.Type {
 		case InstrTypeDeclFunc:
-			input := AsDeclFuncInstrInput(instr.Input)
-			worklist = append(worklist, input.Body)
+			worklist = append(worklist, AsDeclFuncInstrInput(instr.Input).Body)
 		}
 
 		for len(worklist) > 0 {
@@ -289,4 +287,8 @@ func (b *IRBuilder) String() string {
 
 func (b *IRBuilder) Print() {
 	fmt.Println(b.String())
+}
+
+func (b* IRBuilder) GetInstrs() []*Instr {
+	return b.instrs
 }

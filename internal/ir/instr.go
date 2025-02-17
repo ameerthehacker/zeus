@@ -70,20 +70,19 @@ func AsUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 }
 
 type DeclareVarInstrInput struct {
-	Name string
-	ValueType value.ValueType
+	Variable *value.Var
 	Initializer value.Value
 	IsConst bool
 }
 
 func (i DeclareVarInstrInput) String() string {
 	if i.Initializer != nil {
-		return fmt.Sprintf("%s %s = %s", i.ValueType, i.Name, i.Initializer)
+		return fmt.Sprintf("%s %s = %s", i.Variable.ValueType, i.Variable.Name, i.Initializer)
 	}
-	return fmt.Sprintf("%s %s", i.ValueType, i.Name)
+	return fmt.Sprintf("%s %s", i.Variable.ValueType, i.Variable.Name)
 }
 
-func AsDeclareVarInstrInput(input InstrInput) *DeclareVarInstrInput {
+func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 	switch input := input.(type) {
 	case DeclareVarInstrInput:
 		return &input
@@ -322,7 +321,7 @@ func (i InstrType) String() string {
 
 type Instr struct {
 	Type InstrType
-	Output value.Value
+	Output *value.Var
 	Input InstrInput
 	Span   *token.Span
 }
