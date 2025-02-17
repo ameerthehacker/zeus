@@ -18,7 +18,6 @@ const (
 	I16
 	I32
 	I64
-	I128
 )
 
 func (i IntSize) String() string {
@@ -31,8 +30,6 @@ func (i IntSize) String() string {
 		return "32"
 	case I64:
 		return "64"
-	case I128:
-		return "128"
 	default:
 		panic(fmt.Sprintf("unknown int size: %d", i))
 	}

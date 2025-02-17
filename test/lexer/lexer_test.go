@@ -105,14 +105,13 @@ func TestZeusLexer(t *testing.T) {
 		},
 		{
 			name: "integer datatype",
-			input: "i8 i16 i32 i64 i128",
+			input: "i8 i16 i32 i64",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeInt8, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 2))),
 				token.NewToken(token.TokenTypeInt16, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 6))),
 				token.NewToken(token.TokenTypeInt32, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 10))),
 				token.NewToken(token.TokenTypeInt64, token.NewSpan(*token.NewPosition(1, 12), *token.NewPosition(1, 14))),
-				token.NewToken(token.TokenTypeInt128, token.NewSpan(*token.NewPosition(1, 16), *token.NewPosition(1, 19))),
-				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 20), *token.NewPosition(1, 20))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 15), *token.NewPosition(1, 15))),
 			},
 		},
 		{

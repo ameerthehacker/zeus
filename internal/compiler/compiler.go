@@ -62,7 +62,7 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 	}
 
 	tc := ir.NewTypeChecker()
-	tcErrors := tc.TypeCheck(irBuilder.GetInstrs())
+	tcErrors := tc.TypeCheck(irBuilder)
 
 	if len(tcErrors) > 0 {
 		return &SourceFile{

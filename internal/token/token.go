@@ -56,13 +56,11 @@ const (
 	TokenTypeInt16
 	TokenTypeInt32
 	TokenTypeInt64
-	TokenTypeInt128
 	// unsigned integer types
 	TokenTypeUInt8
 	TokenTypeUInt16
 	TokenTypeUInt32
 	TokenTypeUInt64
-	TokenTypeUInt128
 	// floating point types
 	TokenTypeFloat32
 	TokenTypeFloat64
@@ -149,8 +147,6 @@ func (t TokenType) String() string {
 		return "i32"
 	case TokenTypeInt64:
 		return "i64"
-	case TokenTypeInt128:
-		return "i128"
 	case TokenTypeUInt8:
 		return "u8"
 	case TokenTypeUInt16:
@@ -159,8 +155,6 @@ func (t TokenType) String() string {
 		return "u32"
 	case TokenTypeUInt64:
 		return "u64"
-	case TokenTypeUInt128:
-		return "u128"
 	case TokenTypeFloat32:
 		return "f32"
 	case TokenTypeFloat64:
@@ -190,12 +184,10 @@ var DataTypes = map[string]TokenType{
 	TokenTypeInt16.String(): TokenTypeInt16,
 	TokenTypeInt32.String(): TokenTypeInt32,
 	TokenTypeInt64.String(): TokenTypeInt64,
-	TokenTypeInt128.String(): TokenTypeInt128,
 	TokenTypeUInt8.String(): TokenTypeUInt8,
 	TokenTypeUInt16.String(): TokenTypeUInt16,
 	TokenTypeUInt32.String(): TokenTypeUInt32,
 	TokenTypeUInt64.String(): TokenTypeUInt64,
-	TokenTypeUInt128.String(): TokenTypeUInt128,
 	TokenTypeFloat32.String(): TokenTypeFloat32,
 	TokenTypeFloat64.String(): TokenTypeFloat64,
 	TokenTypeBoolean.String(): TokenTypeBoolean,

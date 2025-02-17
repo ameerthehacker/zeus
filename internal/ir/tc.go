@@ -79,29 +79,29 @@ func (tc *TypeChecker) getValueType(_value value.Value) value.ValueType {
 
 func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	switch a := a.(type) {
-	case *value.IntType:
-		b, ok := b.(*value.IntType)
+	case value.IntType:
+		b, ok := b.(value.IntType)
 		
 		if !ok {
 			return false
 		}
 
 		return a.Size >= b.Size
-	case *value.FloatType:
+	case value.FloatType:
 		// TODO: support int type also
-		b, ok := b.(*value.FloatType)
+		b, ok := b.(value.FloatType)
 		if !ok {
 			return false
 		}
 		return a.Size >= b.Size
-	case *value.BoolType:
-		_, ok := b.(*value.BoolType)
+	case value.BoolType:
+		_, ok := b.(value.BoolType)
 		if !ok {
 			return false
 		}
 		return true
-	case *value.FunctionType:
-		b, ok := b.(*value.FunctionType)
+	case value.FunctionType:
+		b, ok := b.(value.FunctionType)
 		if !ok || len(a.ParamTypes) != len(b.ParamTypes) {
 			return false
 		}
@@ -124,29 +124,20 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	return false
 }
 
-func (tc *TypeChecker) TypeCheck(instrs []*Instr) []*zeus_error.ZeusError {
-	worklist := []*BasicBlock{}
+func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
 
 	tc.symbol_table.EnterScope()
 
-	for _, instr := range instrs {
+	builder.Walk(func(instr *Instr) {
 		switch instr.Type {
 		case InstrTypeDeclFunc:
 			tc.tcFuncDecl(instr)
-			worklist = append(worklist, AsDeclFuncInstrInput(instr.Input).Body)
 		case InstrTypeDeclVar:
 			tc.tcDeclVar(instr)
 		default:
 			panic(fmt.Sprintf("unhandled instruction type: %s", instr.Type))
 		}
-
-		for len(worklist) > 0 {
-			block := worklist[0]
-			tc.TypeCheck(block.Instrs)
-			worklist = worklist[1:]
-			worklist = append(worklist, block.Successors...)
-		}
-	}
+	}, func(block *BasicBlock) {})
 
 	tc.symbol_table.ExitScope()
 

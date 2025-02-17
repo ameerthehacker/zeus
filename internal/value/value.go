@@ -135,7 +135,7 @@ func GetIntSize(number string) IntSize {
 	case value >= -9223372036854775808 && value <= 9223372036854775807:
 		return I64
 	default:
-		return I128
+		return I64
 	}
 }
 

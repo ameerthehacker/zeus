@@ -253,18 +253,12 @@ func (b *IRBuilder) BuildUnaryOp(value value.Value, op InstrType, span *token.Sp
 	return result
 }
 
-func toString(instrs []*Instr, indent int) string {
+func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
 	worklist := []*BasicBlock{}
-	output := []string{}
-	indent_str := strings.Repeat(" ", indent * 2)
 
-	appendBlock := func(block *BasicBlock) {
-		output = append(output, indent_str + fmt.Sprintf("%d:", block.Id))
-		output = append(output, toString(block.Instrs, indent + 1))
-	}
+	for _, instr := range b.instrs {
+		fnInstr(instr)
 
-	for _, instr := range instrs {
-		output = append(output, indent_str + instr.String())
 		switch instr.Type {
 		case InstrTypeDeclFunc:
 			worklist = append(worklist, AsDeclFuncInstrInput(instr.Input).Body)
@@ -273,16 +267,24 @@ func toString(instrs []*Instr, indent int) string {
 		for len(worklist) > 0 {
 			block := worklist[0]
 			worklist = worklist[1:]
-			appendBlock(block)
+			fnBlock(block)
+			// walk the instructions in the block
+			for _, instr := range block.Instrs {fnInstr(instr)}
 			worklist = append(worklist, block.Successors...)
 		}
 	}
-
-	return strings.Join(output, "\n")
 }
 
 func (b *IRBuilder) String() string {
-	return toString(b.instrs, 0)
+	output := []string{}
+
+	b.Walk(func(instr *Instr) {
+		output = append(output, instr.String())
+	}, func(block *BasicBlock) {
+		output = append(output, fmt.Sprintf("%d:", block.Id))
+	})
+
+	return strings.Join(output, "\n")
 }
 
 func (b *IRBuilder) Print() {

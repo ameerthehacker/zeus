@@ -192,7 +192,6 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Valu
 }
 
 func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
-	
 	params := []VarDecl{}
 
 	for _, param := range expr.Params {
@@ -305,3 +304,4 @@ func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) value.Value {
 		Span: expr.Value.Span,
 	}
 }
+
