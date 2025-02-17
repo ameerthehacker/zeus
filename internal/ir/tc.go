@@ -161,7 +161,12 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
-	if !tc.cmpValueType(input.Addr.ValueType, valueType) {
+	if input.Addr.IsTempVariable() {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "invalid assignment",
+			Span: input.Addr.Span,
+		})
+	} else if !tc.cmpValueType(input.Addr.ValueType, valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", valueType, input.Addr.ValueType),
 			Span: instr.Span,

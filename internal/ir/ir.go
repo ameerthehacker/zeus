@@ -82,8 +82,11 @@ func (g *IRGen) VisitExprStmt(stmt *ast.ExprStmtNode) {
 }
 
 func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
-	value := stmt.Expr.Accept(g)
-	g.ir_builder.BuildReturn(value, stmt.Expr.GetSpan())
+	if stmt.Expr == nil {
+		g.ir_builder.BuildReturn(nil, stmt.GetSpan())
+	} else {
+		g.ir_builder.BuildReturn(stmt.Expr.Accept(g), stmt.GetSpan())
+	}
 }
 
 func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {

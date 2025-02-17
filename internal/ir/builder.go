@@ -45,13 +45,14 @@ func (b *IRBuilder) generateUniqueSymbolName(name string) string {
 	return unique_name
 }
 
-func (b *IRBuilder) createTempVariable() *value.Var {
+func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
 	temp_variable_name := value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.temp_var_count)
 	b.temp_var_count++
 
 	return &value.Var{
 		Name: temp_variable_name,
 		ValueType: nil,
+		Span: span,
 	}
 }
 
@@ -89,7 +90,7 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 }
 
 func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *token.Span) value.Value {
-	result := b.createTempVariable()
+	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
 		Type: op,
@@ -105,7 +106,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *t
 }
 
 func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
-	result := b.createTempVariable()
+	result := b.createTempVariable(addr.Span)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeLoad,
@@ -215,7 +216,7 @@ func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlo
 }
 
 func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, span *token.Span) value.Value {
-	result := b.createTempVariable()
+	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeCallFunc,
@@ -241,7 +242,7 @@ func (b *IRBuilder) BuildReturn(value value.Value, span *token.Span) {
 }
 
 func (b *IRBuilder) BuildUnaryOp(value value.Value, op InstrType, span *token.Span) value.Value {
-	result := b.createTempVariable()
+	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
 		Type: op,
