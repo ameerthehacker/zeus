@@ -73,7 +73,7 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 			return false
 		}
 
-		return a.Size >= b.Size
+		return a.Signed == b.Signed && a.Size >= b.Size
 	case value.FloatType:
 		bFloat, okFloat := b.(value.FloatType)
 		_, okInt := b.(value.IntType)

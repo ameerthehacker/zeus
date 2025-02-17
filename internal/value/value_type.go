@@ -43,7 +43,7 @@ type IntType struct {
 func (i IntType) String() string {
 	prefix := "i"
 	if !i.Signed {
-		prefix = "u" + prefix
+		prefix = "u"
 	}
 	return fmt.Sprintf("%s%s", prefix, i.Size)
 }
@@ -162,15 +162,26 @@ func IsBoolType(value ValueType) bool {
 }
 
 // currently supports only int and float
+func GetBiggerIntType(a, b IntType) ValueType {
+	if a.Size >= b.Size {
+		return a
+	}
+	return b
+}
+
+func GetBiggerFloatType(a, b FloatType) ValueType {
+	if a.Size >= b.Size {
+		return a
+	}
+	return b
+}
+
 func GetBiggerType(a, b ValueType) ValueType {
 	switch a := a.(type) {
 	case IntType:
 		switch b := b.(type) {
 		case IntType:
-			if a.Size >= b.Size {
-				return a
-			}
-			return b
+			return GetBiggerIntType(a, b)
 		case FloatType:
 			return b
 		default:
@@ -181,10 +192,7 @@ func GetBiggerType(a, b ValueType) ValueType {
 		case IntType:
 			return a
 		case FloatType:
-			if a.Size >= b.Size {
-				return a
-			}
-			return b
+			return GetBiggerFloatType(a, b)
 		default:
 			return a
 		}
