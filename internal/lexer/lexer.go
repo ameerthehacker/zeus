@@ -170,74 +170,62 @@ import (
 
 		for !l.isEOF(0) {
 			char := l.source[l.cursor]
-			// unicode.IsSpace(char) true for \n and \r so we need to check for that first
-			if l.isNewLine() {
+			position := l.getCurrentPosition()
+
+			switch {
+			case l.isNewLine():
 				l.advance()
 				l.newLine()
-			} else if unicode.IsSpace(char) {
+			case unicode.IsSpace(char):
 				l.advance()
-			} else if char == '[' {
-				position := l.getCurrentPosition()
+			case char == '[':
 				l.pushToken(token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == ']' {
-				position := l.getCurrentPosition()
+			case char == ']':
 				l.pushToken(token.NewToken(token.TokenTypeRightBracket, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '(' {
-				position := l.getCurrentPosition()
+			case char == '(':
 				l.pushToken(token.NewToken(token.TokenTypeLeftParen, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == ')' {
-				position := l.getCurrentPosition()
+			case char == ')':
 				l.pushToken(token.NewToken(token.TokenTypeRightParen, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '{' {
-				position := l.getCurrentPosition()
+			case char == '{':
 				l.pushToken(token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '}' {
-				position := l.getCurrentPosition()
+			case char == '}':
 				l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == ';' {
-				position := l.getCurrentPosition()
+			case char == ';':
 				l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == ',' {
-				position := l.getCurrentPosition()
+			case char == ',':
 				l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '+' {
-				position := l.getCurrentPosition()
+			case char == '+':
 				l.pushToken(token.NewToken(token.TokenTypePlus, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '-' {
-				position := l.getCurrentPosition()
+			case char == '-':
 				l.pushToken(token.NewToken(token.TokenTypeMinus, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '*' {
-				position := l.getCurrentPosition()
+			case char == '*':
 				l.pushToken(token.NewToken(token.TokenTypeStar, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '/' {
+			case char == '/':
 				if l.matchNextRune('/') {
 					l.consumeLine()
 				} else {
-					position := l.getCurrentPosition()
 					l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*position, *position)))
 					l.advance()
 				}
-			} else if char == ':' {
-				position := l.getCurrentPosition()
+			case char == ':':
 				l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '.' {
-				position := l.getCurrentPosition()
+			case char == '.':
 				l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(*position, *position)))
 				l.advance()
-			} else if char == '=' {
-				startPosition := l.getCurrentPosition()
+			case char == '=':
+				startPosition := position
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
@@ -246,8 +234,8 @@ import (
 					l.pushToken(token.NewToken(token.TokenTypeEqual, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
-			} else if char == '!' {
-				startPosition := l.getCurrentPosition()
+			case char == '!':
+				startPosition := position
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
@@ -256,8 +244,8 @@ import (
 					l.pushToken(token.NewToken(token.TokenTypeBang, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
-			} else if char == '>' {
-				startPosition := l.getCurrentPosition()
+			case char == '>':
+				startPosition := position
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
@@ -266,8 +254,8 @@ import (
 					l.pushToken(token.NewToken(token.TokenTypeGreaterThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
-			} else if char == '<' {
-				startPosition := l.getCurrentPosition()
+			case char == '<':
+				startPosition := position
 				if l.matchNextRune('=') {
 					l.advance()
 					endPosition := l.getCurrentPosition()
@@ -276,12 +264,11 @@ import (
 					l.pushToken(token.NewToken(token.TokenTypeLessThan, token.NewSpan(*startPosition, *startPosition)))
 				}
 				l.advance()
-			} else if unicode.IsDigit(char) {
+			case unicode.IsDigit(char):
 				l.eatNumber()
-			} else if isIdentifierRune(char) {
+			case isIdentifierRune(char):
 				l.eatIdentifierOrKeywordOrDatatype()
-			} else {
-				position := l.getCurrentPosition()
+			default:
 				l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("unknown token '%c'", char), token.NewSpan(*position, *position)))
 				l.advance()
 			}
