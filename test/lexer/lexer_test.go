@@ -104,6 +104,14 @@ func TestZeusLexer(t *testing.T) {
 			},
 		},
 		{
+			name: "void datatype",
+			input: "void",
+			expected: []*token.Token{
+				token.NewToken(token.TokenTypeVoid, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 5))),
+			},
+		},
+		{
 			name: "integer datatype",
 			input: "i8 i16 i32 i64",
 			expected: []*token.Token{

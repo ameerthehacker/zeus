@@ -80,6 +80,12 @@ func (b BoolType) String() string {
 	return "bool"
 }
 
+type VoidType struct {}
+
+func (v VoidType) String() string {
+	return "void"
+}
+
 type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
@@ -117,6 +123,8 @@ func ToValueType(t *token.Token) ValueType {
 		return FloatType{Size: F64}
 	case token.TokenTypeBoolean:
 		return BoolType{}
+	case token.TokenTypeVoid:
+		return VoidType{}
 	default:
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}
@@ -155,6 +163,15 @@ func IsNumberType(value ValueType) bool {
 func IsBoolType(value ValueType) bool {
 	switch value.(type) {
 	case BoolType:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsVoidType(value ValueType) bool {
+	switch value.(type) {
+	case VoidType:
 		return true
 	default:
 		return false

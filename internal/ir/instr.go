@@ -161,7 +161,10 @@ type ReturnInstrInput struct {
 }
 
 func (i ReturnInstrInput) String() string {
-	return i.Value.String()
+	if i.Value != nil {
+		return i.Value.String()
+	}
+	return "void"
 }
 
 func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {

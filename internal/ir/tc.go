@@ -41,7 +41,13 @@ func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 	decl_var := AsDeclVarInstrInput(instr.Input)
-	if decl_var.Initializer != nil {
+
+	if value.IsVoidType(decl_var.Variable.ValueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot declare variable of type '%s'", decl_var.Variable.ValueType),
+			Span: decl_var.Variable.Span,
+		})
+	} else if decl_var.Initializer != nil {
 		if !tc.cmpValueType(decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)) {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)),
@@ -60,7 +66,7 @@ func (tc *TypeChecker) getValueType(_value value.Value) value.ValueType {
 	case *value.Constant:
 		return _value.ValueType
 	default:
-		panic(fmt.Sprintf("unknown value: %T", _value))
+		panic(fmt.Sprintf("cannot get value type of value: %T", _value))
 	}
 }
 
@@ -186,12 +192,58 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 		return
 	}
 
-	if !tc.cmpValueType(tc.current_function.ReturnType, tc.getValueType(input.Value)) {
+	if (value.IsVoidType(tc.current_function.ReturnType) && input.Value != nil) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "cannot return a value from void function",
+			Span: instr.Span,
+		})
+	} else if (!value.IsVoidType(tc.current_function.ReturnType) && input.Value == nil) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("return value of type '%s' is expected", tc.getValueType(input.Value)),
+			Span: instr.Span,
+		})
+	} else if (value.IsVoidType(tc.current_function.ReturnType) && input.Value == nil) {
+		return;
+	} else if (!tc.cmpValueType(tc.current_function.ReturnType, tc.getValueType(input.Value))) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.current_function.ReturnType),
 			Span: instr.Span,
 		})
 	}
+}
+
+func (tc *TypeChecker) tcCallFunc(instr *Instr) {
+	input := AsCallFuncInstrInput(instr.Input)
+	function := value.AsFunction(input.Callee)
+
+	if function == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "expression is not callable",
+			Span: input.Callee.GetSpan(),
+		})
+
+		return;
+	}
+
+	functionType := value.ToFunctionType(*function)
+
+	if len(input.Args) != len(functionType.ParamTypes) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("expected %d arguments for function '%s', but found %d", len(functionType.ParamTypes), function.Name, len(input.Args)),
+			Span: input.Callee.GetSpan(),
+		})
+	} else {
+		for i := range input.Args {
+			if !tc.cmpValueType(functionType.ParamTypes[i], tc.getValueType(input.Args[i])) {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i + 1, tc.getValueType(input.Args[i]), functionType.ParamTypes[i]),
+					Span: input.Args[i].GetSpan(),
+				})
+			}
+		}
+	}
+
+	instr.Output.ValueType = functionType.ReturnType
 }
 
 func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
@@ -245,10 +297,14 @@ func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
 			tc.tcStore(instr)
 		case InstrTypeReturn:
 			tc.tcReturn(instr)
+		case InstrTypeCallFunc:
+			tc.tcCallFunc(instr)
 		default:
 			panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 		}
-	}, func(block *BasicBlock) {})
+	}, func(block *BasicBlock) {
+		
+	})
 
 	return tc.errors
 }

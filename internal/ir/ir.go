@@ -107,8 +107,8 @@ func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
 	g.ir_builder.BuildJmp(merge_block, nil)
 	
 	// generate the else block
-	g.ir_builder.SetInsertionBlock(else_block)
 	if stmt.ElseStmt != nil {
+		g.ir_builder.SetInsertionBlock(else_block)
 		stmt.ElseStmt.Accept(g)
 	}
 

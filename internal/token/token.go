@@ -51,6 +51,7 @@ const (
 	keyword_end
 	// data types
 	datatype_beg
+	TokenTypeVoid
 	// signed integer types
 	TokenTypeInt8
 	TokenTypeInt16
@@ -139,6 +140,8 @@ func (t TokenType) String() string {
 		return "true"
 	case TokenTypeFalse:
 		return "false"
+	case TokenTypeVoid:
+		return "void"
 	case TokenTypeInt8:
 		return "i8"
 	case TokenTypeInt16:
@@ -191,6 +194,7 @@ var DataTypes = map[string]TokenType{
 	TokenTypeFloat32.String(): TokenTypeFloat32,
 	TokenTypeFloat64.String(): TokenTypeFloat64,
 	TokenTypeBoolean.String(): TokenTypeBoolean,
+	TokenTypeVoid.String(): TokenTypeVoid,
 }
 
 type Position struct {
