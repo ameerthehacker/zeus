@@ -179,10 +179,8 @@ func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {
 }
 
 type DeclFuncInstrInput struct {
-	Name string
-	Args []VarDecl
+	Function value.Function
 	Body *BasicBlock
-	ReturnType value.ValueType
 }
 
 func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
@@ -197,12 +195,7 @@ func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
 }
 
 func (i DeclFuncInstrInput) String() string {
-	args := []string{}
-	for _, arg := range i.Args {
-		args = append(args, fmt.Sprintf("%s %s", arg.ValueType, arg.Name))
-	}
-
-	return fmt.Sprintf("%s(%s) %s", i.Name, strings.Join(args, ", "), i.ReturnType)
+	return i.Function.String()
 }
 
 type JmpInstrInput struct {

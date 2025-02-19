@@ -11,17 +11,17 @@ import (
 )
 
 type IRGen struct {
-	ir_builder *IRBuilder
-	is_lvalue_expr bool
-	symbol_table *symbol_table.SymbolTable[value.Value]
+	irBuilder *IRBuilder
+	isLValueExpr bool
+	symbolTable *symbol_table.SymbolTable[value.Value]
 	errors []*zeus_error.ZeusError
 }
 
 func NewIRGen(ir_builder *IRBuilder) *IRGen {
 	return &IRGen{
-		ir_builder: ir_builder,
-		is_lvalue_expr: false,
-		symbol_table: symbol_table.NewSymbolTable[value.Value](),
+		irBuilder: ir_builder,
+		isLValueExpr: false,
+		symbolTable: symbol_table.NewSymbolTable[value.Value](),
 	}
 }
 
@@ -30,26 +30,26 @@ func (g *IRGen) pushError(err *zeus_error.ZeusError) {
 }
 
 func (g *IRGen) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
-	g.symbol_table.EnterScope()
+	g.symbolTable.EnterScope()
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
 	}
-	g.symbol_table.ExitScope()
+	g.symbolTable.ExitScope()
 
 	return g.errors
 }
 
 func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
-	g.symbol_table.EnterScope()
+	g.symbolTable.EnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
 	}
-	g.symbol_table.ExitScope()
+	g.symbolTable.ExitScope()
 }
 
 func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
-		if _, ok := g.symbol_table.GetSymbolInCurrentScope(decl.Identifier.Name.Value); ok {
+		if _, ok := g.symbolTable.GetSymbolInCurrentScope(decl.Identifier.Name.Value); ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", decl.Identifier.Name.Value), decl.Identifier.Name.Span))
 			return
 		}
@@ -65,7 +65,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			isConst = true
 		}
 
-		variable := g.ir_builder.BuildVarDecl(&VarDecl{
+		variable := g.irBuilder.BuildVarDecl(&VarDecl{
 			Name: decl.Identifier.Name.Value,
 			ValueType: value.ToValueType(decl.DataType),
 			Span: decl.Identifier.Name.Span,
@@ -73,7 +73,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			Initializer: initializer,
 		})
 
-		g.symbol_table.DeclareSymbol(decl.Identifier.Name.Value, variable)
+		g.symbolTable.DeclareSymbol(decl.Identifier.Name.Value, variable)
 	}
 }
 
@@ -83,9 +83,9 @@ func (g *IRGen) VisitExprStmt(stmt *ast.ExprStmtNode) {
 
 func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 	if stmt.Expr == nil {
-		g.ir_builder.BuildReturn(nil, stmt.GetSpan())
+		g.irBuilder.BuildReturn(nil, stmt.GetSpan())
 	} else {
-		g.ir_builder.BuildReturn(stmt.Expr.Accept(g), stmt.GetSpan())
+		g.irBuilder.BuildReturn(stmt.Expr.Accept(g), stmt.GetSpan())
 	}
 }
 
@@ -93,85 +93,85 @@ func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
 	// create the condition
 	condition := stmt.Condition.Accept(g)
 	// create the required blocks
-	then_block := g.ir_builder.BuildSuccessorBlock()
-	else_block := g.ir_builder.BuildSuccessorBlock()
-	merge_block := g.ir_builder.BuildSuccessorBlock()
+	then_block := g.irBuilder.BuildSuccessorBlock()
+	else_block := g.irBuilder.BuildSuccessorBlock()
+	merge_block := g.irBuilder.BuildSuccessorBlock()
 
 	// build jump to if block
-	g.ir_builder.BuildCondJmp(then_block, else_block, condition, stmt.Condition.GetSpan())
+	g.irBuilder.BuildCondJmp(then_block, else_block, condition, stmt.Condition.GetSpan())
 
 	// generate the then block
-	g.ir_builder.SetInsertionBlock(then_block)
+	g.irBuilder.SetInsertionBlock(then_block)
 	stmt.ThenStmt.Accept(g)
 	// jump to the merge block
-	g.ir_builder.BuildJmp(merge_block, nil)
+	g.irBuilder.BuildJmp(merge_block, nil)
 	
 	// generate the else block
 	if stmt.ElseStmt != nil {
-		g.ir_builder.SetInsertionBlock(else_block)
+		g.irBuilder.SetInsertionBlock(else_block)
 		stmt.ElseStmt.Accept(g)
 	}
 
-	g.ir_builder.SetInsertionBlock(merge_block)
+	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
 func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	
 	// create the required blocks
-	condition_block := g.ir_builder.BuildSuccessorBlock()
-	body_block := g.ir_builder.BuildSuccessorBlock()
-	merge_block := g.ir_builder.BuildSuccessorBlock()
+	condition_block := g.irBuilder.BuildSuccessorBlock()
+	body_block := g.irBuilder.BuildSuccessorBlock()
+	merge_block := g.irBuilder.BuildSuccessorBlock()
 
 	// build condition block
-	g.ir_builder.SetInsertionBlock(condition_block)
+	g.irBuilder.SetInsertionBlock(condition_block)
 	// create the condition
 	condition := stmt.Condition.Accept(g)
-	g.ir_builder.BuildCondJmp(body_block, merge_block, condition, stmt.Condition.GetSpan())
+	g.irBuilder.BuildCondJmp(body_block, merge_block, condition, stmt.Condition.GetSpan())
 
 	// generate the body block
-	g.ir_builder.SetInsertionBlock(body_block)
+	g.irBuilder.SetInsertionBlock(body_block)
 	stmt.Body.Accept(g)
-	g.ir_builder.BuildJmp(condition_block, nil)
+	g.irBuilder.BuildJmp(condition_block, nil)
 
 	// generate the merge block
-	g.ir_builder.SetInsertionBlock(merge_block)
+	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
 func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) value.Value {
-	g.is_lvalue_expr = expr.Operator.Type == token.TokenTypeEqual
+	g.isLValueExpr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
-	g.is_lvalue_expr = false
+	g.isLValueExpr = false
 	right := expr.Right.Accept(g)
 	
 	switch expr.Operator.Type {
 	case token.TokenTypePlus:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeAdd, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeAdd, expr.GetSpan())
 	case token.TokenTypeMinus:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeSub, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeSub, expr.GetSpan())
 	case token.TokenTypeStar:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeMul, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMul, expr.GetSpan())
 	case token.TokenTypeSlash:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
 	case token.TokenTypeBangEqual:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeNotEq, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeNotEq, expr.GetSpan())
 	case token.TokenTypeEqualEqual:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeEqEq, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeEqEq, expr.GetSpan())
 	case token.TokenTypeLessThan:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeLessThan, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeLessThan, expr.GetSpan())
 	case token.TokenTypeLessThanEqual:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeLessThanEq, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeLessThanEq, expr.GetSpan())
 	case token.TokenTypeGreaterThan:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThan, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThan, expr.GetSpan())
 	case token.TokenTypeGreaterThanEqual:
-		return g.ir_builder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
 	case token.TokenTypeEqual:
 		addr := value.AsVar(left)
 		if addr == nil {
 			panic(fmt.Sprintf("invalid lvalue: %s", left))
 		}
 
-		g.ir_builder.BuildStore(addr, right, expr.GetSpan())
-		return g.ir_builder.BuildLoad(addr, expr.GetSpan())
+		g.irBuilder.BuildStore(addr, right, expr.GetSpan())
+		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
 
 	default:
 		panic(fmt.Sprintf("unknown binary operator: %s", expr.Operator.Type))
@@ -191,7 +191,7 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Valu
 
 	addr := value.AsFunction(callee)
 
-	return g.ir_builder.BuildCallFunc(addr, params, expr.GetSpan())
+	return g.irBuilder.BuildCallFunc(addr, params, expr.GetSpan())
 }
 
 func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
@@ -207,27 +207,27 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 		})
 	}
 
-	current_block := g.ir_builder.GetInsertionBlock()
+	current_block := g.irBuilder.GetInsertionBlock()
 	// functions are global
-	g.ir_builder.SetInsertionBlock(nil)
-	body := g.ir_builder.BuildBasicBlock()
-	fn := g.ir_builder.BuildFuncDecl(expr.Name.Name.Value, params, body, value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
-	g.symbol_table.DeclareSymbol(expr.Name.Name.Value, fn)
-	g.symbol_table.EnterScope()
+	g.irBuilder.SetInsertionBlock(nil)
+	body := g.irBuilder.BuildBasicBlock()
+	fn := g.irBuilder.BuildFuncDecl(expr.Name.Name.Value, params, body, value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
+	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, fn)
+	g.symbolTable.EnterScope()
 
 	for index, param := range expr.Params {
-		if _, ok := g.symbol_table.GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
+		if _, ok := g.symbolTable.GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare parameter '%s' in the same scope", param.Identifier.Name.Value), param.Identifier.Name.Span))
 			return nil
 		}
-		g.symbol_table.DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
+		g.symbolTable.DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
 	}
 
-	g.ir_builder.SetInsertionBlock(body)
+	g.irBuilder.SetInsertionBlock(body)
 	expr.Body.Accept(g)
-	g.ir_builder.SetInsertionBlock(current_block)
+	g.irBuilder.SetInsertionBlock(current_block)
 
-	g.symbol_table.ExitScope()
+	g.symbolTable.ExitScope()
 
 	return &value.Var{
 		Name: expr.Name.Name.Value,
@@ -237,7 +237,7 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 }
 
 func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
-	variable, ok := g.symbol_table.GetSymbol(expr.Name.Value)
+	variable, ok := g.symbolTable.GetSymbol(expr.Name.Value)
 
 	if !ok {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("undefined identifier '%s'", expr.Name.Value), expr.Name.Span))
@@ -250,13 +250,13 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 		return asFn
 	}
 
-	if g.is_lvalue_expr {
+	if g.isLValueExpr {
 		return variable
 	}
 
 	asVar := value.AsVar(variable)
 
-	return g.ir_builder.BuildLoad(asVar, expr.Name.Span)
+	return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
 }
 
 func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {
@@ -285,9 +285,9 @@ func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
 
 	switch expr.Operator.Type {
 	case token.TokenTypeMinus:
-		return g.ir_builder.BuildUnaryOp(value, InstrTypeNeg, expr.Operator.Span)
+		return g.irBuilder.BuildUnaryOp(value, InstrTypeNeg, expr.Operator.Span)
 	case token.TokenTypeBang:
-		return g.ir_builder.BuildUnaryOp(value, InstrTypeNot, expr.Operator.Span)
+		return g.irBuilder.BuildUnaryOp(value, InstrTypeNot, expr.Operator.Span)
 	default:
 		panic(fmt.Sprintf("unknown unary operator: %s", expr.Operator.Type))
 	}

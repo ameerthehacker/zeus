@@ -139,13 +139,13 @@ func AsFunctionType(value ValueType) *FunctionType {
 	}
 }
 
-func ToFunctionType(value Function) *FunctionType {
+func ToFunctionType(value Function) FunctionType {
 	param_types := []ValueType{}
 	for _, param := range value.Params {
 		param_types = append(param_types, param.ValueType)
 	}
 
-	return &FunctionType{
+	return FunctionType{
 		ReturnType: value.ReturnType,
 		ParamTypes: param_types,
 	}

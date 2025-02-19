@@ -12,10 +12,10 @@ import (
 
 type IRBuilder struct {
 	instrs      []*Instr
-	current_block *BasicBlock
-	temp_var_count int
-	blocks_count int
-	symbol_table *symbol_table.SymbolTable[value.Value]
+	currentBlock *BasicBlock
+	tempVarCount int
+	blocksCount int
+	symbolTable *symbol_table.SymbolTable[value.Value]
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -23,10 +23,10 @@ func NewIRBuilder() *IRBuilder {
 	symbol_table.EnterScope()
 
 	return &IRBuilder{
-		current_block: nil,
-		temp_var_count: 0,
-		blocks_count: 0,
-		symbol_table: symbol_table,
+		currentBlock: nil,
+		tempVarCount: 0,
+		blocksCount: 0,
+		symbolTable: symbol_table,
 	}
 }
 
@@ -35,7 +35,7 @@ func (b *IRBuilder) generateUniqueSymbolName(name string) string {
 	count := 1
 
 	for {
-		if _, ok := b.symbol_table.GetSymbol(unique_name); !ok {
+		if _, ok := b.symbolTable.GetSymbol(unique_name); !ok {
 			break
 		}
 		unique_name = name + strconv.Itoa(count)
@@ -46,8 +46,8 @@ func (b *IRBuilder) generateUniqueSymbolName(name string) string {
 }
 
 func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
-	temp_variable_name := value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.temp_var_count)
-	b.temp_var_count++
+	temp_variable_name := value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.tempVarCount)
+	b.tempVarCount++
 
 	return &value.Var{
 		Name: temp_variable_name,
@@ -57,36 +57,36 @@ func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
 }
 
 func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
-	return b.current_block
+	return b.currentBlock
 }
 
 func (b *IRBuilder) pushInstr(instr *Instr) {
-	if b.current_block == nil {
+	if b.currentBlock == nil {
 		b.instrs = append(b.instrs, instr)
 	} else {
-		b.current_block.Instrs = append(b.current_block.Instrs, instr)
+		b.currentBlock.Instrs = append(b.currentBlock.Instrs, instr)
 	}
 }
 
 func (b *IRBuilder) BuildSuccessorBlock() *BasicBlock {
 	new_block := b.BuildBasicBlock()
 
-	if b.current_block != nil {
-		b.current_block.Successors = append(b.current_block.Successors, new_block)
+	if b.currentBlock != nil {
+		b.currentBlock.Successors = append(b.currentBlock.Successors, new_block)
 	}
 
 	return new_block
 }
 
 func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
-	new_block := NewBasicBlock(b.blocks_count)
-	b.blocks_count++
+	new_block := NewBasicBlock(b.blocksCount)
+	b.blocksCount++
 
 	return new_block
 }
 
 func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
-	b.current_block = block
+	b.currentBlock = block
 }
 
 func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *token.Span) value.Value {
@@ -129,7 +129,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 		Span: v.Span,
 	}
 
-	b.symbol_table.DeclareSymbol(unique_name, variable)
+	b.symbolTable.DeclareSymbol(unique_name, variable)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclVar,
@@ -155,7 +155,7 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 }
 
 func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
-	b.symbol_table.EnterScope()
+	b.symbolTable.EnterScope()
 	params := []*value.Var{}
 	for _, arg := range args {
 		variable := &value.Var{
@@ -163,34 +163,32 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock,
 			ValueType: arg.ValueType,
 			Span: arg.Span,
 		}
-		b.symbol_table.DeclareSymbol(variable.Name, variable)
+		b.symbolTable.DeclareSymbol(variable.Name, variable)
 
 		params = append(params, variable)
 	}
 
-	fn := &value.Function{
+	fn := value.Function{
 		Name:  b.generateUniqueSymbolName(name),
 		ReturnType: return_type,
 		Params: params,
 		Span: span,
 	}
 	// functions are global
-	b.symbol_table.DeclareGlobalSymbol(fn.Name, fn)
+	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclFunc,
 		Input: DeclFuncInstrInput{
-			Name: fn.Name,
-			Args: args,
-			ReturnType: return_type,
+			Function: fn,
 			Body: body,
 		},
 		Span: span,
 	})
 
-	b.symbol_table.ExitScope()
+	b.symbolTable.ExitScope()
 
-	return fn
+	return &fn
 }
 
 func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {

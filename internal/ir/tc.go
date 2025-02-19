@@ -9,7 +9,7 @@ import (
 
 type TypeChecker struct {
 	errors []*zeus_error.ZeusError
-	current_function *value.Function
+	currentFunction *value.Function
 }
 
 func NewTypeChecker() *TypeChecker {
@@ -22,21 +22,7 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 
 func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 	func_decl := AsDeclFuncInstrInput(instr.Input)
-	params := []*value.Var{}
-	for _, param := range func_decl.Args {
-		params = append(params, &value.Var{
-			Name: param.Name,
-			ValueType: param.ValueType,
-			Span: param.Span,
-		})
-	}
-
-	tc.current_function = &value.Function{
-		Params: params,
-		ReturnType: func_decl.ReturnType,
-		Span: instr.Span,
-		Name: func_decl.Name,
-	}
+	tc.currentFunction = &func_decl.Function
 }
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {
@@ -183,7 +169,7 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 func (tc *TypeChecker) tcReturn(instr *Instr) {
 	input := AsReturnInstrInput(instr.Input)
 
-	if tc.current_function == nil {
+	if tc.currentFunction == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "return statement outside of function",
 			Span: instr.Span,
@@ -192,21 +178,21 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 		return
 	}
 
-	if (value.IsVoidType(tc.current_function.ReturnType) && input.Value != nil) {
+	if (value.IsVoidType(tc.currentFunction.ReturnType) && input.Value != nil) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot return a value from void function",
 			Span: instr.Span,
 		})
-	} else if (!value.IsVoidType(tc.current_function.ReturnType) && input.Value == nil) {
+	} else if (!value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("return value of type '%s' is expected", tc.getValueType(input.Value)),
 			Span: instr.Span,
 		})
-	} else if (value.IsVoidType(tc.current_function.ReturnType) && input.Value == nil) {
+	} else if (value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil) {
 		return;
-	} else if (!tc.cmpValueType(tc.current_function.ReturnType, tc.getValueType(input.Value))) {
+	} else if (!tc.cmpValueType(tc.currentFunction.ReturnType, tc.getValueType(input.Value))) {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.current_function.ReturnType),
+			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.currentFunction.ReturnType),
 			Span: instr.Span,
 		})
 	}

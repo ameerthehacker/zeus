@@ -2,19 +2,24 @@ package compiler
 
 import (
 	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/codegen"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
-type Compiler struct {}
+type Compiler struct {
+	codegen *codegen.Codegen
+}
 
 type SourceFile struct {
 	Path string
 	Source string
 	Program *ast.ProgramNode
+	Module *codegen.CodegenModule
 	Errors []*zeus_error.ZeusError
+	IRBuilder *ir.IRBuilder
 }
 
 type Input struct {
@@ -23,7 +28,9 @@ type Input struct {
 }
 
 func NewCompiler() *Compiler {
-	return &Compiler{}
+	return &Compiler{
+		codegen: codegen.NewCodegen(),
+	}
 }
 
 func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
@@ -64,8 +71,6 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 	tc := ir.NewTypeChecker()
 	tcErrors := tc.TypeCheck(irBuilder)
 
-	irBuilder.Print()
-
 	if len(tcErrors) > 0 {
 		return &SourceFile{
 			Path: entryPoint.Path,
@@ -74,10 +79,15 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 		}
 	}
 
+	codegenModule := c.codegen.NewModule(entryPoint.Path)
+	codegenModule.Generate(*irBuilder)
+
 	return &SourceFile{
 		Path: entryPoint.Path,
 		Source: entryPoint.Source,
 		Program: program,
 		Errors: []*zeus_error.ZeusError{},
+		Module: codegenModule,
+		IRBuilder: irBuilder,
 	}
 }
