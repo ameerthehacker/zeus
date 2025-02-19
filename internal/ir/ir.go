@@ -121,6 +121,7 @@ func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	condition_block := g.irBuilder.BuildSuccessorBlock()
 	body_block := g.irBuilder.BuildSuccessorBlock()
 	merge_block := g.irBuilder.BuildSuccessorBlock()
+	g.irBuilder.BuildJmp(condition_block, nil)
 
 	// build condition block
 	g.irBuilder.SetInsertionBlock(condition_block)

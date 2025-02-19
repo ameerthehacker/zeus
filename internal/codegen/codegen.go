@@ -19,6 +19,7 @@ type CodegenModule struct {
 	builder llvm.Builder
 	ctx llvm.Context
 	symbolTable *symbol_table.SymbolTable[llvm.Value]
+	basicBlocks map[int]llvm.BasicBlock
 }
 
 func NewCodegen() *Codegen {
@@ -36,7 +37,7 @@ func (c *Codegen) NewModule(name string) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value]() }
+	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock) }
 }
 
 func (c *CodegenModule) toLLVMValue(_value value.Value) llvm.Value {
@@ -52,6 +53,15 @@ func (c *CodegenModule) toLLVMValue(_value value.Value) llvm.Value {
 	default:
 		panic(fmt.Sprintf("unable to convert zeus value %s to llvm value", _value))
 	}
+}
+
+func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.BasicBlock {
+	if basicBlock, ok := c.basicBlocks[id]; ok {
+		return basicBlock
+	}
+	basicBlock := c.ctx.AddBasicBlock(parent, strconv.Itoa(id))
+	c.basicBlocks[id] = basicBlock
+	return basicBlock
 }
 
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
@@ -105,6 +115,107 @@ func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output value.Va
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
+func (c *CodegenModule) genJmp(input ir.JmpInstrInput) {
+	basicBlock := c.getOrCreateBasicBlock(input.Target.Id, c.builder.GetInsertBlock().Parent())
+	c.builder.CreateBr(basicBlock)
+}
+
+func (c *CodegenModule) genCondJmp(input ir.CondJmpInstrInput) {
+	trueBlock := c.getOrCreateBasicBlock(input.TrueTarget.Id, c.builder.GetInsertBlock().Parent())
+	falseBlock := c.getOrCreateBasicBlock(input.FalseTarget.Id, c.builder.GetInsertBlock().Parent())
+	c.builder.CreateCondBr(c.toLLVMValue(input.Condition), trueBlock, falseBlock)
+}
+
+type BinaryOpLLVMFunc func (llvm.Value, llvm.Value, string) llvm.Value
+
+func (c *CodegenModule) genLLVMBinaryOp(left value.Value, right value.Value, opName string, intIntOp BinaryOpLLVMFunc, uIntuIntOp BinaryOpLLVMFunc, floatFloat BinaryOpLLVMFunc) llvm.Value {
+	leftType := value.GetValueType(left)
+	rightType := value.GetValueType(right)
+
+	switch leftType := leftType.(type) {
+		case value.IntType:
+			switch rightType := rightType.(type) {
+				case value.IntType:
+					if !leftType.Signed && !rightType.Signed {
+						return uIntuIntOp(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sUIntuInt", opName))
+					}
+					return intIntOp(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sIntInt", opName))
+			}
+		case value.FloatType:
+			switch rightType.(type) {
+				case value.FloatType:
+					return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sFloatFloat", opName))
+			}
+	}
+
+	panic(fmt.Sprintf("invalid types %s and %s for binary operation %s", leftType, rightType, opName))
+}
+
+func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput, output value.Var) {
+	var result llvm.Value
+
+	switch instr.Type {
+		case ir.InstrTypeAdd:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "add", c.builder.CreateAdd, c.builder.CreateAdd, c.builder.CreateFAdd)
+		case ir.InstrTypeSub:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "sub", c.builder.CreateSub, c.builder.CreateSub, c.builder.CreateFSub)
+		case ir.InstrTypeMul:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "mul", c.builder.CreateMul, c.builder.CreateMul, c.builder.CreateFMul)
+		case ir.InstrTypeDiv:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "div", c.builder.CreateSDiv, c.builder.CreateUDiv, c.builder.CreateFDiv)
+		case ir.InstrTypeEqEq:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "eq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntEQ), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntEQ), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOEQ), left, right, opName)
+			})
+		case ir.InstrTypeNotEq:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "notEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntNE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntNE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatONE), left, right, opName)
+			})
+		case ir.InstrTypeLessThan:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "lessThan", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSLT), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntULT), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOLT), left, right, opName)
+			})
+		case ir.InstrTypeGreaterThan:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "greaterThan", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSGT), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntUGT), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGT), left, right, opName)
+			})
+		case ir.InstrTypeLessThanEq:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "lessThanEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSLE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntULE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOLE), left, right, opName)
+			})
+		case ir.InstrTypeGreaterThanEq:
+			result = c.genLLVMBinaryOp(input.Left, input.Right, "greaterThanEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSGE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntUGE), left, right, opName)
+			}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
+				return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGE), left, right, opName)
+			})
+	}
+
+	c.symbolTable.DeclareSymbol(output.Name, result)
+}
+
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	var currentFunction llvm.Value
 
@@ -124,9 +235,33 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genLoad(*ir.AsLoadInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCallFunc:
 			c.genCallFunc(*ir.AsCallFuncInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeJmp:
+			c.genJmp(*ir.AsJmpInstrInput(instr.Input))
+		case ir.InstrTypeCondJmp:
+			c.genCondJmp(*ir.AsCondJmpInstrInput(instr.Input))
+		case ir.InstrTypeAdd:
+			fallthrough
+		case ir.InstrTypeSub:
+			fallthrough
+		case ir.InstrTypeMul:
+			fallthrough
+		case ir.InstrTypeDiv:
+			fallthrough
+		case ir.InstrTypeEqEq:
+			fallthrough
+		case ir.InstrTypeNotEq:
+			fallthrough
+		case ir.InstrTypeLessThan:
+			fallthrough
+		case ir.InstrTypeGreaterThan:
+			fallthrough
+		case ir.InstrTypeLessThanEq:
+			fallthrough
+		case ir.InstrTypeGreaterThanEq:
+			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
 		}
 	}, func(block *ir.BasicBlock) {
-		basicBlock := c.ctx.AddBasicBlock(currentFunction, strconv.Itoa(block.Id))
+		basicBlock := c.getOrCreateBasicBlock(block.Id, currentFunction)
 		c.builder.SetInsertPointAtEnd(basicBlock)
 	})
 

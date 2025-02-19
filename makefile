@@ -1,4 +1,5 @@
-.PHONY: test play
+.PHONY: test play llvmc
+
 test-verbose:
 	go test ./test/... -v
 
@@ -23,5 +24,7 @@ play:
 	llc -filetype=obj -o ./playground/$(file).o ./playground/$(file).ll
 	# compile the object file to executable
 	clang ./playground/$(file).o -o ./playground/$(file)
-	# run the executable
-	./playground/$(file)
+
+llvmc:
+	llc -filetype=obj -o ./playground/$(file).o ./playground/$(file).ll
+	clang ./playground/$(file).o -o ./playground/$(file)
