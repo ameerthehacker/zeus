@@ -12,9 +12,9 @@ test:
 play:
 	# compile the zeus file to llvm IR
 	@if [ "$(ir)" = "true" ]; then \
-		go run zeus.go build ./playground/$(file).tsl --internal-zeus-ir --internal-llvm-ir; \
+		go run zeus.go build ./playground/$(file).tsl --internal-zeus-ir --internal-llvm-ir -o ./playground/$(file).ll; \
 	else \
-		go run zeus.go build ./playground/$(file).tsl; \
+		go run zeus.go build ./playground/$(file).tsl -o ./playground/$(file).ll; \
 	fi
 	@if [ ! -f ./playground/$(file).ll ]; then \
 		echo "Error: ./playground/$(file).ll does not exist"; \

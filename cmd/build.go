@@ -16,6 +16,7 @@ import (
 const (
 	FlagInternalZeusIR = "internal-zeus-ir"
 	FlagInternalLLVMIR = "internal-llvm-ir"
+	FlagOutputPath = "out"
 )
 
 func buildCmd() *cobra.Command {
@@ -52,13 +53,25 @@ func buildCmd() *cobra.Command {
 					sourceFile.Module.Dump()
 				}
 
-				folderPath := filepath.Dir(filePath)
+				folderPath, err := os.Getwd()
+				if err != nil {
+					logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get current directory: %s", err.Error()))
+					os.Exit(1)
+				}
 				fileName := filepath.Base(filePath)
 				fileNameWithoutExtension := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-				err := os.WriteFile(filepath.Join(folderPath, fmt.Sprintf("%s.ll", fileNameWithoutExtension)), []byte(sourceFile.Module.String()), 0644)
+				outputFileName := fileNameWithoutExtension + ".ll"
+
+				var outputPath string
+				if cmd.Flag(FlagOutputPath).Changed {
+					outputPath = cmd.Flag(FlagOutputPath).Value.String()
+				} else {
+					outputPath = filepath.Join(folderPath, outputFileName)
+				}
+				err = os.WriteFile(outputPath, []byte(sourceFile.Module.String()), 0644)
 
 				if err != nil {
-					logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write file %s: %s", fileNameWithoutExtension, err.Error()))
+					logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write file %s: %s", outputFileName, err.Error()))
 					os.Exit(1)
 				}
 			}
@@ -67,6 +80,7 @@ func buildCmd() *cobra.Command {
 
 	buildCmd.Flags().Bool(FlagInternalZeusIR, false, "print the zeus IR")
 	buildCmd.Flags().Bool(FlagInternalLLVMIR, false, "print the llvm IR")
+	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
 
 	return buildCmd
 }
