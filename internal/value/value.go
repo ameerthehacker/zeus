@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 const TEMP_VARIABLE_PREFIX = "%"
@@ -119,12 +120,10 @@ func AsConstant(value Value) *Constant {
 	}
 }
 
-func GetIntSize(number string) IntSize {
+func GetSignedIntSize(number string) IntSize {
 	value, err := strconv.ParseInt(number, 10, 64)
 
-	if err != nil {
-		panic(fmt.Sprintf("failed to parse int: %s", err))
-	}
+	zeus_error.Assert(err == nil, fmt.Sprintf("failed to parse int: %s", err))
 
 	switch {
 	case value >= -128 && value <= 127:

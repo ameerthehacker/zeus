@@ -69,7 +69,11 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 			return false
 		}
 
-		return a.Signed == b.Signed && a.Size >= b.Size
+		if a.Signed && !b.Signed {
+			return a.Size > b.Size
+		}
+
+		return a.Size >= b.Size && a.Signed == b.Signed
 	case value.FloatType:
 		bFloat, okFloat := b.(value.FloatType)
 		_, okInt := b.(value.IntType)
@@ -305,6 +309,14 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			}, value.IsBoolType)
 		case InstrTypeNeg:
 			tc.tcUnaryOp(instr, func(operandType value.ValueType) value.ValueType {
+				switch operandType := operandType.(type) {
+				// negation on int makes it signed
+				case value.IntType:
+					return value.IntType{
+						Signed: true,
+						Size: operandType.Size,
+					}
+				}
 				return operandType
 			}, value.IsNumberType)
 		case InstrTypeCondJmp:

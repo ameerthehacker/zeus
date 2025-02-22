@@ -277,8 +277,8 @@ func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {
 		return &value.Constant{
 			Value: expr.Value.Value,
 			ValueType: value.IntType{
-				Signed: true,
-				Size: value.GetIntSize(expr.Value.Value),
+				Signed: false,
+				Size: value.GetSignedIntSize(expr.Value.Value),
 			},
 			Span: expr.Value.Span,
 		}
