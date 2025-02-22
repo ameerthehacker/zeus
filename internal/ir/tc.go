@@ -124,14 +124,55 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.Val
 			Span: instr.Span,
 		})
 	} else {
-		// if any of the operand is float then we cast both to float
-		if (value.IsFloatType(tc.getValueType(input.Left)) || value.IsFloatType(tc.getValueType(input.Right))) {
-			zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
-			tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
-			instr.Input = BinaryOpInstrInput{
-				Left: tc.castToFloat(input.Left),
-				Right: tc.castToFloat(input.Right),
+		leftValueType := tc.getValueType(input.Left)
+		rightValueType := tc.getValueType(input.Right)
+		left := input.Left
+		right := input.Right
+
+		zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
+		tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
+
+		castIntToFloat := func (intType value.IntType, _value value.Value) value.Value {
+			size := value.F32
+			if intType.Size == value.I64 {
+				size = value.F64
 			}
+
+			return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
+		}
+
+		switch leftValueType := leftValueType.(type) {
+			case value.IntType:
+				switch rightValueType := rightValueType.(type) {
+					case value.IntType:
+						if leftValueType.Size > rightValueType.Size {
+							right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+						} else if rightValueType.Size > leftValueType.Size {
+							left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+						}
+					case value.FloatType:
+						left = castIntToFloat(leftValueType, left)
+					default:
+						panic(fmt.Sprintf("cannot cast value of type %s to %s", rightValueType, leftValueType))
+				}
+			case value.FloatType:
+				switch rightValueType := rightValueType.(type) {
+					case value.FloatType:
+						if leftValueType.Size > rightValueType.Size {
+							right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+						} else if rightValueType.Size > leftValueType.Size {
+							left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+						}
+					case value.IntType:
+						right = castIntToFloat(rightValueType, right)
+					default:
+						panic(fmt.Sprintf("cannot cast value of type %s to %s", rightValueType, leftValueType))
+				}
+		}
+
+		instr.Input = BinaryOpInstrInput{
+			Left: left,
+			Right: right,
 		}
 	}
 	
@@ -247,25 +288,7 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 		}
 	}
 
-	instr.Output.ValueType = functionType.ReturnType
-}
-
-func (tc *TypeChecker) castToFloat(_value value.Value) value.Value {
-	valueType := value.GetValueType(_value)
-
-	switch valueType := valueType.(type) {
-	case value.IntType:
-		size := value.F32
-		if valueType.Size == value.I64 {
-			size = value.F64
-		}
-		zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
-		return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
-	case value.FloatType:
-		return _value
-	default:
-		panic(fmt.Sprintf("cannot cast value of type %s to float", valueType))
-	}
+	instr.Output.ValueType = functionType.ReturnType 
 }
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {

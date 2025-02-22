@@ -239,12 +239,18 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output value.Var) {
 
 	switch valueType := valueType.(type) {
 		case value.IntType:
-			switch input.CastType.(type) {
+			switch castType := input.CastType.(type) {
 				case value.FloatType:
 					if valueType.Signed {
 						result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					} else {
 						result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+					}
+				case value.IntType:
+					if castType.Signed {
+						result = c.builder.CreateSExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+					} else {
+						result = c.builder.CreateZExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					}
 				default:
 					panic(castErrorMsg)
