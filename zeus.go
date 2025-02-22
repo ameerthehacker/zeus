@@ -2,6 +2,6 @@ package main
 
 import "github.com/ameerthehacker/zeus/cmd"
 
-func main ()  {
+func main() {
 	cmd.Execute()
 }

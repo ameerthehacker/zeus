@@ -8,10 +8,10 @@ import (
 )
 
 type TypeChecker struct {
-	errors []*zeus_error.ZeusError
+	errors          []*zeus_error.ZeusError
 	currentFunction *value.Function
-	builder *IRBuilder
-	currentBlock *BasicBlock
+	builder         *IRBuilder
+	currentBlock    *BasicBlock
 }
 
 func NewTypeChecker(builder *IRBuilder) *TypeChecker {
@@ -35,13 +35,13 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 	if value.IsVoidType(decl_var.Variable.ValueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot declare variable of type '%s'", decl_var.Variable.ValueType),
-			Span: decl_var.Variable.Span,
+			Span:    decl_var.Variable.Span,
 		})
 	} else if decl_var.Initializer != nil {
 		if !tc.cmpValueType(decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)) {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)),
-				Span: decl_var.Variable.Span,
+				Span:    decl_var.Variable.Span,
 			})
 		}
 	}
@@ -64,7 +64,7 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	switch a := a.(type) {
 	case value.IntType:
 		b, ok := b.(value.IntType)
-		
+
 		if !ok {
 			return false
 		}
@@ -98,7 +98,7 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 		}
 
 		isReturnTypeEqual := tc.cmpValueType(a.ReturnType, b.ReturnType)
-		
+
 		if !isReturnTypeEqual {
 			return false
 		}
@@ -115,67 +115,67 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	return false
 }
 
-func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.ValueType) value.ValueType ,cmpTypeFn func(a, b value.ValueType) bool) {
+func (tc *TypeChecker) doImplicitCast(instr *Instr, left, right value.Value) (value.Value, value.Value) {
+	leftValueType := tc.getValueType(left)
+	rightValueType := tc.getValueType(right)
+
+	zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
+	tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
+
+	castIntToFloat := func(intType value.IntType, _value value.Value) value.Value {
+		size := value.F32
+		if intType.Size == value.I64 {
+			size = value.F64
+		}
+
+		return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
+	}
+
+	switch leftValueType := leftValueType.(type) {
+	case value.IntType:
+		switch rightValueType := rightValueType.(type) {
+		case value.IntType:
+			if leftValueType.Size > rightValueType.Size {
+				right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+			} else if rightValueType.Size > leftValueType.Size {
+				left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+			}
+		case value.FloatType:
+			left = castIntToFloat(leftValueType, left)
+		}
+	case value.FloatType:
+		switch rightValueType := rightValueType.(type) {
+		case value.FloatType:
+			if leftValueType.Size > rightValueType.Size {
+				right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+			} else if rightValueType.Size > leftValueType.Size {
+				left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+			}
+		case value.IntType:
+			right = castIntToFloat(rightValueType, right)
+		}
+	}
+
+	return left, right
+}
+
+func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.ValueType) value.ValueType, cmpTypeFn func(a, b value.ValueType) bool) {
 	input := AsBinaryOpInstrInput(instr.Input)
 
 	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("invalid operands of type '%s' and '%s' for binary operation", tc.getValueType(input.Left), tc.getValueType(input.Right)),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
 	} else {
-		leftValueType := tc.getValueType(input.Left)
-		rightValueType := tc.getValueType(input.Right)
-		left := input.Left
-		right := input.Right
-
-		zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
-		tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
-
-		castIntToFloat := func (intType value.IntType, _value value.Value) value.Value {
-			size := value.F32
-			if intType.Size == value.I64 {
-				size = value.F64
-			}
-
-			return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
-		}
-
-		switch leftValueType := leftValueType.(type) {
-			case value.IntType:
-				switch rightValueType := rightValueType.(type) {
-					case value.IntType:
-						if leftValueType.Size > rightValueType.Size {
-							right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
-						} else if rightValueType.Size > leftValueType.Size {
-							left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
-						}
-					case value.FloatType:
-						left = castIntToFloat(leftValueType, left)
-					default:
-						panic(fmt.Sprintf("cannot cast value of type %s to %s", rightValueType, leftValueType))
-				}
-			case value.FloatType:
-				switch rightValueType := rightValueType.(type) {
-					case value.FloatType:
-						if leftValueType.Size > rightValueType.Size {
-							right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
-						} else if rightValueType.Size > leftValueType.Size {
-							left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
-						}
-					case value.IntType:
-						right = castIntToFloat(rightValueType, right)
-					default:
-						panic(fmt.Sprintf("cannot cast value of type %s to %s", rightValueType, leftValueType))
-				}
-		}
+		left, right := tc.doImplicitCast(instr, input.Left, input.Right)
 
 		instr.Input = BinaryOpInstrInput{
-			Left: left,
+			Left:  left,
 			Right: right,
 		}
 	}
-	
+
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right))
 }
 
@@ -185,10 +185,10 @@ func (tc *TypeChecker) tcUnaryOp(instr *Instr, resultTypeFn func(a value.ValueTy
 	if !cmpTypeFn(tc.getValueType(input.Value)) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("invalid operand of type '%s' for unary operation", tc.getValueType(input.Value)),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
-	} 
-	
+	}
+
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Value))
 }
 
@@ -198,7 +198,7 @@ func (tc *TypeChecker) tcCondJmp(instr *Instr) {
 	if !value.IsBoolType(tc.getValueType(input.Condition)) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("condition must be of type bool, but found %s", tc.getValueType(input.Condition)),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
 	}
 }
@@ -215,12 +215,12 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 	if input.Addr.IsTempVariable() {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "invalid assignment",
-			Span: input.Addr.Span,
+			Span:    input.Addr.Span,
 		})
 	} else if !tc.cmpValueType(input.Addr.ValueType, valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", valueType, input.Addr.ValueType),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
 	}
 }
@@ -231,28 +231,28 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 	if tc.currentFunction == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "return statement outside of function",
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
 
 		return
 	}
 
-	if (value.IsVoidType(tc.currentFunction.ReturnType) && input.Value != nil) {
+	if value.IsVoidType(tc.currentFunction.ReturnType) && input.Value != nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot return a value from void function",
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
-	} else if (!value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil) {
+	} else if !value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("return value of type '%s' is expected", tc.getValueType(input.Value)),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
-	} else if (value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil) {
-		return;
-	} else if (!tc.cmpValueType(tc.currentFunction.ReturnType, tc.getValueType(input.Value))) {
+	} else if value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil {
+		return
+	} else if !tc.cmpValueType(tc.currentFunction.ReturnType, tc.getValueType(input.Value)) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.currentFunction.ReturnType),
-			Span: instr.Span,
+			Span:    instr.Span,
 		})
 	}
 }
@@ -264,10 +264,10 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	if function == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "expression is not callable",
-			Span: input.Callee.GetSpan(),
+			Span:    input.Callee.GetSpan(),
 		})
 
-		return;
+		return
 	}
 
 	functionType := value.ToFunctionType(*function)
@@ -275,20 +275,20 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	if len(input.Args) != len(functionType.ParamTypes) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("expected %d arguments for function '%s', but found %d", len(functionType.ParamTypes), function.Name, len(input.Args)),
-			Span: input.Callee.GetSpan(),
+			Span:    input.Callee.GetSpan(),
 		})
 	} else {
 		for i := range input.Args {
 			if !tc.cmpValueType(functionType.ParamTypes[i], tc.getValueType(input.Args[i])) {
 				tc.pushError(&zeus_error.ZeusError{
-					Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i + 1, tc.getValueType(input.Args[i]), functionType.ParamTypes[i]),
-					Span: input.Args[i].GetSpan(),
+					Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(input.Args[i]), functionType.ParamTypes[i]),
+					Span:    input.Args[i].GetSpan(),
 				})
 			}
 		}
 	}
 
-	instr.Output.ValueType = functionType.ReturnType 
+	instr.Output.ValueType = functionType.ReturnType
 }
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
@@ -337,7 +337,7 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 				case value.IntType:
 					return value.IntType{
 						Signed: true,
-						Size: operandType.Size,
+						Size:   operandType.Size,
 					}
 				}
 				return operandType
