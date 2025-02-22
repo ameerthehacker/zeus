@@ -40,16 +40,22 @@ func (c *Codegen) NewModule(name string) *CodegenModule {
 	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock) }
 }
 
+func (c *CodegenModule) getSymbol(name string) llvm.Value {
+	symbol, ok := c.symbolTable.GetSymbol(name)
+	if !ok {
+		panic(fmt.Sprintf("symbol %s not found in symbol table", name))
+	}
+	return symbol
+}
+
 func (c *CodegenModule) toLLVMValue(_value value.Value) llvm.Value {
 	switch _value := _value.(type) {
 	case *value.Constant:
 		return ToLLVMConstant(*_value)
 	case *value.Var:
-		llvmValue, ok := c.symbolTable.GetSymbol(_value.Name)
-		if !ok {
-			panic(fmt.Sprintf("symbol %s not found in symbol table", _value.Name))
-		}
-		return llvmValue
+		return c.getSymbol(_value.Name)
+	case *value.Function:
+		return c.getSymbol(_value.Name)
 	default:
 		panic(fmt.Sprintf("unable to convert zeus value %s to llvm value", _value))
 	}
@@ -65,7 +71,16 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 }
 
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
-	return llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(value.ToFunctionType(input.Function)))
+	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(value.ToFunctionType(input.Function)))
+	funcParams := input.Function.Params
+
+	for index, param := range llvmFunc.Params() {
+		c.symbolTable.DeclareSymbol(funcParams[index].Name, param)
+	}
+
+	c.symbolTable.DeclareGlobalSymbol(input.Function.Name, llvmFunc)
+
+	return llvmFunc
 }
 
 func (c *CodegenModule) genReturn(input ir.ReturnInstrInput) {
@@ -106,12 +121,13 @@ func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output value.Var) {
 
 func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output value.Var) {
 	function := c.toLLVMValue(input.Callee)
+	functionType := ToLLVMType(value.GetValueType(input.Callee))
 	args := make([]llvm.Value, len(input.Args))
 	for i, arg := range input.Args {
 		args[i] = c.toLLVMValue(arg)
 	}
 
-	llvmValue := c.builder.CreateCall(function.Type(), function, args, function.Name())
+	llvmValue := c.builder.CreateCall(functionType, function, args, function.Name())
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
@@ -137,14 +153,14 @@ func (c *CodegenModule) genLLVMBinaryOp(left value.Value, right value.Value, opN
 			switch rightType := rightType.(type) {
 				case value.IntType:
 					if !leftType.Signed && !rightType.Signed {
-						return uIntuIntOp(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sUIntuInt", opName))
+						return uIntuIntOp(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 					}
-					return intIntOp(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sIntInt", opName))
+					return intIntOp(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 			}
 		case value.FloatType:
 			switch rightType.(type) {
 				case value.FloatType:
-					return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), fmt.Sprintf("%sFloatFloat", opName))
+					return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 			}
 	}
 
@@ -216,6 +232,32 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 	c.symbolTable.DeclareSymbol(output.Name, result)
 }
 
+func (c *CodegenModule) genCast(input ir.CastInstrInput, output value.Var) {
+	var result llvm.Value
+	valueType := value.GetValueType(input.Value)
+	castErrorMsg := fmt.Sprintf("cannot cast %s to %s", input.Value, input.CastType)
+
+	switch valueType := valueType.(type) {
+		case value.IntType:
+			switch input.CastType.(type) {
+				case value.FloatType:
+					if valueType.Signed {
+						result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+					} else {
+						result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+					}
+				default:
+					panic(castErrorMsg)
+			}
+		case value.FloatType:
+			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+		default:
+			panic(castErrorMsg)
+	}
+
+	c.symbolTable.DeclareSymbol(output.Name, result)
+}
+
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	var currentFunction llvm.Value
 
@@ -224,6 +266,12 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	irBuilder.Walk(func(instr *ir.Instr) {
 		switch instr.Type {
 		case ir.InstrTypeDeclFunc:
+			// maintain function level scoping
+			if !c.symbolTable.IsGlobalScope() {
+				c.symbolTable.ExitScope()
+			} else {
+				c.symbolTable.EnterScope()
+			}
 			currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
 		case ir.InstrTypeDeclVar:
 			c.genDeclVar(*ir.AsDeclVarInstrInput(instr.Input))
@@ -259,6 +307,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			fallthrough
 		case ir.InstrTypeGreaterThanEq:
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeCast:
+			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
+		default:
+			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}
 	}, func(block *ir.BasicBlock) {
 		basicBlock := c.getOrCreateBasicBlock(block.Id, currentFunction)

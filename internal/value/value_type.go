@@ -178,6 +178,24 @@ func IsVoidType(value ValueType) bool {
 	}
 }
 
+func IsIntType(value ValueType) bool {
+	switch value.(type) {
+	case IntType:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsFloatType(value ValueType) bool {
+	switch value.(type) {
+	case FloatType:
+		return true
+	default:
+		return false
+	}
+}
+
 // currently supports only int and float
 func GetBiggerIntType(a, b IntType) ValueType {
 	if a.Size >= b.Size {

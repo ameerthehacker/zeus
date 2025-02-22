@@ -13,22 +13,22 @@ type Table[T any] struct {
 type SymbolTable[T any] struct {
 	tables []*Table[T]
 	current_scope *Table[T]
-	current_scope_index int
+	next_scope_index int
 	readonly bool
 }
 
 func NewSymbolTable[T any]() *SymbolTable[T] {
 	return &SymbolTable[T]{
 		tables: make([]*Table[T], 0),
-		current_scope_index: 0,
+		next_scope_index: 0,
 		readonly: false,
 	}
 }
 
 func (s *SymbolTable[T]) EnterScope() {
 	if s.readonly {
-		zeus_error.Assert(s.current_scope_index < len(s.tables), "trying to enter non existent scope")
-		scope := s.tables[s.current_scope_index]
+		zeus_error.Assert(s.next_scope_index < len(s.tables), "trying to enter non existent scope")
+		scope := s.tables[s.next_scope_index]
 		s.current_scope = scope
 	} else {
 		new_scope := &Table[T]{
@@ -39,7 +39,7 @@ func (s *SymbolTable[T]) EnterScope() {
 		s.tables = append(s.tables, new_scope)
 		s.current_scope = new_scope
 	}
-	s.current_scope_index++
+	s.next_scope_index++
 }
 
 func (s *SymbolTable[T]) ExitScope() {
@@ -73,12 +73,16 @@ func (s *SymbolTable[T]) GetSymbol(name string) (T, bool) {
 	return zero, false
 }
 
+func (s *SymbolTable[T]) IsGlobalScope() bool {
+	return s.current_scope == s.tables[0]
+}
+
 func (s *SymbolTable[T]) SetReadonly(readonly bool) {
 	s.readonly = readonly
 }
 
 func (s *SymbolTable[T]) GoToGlobalScope() {
-	s.current_scope_index = 0
+	s.next_scope_index = 0
 }
 
 func (s *SymbolTable[T]) GetSymbolInCurrentScope(name string) (T, bool) {

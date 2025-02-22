@@ -68,8 +68,8 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 		}
 	}
 
-	tc := ir.NewTypeChecker()
-	tcErrors := tc.TypeCheck(irBuilder)
+	tc := ir.NewTypeChecker(irBuilder)
+	tcErrors := tc.TypeCheck()
 
 	if len(tcErrors) > 0 {
 		return &SourceFile{

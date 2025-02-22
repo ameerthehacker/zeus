@@ -10,10 +10,14 @@ import (
 type TypeChecker struct {
 	errors []*zeus_error.ZeusError
 	currentFunction *value.Function
+	builder *IRBuilder
+	currentBlock *BasicBlock
 }
 
-func NewTypeChecker() *TypeChecker {
-	return &TypeChecker{}
+func NewTypeChecker(builder *IRBuilder) *TypeChecker {
+	return &TypeChecker{
+		builder: builder,
+	}
 }
 
 func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
@@ -115,6 +119,16 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.Val
 			Message: fmt.Sprintf("invalid operands of type '%s' and '%s' for binary operation", tc.getValueType(input.Left), tc.getValueType(input.Right)),
 			Span: instr.Span,
 		})
+	} else {
+		// if any of the operand is float then we cast both to float
+		if (value.IsFloatType(tc.getValueType(input.Left)) || value.IsFloatType(tc.getValueType(input.Right))) {
+			zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
+			tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
+			instr.Input = BinaryOpInstrInput{
+				Left: tc.castToFloat(input.Left),
+				Right: tc.castToFloat(input.Right),
+			}
+		}
 	}
 	
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right))
@@ -232,8 +246,26 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	instr.Output.ValueType = functionType.ReturnType
 }
 
-func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
-	builder.Walk(func(instr *Instr) {
+func (tc *TypeChecker) castToFloat(_value value.Value) value.Value {
+	valueType := value.GetValueType(_value)
+
+	switch valueType := valueType.(type) {
+	case value.IntType:
+		size := value.F32
+		if valueType.Size == value.I64 {
+			size = value.F64
+		}
+		zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
+		return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
+	case value.FloatType:
+		return _value
+	default:
+		panic(fmt.Sprintf("cannot cast value of type %s to float", valueType))
+	}
+}
+
+func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
+	tc.builder.Walk(func(instr *Instr) {
 		switch instr.Type {
 		// jmp requires no type checking
 		case InstrTypeJmp:
@@ -289,7 +321,7 @@ func (tc *TypeChecker) TypeCheck(builder *IRBuilder) []*zeus_error.ZeusError {
 			panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 		}
 	}, func(block *BasicBlock) {
-		
+		tc.currentBlock = block
 	})
 
 	return tc.errors

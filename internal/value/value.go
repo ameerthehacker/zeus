@@ -32,6 +32,7 @@ func (i Constant) String() string {
 type Var struct {
 	Name string
 	ValueType ValueType
+	IsPtr bool
 	Span *token.Span
 }
 

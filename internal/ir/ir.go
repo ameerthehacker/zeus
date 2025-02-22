@@ -257,7 +257,11 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 
 	asVar := value.AsVar(variable)
 
-	return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+	if asVar.IsPtr {
+		return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+	} else {
+		return asVar
+	}
 }
 
 func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {

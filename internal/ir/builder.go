@@ -2,17 +2,21 @@ package ir
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/value"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 type IRBuilder struct {
 	instrs      []*Instr
 	currentBlock *BasicBlock
+	insertionIndex int
+	blockIdInsetionIndexMap map[int]int
 	tempVarCount int
 	blocksCount int
 	symbolTable *symbol_table.SymbolTable[value.Value]
@@ -26,6 +30,8 @@ func NewIRBuilder() *IRBuilder {
 		currentBlock: nil,
 		tempVarCount: 0,
 		blocksCount: 0,
+		insertionIndex: 0,
+		blockIdInsetionIndexMap: make(map[int]int),
 		symbolTable: symbol_table,
 	}
 }
@@ -53,6 +59,7 @@ func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
 		Name: temp_variable_name,
 		ValueType: nil,
 		Span: span,
+		IsPtr: false,
 	}
 }
 
@@ -62,9 +69,13 @@ func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
 
 func (b *IRBuilder) pushInstr(instr *Instr) {
 	if b.currentBlock == nil {
-		b.instrs = append(b.instrs, instr)
+		b.instrs = append(b.instrs[:b.insertionIndex], append([]*Instr{instr}, b.instrs[b.insertionIndex:]...)...)
+		b.insertionIndex++
 	} else {
-		b.currentBlock.Instrs = append(b.currentBlock.Instrs, instr)
+		blockInsertionIndex, ok := b.blockIdInsetionIndexMap[b.currentBlock.Id]
+		zeus_error.Assert(ok, "block id not found in block id insertion index map")
+		b.currentBlock.Instrs = append(b.currentBlock.Instrs[:blockInsertionIndex], append([]*Instr{instr}, b.currentBlock.Instrs[blockInsertionIndex:]...)...)
+		b.blockIdInsetionIndexMap[b.currentBlock.Id]++
 	}
 }
 
@@ -80,6 +91,7 @@ func (b *IRBuilder) BuildSuccessorBlock() *BasicBlock {
 
 func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
 	new_block := NewBasicBlock(b.blocksCount)
+	b.blockIdInsetionIndexMap[b.blocksCount] = 0
 	b.blocksCount++
 
 	return new_block
@@ -87,6 +99,32 @@ func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
 
 func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 	b.currentBlock = block
+}
+
+func (b *IRBuilder) SetInsertionAfter(instr *Instr) {
+	instrIndex := slices.Index(b.instrs, instr)
+	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in instructions list", instr.String()))
+	b.insertionIndex = instrIndex + 1
+}
+
+func (b *IRBuilder) SetInsertionBefore(instr *Instr) {
+	instrIndex := slices.Index(b.instrs, instr)
+	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in instructions list", instr.String()))
+	b.insertionIndex = instrIndex
+}
+
+func (b* IRBuilder) SetBlockInsertionAfter(block *BasicBlock, instr *Instr) {
+	instrIndex := slices.Index(block.Instrs, instr)
+	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block instructions list", instr.String()))
+	b.SetInsertionBlock(block)
+	b.blockIdInsetionIndexMap[block.Id] = instrIndex + 1
+}
+
+func (b* IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
+	instrIndex := slices.Index(block.Instrs, instr)
+	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block instructions list", instr.String()))
+	b.SetInsertionBlock(block)
+	b.blockIdInsetionIndexMap[block.Id] = instrIndex
 }
 
 func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *token.Span) value.Value {
@@ -127,6 +165,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 		Name: unique_name,
 		ValueType: v.ValueType,
 		Span: v.Span,
+		IsPtr: true,
 	}
 
 	b.symbolTable.DeclareSymbol(unique_name, variable)
@@ -154,6 +193,23 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 	})
 }
 
+func (b *IRBuilder) BuildCast(value value.Value, castType value.ValueType, span *token.Span) value.Value {
+	result := b.createTempVariable(span)
+
+	b.pushInstr(&Instr{
+		Type: InstrTypeCast,
+		Output: result,
+		Input: CastInstrInput{
+			Value: value,
+			CastType: castType,
+		},
+		Span: span,
+	})
+	result.ValueType = castType
+
+	return result
+}
+
 func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
 	b.symbolTable.EnterScope()
 	params := []*value.Var{}
@@ -162,8 +218,9 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock,
 			Name: b.generateUniqueSymbolName(arg.Name),
 			ValueType: arg.ValueType,
 			Span: arg.Span,
+			IsPtr: false,
 		}
-		b.symbolTable.DeclareSymbol(variable.Name, variable)
+		b.symbolTable.DeclareSymbol(arg.Name, variable)
 
 		params = append(params, variable)
 	}

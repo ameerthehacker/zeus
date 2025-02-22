@@ -238,12 +238,34 @@ func AsCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
 	return nil
 }
 
+type CastInstrInput struct {
+	Value value.Value
+	CastType value.ValueType
+}
+
+func (i CastInstrInput) String() string {
+	return fmt.Sprintf("%s %s", i.Value, i.CastType)
+}
+
+func AsCastInstrInput(input InstrInput) *CastInstrInput {
+	switch input := input.(type) {
+	case CastInstrInput:
+		return &input
+	default:
+		panicInvalidInputType("CastInstrInput", input)
+	}
+
+	return nil
+}
+
 const (
-	InstrTypeAdd InstrType = iota
 	// math operations
+	InstrTypeAdd InstrType = iota
 	InstrTypeSub
 	InstrTypeMul
 	InstrTypeDiv
+	// casting
+	InstrTypeCast
 	// comparison operations
 	InstrTypeNeg
 	InstrTypeEqEq
@@ -310,6 +332,8 @@ func (i InstrType) String() string {
 		return "LOAD"
 	case InstrTypeStore:
 		return "STORE"
+	case InstrTypeCast:
+		return "CAST"
 	default:
 		panic("unknown instruction type")
 	}
