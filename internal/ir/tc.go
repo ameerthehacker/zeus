@@ -38,17 +38,12 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 			Span:    decl_var.Variable.Span,
 		})
 	} else if decl_var.Initializer != nil {
-		if !tc.cmpValueType(decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)) {
-			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)),
-				Span:    decl_var.Variable.Span,
-			})
-		} else {
-			instr.Input = DeclareVarInstrInput{
-				Variable: decl_var.Variable,
-				Initializer: tc.tryImplicitCast(instr, decl_var.Initializer, decl_var.Variable.ValueType),
-				IsConst: decl_var.IsConst,
-			}
+		initializer := tc.tcAssignWithImplicitCast(instr, decl_var.Variable.ValueType, decl_var.Initializer)
+
+		instr.Input = DeclareVarInstrInput{
+			Variable:    decl_var.Variable,
+			Initializer: initializer,
+			IsConst:     decl_var.IsConst,
 		}
 	}
 }
@@ -66,31 +61,34 @@ func (tc *TypeChecker) getValueType(_value value.Value) value.ValueType {
 	}
 }
 
+func (tc *TypeChecker) tcAssignWithImplicitCast(instr *Instr, targetType value.ValueType, b value.Value) value.Value {
+	bType := tc.getValueType(b)
+
+	if !tc.cmpValueType(targetType, bType) {
+		castedB, ok := tc.tryImplicitCast(instr, b, targetType)
+
+		if ok {
+			return castedB
+		} else {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType, targetType),
+				Span:    instr.Span,
+			})
+		}
+	}
+
+	return b
+}
+
 func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	switch a := a.(type) {
 	case value.IntType:
 		b, ok := b.(value.IntType)
 
-		if !ok {
-			return false
-		}
-
-		if a.Signed && !b.Signed {
-			return a.Size > b.Size
-		}
-
-		return a.Size >= b.Size && a.Signed == b.Signed
+		return ok && a.Signed == b.Signed && a.Size == b.Size
 	case value.FloatType:
 		bFloat, okFloat := b.(value.FloatType)
-		_, okInt := b.(value.IntType)
-
-		if okFloat {
-			return a.Size >= bFloat.Size
-		} else if okInt {
-			return true
-		}
-
-		return false
+		return okFloat && a.Size == bFloat.Size
 	case value.BoolType:
 		_, ok := b.(value.BoolType)
 		if !ok {
@@ -125,8 +123,7 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 // - int to float
 // - int to int of bigger size
 // - float to float of bigger size
-func (tc *TypeChecker) tryImplicitCast(instr *Instr, _value value.Value, targetType value.ValueType) value.Value {
-	castedValue := _value
+func (tc *TypeChecker) tryImplicitCast(instr *Instr, _value value.Value, targetType value.ValueType) (value.Value, bool) {
 	valueType := tc.getValueType(_value)
 
 	zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
@@ -145,54 +142,82 @@ func (tc *TypeChecker) tryImplicitCast(instr *Instr, _value value.Value, targetT
 	case value.IntType:
 		switch targetType := targetType.(type) {
 		case value.IntType:
-			if targetType.Size > valueType.Size {
-				castedValue = tc.builder.BuildCast(_value, targetType, _value.GetSpan())
+			// value and target are signed and the target is larger
+			canFitValue := targetType.Size > valueType.Size && valueType.Signed == targetType.Signed
+			// value is unsigned and target is signed and the target is larger
+			canFitUnsigned := targetType.Signed && !valueType.Signed && targetType.Size > valueType.Size
+			// value is a constant and the target is larger
+			constant := value.AsConstant(_value)
+			canFitUnsignedConstant := constant != nil && targetType.Size >= value.GetSignedIntSize(constant.Value)
+
+			if canFitValue || canFitUnsigned || canFitUnsignedConstant {
+				return tc.builder.BuildCast(_value, targetType, _value.GetSpan()), true
 			}
 		case value.FloatType:
-			castedValue = castIntToFloat(valueType, _value)
+			return castIntToFloat(valueType, _value), true
 		}
 	case value.FloatType:
 		switch targetType := targetType.(type) {
 		case value.FloatType:
 			if targetType.Size > valueType.Size {
-				castedValue = tc.builder.BuildCast(_value, valueType, _value.GetSpan())
+				return tc.builder.BuildCast(_value, targetType, _value.GetSpan()), true
 			}
 		}
 	}
 
-	return castedValue
+	return _value, false
 }
 
 // converts left and right to the same type
 func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right value.Value) (value.Value, value.Value) {
 	leftValueType := tc.getValueType(left)
 	rightValueType := tc.getValueType(right)
-	castErrMsg := fmt.Sprintf("cannot cast %s to %s without an explicit cast", leftValueType, rightValueType)
+	castErrMsg := fmt.Sprintf("cannot do implicit cast to same type: %s and %s", leftValueType, rightValueType)
+	ok := false
 
 	switch leftValueType := leftValueType.(type) {
 	case value.IntType:
 		switch rightValueType := rightValueType.(type) {
 		case value.IntType:
 			if leftValueType.Size > rightValueType.Size {
-				right = tc.tryImplicitCast(instr, right, leftValueType)
+				right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+				if !ok {
+					tc.pushError(&zeus_error.ZeusError{
+						Message: fmt.Sprintf("cannot cast %s to %s without an explicit cast", rightValueType, leftValueType),
+						Span:    instr.Span,
+					})
+				}
 			} else if rightValueType.Size > leftValueType.Size {
-				left = tc.tryImplicitCast(instr, left, rightValueType)
+				left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+				if !ok {
+					tc.pushError(&zeus_error.ZeusError{
+						Message: fmt.Sprintf("cannot cast %s to %s without an explicit cast", leftValueType, rightValueType),
+						Span:    instr.Span,
+					})
+				}
 			}
 		case value.FloatType:
-			left = tc.tryImplicitCast(instr, left, rightValueType)
+			left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+			zeus_error.Assert(ok, "failed to cast int to float")
 		default:
-			panic(castErrMsg)
+			tc.pushError(&zeus_error.ZeusError{
+				Message: castErrMsg,
+				Span:    instr.Span,
+			})
 		}
 	case value.FloatType:
 		switch rightValueType := rightValueType.(type) {
 		case value.FloatType:
 			if leftValueType.Size > rightValueType.Size {
-				right = tc.tryImplicitCast(instr, right, leftValueType)
+				right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+				zeus_error.Assert(ok, "failed to cast smaller float to larger float")
 			} else if rightValueType.Size > leftValueType.Size {
-				left = tc.tryImplicitCast(instr, left, rightValueType)
+				left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+				zeus_error.Assert(ok, "failed to cast smaller float to larger float")
 			}
 		case value.IntType:
-			right = tc.tryImplicitCast(instr, right, leftValueType)
+			right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+			zeus_error.Assert(ok, "failed to cast int to float")
 		default:
 			panic(castErrMsg)
 		}
@@ -252,18 +277,17 @@ func (tc *TypeChecker) tcLoad(instr *Instr) {
 
 func (tc *TypeChecker) tcStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
-	valueType := tc.getValueType(input.Value)
 
 	if input.Addr.IsTempVariable() {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "invalid assignment",
 			Span:    input.Addr.Span,
 		})
-	} else if !tc.cmpValueType(input.Addr.ValueType, valueType) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", valueType, input.Addr.ValueType),
-			Span:    instr.Span,
-		})
+	} else {
+		instr.Input = StoreInstrInput{
+			Addr:  input.Addr,
+			Value: tc.tcAssignWithImplicitCast(instr, input.Addr.ValueType, input.Value),
+		}
 	}
 }
 
@@ -321,12 +345,18 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 		})
 	} else {
 		for i := range input.Args {
-			if !tc.cmpValueType(functionType.ParamTypes[i], tc.getValueType(input.Args[i])) {
+			castedArg, ok := tc.tryImplicitCast(instr, input.Args[i], functionType.ParamTypes[i])
+			input.Args[i] = castedArg
+			if !ok {
 				tc.pushError(&zeus_error.ZeusError{
 					Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(input.Args[i]), functionType.ParamTypes[i]),
 					Span:    input.Args[i].GetSpan(),
 				})
 			}
+		}
+		instr.Input = CallFuncInstrInput{
+			Callee: input.Callee,
+			Args:   input.Args,
 		}
 	}
 

@@ -72,6 +72,16 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 		}
 	}
 
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error")
+			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
+			fmt.Fprintln(os.Stderr, "---:GENERATED ZEUS IR:---")
+			fmt.Fprintln(os.Stderr, irBuilder.String())
+			panic(r)
+		}
+	}()
+
 	tc := ir.NewTypeChecker(irBuilder)
 	tcErrors := tc.TypeCheck()
 
@@ -85,16 +95,6 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 
 	codegenModule := c.codegen.NewModule(entryPoint.Path)
 	codegenModule.Generate(*irBuilder)
-
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error")
-			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
-			fmt.Fprintln(os.Stderr, r)
-			fmt.Fprintln(os.Stderr, "---:GENERATED ZEUS IR:---")
-			fmt.Fprintln(os.Stderr, irBuilder.String())
-		}
-	}()
 
 	return &SourceFile{
 		Path: entryPoint.Path,
