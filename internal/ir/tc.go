@@ -43,6 +43,12 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", decl_var.Variable.ValueType, tc.getValueType(decl_var.Initializer)),
 				Span:    decl_var.Variable.Span,
 			})
+		} else {
+			instr.Input = DeclareVarInstrInput{
+				Variable: decl_var.Variable,
+				Initializer: tc.tryImplicitCast(instr, decl_var.Initializer, decl_var.Variable.ValueType),
+				IsConst: decl_var.IsConst,
+			}
 		}
 	}
 }
@@ -115,9 +121,13 @@ func (tc *TypeChecker) cmpValueType(a, b value.ValueType) bool {
 	return false
 }
 
-func (tc *TypeChecker) doImplicitCast(instr *Instr, left, right value.Value) (value.Value, value.Value) {
-	leftValueType := tc.getValueType(left)
-	rightValueType := tc.getValueType(right)
+// Performs the following implicit casts:
+// - int to float
+// - int to int of bigger size
+// - float to float of bigger size
+func (tc *TypeChecker) tryImplicitCast(instr *Instr, _value value.Value, targetType value.ValueType) value.Value {
+	castedValue := _value
+	valueType := tc.getValueType(_value)
 
 	zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
 	tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
@@ -131,28 +141,60 @@ func (tc *TypeChecker) doImplicitCast(instr *Instr, left, right value.Value) (va
 		return tc.builder.BuildCast(_value, value.FloatType{Size: size}, _value.GetSpan())
 	}
 
+	switch valueType := valueType.(type) {
+	case value.IntType:
+		switch targetType := targetType.(type) {
+		case value.IntType:
+			if targetType.Size > valueType.Size {
+				castedValue = tc.builder.BuildCast(_value, targetType, _value.GetSpan())
+			}
+		case value.FloatType:
+			castedValue = castIntToFloat(valueType, _value)
+		}
+	case value.FloatType:
+		switch targetType := targetType.(type) {
+		case value.FloatType:
+			if targetType.Size > valueType.Size {
+				castedValue = tc.builder.BuildCast(_value, valueType, _value.GetSpan())
+			}
+		}
+	}
+
+	return castedValue
+}
+
+// converts left and right to the same type
+func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right value.Value) (value.Value, value.Value) {
+	leftValueType := tc.getValueType(left)
+	rightValueType := tc.getValueType(right)
+	castErrMsg := fmt.Sprintf("cannot cast %s to %s without an explicit cast", leftValueType, rightValueType)
+
 	switch leftValueType := leftValueType.(type) {
 	case value.IntType:
 		switch rightValueType := rightValueType.(type) {
 		case value.IntType:
 			if leftValueType.Size > rightValueType.Size {
-				right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+				right = tc.tryImplicitCast(instr, right, leftValueType)
 			} else if rightValueType.Size > leftValueType.Size {
-				left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+				left = tc.tryImplicitCast(instr, left, rightValueType)
 			}
 		case value.FloatType:
-			left = castIntToFloat(leftValueType, left)
+			left = tc.tryImplicitCast(instr, left, rightValueType)
+		default:
+			panic(castErrMsg)
 		}
 	case value.FloatType:
 		switch rightValueType := rightValueType.(type) {
 		case value.FloatType:
 			if leftValueType.Size > rightValueType.Size {
-				right = tc.builder.BuildCast(right, leftValueType, right.GetSpan())
+				right = tc.tryImplicitCast(instr, right, leftValueType)
 			} else if rightValueType.Size > leftValueType.Size {
-				left = tc.builder.BuildCast(left, rightValueType, left.GetSpan())
+				left = tc.tryImplicitCast(instr, left, rightValueType)
 			}
 		case value.IntType:
-			right = castIntToFloat(rightValueType, right)
+			right = tc.tryImplicitCast(instr, right, leftValueType)
+		default:
+			panic(castErrMsg)
 		}
 	}
 
@@ -168,7 +210,7 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.Val
 			Span:    instr.Span,
 		})
 	} else {
-		left, right := tc.doImplicitCast(instr, input.Left, input.Right)
+		left, right := tc.doImplicitCastToSameType(instr, input.Left, input.Right)
 
 		instr.Input = BinaryOpInstrInput{
 			Left:  left,

@@ -26,7 +26,7 @@ func formatError(severity zeus_error.ErrorSeverity, prefix string, message strin
 }
 
 func Log(severity zeus_error.ErrorSeverity, message string) {
-	fmt.Println(formatError(severity, zeus, message))
+	fmt.Fprintln(os.Stderr, formatError(severity, zeus, message))
 }
 
 func LogZeusError(filePath string, error *zeus_error.ZeusError) {
