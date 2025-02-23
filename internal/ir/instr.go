@@ -424,6 +424,10 @@ func (i InstrType) String() string {
 	}
 }
 
+func IsControlFlowInstr(instrType InstrType) bool {
+	return instrType == InstrTypeJmp || instrType == InstrTypeCondJmp || instrType == InstrTypeReturn
+}
+
 type Instr struct {
 	Type InstrType
 	Output *value.Var

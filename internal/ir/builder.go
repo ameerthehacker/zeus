@@ -17,6 +17,7 @@ type IRBuilder struct {
 	currentBlock *BasicBlock
 	insertionIndex int
 	blockIdInsetionIndexMap map[int]int
+	blocks []*BasicBlock
 	tempVarCount int
 	blocksCount int
 	symbolTable *symbol_table.SymbolTable[value.Value]
@@ -87,6 +88,7 @@ func (b *IRBuilder) BuildSuccessorBlock() *BasicBlock {
 func (b *IRBuilder) BuildBasicBlock() *BasicBlock {
 	new_block := NewBasicBlock(b.blocksCount)
 	b.blockIdInsetionIndexMap[b.blocksCount] = 0
+	b.blocks = append(b.blocks, new_block)
 	b.blocksCount++
 
 	return new_block
@@ -294,6 +296,91 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 		}
 		i++
 	}
+}
+
+func (b *IRBuilder) deleteBlock(block *BasicBlock) {
+	blockIndex := slices.Index(b.blocks, block)
+	zeus_error.Assert(blockIndex != -1, "block not found in blocks list")
+	b.blocks = slices.Delete(b.blocks, blockIndex, blockIndex + 1)
+
+	// remove this block as successor in other blocks
+	for _, otherBlock := range b.blocks {
+		otherBlock.Successors = slices.DeleteFunc(otherBlock.Successors, func(successor *BasicBlock) bool {
+			return successor.Id == block.Id
+		})
+	}
+}
+
+func (b *IRBuilder) deleteDeadCode(block *BasicBlock) {
+	conctrolFlowInstrIndex := slices.IndexFunc(block.Instrs, func(instr *Instr) bool {
+		return IsControlFlowInstr(instr.Type)
+	})
+
+	// delete all instructions after the control flow instruction
+	if conctrolFlowInstrIndex != -1 {
+		block.Instrs = slices.Delete(block.Instrs, conctrolFlowInstrIndex + 1, len(block.Instrs))
+	}
+}
+
+func (b *IRBuilder) getBranchingBlocks(block *BasicBlock) []*BasicBlock {
+	branchingBlocks := []*BasicBlock{}
+
+	for _, instr := range block.Instrs {
+		switch instr.Type {
+		case InstrTypeJmp:
+			branchingBlocks = append(branchingBlocks, AsJmpInstrInput(instr.Input).Target)
+		case InstrTypeCondJmp:
+			branchingBlocks = append(branchingBlocks, AsCondJmpInstrInput(instr.Input).TrueTarget, AsCondJmpInstrInput(instr.Input).FalseTarget)
+		}
+	}
+
+	return branchingBlocks
+}
+
+func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
+	optimizedBlocks := map[*BasicBlock]bool{}
+	var visitAndOptimize func(block *BasicBlock)
+	
+	// we delete the dead code in the block and then visit the branching blocks
+	visitAndOptimize = func(block *BasicBlock) {
+		_, isOptimized := optimizedBlocks[block]
+		if isOptimized {
+			return
+		}
+
+		b.deleteDeadCode(block)
+
+		optimizedBlocks[block] = true
+		branchingBlocks := b.getBranchingBlocks(block)
+		for _, branchingBlock := range branchingBlocks {
+			visitAndOptimize(branchingBlock)
+		}
+	}
+
+	for _, block := range blocks {
+		visitAndOptimize(block)
+	}
+
+	// delete unreachable blocks
+	for _, block := range b.blocks {
+		_, isOptimized := optimizedBlocks[block]
+		if !isOptimized {
+			b.deleteBlock(block)
+		}
+	}
+}
+
+func (b *IRBuilder) Optimize() {
+	functionBlocks := []*BasicBlock{}
+
+	// get all the root blocks
+	for _, instr := range b.instrs {
+		if instr.Type == InstrTypeDeclFunc {
+			functionBlocks = append(functionBlocks, AsDeclFuncInstrInput(instr.Input).Body)
+		}
+	}
+
+	b.optimizeBlocks(functionBlocks)
 }
 
 func (b *IRBuilder) String() string {

@@ -10,7 +10,12 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/zeus.go",
-            "args": ["build", "${workspaceFolder}/playground/hello.tsl"]
+            "args": [
+                "build",
+                "${workspaceFolder}/playground/hello.tsl",
+                "-o",
+                "${workspaceFolder}/playground/hello.ll"
+            ]
         }
     ]
 }

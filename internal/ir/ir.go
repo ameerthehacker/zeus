@@ -35,6 +35,7 @@ func (g *IRGen) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 		stmt.Accept(g)
 	}
 	g.symbolTable.ExitScope()
+	g.irBuilder.Optimize()
 
 	return g.errors
 }
