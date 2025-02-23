@@ -38,7 +38,7 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 			Span:    decl_var.Variable.Span,
 		})
 	} else if decl_var.Initializer != nil {
-		initializer := tc.tcAssignWithImplicitCast(instr, decl_var.Variable.ValueType, decl_var.Initializer)
+		initializer := tc.cmpValueWithImplicitCast(instr, decl_var.Variable.ValueType, decl_var.Initializer)
 		decl_var.Initializer = initializer
 	}
 }
@@ -56,7 +56,7 @@ func (tc *TypeChecker) getValueType(_value value.Value) value.ValueType {
 	}
 }
 
-func (tc *TypeChecker) tcAssignWithImplicitCast(instr *Instr, targetType value.ValueType, b value.Value) value.Value {
+func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType value.ValueType, b value.Value) value.Value {
 	bType := tc.getValueType(b)
 
 	if !tc.cmpValueType(targetType, bType) {
@@ -276,7 +276,7 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 			Span:    input.Addr.Span,
 		})
 	} else {
-		input.Value = tc.tcAssignWithImplicitCast(instr, input.Addr.ValueType, input.Value)
+		input.Value = tc.cmpValueWithImplicitCast(instr, input.Addr.ValueType, input.Value)
 	}
 }
 
@@ -304,11 +304,8 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 		})
 	} else if value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil {
 		return
-	} else if !tc.cmpValueType(tc.currentFunction.ReturnType, tc.getValueType(input.Value)) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("return type '%s' does not match function return type '%s'", tc.getValueType(input.Value), tc.currentFunction.ReturnType),
-			Span:    instr.Span,
-		})
+	} else {
+		input.Value = tc.cmpValueWithImplicitCast(instr, tc.currentFunction.ReturnType, input.Value)
 	}
 }
 

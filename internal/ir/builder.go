@@ -268,8 +268,10 @@ func (b *IRBuilder) BuildUnaryOp(value value.Value, op InstrType, span *token.Sp
 
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
 	worklist := []*BasicBlock{}
+	i := 0
 
-	for _, instr := range b.instrs {
+	for i < len(b.instrs) {
+		instr := b.instrs[i]
 		fnInstr(instr)
 
 		switch instr.Type {
@@ -281,10 +283,16 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 			block := worklist[0]
 			worklist = worklist[1:]
 			fnBlock(block)
+			j := 0
 			// walk the instructions in the block
-			for _, instr := range block.Instrs {fnInstr(instr)}
+			for j < len(block.Instrs) {
+				instr := block.Instrs[j]
+				fnInstr(instr)
+				j++
+			}
 			worklist = append(worklist, block.Successors...)
 		}
+		i++
 	}
 }
 
