@@ -65,13 +65,13 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			isConst = true
 		}
 
-		variable := g.irBuilder.BuildVarDecl(&VarDecl{
-			Name: decl.Identifier.Name.Value,
-			ValueType: value.ToValueType(decl.DataType),
-			Span: decl.Identifier.Name.Span,
-			IsConst: isConst,
-			Initializer: initializer,
-		})
+		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
+			decl.Identifier.Name.Value,
+			value.ToValueType(decl.DataType),
+			isConst,
+			initializer,
+			decl.Identifier.Name.Span,
+		))
 
 		g.symbolTable.DeclareSymbol(decl.Identifier.Name.Value, variable)
 	}
@@ -196,16 +196,16 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Valu
 }
 
 func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
-	params := []VarDecl{}
+	params := []*VarDecl{}
 
 	for _, param := range expr.Params {
-		params = append(params, VarDecl{
-			Name: param.Identifier.Name.Value,
-			ValueType: value.ToValueType(param.DataType),
-			IsConst: true,
-			Initializer: nil,
-			Span: param.Identifier.Name.Span,
-		})
+		params = append(params, NewVarDecl(
+			param.Identifier.Name.Value,
+			value.ToValueType(param.DataType),
+			true,
+			nil,
+			param.Identifier.Name.Span,
+		))
 	}
 
 	current_block := g.irBuilder.GetInsertionBlock()
@@ -230,11 +230,7 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 
 	g.symbolTable.ExitScope()
 
-	return &value.Var{
-		Name: expr.Name.Name.Value,
-		ValueType: value.ToFunctionType(*fn),
-		Span: expr.Name.Name.Span,
-	}
+	return value.NewVar(expr.Name.Name.Value, value.ToFunctionType(*fn), false, expr.Name.Name.Span)
 }
 
 func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
@@ -266,22 +262,22 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 
 func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {
 	if value.IsFloat(expr.Value.Value) {
-		return &value.Constant{
-			Value: expr.Value.Value,
-			ValueType: value.FloatType{
+		return value.NewConstant(
+			expr.Value.Value,
+			value.FloatType{
 				Size: value.F64,
 			},
-			Span: expr.Value.Span,
-		}
+			expr.Value.Span,
+		)
 	} else {
-		return &value.Constant{
-			Value: expr.Value.Value,
-			ValueType: value.IntType{
+		return value.NewConstant(
+			expr.Value.Value,
+			value.IntType{
 				Signed: false,
 				Size: value.GetSignedIntSize(expr.Value.Value),
 			},
-			Span: expr.Value.Span,
-		}
+			expr.Value.Span,
+		)
 	}
 }
 
@@ -300,16 +296,16 @@ func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
 
 func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) value.Value {
 	if expr.Value.Type == token.TokenTypeTrue {
-		return &value.Constant{
-			Value: "true",
-			ValueType: value.BoolType{},
-			Span: expr.Value.Span,
-		}
+		return value.NewConstant(
+			"true",
+			value.BoolType{},
+			expr.Value.Span,
+		)
 	}
-	return &value.Constant{
-		Value: "false",
-		ValueType: value.BoolType{},
-		Span: expr.Value.Span,
-	}
+	return value.NewConstant(
+		"false",
+		value.BoolType{},
+		expr.Value.Span,
+	)
 }
 

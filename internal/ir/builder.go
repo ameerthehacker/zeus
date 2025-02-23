@@ -55,12 +55,7 @@ func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
 	temp_variable_name := value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.tempVarCount)
 	b.tempVarCount++
 
-	return &value.Var{
-		Name: temp_variable_name,
-		ValueType: nil,
-		Span: span,
-		IsPtr: false,
-	}
+	return value.NewVar(temp_variable_name, nil, false, span)
 }
 
 func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
@@ -133,10 +128,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *t
 	b.pushInstr(&Instr{
 		Type: op,
 		Output: result,
-		Input: BinaryOpInstrInput{
-			Left: left,
-			Right: right,
-		},
+		Input: NewBinaryOpInstrInput(left, right),
 		Span: span,
 	})
 
@@ -149,9 +141,7 @@ func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
 	b.pushInstr(&Instr{
 		Type: InstrTypeLoad,
 		Output: result,
-		Input: LoadInstrInput{
-			Addr: addr,
-		},
+		Input: NewLoadInstrInput(addr),
 		Span: span,
 	})
 
@@ -161,21 +151,13 @@ func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
 func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 	unique_name := b.generateUniqueSymbolName(v.Name)
 
-	variable := &value.Var{
-		Name: unique_name,
-		ValueType: v.ValueType,
-		Span: v.Span,
-		IsPtr: true,
-	}
+	variable := value.NewVar(unique_name, v.ValueType, true, v.Span)
 
 	b.symbolTable.DeclareSymbol(unique_name, variable)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclVar,
-		Input: DeclareVarInstrInput{
-			Variable: variable,
-			Initializer: v.Initializer,
-		},
+		Input: NewDeclareVarInstrInput(variable, v.Initializer, v.IsConst),
 		Span: v.Span,
 	})
 
@@ -185,10 +167,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeStore,
-		Input: StoreInstrInput{
-			Addr: addr,
-			Value: value,
-		},
+		Input: NewStoreInstrInput(addr, value),
 		Span: span,
 	})
 }
@@ -199,10 +178,7 @@ func (b *IRBuilder) BuildCast(value value.Value, castType value.ValueType, span 
 	b.pushInstr(&Instr{
 		Type: InstrTypeCast,
 		Output: result,
-		Input: CastInstrInput{
-			Value: value,
-			CastType: castType,
-		},
+		Input: NewCastInstrInput(value, castType),
 		Span: span,
 	})
 	result.ValueType = castType
@@ -210,50 +186,40 @@ func (b *IRBuilder) BuildCast(value value.Value, castType value.ValueType, span 
 	return result
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
+func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
 	b.symbolTable.EnterScope()
 	params := []*value.Var{}
 	for _, arg := range args {
-		variable := &value.Var{
-			Name: b.generateUniqueSymbolName(arg.Name),
-			ValueType: arg.ValueType,
-			Span: arg.Span,
-			IsPtr: false,
-		}
+		variable := value.NewVar(b.generateUniqueSymbolName(arg.Name), arg.ValueType, false, arg.Span)
 		b.symbolTable.DeclareSymbol(arg.Name, variable)
 
 		params = append(params, variable)
 	}
 
-	fn := value.Function{
-		Name:  b.generateUniqueSymbolName(name),
-		ReturnType: return_type,
-		Params: params,
-		Span: span,
-	}
+	fn := value.NewFunction(
+		name,
+		params,
+		return_type,
+		span,
+	)
 	// functions are global
 	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclFunc,
-		Input: DeclFuncInstrInput{
-			Function: fn,
-			Body: body,
-		},
+		Input: NewDeclFuncInstrInput(fn, body),
 		Span: span,
 	})
 
 	b.symbolTable.ExitScope()
 
-	return &fn
+	return fn
 }
 
 func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeJmp,
-		Input: JmpInstrInput{
-			Target: target,
-		},
+		Input: NewJmpInstrInput(target),
 		Span: span,
 	})
 }
@@ -261,11 +227,7 @@ func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlock, condition value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeCondJmp,
-		Input: CondJmpInstrInput{
-			TrueTarget: true_target,
-			FalseTarget: false_target,
-			Condition: condition,
-		},
+		Input: NewCondJmpInstrInput(true_target, false_target, condition),
 		Span: span,
 	})
 }
@@ -276,10 +238,7 @@ func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, sp
 	b.pushInstr(&Instr{
 		Type: InstrTypeCallFunc,
 		Output: result,
-		Input: CallFuncInstrInput{
-			Callee: callee,
-			Args: args,
-		},
+		Input: NewCallFuncInstrInput(callee, args),
 		Span: span,
 	})
 
@@ -289,9 +248,7 @@ func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, sp
 func (b *IRBuilder) BuildReturn(value value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeReturn,
-		Input: ReturnInstrInput{
-			Value: value,
-		},
+		Input: NewReturnInstrInput(value),
 		Span: span,
 	})
 }
@@ -302,9 +259,7 @@ func (b *IRBuilder) BuildUnaryOp(value value.Value, op InstrType, span *token.Sp
 	b.pushInstr(&Instr{
 		Type: op,
 		Output: result,
-		Input: UnaryOpInstrInput{
-			Value: value,
-		},
+		Input: NewUnaryOpInstrInput(value),
 		Span: span,
 	})
 

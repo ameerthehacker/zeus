@@ -71,7 +71,7 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 }
 
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
-	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(value.ToFunctionType(input.Function)))
+	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(value.ToFunctionType(*input.Function)))
 	funcParams := input.Function.Params
 
 	for index, param := range llvmFunc.Params() {

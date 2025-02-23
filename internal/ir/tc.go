@@ -26,7 +26,7 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 
 func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 	func_decl := AsDeclFuncInstrInput(instr.Input)
-	tc.currentFunction = &func_decl.Function
+	tc.currentFunction = func_decl.Function
 }
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {
@@ -39,12 +39,7 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 		})
 	} else if decl_var.Initializer != nil {
 		initializer := tc.tcAssignWithImplicitCast(instr, decl_var.Variable.ValueType, decl_var.Initializer)
-
-		instr.Input = DeclareVarInstrInput{
-			Variable:    decl_var.Variable,
-			Initializer: initializer,
-			IsConst:     decl_var.IsConst,
-		}
+		decl_var.Initializer = initializer
 	}
 }
 
@@ -236,11 +231,8 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b value.Val
 		})
 	} else {
 		left, right := tc.doImplicitCastToSameType(instr, input.Left, input.Right)
-
-		instr.Input = BinaryOpInstrInput{
-			Left:  left,
-			Right: right,
-		}
+		input.Left = left
+		input.Right = right
 	}
 
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right))
@@ -284,10 +276,7 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 			Span:    input.Addr.Span,
 		})
 	} else {
-		instr.Input = StoreInstrInput{
-			Addr:  input.Addr,
-			Value: tc.tcAssignWithImplicitCast(instr, input.Addr.ValueType, input.Value),
-		}
+		input.Value = tc.tcAssignWithImplicitCast(instr, input.Addr.ValueType, input.Value)
 	}
 }
 

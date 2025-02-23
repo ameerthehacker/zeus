@@ -22,6 +22,16 @@ type VarDecl struct {
 	Span *token.Span
 }
 
+func NewVarDecl(name string, valueType value.ValueType, isConst bool, initializer value.Value, span *token.Span) *VarDecl {
+	return &VarDecl{
+		Name: name,
+		ValueType: valueType,
+		IsConst: isConst,
+		Initializer: initializer,
+		Span: span,
+	}
+}
+
 func (v VarDecl) String() string {
 	return fmt.Sprintf("%s %s", v.ValueType, v.Name)
 }
@@ -35,14 +45,21 @@ type BinaryOpInstrInput struct {
 	Right value.Value
 }
 
+func NewBinaryOpInstrInput(left, right value.Value) *BinaryOpInstrInput {
+	return &BinaryOpInstrInput{
+		Left:  left,
+		Right: right,
+	}
+}
+
 func (i BinaryOpInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Left, i.Right)
 }
 
 func AsBinaryOpInstrInput(input InstrInput) *BinaryOpInstrInput {
 	switch input := input.(type) {
-	case BinaryOpInstrInput:
-		return &input
+	case *BinaryOpInstrInput:
+		return input
 	default:
 		panicInvalidInputType("BinaryOpInstrInput", input)
 	}
@@ -54,14 +71,20 @@ type UnaryOpInstrInput struct {
 	Value value.Value
 }
 
+func NewUnaryOpInstrInput(value value.Value) *UnaryOpInstrInput {
+	return &UnaryOpInstrInput{
+		Value: value,
+	}
+}
+
 func (i UnaryOpInstrInput) String() string {
 	return i.Value.String()
 }
 
 func AsUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 	switch input := input.(type) {
-	case UnaryOpInstrInput:
-		return &input
+	case *UnaryOpInstrInput:
+		return input
 	default:
 		panicInvalidInputType("UnaryOpInstrInput", input)
 	}
@@ -75,6 +98,14 @@ type DeclareVarInstrInput struct {
 	IsConst bool
 }
 
+func NewDeclareVarInstrInput(variable *value.Var, initializer value.Value, isConst bool) *DeclareVarInstrInput {
+	return &DeclareVarInstrInput{
+		Variable:    variable,
+		Initializer: initializer,
+		IsConst:     isConst,
+	}
+}
+
 func (i DeclareVarInstrInput) String() string {
 	if i.Initializer != nil {
 		return fmt.Sprintf("%s %s = %s", i.Variable.ValueType, i.Variable.Name, i.Initializer)
@@ -84,8 +115,8 @@ func (i DeclareVarInstrInput) String() string {
 
 func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 	switch input := input.(type) {
-	case DeclareVarInstrInput:
-		return &input
+	case *DeclareVarInstrInput:
+		return input
 	default:
 		panicInvalidInputType("DeclareVarInstrInput", input)
 	}
@@ -97,14 +128,20 @@ type LoadInstrInput struct {
 	Addr *value.Var
 }
 
+func NewLoadInstrInput(addr *value.Var) *LoadInstrInput {
+	return &LoadInstrInput{
+		Addr: addr,
+	}
+}
+
 func (i LoadInstrInput) String() string {
 	return i.Addr.String()
 }
 
 func AsLoadInstrInput(input InstrInput) *LoadInstrInput {
 	switch input := input.(type) {
-	case LoadInstrInput:
-		return &input
+	case *LoadInstrInput:
+		return input
 	default:
 		panicInvalidInputType("LoadInstrInput", input)
 	}
@@ -117,14 +154,21 @@ type StoreInstrInput struct {
 	Value value.Value
 }
 
+func NewStoreInstrInput(addr *value.Var, value value.Value) *StoreInstrInput {
+	return &StoreInstrInput{
+		Addr:  addr,
+		Value: value,
+	}
+}
+
 func (i StoreInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Addr, i.Value)
 }
 
 func AsStoreInstrInput(input InstrInput) *StoreInstrInput {
 	switch input := input.(type) {
-	case StoreInstrInput:
-		return &input
+	case *StoreInstrInput:
+		return input
 	default:
 		panicInvalidInputType("StoreInstrInput", input)
 	}
@@ -137,6 +181,13 @@ type CallFuncInstrInput struct {
 	Args []value.Value
 }
 
+func NewCallFuncInstrInput(callee value.Value, args []value.Value) *CallFuncInstrInput {
+	return &CallFuncInstrInput{
+		Callee: callee,
+		Args:   args,
+	}
+}
+
 func (i CallFuncInstrInput) String() string {
 	args := []string{}
 	for _, arg := range i.Args {
@@ -147,8 +198,8 @@ func (i CallFuncInstrInput) String() string {
 
 func AsCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {
 	switch input := input.(type) {
-	case CallFuncInstrInput:
-		return &input
+	case *CallFuncInstrInput:
+		return input
 	default:
 		panicInvalidInputType("CallFuncInstrInput", input)
 	}
@@ -160,6 +211,12 @@ type ReturnInstrInput struct {
 	Value value.Value
 }
 
+func NewReturnInstrInput(value value.Value) *ReturnInstrInput {
+	return &ReturnInstrInput{
+		Value: value,
+	}
+}
+
 func (i ReturnInstrInput) String() string {
 	if i.Value != nil {
 		return i.Value.String()
@@ -169,8 +226,8 @@ func (i ReturnInstrInput) String() string {
 
 func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {
 	switch input := input.(type) {
-	case ReturnInstrInput:
-		return &input
+	case *ReturnInstrInput:
+		return input
 	default:
 		panicInvalidInputType("ReturnInstrInput", input)
 	}
@@ -179,14 +236,14 @@ func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {
 }
 
 type DeclFuncInstrInput struct {
-	Function value.Function
+	Function *value.Function
 	Body *BasicBlock
 }
 
 func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
 	switch input := input.(type) {
-	case DeclFuncInstrInput:
-		return &input
+	case *DeclFuncInstrInput:
+		return input
 	default:
 		panicInvalidInputType("DeclFuncInstrInput", input)
 	}
@@ -194,12 +251,25 @@ func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
 	return nil
 }
 
+func NewDeclFuncInstrInput(function *value.Function, body *BasicBlock) *DeclFuncInstrInput {
+	return &DeclFuncInstrInput{
+		Function: function,
+		Body:     body,
+	}
+}
+
 func (i DeclFuncInstrInput) String() string {
 	return i.Function.String()
 }
-
+	
 type JmpInstrInput struct {
 	Target *BasicBlock
+}
+
+func NewJmpInstrInput(target *BasicBlock) *JmpInstrInput {
+	return &JmpInstrInput{
+		Target: target,
+	}
 }
 
 func (i JmpInstrInput) String() string {
@@ -208,8 +278,8 @@ func (i JmpInstrInput) String() string {
 
 func AsJmpInstrInput(input InstrInput) *JmpInstrInput {
 	switch input := input.(type) {
-	case JmpInstrInput:
-		return &input
+	case *JmpInstrInput:
+		return input
 	default:
 		panicInvalidInputType("JmpInstrInput", input)
 	}
@@ -223,14 +293,22 @@ type CondJmpInstrInput struct {
 	Condition value.Value
 }
 
+func NewCondJmpInstrInput(trueTarget, falseTarget *BasicBlock, condition value.Value) *CondJmpInstrInput {
+	return &CondJmpInstrInput{
+		TrueTarget:  trueTarget,
+		FalseTarget: falseTarget,
+		Condition:   condition,
+	}
+}
+
 func (i CondJmpInstrInput) String() string {
 	return fmt.Sprintf("%s, %d, %d", i.Condition, i.TrueTarget.Id, i.FalseTarget.Id)
 }
 
 func AsCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
 	switch input := input.(type) {
-	case CondJmpInstrInput:
-		return &input
+	case *CondJmpInstrInput:
+		return input
 	default:
 		panicInvalidInputType("CondJmpInstrInput", input)
 	}
@@ -243,14 +321,21 @@ type CastInstrInput struct {
 	CastType value.ValueType
 }
 
+func NewCastInstrInput(value value.Value, castType value.ValueType) *CastInstrInput {
+	return &CastInstrInput{
+		Value:     value,
+		CastType:  castType,
+	}
+}
+
 func (i CastInstrInput) String() string {
 	return fmt.Sprintf("%s %s", i.Value, i.CastType)
 }
 
 func AsCastInstrInput(input InstrInput) *CastInstrInput {
 	switch input := input.(type) {
-	case CastInstrInput:
-		return &input
+	case *CastInstrInput:
+		return input
 	default:
 		panicInvalidInputType("CastInstrInput", input)
 	}

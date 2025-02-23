@@ -22,6 +22,14 @@ type Constant struct {
 	Span *token.Span
 }
 
+func NewConstant(value string, valueType ValueType, span *token.Span) *Constant {
+	return &Constant{
+		Value: value,
+		ValueType: valueType,
+		Span: span,
+	}
+}
+
 func (i Constant) GetSpan() *token.Span {
 	return i.Span
 }	
@@ -35,6 +43,15 @@ type Var struct {
 	ValueType ValueType
 	IsPtr bool
 	Span *token.Span
+}
+
+func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span) *Var {
+	return &Var{
+		Name: name,
+		ValueType: valueType,
+		IsPtr: isPtr,
+		Span: span,
+	}
 }
 
 func (v Var) GetSpan() *token.Span {
@@ -57,6 +74,15 @@ type Function struct {
 	Params []*Var
 	ReturnType ValueType
 	Span *token.Span
+}
+
+func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {
+	return &Function{
+		Name: name,
+		Params: params,
+		ReturnType: returnType,
+		Span: span,
+	}
 }
 
 func (f Function) GetSpan() *token.Span {
