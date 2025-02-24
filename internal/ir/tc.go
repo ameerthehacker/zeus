@@ -35,7 +35,13 @@ func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 		block := worklist[0]
 
 		if len(block.Instrs) == 0 || !IsControlFlowInstr(block.Instrs[len(block.Instrs) -1 ].Type) {
-			returnsInAllBlocks = false
+			// add implicit return
+			if value.IsVoidType(input.Function.ReturnType) {
+				tc.builder.SetInsertionBlock(block)
+				tc.builder.BuildReturn(nil, nil)
+			} else {
+				returnsInAllBlocks = false
+			}
 		}
 
 		worklist = worklist[1:]

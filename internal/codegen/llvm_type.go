@@ -46,15 +46,17 @@ func ToLLVMFloatType(floatType value.FloatType) llvm.Type {
 }
 
 func ToLLVMType(_type value.ValueType) llvm.Type {
-	switch _type.(type) {
+	switch _type := _type.(type) {
 	case value.IntType:
-		return ToLLVMIntType(_type.(value.IntType))
+		return ToLLVMIntType(_type)
 	case value.FloatType:
-		return ToLLVMFloatType(_type.(value.FloatType))
+		return ToLLVMFloatType(_type)
 	case value.BoolType:
 		return llvm.GlobalContext().Int1Type()
 	case value.FunctionType:
-		return ToLLVMFunctionType(_type.(value.FunctionType))
+		return ToLLVMFunctionType(_type)
+	case value.VoidType:
+		return llvm.GlobalContext().VoidType()
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %s", _type))
 	}
