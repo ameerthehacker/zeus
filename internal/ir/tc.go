@@ -25,8 +25,29 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 }
 
 func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
-	func_decl := AsDeclFuncInstrInput(instr.Input)
-	tc.currentFunction = func_decl.Function
+	input := AsDeclFuncInstrInput(instr.Input)
+	tc.currentFunction = input.Function
+	functionBlock := input.Body
+	returnsInAllBlocks := true
+	worklist := []*BasicBlock{functionBlock}
+
+	for len(worklist) > 0 {
+		block := worklist[0]
+
+		if len(block.Instrs) == 0 || !IsControlFlowInstr(block.Instrs[len(block.Instrs) -1 ].Type) {
+			returnsInAllBlocks = false
+		}
+
+		worklist = worklist[1:]
+		worklist = append(worklist, block.Successors...)
+	}
+
+	if !returnsInAllBlocks {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("function '%s' does not return value of type '%s' in all paths", tc.currentFunction.Name, tc.currentFunction.ReturnType),
+			Span:    input.Function.Span,
+		})
+	}
 }
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {

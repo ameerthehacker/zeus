@@ -276,8 +276,7 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 		instr := b.instrs[i]
 		fnInstr(instr)
 
-		switch instr.Type {
-		case InstrTypeDeclFunc:
+		if IsFunctionDeclInstr(instr.Type) {
 			worklist = append(worklist, AsDeclFuncInstrInput(instr.Input).Body)
 		}
 
@@ -322,7 +321,7 @@ func (b *IRBuilder) deleteDeadCode(block *BasicBlock) {
 	}
 }
 
-func (b *IRBuilder) getBranchingBlocks(block *BasicBlock) []*BasicBlock {
+func (b *IRBuilder) GetBranchingBlocks(block *BasicBlock) []*BasicBlock {
 	branchingBlocks := []*BasicBlock{}
 
 	for _, instr := range block.Instrs {
@@ -351,7 +350,7 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 		b.deleteDeadCode(block)
 
 		optimizedBlocks[block] = true
-		branchingBlocks := b.getBranchingBlocks(block)
+		branchingBlocks := b.GetBranchingBlocks(block)
 		for _, branchingBlock := range branchingBlocks {
 			visitAndOptimize(branchingBlock)
 		}
@@ -370,17 +369,20 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 	}
 }
 
-func (b *IRBuilder) Optimize() {
+func (b *IRBuilder) GetFunctionBlocks() []*BasicBlock {
 	functionBlocks := []*BasicBlock{}
 
-	// get all the root blocks
 	for _, instr := range b.instrs {
-		if instr.Type == InstrTypeDeclFunc {
+		if IsFunctionDeclInstr(instr.Type) {
 			functionBlocks = append(functionBlocks, AsDeclFuncInstrInput(instr.Input).Body)
 		}
 	}
 
-	b.optimizeBlocks(functionBlocks)
+	return functionBlocks
+}
+
+func (b *IRBuilder) Optimize() {
+	b.optimizeBlocks(b.GetFunctionBlocks())
 }
 
 func (b *IRBuilder) String() string {
