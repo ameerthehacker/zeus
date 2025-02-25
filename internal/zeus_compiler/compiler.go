@@ -143,7 +143,7 @@ func (c *Compiler) EmitFile(sourceFile *SourceFile, emitFileType EmitFileType, o
 	case EmitFileTypeASM:
 		llvmCodegenType := llvm.AssemblyFile
 
-		if emitFileType == EmitFileTypeASM {
+		if emitFileType == EmitFileTypeObject {
 			llvmCodegenType = llvm.ObjectFile
 		}
 
