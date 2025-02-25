@@ -50,3 +50,7 @@ func Assert(condition bool, message string) {
 		panic(message)
 	}
 }
+
+func NotImplemented() {
+	panic("not implemented")
+}

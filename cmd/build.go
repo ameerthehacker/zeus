@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ameerthehacker/zeus/internal/compiler"
 	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/zeus_compiler"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 
 	"github.com/spf13/cobra"
@@ -16,6 +16,7 @@ import (
 const (
 	FlagInternalZeusIR = "internal-zeus-ir"
 	FlagInternalLLVMIR = "internal-llvm-ir"
+	FlagFileType = "file-type"
 	FlagOutputPath = "out"
 )
 
@@ -31,8 +32,8 @@ func buildCmd() *cobra.Command {
 				logger.Log(zeus_error.ErrorSeverityError, err.Error())
 				os.Exit(1)
 			} else {
-				_compiler := compiler.NewCompiler()
-				sourceFile := _compiler.CompileFile(compiler.Input{
+				_compiler := zeus_compiler.NewCompiler()
+				sourceFile := _compiler.CompileFile(zeus_compiler.Input{
 					Path: filePath,
 					Source: string(content),
 				})
@@ -60,7 +61,32 @@ func buildCmd() *cobra.Command {
 				}
 				fileName := filepath.Base(filePath)
 				fileNameWithoutExtension := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-				outputFileName := fileNameWithoutExtension + ".ll"
+				getOutputFileNameWithExtension := func(fileType zeus_compiler.EmitFileType) string {
+					switch fileType {
+					case zeus_compiler.EmitFileTypeLLVMIR:
+						return fileNameWithoutExtension + ".ll"
+					case zeus_compiler.EmitFileTypeObject:
+						return fileNameWithoutExtension + ".o"
+					case zeus_compiler.EmitFileTypeASM:
+						return fileNameWithoutExtension + ".s"
+					default:
+						return fileNameWithoutExtension
+					}
+				}
+				getEmitFileType := func(fileType string) zeus_compiler.EmitFileType {
+					switch fileType {
+					case "ll":
+						return zeus_compiler.EmitFileTypeLLVMIR
+					case "obj":
+						return zeus_compiler.EmitFileTypeObject
+					case "asm":
+						return zeus_compiler.EmitFileTypeASM
+					default:
+						return zeus_compiler.EmitFileTypeEXE
+					}
+				}
+				emitFileType := getEmitFileType(cmd.Flag(FlagFileType).Value.String())
+				outputFileName := getOutputFileNameWithExtension(emitFileType)
 
 				var outputPath string
 				if cmd.Flag(FlagOutputPath).Changed {
@@ -68,10 +94,10 @@ func buildCmd() *cobra.Command {
 				} else {
 					outputPath = filepath.Join(folderPath, outputFileName)
 				}
-				err = os.WriteFile(outputPath, []byte(sourceFile.Module.String()), 0644)
+				err = _compiler.EmitFile(sourceFile, emitFileType, outputPath)
 
 				if err != nil {
-					logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write file %s: %s", outputFileName, err.Error()))
+					logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit file %s: %s", outputFileName, err.Error()))
 					os.Exit(1)
 				}
 			}
@@ -81,6 +107,7 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().Bool(FlagInternalZeusIR, false, "print the zeus IR")
 	buildCmd.Flags().Bool(FlagInternalLLVMIR, false, "print the llvm IR")
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
+	buildCmd.Flags().String(FlagFileType, "", "file type to emit")
 
 	return buildCmd
 }

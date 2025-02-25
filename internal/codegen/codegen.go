@@ -326,6 +326,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	c.symbolTable.ExitScope()
 }
 
+func (c *CodegenModule) GetModule() llvm.Module {
+	return c.module
+}
+
 func (c *CodegenModule) Dump() {
 	c.module.Dump()
 }
