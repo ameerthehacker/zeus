@@ -8,7 +8,8 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/value"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
+
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
@@ -20,11 +21,11 @@ type IRBuilder struct {
 	blocks []*BasicBlock
 	tempVarCount int
 	blocksCount int
-	symbolTable *symbol_table.SymbolTable[value.Value]
+	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
 }
 
 func NewIRBuilder() *IRBuilder {
-	symbol_table := symbol_table.NewSymbolTable[value.Value]()
+	symbol_table := symbol_table.NewSymbolTable[zeus_value.Value]()
 	symbol_table.EnterScope()
 
 	return &IRBuilder{
@@ -52,11 +53,11 @@ func (b *IRBuilder) generateUniqueSymbolName(name string) string {
 	return unique_name
 }
 
-func (b *IRBuilder) createTempVariable(span *token.Span) *value.Var {
-	temp_variable_name := value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.tempVarCount)
+func (b *IRBuilder) createTempVariable(span *token.Span) *zeus_value.Var {
+	temp_variable_name := zeus_value.TEMP_VARIABLE_PREFIX + strconv.Itoa(b.tempVarCount)
 	b.tempVarCount++
 
-	return value.NewVar(temp_variable_name, nil, false, span)
+	return zeus_value.NewVar(temp_variable_name, nil, false, span)
 }
 
 func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
@@ -124,7 +125,7 @@ func (b* IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
 	b.blockIdInsetionIndexMap[block.Id] = instrIndex
 }
 
-func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *token.Span) value.Value {
+func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
@@ -137,7 +138,7 @@ func (b *IRBuilder) BuildBinaryOp(left, right value.Value, op InstrType, span *t
 	return result
 }
 
-func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
+func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(addr.Span)
 
 	b.pushInstr(&Instr{
@@ -150,10 +151,10 @@ func (b *IRBuilder) BuildLoad(addr *value.Var, span *token.Span) value.Value {
 	return result
 }
 
-func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
+func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 	unique_name := b.generateUniqueSymbolName(v.Name)
 
-	variable := value.NewVar(unique_name, v.ValueType, true, v.Span)
+	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
 
 	b.symbolTable.DeclareSymbol(unique_name, variable)
 
@@ -166,7 +167,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *value.Var {
 	return variable
 }
 
-func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.Span) {
+func (b *IRBuilder) BuildStore(addr *zeus_value.Var, value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeStore,
 		Input: NewStoreInstrInput(addr, value),
@@ -174,7 +175,7 @@ func (b *IRBuilder) BuildStore(addr *value.Var, value value.Value, span *token.S
 	})
 }
 
-func (b *IRBuilder) BuildCast(value value.Value, castType value.ValueType, span *token.Span) value.Value {
+func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
@@ -188,17 +189,17 @@ func (b *IRBuilder) BuildCast(value value.Value, castType value.ValueType, span 
 	return result
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type value.ValueType, span *token.Span) *value.Function {
+func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, span *token.Span) *zeus_value.Function {
 	b.symbolTable.EnterScope()
-	params := []*value.Var{}
+	params := []*zeus_value.Var{}
 	for _, arg := range args {
-		variable := value.NewVar(b.generateUniqueSymbolName(arg.Name), arg.ValueType, false, arg.Span)
+		variable := zeus_value.NewVar(b.generateUniqueSymbolName(arg.Name), arg.ValueType, false, arg.Span)
 		b.symbolTable.DeclareSymbol(arg.Name, variable)
 
 		params = append(params, variable)
 	}
 
-	fn := value.NewFunction(
+	fn := zeus_value.NewFunction(
 		name,
 		params,
 		return_type,
@@ -226,7 +227,7 @@ func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlock, condition value.Value, span *token.Span) {
+func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlock, condition zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeCondJmp,
 		Input: NewCondJmpInstrInput(true_target, false_target, condition),
@@ -234,7 +235,7 @@ func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlo
 	})
 }
 
-func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, span *token.Span) value.Value {
+func (b *IRBuilder) BuildCallFunc(callee *zeus_value.Function, args []zeus_value.Value, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
@@ -247,7 +248,7 @@ func (b *IRBuilder) BuildCallFunc(callee *value.Function, args []value.Value, sp
 	return result
 }
 
-func (b *IRBuilder) BuildReturn(value value.Value, span *token.Span) {
+func (b *IRBuilder) BuildReturn(value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeReturn,
 		Input: NewReturnInstrInput(value),
@@ -255,7 +256,7 @@ func (b *IRBuilder) BuildReturn(value value.Value, span *token.Span) {
 	})
 }
 
-func (b *IRBuilder) BuildUnaryOp(value value.Value, op InstrType, span *token.Span) value.Value {
+func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{

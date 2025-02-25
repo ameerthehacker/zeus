@@ -6,7 +6,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
-	"github.com/ameerthehacker/zeus/internal/value"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -48,16 +48,16 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 	return symbol
 }
 
-func (c *CodegenModule) toLLVMValue(_value value.Value) llvm.Value {
-	switch _value := _value.(type) {
-	case *value.Constant:
-		return ToLLVMConstant(*_value)
-	case *value.Var:
-		return c.getSymbol(_value.Name)
-	case *value.Function:
-		return c.getSymbol(_value.Name)
+func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
+	switch value := value.(type) {
+	case *zeus_value.Constant:
+		return ToLLVMConstant(*value)
+	case *zeus_value.Var:
+		return c.getSymbol(value.Name)
+	case *zeus_value.Function:
+		return c.getSymbol(value.Name)
 	default:
-		panic(fmt.Sprintf("unable to convert zeus value %s to llvm value", _value))
+		panic(fmt.Sprintf("unable to convert zeus value %s to llvm value", value))
 	}
 }
 
@@ -71,7 +71,7 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 }
 
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
-	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(value.ToFunctionType(*input.Function)))
+	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(zeus_value.ToFunctionType(*input.Function)))
 	funcParams := input.Function.Params
 
 	for index, param := range llvmFunc.Params() {
@@ -110,7 +110,7 @@ func (c *CodegenModule) genStore(input ir.StoreInstrInput) {
 	c.builder.CreateStore(c.toLLVMValue(input.Value), addr)
 }
 
-func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output value.Var) {
+func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output zeus_value.Var) {
 	addr, ok := c.symbolTable.GetSymbol(input.Addr.Name)
 	if !ok {
 		panic(fmt.Sprintf("symbol %s not found in symbol table", input.Addr.Name))
@@ -119,9 +119,9 @@ func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output value.Var) {
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
-func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output value.Var) {
+func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_value.Var) {
 	function := c.toLLVMValue(input.Callee)
-	functionType := ToLLVMType(value.GetValueType(input.Callee))
+	functionType := ToLLVMType(zeus_value.GetValueType(input.Callee))
 	args := make([]llvm.Value, len(input.Args))
 	for i, arg := range input.Args {
 		args[i] = c.toLLVMValue(arg)
@@ -144,22 +144,22 @@ func (c *CodegenModule) genCondJmp(input ir.CondJmpInstrInput) {
 
 type BinaryOpLLVMFunc func (llvm.Value, llvm.Value, string) llvm.Value
 
-func (c *CodegenModule) genLLVMBinaryOp(left value.Value, right value.Value, opName string, intIntOp BinaryOpLLVMFunc, uIntuIntOp BinaryOpLLVMFunc, floatFloat BinaryOpLLVMFunc) llvm.Value {
-	leftType := value.GetValueType(left)
-	rightType := value.GetValueType(right)
+func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.Value, opName string, intIntOp BinaryOpLLVMFunc, uIntuIntOp BinaryOpLLVMFunc, floatFloat BinaryOpLLVMFunc) llvm.Value {
+	leftType := zeus_value.GetValueType(left)
+	rightType := zeus_value.GetValueType(right)
 
 	switch leftType := leftType.(type) {
-		case value.IntType:
+		case zeus_value.IntType:
 			switch rightType := rightType.(type) {
-				case value.IntType:
+				case zeus_value.IntType:
 					if !leftType.Signed && !rightType.Signed {
 						return uIntuIntOp(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 					}
 					return intIntOp(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 			}
-		case value.FloatType:
+		case zeus_value.FloatType:
 			switch rightType.(type) {
-				case value.FloatType:
+				case zeus_value.FloatType:
 					return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 			}
 	}
@@ -167,7 +167,7 @@ func (c *CodegenModule) genLLVMBinaryOp(left value.Value, right value.Value, opN
 	panic(fmt.Sprintf("invalid types %s and %s for binary operation %s", leftType, rightType, opName))
 }
 
-func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput, output value.Var) {
+func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput, output zeus_value.Var) {
 	var result llvm.Value
 
 	switch instr.Type {
@@ -232,21 +232,21 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 	c.symbolTable.DeclareSymbol(output.Name, result)
 }
 
-func (c *CodegenModule) genCast(input ir.CastInstrInput, output value.Var) {
+func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) {
 	var result llvm.Value
-	valueType := value.GetValueType(input.Value)
+	valueType := zeus_value.GetValueType(input.Value)
 	castErrorMsg := fmt.Sprintf("cannot cast %s to %s", input.Value, input.CastType)
 
 	switch valueType := valueType.(type) {
-		case value.IntType:
+		case zeus_value.IntType:
 			switch castType := input.CastType.(type) {
-				case value.FloatType:
+				case zeus_value.FloatType:
 					if valueType.Signed {
 						result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					} else {
 						result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					}
-				case value.IntType:
+				case zeus_value.IntType:
 					if castType.Signed {
 						result = c.builder.CreateSExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					} else {
@@ -255,7 +255,7 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output value.Var) {
 				default:
 					panic(castErrorMsg)
 			}
-		case value.FloatType:
+		case zeus_value.FloatType:
 			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 		default:
 			panic(castErrorMsg)

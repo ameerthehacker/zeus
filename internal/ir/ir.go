@@ -6,14 +6,14 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/value"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 type IRGen struct {
 	irBuilder *IRBuilder
 	isLValueExpr bool
-	symbolTable *symbol_table.SymbolTable[value.Value]
+	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
 	errors []*zeus_error.ZeusError
 }
 
@@ -21,7 +21,7 @@ func NewIRGen(ir_builder *IRBuilder) *IRGen {
 	return &IRGen{
 		irBuilder: ir_builder,
 		isLValueExpr: false,
-		symbolTable: symbol_table.NewSymbolTable[value.Value](),
+		symbolTable: symbol_table.NewSymbolTable[zeus_value.Value](),
 	}
 }
 
@@ -55,7 +55,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			return
 		}
 
-		var initializer value.Value
+		var initializer zeus_value.Value
 		isConst := false
 
 		if decl.Initializer != nil {
@@ -68,7 +68,7 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
 			decl.Identifier.Name.Value,
-			value.ToValueType(decl.DataType),
+			zeus_value.ToValueType(decl.DataType),
 			isConst,
 			initializer,
 			decl.Identifier.Name.Span,
@@ -139,7 +139,7 @@ func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
-func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) value.Value {
+func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	g.isLValueExpr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
@@ -167,7 +167,7 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) value.Value {
 	case token.TokenTypeGreaterThanEqual:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
 	case token.TokenTypeEqual:
-		addr := value.AsVar(left)
+		addr := zeus_value.AsVar(left)
 		if addr == nil {
 			panic(fmt.Sprintf("invalid lvalue: %s", left))
 		}
@@ -180,29 +180,29 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) value.Value {
 	}
 }
 
-func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) value.Value {
+func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) zeus_value.Value {
 	return expr.Expr.Accept(g)
 }
 
-func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) value.Value {
+func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
-	params := []value.Value{}
+	params := []zeus_value.Value{}
 	for _, arg := range expr.Params {
 		params = append(params, arg.Accept(g))
 	}
 
-	addr := value.AsFunction(callee)
+	addr := zeus_value.AsFunction(callee)
 
 	return g.irBuilder.BuildCallFunc(addr, params, expr.GetSpan())
 }
 
-func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Value {
+func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
 	params := []*VarDecl{}
 
 	for _, param := range expr.Params {
 		params = append(params, NewVarDecl(
 			param.Identifier.Name.Value,
-			value.ToValueType(param.DataType),
+			zeus_value.ToValueType(param.DataType),
 			true,
 			nil,
 			param.Identifier.Name.Span,
@@ -213,7 +213,7 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 	// functions are global
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
-	fn := g.irBuilder.BuildFuncDecl(expr.Name.Name.Value, params, body, value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
+	fn := g.irBuilder.BuildFuncDecl(expr.Name.Name.Value, params, body, zeus_value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, fn)
 	g.symbolTable.EnterScope()
 
@@ -231,10 +231,10 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) value.Valu
 
 	g.symbolTable.ExitScope()
 
-	return value.NewVar(expr.Name.Name.Value, value.ToFunctionType(*fn), false, expr.Name.Name.Span)
+	return zeus_value.NewVar(expr.Name.Name.Value, zeus_value.ToFunctionType(*fn), false, expr.Name.Name.Span)
 }
 
-func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
+func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
 	variable, ok := g.symbolTable.GetSymbol(expr.Name.Value)
 
 	if !ok {
@@ -242,7 +242,7 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 		return nil
 	}
 
-	asFn := value.AsFunction(variable)
+	asFn := zeus_value.AsFunction(variable)
 
 	if asFn != nil {
 		return asFn
@@ -252,7 +252,7 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 		return variable
 	}
 
-	asVar := value.AsVar(variable)
+	asVar := zeus_value.AsVar(variable)
 
 	if asVar.IsPtr {
 		return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
@@ -261,28 +261,28 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) value.Value {
 	}
 }
 
-func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) value.Value {
-	if value.IsFloat(expr.Value.Value) {
-		return value.NewConstant(
+func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
+	if zeus_value.IsFloat(expr.Value.Value) {
+		return zeus_value.NewConstant(
 			expr.Value.Value,
-			value.FloatType{
-				Size: value.F64,
+			zeus_value.FloatType{
+				Size: zeus_value.F64,
 			},
 			expr.Value.Span,
 		)
 	} else {
-		return value.NewConstant(
+		return zeus_value.NewConstant(
 			expr.Value.Value,
-			value.IntType{
+			zeus_value.IntType{
 				Signed: false,
-				Size: value.GetSignedIntSize(expr.Value.Value),
+				Size: zeus_value.GetSignedIntSize(expr.Value.Value),
 			},
 			expr.Value.Span,
 		)
 	}
 }
 
-func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
+func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	value := expr.Expr.Accept(g)
 
 	switch expr.Operator.Type {
@@ -295,17 +295,17 @@ func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) value.Value {
 	}
 }
 
-func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) value.Value {
+func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	if expr.Value.Type == token.TokenTypeTrue {
-		return value.NewConstant(
+		return zeus_value.NewConstant(
 			"true",
-			value.BoolType{},
+			zeus_value.BoolType{},
 			expr.Value.Span,
 		)
 	}
-	return value.NewConstant(
+	return zeus_value.NewConstant(
 		"false",
-		value.BoolType{},
+		zeus_value.BoolType{},
 		expr.Value.Span,
 	)
 }

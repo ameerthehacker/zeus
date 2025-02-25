@@ -1,4 +1,4 @@
-package value
+package zeus_value
 
 import (
 	"fmt"

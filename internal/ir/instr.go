@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/value"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 type InstrType int
@@ -16,13 +16,13 @@ type InstrInput interface {
 
 type VarDecl struct {
 	Name string
-	ValueType value.ValueType
+	ValueType zeus_value.ValueType
 	IsConst bool
-	Initializer value.Value
+	Initializer zeus_value.Value
 	Span *token.Span
 }
 
-func NewVarDecl(name string, valueType value.ValueType, isConst bool, initializer value.Value, span *token.Span) *VarDecl {
+func NewVarDecl(name string, valueType zeus_value.ValueType, isConst bool, initializer zeus_value.Value, span *token.Span) *VarDecl {
 	return &VarDecl{
 		Name: name,
 		ValueType: valueType,
@@ -41,11 +41,11 @@ func panicInvalidInputType(expected string, actual InstrInput) {
 }
 
 type BinaryOpInstrInput struct {
-	Left value.Value
-	Right value.Value
+	Left zeus_value.Value
+	Right zeus_value.Value
 }
 
-func NewBinaryOpInstrInput(left, right value.Value) *BinaryOpInstrInput {
+func NewBinaryOpInstrInput(left, right zeus_value.Value) *BinaryOpInstrInput {
 	return &BinaryOpInstrInput{
 		Left:  left,
 		Right: right,
@@ -68,10 +68,10 @@ func AsBinaryOpInstrInput(input InstrInput) *BinaryOpInstrInput {
 }
 
 type UnaryOpInstrInput struct {
-	Value value.Value
+	Value zeus_value.Value
 }
 
-func NewUnaryOpInstrInput(value value.Value) *UnaryOpInstrInput {
+func NewUnaryOpInstrInput(value zeus_value.Value) *UnaryOpInstrInput {
 	return &UnaryOpInstrInput{
 		Value: value,
 	}
@@ -93,12 +93,12 @@ func AsUnaryOpInstrInput(input InstrInput) *UnaryOpInstrInput {
 }
 
 type DeclareVarInstrInput struct {
-	Variable *value.Var
-	Initializer value.Value
+	Variable *zeus_value.Var
+	Initializer zeus_value.Value
 	IsConst bool
 }
 
-func NewDeclareVarInstrInput(variable *value.Var, initializer value.Value, isConst bool) *DeclareVarInstrInput {
+func NewDeclareVarInstrInput(variable *zeus_value.Var, initializer zeus_value.Value, isConst bool) *DeclareVarInstrInput {
 	return &DeclareVarInstrInput{
 		Variable:    variable,
 		Initializer: initializer,
@@ -125,10 +125,10 @@ func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 }
 
 type LoadInstrInput struct {
-	Addr *value.Var
+	Addr *zeus_value.Var
 }
 
-func NewLoadInstrInput(addr *value.Var) *LoadInstrInput {
+func NewLoadInstrInput(addr *zeus_value.Var) *LoadInstrInput {
 	return &LoadInstrInput{
 		Addr: addr,
 	}
@@ -150,11 +150,11 @@ func AsLoadInstrInput(input InstrInput) *LoadInstrInput {
 }
 
 type StoreInstrInput struct {
-	Addr *value.Var
-	Value value.Value
+	Addr *zeus_value.Var
+	Value zeus_value.Value
 }
 
-func NewStoreInstrInput(addr *value.Var, value value.Value) *StoreInstrInput {
+func NewStoreInstrInput(addr *zeus_value.Var, value zeus_value.Value) *StoreInstrInput {
 	return &StoreInstrInput{
 		Addr:  addr,
 		Value: value,
@@ -177,11 +177,11 @@ func AsStoreInstrInput(input InstrInput) *StoreInstrInput {
 }
 
 type CallFuncInstrInput struct {
-	Callee value.Value
-	Args []value.Value
+	Callee zeus_value.Value
+	Args []zeus_value.Value
 }
 
-func NewCallFuncInstrInput(callee value.Value, args []value.Value) *CallFuncInstrInput {
+func NewCallFuncInstrInput(callee zeus_value.Value, args []zeus_value.Value) *CallFuncInstrInput {
 	return &CallFuncInstrInput{
 		Callee: callee,
 		Args:   args,
@@ -208,10 +208,10 @@ func AsCallFuncInstrInput(input InstrInput) *CallFuncInstrInput {
 }
 
 type ReturnInstrInput struct {
-	Value value.Value
+	Value zeus_value.Value
 }
 
-func NewReturnInstrInput(value value.Value) *ReturnInstrInput {
+func NewReturnInstrInput(value zeus_value.Value) *ReturnInstrInput {
 	return &ReturnInstrInput{
 		Value: value,
 	}
@@ -236,7 +236,7 @@ func AsReturnInstrInput(input InstrInput) *ReturnInstrInput {
 }
 
 type DeclFuncInstrInput struct {
-	Function *value.Function
+	Function *zeus_value.Function
 	Body *BasicBlock
 }
 
@@ -251,7 +251,7 @@ func AsDeclFuncInstrInput(input InstrInput) *DeclFuncInstrInput {
 	return nil
 }
 
-func NewDeclFuncInstrInput(function *value.Function, body *BasicBlock) *DeclFuncInstrInput {
+func NewDeclFuncInstrInput(function *zeus_value.Function, body *BasicBlock) *DeclFuncInstrInput {
 	return &DeclFuncInstrInput{
 		Function: function,
 		Body:     body,
@@ -290,10 +290,10 @@ func AsJmpInstrInput(input InstrInput) *JmpInstrInput {
 type CondJmpInstrInput struct {
 	TrueTarget *BasicBlock
 	FalseTarget *BasicBlock
-	Condition value.Value
+	Condition zeus_value.Value
 }
 
-func NewCondJmpInstrInput(trueTarget, falseTarget *BasicBlock, condition value.Value) *CondJmpInstrInput {
+func NewCondJmpInstrInput(trueTarget, falseTarget *BasicBlock, condition zeus_value.Value) *CondJmpInstrInput {
 	return &CondJmpInstrInput{
 		TrueTarget:  trueTarget,
 		FalseTarget: falseTarget,
@@ -317,11 +317,11 @@ func AsCondJmpInstrInput(input InstrInput) *CondJmpInstrInput {
 }
 
 type CastInstrInput struct {
-	Value value.Value
-	CastType value.ValueType
+	Value zeus_value.Value
+	CastType zeus_value.ValueType
 }
 
-func NewCastInstrInput(value value.Value, castType value.ValueType) *CastInstrInput {
+func NewCastInstrInput(value zeus_value.Value, castType zeus_value.ValueType) *CastInstrInput {
 	return &CastInstrInput{
 		Value:     value,
 		CastType:  castType,
@@ -434,7 +434,7 @@ func IsFunctionDeclInstr(instrType InstrType) bool {
 
 type Instr struct {
 	Type InstrType
-	Output *value.Var
+	Output *zeus_value.Var
 	Input InstrInput
 	Span   *token.Span
 }
