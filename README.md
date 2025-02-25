@@ -2,7 +2,7 @@
 
 TypeScript like compiled language
 
-> [!IMPORTANT]  
+> [!WARNING]  
 > This project is in early development and not ready for production use. The language syntax, features, and implementation are subject to significant changes.
 
 ## Language
