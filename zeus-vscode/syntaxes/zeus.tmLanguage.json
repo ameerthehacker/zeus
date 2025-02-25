@@ -1,0 +1,81 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "zeus",
+    "patterns": [
+        {
+            "name": "keyword.control.zeus",
+            "match": "\\b(if|else|return|while|new|class|private|protected|public|this|try|throw|catch|finally)\\b"
+        },
+        {
+            "name": "storage.type.zeus",
+            "match": "\\b(type|function|extern)\\b"
+        },
+        {
+            "name": "storage.modifier.zeus",
+            "match": "\\b(let|const)\\b"
+        },
+        {
+            "name": "constant.numeric.zeus",
+            "match": "\\b\\d+(\\.\\d+)?\\b"
+        },
+        {
+            "name": "constant.boolean.zeus",
+            "match": "\\b(true|false)\\b"
+        },
+        {
+            "name": "string.quoted.double.zeus",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.zeus",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        {
+            "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*(?=\\()",
+            "captures": {
+                "1": {
+                    "name": "entity.name.function.zeus"
+                }
+            }
+        },
+        {
+            "name": "comment.line.double-slash.zeus",
+            "match": "//.*$"
+        },
+        {
+            "name": "support.type.zeus",
+            "match": "\\b(i8|i16|i32|i64|i128|f16|f32|f64|f128|boolean|void|string)\\b"
+        },
+        {
+            "name": "keyword.control.import.zeus",
+            "match": "\\b(import)\\b"
+        },
+        {
+            "name": "keyword.control.from.zeus",
+            "match": "\\b(from)\\b"
+        },
+        {
+            "name": "keyword.control.export.zeus",
+            "match": "\\b(export)\\b"
+        },
+        {
+            "match": "import\\s*({[^}]*})\\s*from\\s*(['\"][^'\"]*['\"])",
+            "captures": {
+                "1": {
+                    "name": "variable.other.zeus"
+                },
+                "2": {
+                    "name": "string.quoted.single.zeus"
+                }
+            }
+        },
+        {
+            "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+            "name": "variable.other.zeus"
+        }
+    ],
+    "scopeName": "source.zeus"
+}
