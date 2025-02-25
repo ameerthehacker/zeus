@@ -2,11 +2,20 @@
 
 TypeScript like compiled language
 
-🚨THIS IS WIP🚨
+⚠️ **Warning**: This project is in early development and not ready for production use. The language syntax, features, and implementation are subject to significant changes.
 
-## Build from source
+## Usage
 
-1. Install llvm 18 and golang
-2. go run go run zeus.go build playground/hello.tsl
+```sh
+# emit executable file
+go run zeus.go build main.zs
 
-Above only outputs llvm IR which needs to be manually compiled using clang for now
+# emit object file
+go run zeus.go build --file-type=obj main.zs
+
+# emit readable llvm file
+go run zeus.go build --file-type=ll main.zs
+
+# emit assembly file
+go run zeus.go build --file-type=asm main.zs
+```
