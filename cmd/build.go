@@ -14,8 +14,6 @@ import (
 )
 
 const (
-	FlagInternalZeusIR = "internal-zeus-ir"
-	FlagInternalLLVMIR = "internal-llvm-ir"
 	FlagOutputPath     = "out"
 )
 
@@ -56,8 +54,6 @@ func buildCmd() *cobra.Command {
 		},
 	}
 
-	buildCmd.Flags().Bool(FlagInternalZeusIR, false, "print the zeus IR")
-	buildCmd.Flags().Bool(FlagInternalLLVMIR, false, "print the llvm IR")
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
 
 	return buildCmd

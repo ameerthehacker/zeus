@@ -9,6 +9,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/codegen"
+	"github.com/ameerthehacker/zeus/internal/debug"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/logger"
@@ -36,6 +37,18 @@ type SourceFile struct {
 	Module *codegen.CodegenModule
 	Errors []*zeus_error.ZeusError
 	IRBuilder *ir.IRBuilder
+}
+
+func (s *SourceFile) Print() {
+	fmt.Printf("---:Source File (%s):---\n", s.Path)
+	if s.IRBuilder != nil {
+		fmt.Println("---:Zeus IR:---")
+		s.IRBuilder.Print()	
+	}
+	if s.Module != nil {
+		fmt.Println("---:LLVM IR:---")
+		s.Module.Dump()
+	}
 }
 
 type Input struct {
@@ -115,6 +128,13 @@ func (c *Compiler) ReadSourceFile(path string) (*Input, *SourceFileError) {
 
 
 func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
+			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
+			panic(r)
+		}
+	}()
 	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
 		hasErrors := false
 
@@ -138,6 +158,15 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 
 	// parse and generate AST
 	sourceFiles := c.GenerateSourceFiles(*entryPointInput)
+
+	defer func() {
+		if debug.IsDebug() {
+			for _, sourceFile := range sourceFiles {
+				sourceFile.Print()
+			}
+		}
+	}()
+
 	checkSourceFilesErrors(sourceFiles)
 	// generate zeus IR
 	sourceFiles = c.GenerateZeusIR(sourceFiles)
@@ -205,13 +234,6 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 }
 
 func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
-			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
-			panic(r)
-		}
-	}()
 	sourceFiles := []*SourceFile{}
 	queue := []Input{entry}
 
