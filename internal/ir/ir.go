@@ -10,26 +10,26 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
-type IRGen struct {
+type IRModule struct {
 	irBuilder *IRBuilder
 	isLValueExpr bool
 	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
 	errors []*zeus_error.ZeusError
 }
 
-func NewIRGen(ir_builder *IRBuilder) *IRGen {
-	return &IRGen{
+func NewIRModule(ir_builder *IRBuilder) *IRModule {
+	return &IRModule{
 		irBuilder: ir_builder,
 		isLValueExpr: false,
 		symbolTable: symbol_table.NewSymbolTable[zeus_value.Value](),
 	}
 }
 
-func (g *IRGen) pushError(err *zeus_error.ZeusError) {
+func (g *IRModule) pushError(err *zeus_error.ZeusError) {
 	g.errors = append(g.errors, err)
 }
 
-func (g *IRGen) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
+func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	g.symbolTable.EnterScope()
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
@@ -40,7 +40,7 @@ func (g *IRGen) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	return g.errors
 }
 
-func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
+func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	g.symbolTable.EnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
@@ -48,7 +48,7 @@ func (g *IRGen) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	g.symbolTable.ExitScope()
 }
 
-func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
+func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
 		if _, ok := g.symbolTable.GetSymbolInCurrentScope(decl.Identifier.Name.Value); ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", decl.Identifier.Name.Value), decl.Identifier.Name.Span))
@@ -78,11 +78,11 @@ func (g *IRGen) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	}
 }
 
-func (g *IRGen) VisitExprStmt(stmt *ast.ExprStmtNode) {
+func (g *IRModule) VisitExprStmt(stmt *ast.ExprStmtNode) {
 	stmt.Expr.Accept(g)
 }
 
-func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
+func (g *IRModule) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 	if stmt.Expr == nil {
 		g.irBuilder.BuildReturn(nil, stmt.GetSpan())
 	} else {
@@ -90,7 +90,7 @@ func (g *IRGen) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
 	}
 }
 
-func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
+func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
 	// create the condition
 	condition := stmt.Condition.Accept(g)
 	// create the required blocks
@@ -116,7 +116,7 @@ func (g *IRGen) VisitIfStmt(stmt *ast.IfStmtNode) {
 	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
-func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
+func (g *IRModule) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	
 	// create the required blocks
 	condition_block := g.irBuilder.BuildSuccessorBlock()
@@ -139,7 +139,7 @@ func (g *IRGen) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
-func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
+func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	g.isLValueExpr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
@@ -180,11 +180,11 @@ func (g *IRGen) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	}
 }
 
-func (g *IRGen) VisitGroupingExpr(expr *ast.GroupingExprNode) zeus_value.Value {
+func (g *IRModule) VisitGroupingExpr(expr *ast.GroupingExprNode) zeus_value.Value {
 	return expr.Expr.Accept(g)
 }
 
-func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
+func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	params := []zeus_value.Value{}
 	for _, arg := range expr.Params {
@@ -196,7 +196,7 @@ func (g *IRGen) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value
 	return g.irBuilder.BuildCallFunc(addr, params, expr.GetSpan())
 }
 
-func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
+func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
 	params := []*VarDecl{}
 
 	for _, param := range expr.Params {
@@ -234,7 +234,7 @@ func (g *IRGen) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value
 	return zeus_value.NewVar(expr.Name.Name.Value, zeus_value.ToFunctionType(*fn), false, expr.Name.Name.Span)
 }
 
-func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
+func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
 	variable, ok := g.symbolTable.GetSymbol(expr.Name.Value)
 
 	if !ok {
@@ -261,7 +261,7 @@ func (g *IRGen) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
 	}
 }
 
-func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
+func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 	if zeus_value.IsFloat(expr.Value.Value) {
 		return zeus_value.NewConstant(
 			expr.Value.Value,
@@ -282,7 +282,7 @@ func (g *IRGen) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 	}
 }
 
-func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
+func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	value := expr.Expr.Accept(g)
 
 	switch expr.Operator.Type {
@@ -295,7 +295,7 @@ func (g *IRGen) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
-func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
+func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	if expr.Value.Type == token.TokenTypeTrue {
 		return zeus_value.NewConstant(
 			"true",
@@ -310,6 +310,6 @@ func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	)
 }
 
-func (g *IRGen) VisitExportStmt(stmt *ast.ExportStmtNode) {}
+func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {}
 
-func (g *IRGen) VisitImportStmt(stmt *ast.ImportStmtNode) {}
+func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {}

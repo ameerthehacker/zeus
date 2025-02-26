@@ -49,14 +49,67 @@ func NewCompiler() *Compiler {
 	}
 }
 
-func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
-	lexer := lexer.NewLexer(entryPoint.Source)
+func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
+	entryPointInput, err := ReadSourceFile(entryFilePath)
+	
+	if err != nil {
+		logger.Log(zeus_error.ErrorSeverityError, err.Error())
+		os.Exit(1)
+	}
+
+	sourceFiles := c.GenerateSourceFiles(*entryPointInput)
+	hasCompilationErrors := false
+
+	for _, sourceFile := range sourceFiles {
+		if len(sourceFile.Errors) > 0 {
+			logger.PrettyPrintError(sourceFile.Path, sourceFile.Source, sourceFile.Errors)
+			hasCompilationErrors = true
+		}
+	}
+
+	if hasCompilationErrors {
+		os.Exit(1)
+	}
+}
+
+func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
+			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
+			panic(r)
+		}
+	}()
+	sourceFiles := []*SourceFile{}
+	queue := []Input{entry}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		sourceFile := c.CompileFile(current)
+		sourceFiles = append(sourceFiles, sourceFile)
+
+		dependencies, errors := GetDependencies(sourceFile.Program, sourceFile.Path)
+		// append the module resolution errors
+		sourceFile.Errors = append(sourceFile.Errors, errors...)
+
+		for _, dependency := range dependencies {
+			queue = append(queue, *dependency)
+		}
+	}
+
+	return sourceFiles
+}
+
+func (c *Compiler) CompileFile(input Input) *SourceFile {
+	lexer := lexer.NewLexer(input.Source)
 	tokens, lexerErrors := lexer.Lex()
 
 	if len(lexerErrors) > 0 {
 		return &SourceFile{
-			Path: entryPoint.Path,
-			Source: entryPoint.Source,
+			Path: input.Path,
+			Source: input.Source,
 			Errors: lexerErrors,
 		}
 	}
@@ -66,55 +119,17 @@ func (c *Compiler) CompileFile(entryPoint Input) *SourceFile {
 
 	if len(parserErrors) > 0 {
 		return &SourceFile{
-			Path: entryPoint.Path,
-			Source: entryPoint.Source,
+			Path: input.Path,
+			Source: input.Source,
 			Errors: parserErrors,
 		}
 	}
 
-	irBuilder := ir.NewIRBuilder()
-	irGen := ir.NewIRGen(irBuilder)
-	irErrors := irGen.Generate(program)
-
-	if len(irErrors) > 0 {
-		return &SourceFile{
-			Path: entryPoint.Path,
-			Source: entryPoint.Source,
-			Errors: irErrors,
-		}
-	}
-
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error")
-			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
-			fmt.Fprintln(os.Stderr, "---:GENERATED ZEUS IR:---")
-			fmt.Fprintln(os.Stderr, irBuilder.String())
-			panic(r)
-		}
-	}()
-
-	tc := ir.NewTypeChecker(irBuilder)
-	tcErrors := tc.TypeCheck()
-
-	if len(tcErrors) > 0 {
-		return &SourceFile{
-			Path: entryPoint.Path,
-			Source: entryPoint.Source,
-			Errors: tcErrors,
-		}
-	}
-
-	codegenModule := c.codegen.NewModule(entryPoint.Path)
-	codegenModule.Generate(*irBuilder)
-
 	return &SourceFile{
-		Path: entryPoint.Path,
-		Source: entryPoint.Source,
+		Path: input.Path,
+		Source: input.Source,
 		Program: program,
 		Errors: []*zeus_error.ZeusError{},
-		Module: codegenModule,
-		IRBuilder: irBuilder,
 	}
 }
 
