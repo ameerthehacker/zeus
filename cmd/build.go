@@ -37,24 +37,16 @@ func buildCmd() *cobra.Command {
 			fileNameWithoutExtension := strings.TrimSuffix(fileName, filepath.Ext(fileName))
 			getOutputFileNameWithExtension := func(fileType zeus_compiler.EmitFileType) string {
 				switch fileType {
-				case zeus_compiler.EmitFileTypeLLVMIR:
-					return fileNameWithoutExtension + ".ll"
 				case zeus_compiler.EmitFileTypeObject:
 					return fileNameWithoutExtension + ".o"
-				case zeus_compiler.EmitFileTypeASM:
-					return fileNameWithoutExtension + ".s"
 				default:
 					return fileNameWithoutExtension
 				}
 			}
 			getEmitFileType := func(fileType string) zeus_compiler.EmitFileType {
 				switch fileType {
-				case "ll":
-					return zeus_compiler.EmitFileTypeLLVMIR
 				case "obj":
 					return zeus_compiler.EmitFileTypeObject
-				case "asm":
-					return zeus_compiler.EmitFileTypeASM
 				default:
 					return zeus_compiler.EmitFileTypeEXE
 				}

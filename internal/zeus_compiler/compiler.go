@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
@@ -23,9 +24,7 @@ type Compiler struct {
 type EmitFileType string
 
 const (
-	EmitFileTypeLLVMIR EmitFileType = "ll"
 	EmitFileTypeObject EmitFileType = "obj"
-	EmitFileTypeASM    EmitFileType = "asm"
 	EmitFileTypeEXE    EmitFileType = "exe"
 )
 
@@ -50,6 +49,20 @@ func NewCompiler() *Compiler {
 }
 
 func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
+	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
+		hasErrors := false
+
+		for _, sourceFile := range sourceFiles {
+			if len(sourceFile.Errors) > 0 {
+				logger.PrettyPrintError(sourceFile.Path, sourceFile.Source, sourceFile.Errors)
+				hasErrors = true
+			}
+		}
+
+		if hasErrors {
+			os.Exit(1)
+		}
+	}
 	entryPointInput, err := ReadSourceFile(entryFilePath)
 	
 	if err != nil {
@@ -57,19 +70,74 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		os.Exit(1)
 	}
 
+	// parse and generate AST
 	sourceFiles := c.GenerateSourceFiles(*entryPointInput)
-	hasCompilationErrors := false
+	checkSourceFilesErrors(sourceFiles)
+	// generate zeus IR
+	sourceFiles = c.GenerateZeusIR(sourceFiles)
+	checkSourceFilesErrors(sourceFiles)
+	// type check the zeus IR
+	sourceFiles = c.TypeCheckSourceFiles(sourceFiles)
+	checkSourceFilesErrors(sourceFiles)
+	// generate llvm IR
+	sourceFiles = c.GenerateLLVMIR(sourceFiles)
+	checkSourceFilesErrors(sourceFiles)
+	// emit llvm object files
+	objDir, emitError := c.EmitFiles(sourceFiles)
 
-	for _, sourceFile := range sourceFiles {
-		if len(sourceFile.Errors) > 0 {
-			logger.PrettyPrintError(sourceFile.Path, sourceFile.Source, sourceFile.Errors)
-			hasCompilationErrors = true
-		}
-	}
-
-	if hasCompilationErrors {
+	if emitError != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object files: %s", emitError.Error()))
 		os.Exit(1)
 	}
+
+	if emitFileType == EmitFileTypeEXE {
+		linkError := LinkObjFiles(objDir, outputPath)
+		if linkError != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
+			os.Exit(1)
+		}
+	}
+}
+
+func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
+	for _, sourceFile := range sourceFiles {
+		llvmModule := c.codegen.NewModule(sourceFile.Path)
+		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
+		llvmModule.Generate(*sourceFile.IRBuilder)
+		sourceFile.Module = llvmModule
+	}
+
+	return sourceFiles
+}
+
+func (c *Compiler) TypeCheckSourceFiles(sourceFiles []*SourceFile) []*SourceFile {
+	for _, sourceFile := range sourceFiles {
+		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
+		typeChecker := ir.NewTypeChecker(sourceFile.IRBuilder)
+		errors := typeChecker.TypeCheck()
+		sourceFile.Errors = append(sourceFile.Errors, errors...)
+	}
+
+	return sourceFiles
+}
+
+func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
+	sourcesFilesPathMap := map[string]*SourceFile{}
+
+	for _, sourceFile := range sourceFiles {
+		sourcesFilesPathMap[sourceFile.Path] = sourceFile
+	}
+
+	for _, sourceFile := range sourceFiles {
+		irBuilder := ir.NewIRBuilder()
+		sourceFile.IRBuilder = irBuilder
+		irModule := ir.NewIRModule(irBuilder)
+		zeus_error.Assert(sourceFile.Program != nil, "source file program is nil")
+		errors := irModule.Generate(sourceFile.Program)
+		sourceFile.Errors = append(sourceFile.Errors, errors...)
+	}
+
+	return sourceFiles
 }
 
 func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
@@ -133,7 +201,7 @@ func (c *Compiler) CompileFile(input Input) *SourceFile {
 	}
 }
 
-func (c *Compiler) EmitFile(sourceFile *SourceFile, emitFileType EmitFileType, outputPath string) error {
+func (c *Compiler) EmitFiles(sourceFiles []*SourceFile) (string, error) {
 	targetTriple := llvm.DefaultTargetTriple()
 	target, err := llvm.GetTargetFromTriple(targetTriple)
 	targetMachine := target.CreateTargetMachine(
@@ -145,60 +213,59 @@ func (c *Compiler) EmitFile(sourceFile *SourceFile, emitFileType EmitFileType, o
 		llvm.CodeModelDefault,
 	)
 
-
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	switch emitFileType {
-	case EmitFileTypeLLVMIR:
-		os.WriteFile(outputPath, []byte(sourceFile.Module.String()), 0644)
-	case EmitFileTypeObject:
-		fallthrough
-	case EmitFileTypeASM:
-		llvmCodegenType := llvm.AssemblyFile
+	objDir, err := os.MkdirTemp(os.TempDir(), "zeus-obj-*")
+	if err != nil {
+		return "", err
+	}
 
-		if emitFileType == EmitFileTypeObject {
-			llvmCodegenType = llvm.ObjectFile
-		}
-
-		buffer, err := targetMachine.EmitToMemoryBuffer(sourceFile.Module.GetModule(), llvmCodegenType)
-		if err != nil {
-			return err
-		}
-
-		os.WriteFile(outputPath, buffer.Bytes(), 0644)
-	default:
+	for _, sourceFile := range sourceFiles {
 		// generate temp object file
-		tempFile, err := os.CreateTemp(os.TempDir(), "zeus-*.o")
+		tempFile, err := os.CreateTemp(objDir, "zeus-*.o")
 
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		defer tempFile.Close()
-		defer os.Remove(tempFile.Name())
 
 		// write buffer to temp file
+		zeus_error.Assert(sourceFile.Module != nil, "source file module is nil")
 		buffer, err := targetMachine.EmitToMemoryBuffer(sourceFile.Module.GetModule(), llvm.ObjectFile)
 		if err != nil {
-			return err
+			return "", err
 		}
 		tempFile.Write(buffer.Bytes())
+	}
 
-		// link object file to platform executable
-		var linkerCmd *exec.Cmd
+	return objDir, nil
+}
+
+func LinkObjFiles(objDir string, outputPath string) error {
+	objFiles, err := filepath.Glob(fmt.Sprintf("%s/zeus-*.o", objDir))
+	if err != nil {
+		return err
+	}
+	// link object file to platform executable
+	var linkerCmd *exec.Cmd
 		
-		if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
-			linkerCmd = exec.Command("ld", tempFile.Name(), "-o", outputPath)
-		} else {
-			return fmt.Errorf("%s is not supported", runtime.GOOS)
-		}
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		args := []string{}
+		args = append(args, objFiles...)
+		args = append(args, "-o", outputPath)
+		linkerCmd = exec.Command("ld", args...)
+		linkerCmd.Stdout = os.Stdout
+		linkerCmd.Stderr = os.Stderr
+	} else {
+		return fmt.Errorf("%s is not supported", runtime.GOOS)
+	}
 
-		err = linkerCmd.Run()
-		if err != nil {
-			return err
-		}
+	err = linkerCmd.Run()
+	if err != nil {
+		return err
 	}
 
 	return nil
