@@ -43,11 +43,76 @@ type Input struct {
 	Source string
 }
 
+type SourceFileErrorType int
+
+const (
+	SourceFileNotFound SourceFileErrorType = iota
+	Unknown
+)
+
+type SourceFileError struct {
+	Type SourceFileErrorType
+	Message string
+}
+
+func NewSourceFileError(t SourceFileErrorType, message string) *SourceFileError {
+	return &SourceFileError{
+		Type:    t,
+		Message: message,
+	}
+}
+
+func (e *SourceFileError) Error() string {
+	return e.Message
+}
+
 func NewCompiler() *Compiler {
 	return &Compiler{
 		codegen: codegen.NewCodegen(),
 	}
 }
+
+func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*Input, []*zeus_error.ZeusError) {
+	dependencies := []*Input{}
+	errors := []*zeus_error.ZeusError{}
+
+	for _, stmt := range program.Statements {
+		switch stmt := stmt.(type) {
+		case *ast.ImportStmtNode:
+			dependencyPath := filepath.Join(filepath.Dir(sourcePath), stmt.Source.Value)
+			dependency, err := c.ReadSourceFile(dependencyPath)
+
+			if err != nil && err.Type == SourceFileNotFound {
+				errors = append(errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "module not found", stmt.Source.Span))
+				continue
+			} else if err != nil {
+				errors = append(errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to read module %s", dependencyPath), stmt.Source.Span))
+				continue
+			}
+
+			dependencies = append(dependencies, dependency)
+		}
+	}
+
+	return dependencies, errors
+}
+
+
+func (c *Compiler) ReadSourceFile(path string) (*Input, *SourceFileError) {
+	content, err := os.ReadFile(path)
+
+	if err != nil && os.IsNotExist(err) {
+		return nil, NewSourceFileError(SourceFileNotFound, "file does not exist")
+	} else if err != nil {
+		return nil, NewSourceFileError(Unknown, err.Error())
+	}
+
+	return &Input{
+		Path: path,
+		Source: string(content),
+	}, nil
+}
+
 
 func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
 	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
@@ -64,7 +129,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 			os.Exit(1)
 		}
 	}
-	entryPointInput, err := ReadSourceFile(entryFilePath)
+	entryPointInput, err := c.ReadSourceFile(entryFilePath)
 	
 	if err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, err.Error())
@@ -157,7 +222,7 @@ func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
 		sourceFile := c.CompileFile(current)
 		sourceFiles = append(sourceFiles, sourceFile)
 
-		dependencies, errors := GetDependencies(sourceFile.Program, sourceFile.Path)
+		dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)
 		// append the module resolution errors
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
 
