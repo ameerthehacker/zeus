@@ -16,7 +16,6 @@ import (
 const (
 	FlagInternalZeusIR = "internal-zeus-ir"
 	FlagInternalLLVMIR = "internal-llvm-ir"
-	FlagFileType       = "file-type"
 	FlagOutputPath     = "out"
 )
 
@@ -43,16 +42,7 @@ func buildCmd() *cobra.Command {
 					return fileNameWithoutExtension
 				}
 			}
-			getEmitFileType := func(fileType string) zeus_compiler.EmitFileType {
-				switch fileType {
-				case "obj":
-					return zeus_compiler.EmitFileTypeObject
-				default:
-					return zeus_compiler.EmitFileTypeEXE
-				}
-			}
-			emitFileType := getEmitFileType(cmd.Flag(FlagFileType).Value.String())
-			outputFileName := getOutputFileNameWithExtension(emitFileType)
+			outputFileName := getOutputFileNameWithExtension(zeus_compiler.EmitFileTypeEXE)
 
 			var outputPath string
 			if cmd.Flag(FlagOutputPath).Changed {
@@ -62,14 +52,13 @@ func buildCmd() *cobra.Command {
 			}
 
 			compiler := zeus_compiler.NewCompiler()
-			compiler.Compile(filePath, emitFileType, outputPath)
+			compiler.Compile(filePath, zeus_compiler.EmitFileTypeEXE, outputPath)
 		},
 	}
 
 	buildCmd.Flags().Bool(FlagInternalZeusIR, false, "print the zeus IR")
 	buildCmd.Flags().Bool(FlagInternalLLVMIR, false, "print the llvm IR")
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
-	buildCmd.Flags().String(FlagFileType, "", "file type to emit")
 
 	return buildCmd
 }

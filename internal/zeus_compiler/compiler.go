@@ -24,6 +24,7 @@ type Compiler struct {
 type EmitFileType string
 
 const (
+	// TODO: implement obj emit
 	EmitFileTypeObject EmitFileType = "obj"
 	EmitFileTypeEXE    EmitFileType = "exe"
 )
@@ -83,19 +84,17 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
 	// emit llvm object files
-	objDir, emitError := c.EmitFiles(sourceFiles)
+	objDir, emitError := c.EmitObjFiles(sourceFiles)
 
 	if emitError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object files: %s", emitError.Error()))
 		os.Exit(1)
 	}
 
-	if emitFileType == EmitFileTypeEXE {
-		linkError := LinkObjFiles(objDir, outputPath)
-		if linkError != nil {
-			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
-			os.Exit(1)
-		}
+	linkError := LinkObjFiles(objDir, outputPath)
+	if linkError != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
+		os.Exit(1)
 	}
 }
 
@@ -201,7 +200,7 @@ func (c *Compiler) CompileFile(input Input) *SourceFile {
 	}
 }
 
-func (c *Compiler) EmitFiles(sourceFiles []*SourceFile) (string, error) {
+func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 	targetTriple := llvm.DefaultTargetTriple()
 	target, err := llvm.GetTargetFromTriple(targetTriple)
 	targetMachine := target.CreateTargetMachine(
