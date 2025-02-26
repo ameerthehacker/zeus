@@ -40,7 +40,7 @@ func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	return g.errors
 }
 
-func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
+func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) { 
 	g.symbolTable.EnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
@@ -310,6 +310,8 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	)
 }
 
-func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {}
+func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
+	g.irBuilder.BuildExport(stmt.Expr.Accept(g), stmt.GetSpan())
+}
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {}

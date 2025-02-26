@@ -138,6 +138,14 @@ func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, sp
 	return result
 }
 
+func (b *IRBuilder) BuildExport(value zeus_value.Value, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeExport,
+		Input: NewExportInstrInput(value),
+		Span: span,
+	})
+}
+
 func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(addr.Span)
 

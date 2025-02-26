@@ -244,12 +244,14 @@ func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
 		sourceFile := c.CompileFile(current)
 		sourceFiles = append(sourceFiles, sourceFile)
 
-		dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)
-		// append the module resolution errors
-		sourceFile.Errors = append(sourceFile.Errors, errors...)
+		if sourceFile.Program != nil {
+			dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)
+			// append the module resolution errors
+			sourceFile.Errors = append(sourceFile.Errors, errors...)
 
-		for _, dependency := range dependencies {
-			queue = append(queue, *dependency)
+			for _, dependency := range dependencies {
+				queue = append(queue, *dependency)
+			}
 		}
 	}
 

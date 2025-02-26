@@ -132,11 +132,15 @@ func ToValueType(t *token.Token) ValueType {
 
 func AsFunctionType(value ValueType) *FunctionType {
 	switch value := value.(type) {
-	case *FunctionType:
-		return value
+	case FunctionType:
+		return &value
 	default:
 		return nil
 	}
+}
+
+func IsFunctionType(value ValueType) bool {
+	return AsFunctionType(value) != nil
 }
 
 func ToFunctionType(value Function) FunctionType {

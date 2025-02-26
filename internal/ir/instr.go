@@ -287,6 +287,31 @@ func AsJmpInstrInput(input InstrInput) *JmpInstrInput {
 	return nil
 }
 
+type ExportInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewExportInstrInput(value zeus_value.Value) *ExportInstrInput {
+	return &ExportInstrInput{
+		Value: value,
+	}
+}
+
+func (i ExportInstrInput) String() string {
+	return i.Value.String()
+}
+
+func AsExportInstrInput(input InstrInput) *ExportInstrInput {
+	switch input := input.(type) {
+	case *ExportInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ExportInstrInput", input)
+	}
+
+	return nil
+}
+
 type CondJmpInstrInput struct {
 	TrueTarget *BasicBlock
 	FalseTarget *BasicBlock
@@ -373,6 +398,9 @@ const (
 	// control flow
 	InstrTypeJmp
 	InstrTypeCondJmp
+	// import and export
+	InstrTypeImport
+	InstrTypeExport
 )
 
 func (i InstrType) String() string {
@@ -419,6 +447,10 @@ func (i InstrType) String() string {
 		return "STORE"
 	case InstrTypeCast:
 		return "CAST"
+	case InstrTypeImport:
+		return "IMPORT"
+	case InstrTypeExport:
+		return "EXPORT"
 	default:
 		panic("unknown instruction type")
 	}

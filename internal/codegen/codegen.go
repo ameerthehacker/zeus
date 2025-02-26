@@ -232,6 +232,11 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 	c.symbolTable.DeclareSymbol(output.Name, result)
 }
 
+func (c *CodegenModule) genExport(input ir.ExportInstrInput) {
+	llvmValue := c.toLLVMValue(input.Value)
+	llvmValue.SetLinkage(llvm.ExternalLinkage)
+}
+
 func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) {
 	var result llvm.Value
 	valueType := zeus_value.GetValueType(input.Value)
@@ -315,6 +320,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCast:
 			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeExport:
+			c.genExport(*ir.AsExportInstrInput(instr.Input))
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

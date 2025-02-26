@@ -385,6 +385,13 @@ func (p *Parser) parseImportStmt() *ast.ImportStmtNode {
 func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
 	exportKeyword := p.consumeToken(token.TokenTypeExport)
 	expr := p.ParseExpr("export")
+
+	switch expr.(type) {
+	case *ast.FunctionDeclExprNode:
+	default:
+		p.consumeSemicolon()
+	}
+
 	return &ast.ExportStmtNode{Expr: expr, Span: &token.Span{Start: exportKeyword.Span.Start, End: expr.GetSpan().End}}
 }
 
