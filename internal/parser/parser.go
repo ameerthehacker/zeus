@@ -362,6 +362,32 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, DataType: dataType}
 }
 
+func (p *Parser) parseImportStmt() *ast.ImportStmtNode {
+	importKeyword := p.consumeToken(token.TokenTypeImport)
+	imports := []ast.ExprNode{}
+
+	p.consumeToken(token.TokenTypeLeftBrace, "after import")
+
+	for !p.isEOF() && p.peek().Type != token.TokenTypeRightBrace {
+		expr := p.ParseExpr("import")
+		imports = append(imports, expr)
+		p.consumeOptionalToken(token.TokenTypeComma)
+	}
+
+	p.consumeToken(token.TokenTypeRightBrace, "after imports")
+	p.consumeToken(token.TokenTypeFrom, "after imports")
+	source := p.consumeToken(token.TokenTypeString, "after from")
+	p.consumeSemicolon()
+
+	return &ast.ImportStmtNode{Imports: imports, Source: source, Span: &token.Span{Start: importKeyword.Span.Start, End: source.Span.End}}
+}
+
+func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
+	exportKeyword := p.consumeToken(token.TokenTypeExport)
+	expr := p.ParseExpr("export")
+	return &ast.ExportStmtNode{Expr: expr, Span: &token.Span{Start: exportKeyword.Span.Start, End: expr.GetSpan().End}}
+}
+
 // Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
 // this helps in preventing errors that are side effects of a previous error
 func (p *Parser) synchronize() {
@@ -446,6 +472,10 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return nil
 	case token.TokenTypeWhile:
 		return p.parseWhileStmt()
+	case token.TokenTypeImport:
+		return p.parseImportStmt()
+	case token.TokenTypeExport:
+		return p.parseExportStmt()
 	default:
 		return p.parseExprStmt()
 	}

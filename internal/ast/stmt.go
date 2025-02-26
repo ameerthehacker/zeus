@@ -67,6 +67,17 @@ type WhileStmtNode struct {
 	Span *token.Span
 }
 
+type ImportStmtNode struct {
+	Source *token.Token
+	Imports []ExprNode
+	Span *token.Span
+}
+
+type ExportStmtNode struct {
+	Expr ExprNode
+	Span *token.Span
+}
+
 type StmtVisitor interface {
 	VisitExprStmt(stmt *ExprStmtNode)
 	VisitVarDeclStmt(stmt *VarDeclStmtNode)
@@ -74,6 +85,8 @@ type StmtVisitor interface {
 	VisitReturnStmt(stmt *ReturnStmtNode)
 	VisitIfStmt(stmt *IfStmtNode)
 	VisitWhileStmt(stmt *WhileStmtNode)
+	VisitImportStmt(stmt *ImportStmtNode)
+	VisitExportStmt(stmt *ExportStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -236,4 +249,42 @@ func (w *WhileStmtNode) String() string {
 
 func (w *WhileStmtNode) PrettyString() string {
 	return fmt.Sprintf("while (%s) {\n%s\n}", w.Condition.PrettyString(), w.Body.PrettyString())
+}
+
+func (i *ImportStmtNode) GetSpan() *token.Span {
+	return i.Span
+}
+
+func (i *ImportStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitImportStmt(i)
+}
+
+func (i *ImportStmtNode) String() string {
+	return fmt.Sprintf("{ type: ImportStmtNode, Source: %s, Imports: %s, Span: %s }", i.Source, i.Imports, i.Span)
+}
+
+func (i *ImportStmtNode) PrettyString() string {
+	imports := []string{}
+
+	for _, _import := range i.Imports {
+		imports = append(imports, _import.PrettyString())
+	}
+
+	return fmt.Sprintf("import { %s } from %s", strings.Join(imports, ", "), i.Source)
+}
+
+func (e *ExportStmtNode) GetSpan() *token.Span {
+	return e.Span
+}
+
+func (e *ExportStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitExportStmt(e)
+}
+
+func (e *ExportStmtNode) String() string {
+	return fmt.Sprintf("{ type: ExportStmtNode, Exprs: %s, Span: %s }", e.Expr, e.Span)
+}
+
+func (e *ExportStmtNode) PrettyString() string {
+	return fmt.Sprintf("export %s", e.Expr)
 }

@@ -310,3 +310,6 @@ func (g *IRGen) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	)
 }
 
+func (g *IRGen) VisitExportStmt(stmt *ast.ExportStmtNode) {}
+
+func (g *IRGen) VisitImportStmt(stmt *ast.ImportStmtNode) {}

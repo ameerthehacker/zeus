@@ -36,6 +36,7 @@ const (
 	literal_beg
 	TokenTypeNumber
 	TokenTypeIdentifier
+	TokenTypeString
 	literal_end
 	// keywords
 	keyword_beg
@@ -48,6 +49,9 @@ const (
 	TokenTypeWhile
 	TokenTypeTrue
 	TokenTypeFalse
+	TokenTypeImport
+	TokenTypeExport
+	TokenTypeFrom
 	keyword_end
 	// data types
 	datatype_beg
@@ -120,6 +124,8 @@ func (t TokenType) String() string {
 		return "<="
 	case TokenTypeNumber:
 		return "number"
+	case TokenTypeString:
+		return "string"
 	case TokenTypeIdentifier:
 		return "identifier"
 	case TokenTypeLet:
@@ -142,6 +148,12 @@ func (t TokenType) String() string {
 		return "false"
 	case TokenTypeVoid:
 		return "void"
+	case TokenTypeImport:
+		return "import"
+	case TokenTypeExport:
+		return "export"
+	case TokenTypeFrom:
+		return "from"
 	case TokenTypeInt8:
 		return "i8"
 	case TokenTypeInt16:
@@ -180,6 +192,9 @@ var Keywords = map[string]TokenType{
 	TokenTypeWhile.String(): TokenTypeWhile,
 	TokenTypeTrue.String(): TokenTypeTrue,
 	TokenTypeFalse.String(): TokenTypeFalse,
+	TokenTypeImport.String(): TokenTypeImport,
+	TokenTypeExport.String(): TokenTypeExport,
+	TokenTypeFrom.String(): TokenTypeFrom,
 }
 
 var DataTypes = map[string]TokenType{

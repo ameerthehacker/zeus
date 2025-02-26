@@ -12,9 +12,9 @@
             "program": "${workspaceFolder}/zeus.go",
             "args": [
                 "build",
-                "${workspaceFolder}/playground/hello.tsl",
+                "${workspaceFolder}/playground/main.zs",
                 "-o",
-                "${workspaceFolder}/playground/hello.ll"
+                "${workspaceFolder}/playground/main"
             ]
         }
     ]

@@ -140,6 +140,25 @@ import (
 		l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
 	}
 
+	func (l *Lexer) eatString() {
+		start := l.cursor
+		startPosition := l.getCurrentPosition()
+		l.advance()
+		for !l.isEOF(0) && l.source[l.cursor] != '"' {
+			l.advance()
+		}
+
+		if l.isEOF(0) {
+			l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated string", token.NewSpan(*startPosition, *startPosition)))
+			return
+		}
+
+		endPosition := l.getCurrentPosition()
+		l.advance()
+
+		l.pushToken(token.NewTokenWithValue(token.TokenTypeString, string(l.source[start + 1:l.cursor - 1]), token.NewSpan(*startPosition, *endPosition)))
+	}
+
 	func (l *Lexer) pushError(err *zeus_error.ZeusError) {
 		l.errors = append(l.errors, err)
 	}
@@ -266,6 +285,8 @@ import (
 				l.advance()
 			case unicode.IsDigit(char):
 				l.eatNumber()
+			case char == '"':
+				l.eatString()
 			case isIdentifierRune(char):
 				l.eatIdentifierOrKeywordOrDatatype()
 			default:

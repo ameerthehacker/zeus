@@ -89,7 +89,7 @@ func TestZeusLexer(t *testing.T) {
 		},
 		{
 			name: "keyword",
-			input: "if else function let const while return true false",
+			input: "if else function let const while return true false import export",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeIf, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 2))),
 				token.NewToken(token.TokenTypeElse, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 7))),
@@ -100,7 +100,9 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeReturn, token.NewSpan(*token.NewPosition(1, 34), *token.NewPosition(1, 39))),
 				token.NewToken(token.TokenTypeTrue, token.NewSpan(*token.NewPosition(1, 41), *token.NewPosition(1, 44))),
 				token.NewToken(token.TokenTypeFalse, token.NewSpan(*token.NewPosition(1, 46), *token.NewPosition(1, 50))),
-				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 51), *token.NewPosition(1, 51))),
+				token.NewToken(token.TokenTypeImport, token.NewSpan(*token.NewPosition(1, 52), *token.NewPosition(1, 57))),
+				token.NewToken(token.TokenTypeExport, token.NewSpan(*token.NewPosition(1, 59), *token.NewPosition(1, 64))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 65), *token.NewPosition(1, 65))),
 			},
 		},
 		{
@@ -202,6 +204,22 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
 			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "invalid decimal point", token.NewSpan(*token.NewPosition(1, 6), *token.NewPosition(1, 6)))},
+		},
+		{
+			name: "string",
+			input: `"hello world"`,
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeString, "hello world", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 13))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 14), *token.NewPosition(1, 14))),
+			},
+		},
+		{
+			name: "unterminated string",
+			input: `"hello world`,
+			expected: []*token.Token{
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 13), *token.NewPosition(1, 13))),
+			},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated string", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
 		},
 	}
 
