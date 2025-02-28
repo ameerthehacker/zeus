@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/module"
@@ -17,19 +18,33 @@ type IRModule struct {
 	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
 	errors []*zeus_error.ZeusError
 	modulePath string
+	exportedSymbols map[string]zeus_value.Value
+	getModule func(modulePath string) *IRModule
 }
 
-func NewIRModule(ir_builder *IRBuilder, modulePath string) *IRModule {
+func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
 	return &IRModule{
 		irBuilder: ir_builder,
 		isLValueExpr: false,
 		symbolTable: symbol_table.NewSymbolTable[zeus_value.Value](),
 		modulePath: modulePath,
+		exportedSymbols: map[string]zeus_value.Value{},
+		getModule: getIRModule,
 	}
 }
 
 func (g *IRModule) pushError(err *zeus_error.ZeusError) {
 	g.errors = append(g.errors, err)
+}
+
+func (g *IRModule) GetExportedSymbol(symbolName string) (zeus_value.Value, bool) {
+	value, ok := g.exportedSymbols[symbolName]
+
+	if !ok {
+		return nil, false
+	}
+
+	return value, true
 }
 
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
@@ -318,8 +333,11 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 
 	switch exportedValue := exportedValue.(type) {
 	case *zeus_value.Function:
+		exportedFnName := exportedValue.Name
+		// track the exported values from the module
+		g.exportedSymbols[exportedFnName] = exportedValue
 		// make the exported function module scoped to avoid conflicts between modules
-		exportedValue.Name = module.GetModuleScopedName(g.modulePath, exportedValue.Name)
+		exportedValue.Name = module.GetModuleScopedName(g.modulePath, exportedFnName)
 	default:
 		g.pushError(&zeus_error.ZeusError{
 			Message: "cannot export non-function expression",
@@ -330,4 +348,21 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	g.irBuilder.BuildExport(exportedValue, stmt.GetSpan())
 }
 
-func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {}
+func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
+	absoluteModulePath := filepath.Join(filepath.Dir(g.modulePath), stmt.Source.Value)
+	irModule := g.getModule(absoluteModulePath)
+
+	zeus_error.Assert(irModule != nil, fmt.Sprintf("IR module %s not found", absoluteModulePath))
+
+	for _, _import := range stmt.Imports {
+		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)
+
+		if !ok {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("module '%s' does not export '%s'", stmt.Source.Value, _import.Name.Value), _import.Name.Span))
+			return
+		}
+
+		g.irBuilder.BuildImport(importedValue, _import.Name.Span)
+		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
+	}
+}

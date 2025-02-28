@@ -312,6 +312,31 @@ func AsExportInstrInput(input InstrInput) *ExportInstrInput {
 	return nil
 }
 
+type ImportInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewImportInstrInput(value zeus_value.Value) *ImportInstrInput {
+	return &ImportInstrInput{
+		Value: value,
+	}
+}
+
+func (i ImportInstrInput) String() string {
+	return i.Value.String()
+}
+
+func AsImportInstrInput(input InstrInput) *ImportInstrInput {
+	switch input := input.(type) {
+	case *ImportInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ImportInstrInput", input)
+	}
+
+	return nil
+}
+
 type CondJmpInstrInput struct {
 	TrueTarget *BasicBlock
 	FalseTarget *BasicBlock

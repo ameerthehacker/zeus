@@ -353,6 +353,18 @@ func (tc *TypeChecker) tcExport(instr *Instr) {
 	}
 }
 
+func (tc *TypeChecker) tcImport(instr *Instr) {
+	input := AsImportInstrInput(instr.Input)
+	valueType := tc.getValueType(input.Value)
+
+	if !zeus_value.IsFunctionType(valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot import value of type '%s'", valueType),
+			Span:    instr.Span,
+		})
+	}
+}
+
 func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
 	function := zeus_value.AsFunction(input.Callee)
@@ -453,6 +465,10 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcCallFunc(instr)
 		case InstrTypeExport:
 			tc.tcExport(instr)
+		case InstrTypeImport:
+			tc.tcImport(instr)
+		case InstrTypeCast:
+			// TODO: add type checking for cast
 		default:
 			panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 		}

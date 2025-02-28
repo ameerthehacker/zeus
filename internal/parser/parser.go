@@ -364,12 +364,12 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 
 func (p *Parser) parseImportStmt() *ast.ImportStmtNode {
 	importKeyword := p.consumeToken(token.TokenTypeImport)
-	imports := []ast.ExprNode{}
+	imports := []*ast.IdentifierExprNode{}
 
 	p.consumeToken(token.TokenTypeLeftBrace, "after import")
 
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightBrace {
-		expr := p.ParseExpr("import")
+		expr := p.consumeIdentifier("import")
 		imports = append(imports, expr)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}

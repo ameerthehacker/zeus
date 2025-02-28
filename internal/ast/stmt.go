@@ -69,7 +69,7 @@ type WhileStmtNode struct {
 
 type ImportStmtNode struct {
 	Source *token.Token
-	Imports []ExprNode
+	Imports []*IdentifierExprNode
 	Span *token.Span
 }
 

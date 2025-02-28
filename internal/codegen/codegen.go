@@ -237,6 +237,18 @@ func (c *CodegenModule) genExport(input ir.ExportInstrInput) {
 	llvmValue.SetLinkage(llvm.ExternalLinkage)
 }
 
+func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
+	importedValue := input.Value
+
+	switch importedValue := importedValue.(type) {
+		case *zeus_value.Function:
+			importedFunc := llvm.AddFunction(c.module, importedValue.Name, ToLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
+			c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
+		default:
+			panic(fmt.Sprintf("cannot codegen for imported value %s", importedValue))
+	}
+}
+
 func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) {
 	var result llvm.Value
 	valueType := zeus_value.GetValueType(input.Value)
@@ -322,6 +334,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeExport:
 			c.genExport(*ir.AsExportInstrInput(instr.Input))
+		case ir.InstrTypeImport:
+			c.genImport(*ir.AsImportInstrInput(instr.Input))
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

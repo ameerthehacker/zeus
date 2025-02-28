@@ -212,17 +212,24 @@ func (c *Compiler) TypeCheckSourceFiles(sourceFiles []*SourceFile) []*SourceFile
 }
 
 func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
-	sourcesFilesPathMap := map[string]*SourceFile{}
+	irModuleFilePathMap := map[string]*ir.IRModule{}
 
 	for _, sourceFile := range sourceFiles {
-		sourcesFilesPathMap[sourceFile.Path] = sourceFile
-	}
-
-	for _, sourceFile := range sourceFiles {
+		// if the source file is already in the map, skip it
+		_, ok := irModuleFilePathMap[sourceFile.Path]
+		if ok {
+			continue
+		}
+		// generate zeus IR and cache it
+		zeus_error.Assert(sourceFile.Program != nil, "source file program is nil")
 		irBuilder := ir.NewIRBuilder()
 		sourceFile.IRBuilder = irBuilder
-		irModule := ir.NewIRModule(irBuilder, sourceFile.Path)
-		zeus_error.Assert(sourceFile.Program != nil, "source file program is nil")
+		irModule := ir.NewIRModule(irBuilder, sourceFile.Path, func(modulePath string) *ir.IRModule {
+			irModule, ok := irModuleFilePathMap[modulePath]
+			zeus_error.Assert(ok, fmt.Sprintf("IR module not found %s", modulePath))
+			return irModule
+		})
+		irModuleFilePathMap[sourceFile.Path] = irModule
 		errors := irModule.Generate(sourceFile.Program)
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
 	}
@@ -234,12 +241,13 @@ func (c *Compiler) GenerateSourceFiles(entry SourceFile) []*SourceFile {
 	sourceFiles := []*SourceFile{}
 	queue := []SourceFile{entry}
 
+	// BFS traversal so that we can generate the source files in the order they are imported
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
 
 		sourceFile := c.CompileFile(current)
-		sourceFiles = append(sourceFiles, sourceFile)
+		sourceFiles = append([]*SourceFile{sourceFile}, sourceFiles...)
 
 		if sourceFile.Program != nil {
 			dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)

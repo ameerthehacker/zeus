@@ -277,6 +277,14 @@ func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *tok
 	return result
 }
 
+func (b *IRBuilder) BuildImport(importedValue zeus_value.Value, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeImport,
+		Input: NewImportInstrInput(importedValue),
+		Span: span,
+	})
+}
+
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
 	worklist := []*BasicBlock{}
 	i := 0
