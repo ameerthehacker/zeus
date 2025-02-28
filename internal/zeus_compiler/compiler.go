@@ -135,16 +135,16 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		}
 	}()
 	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
-		errors := []*zeus_error.ZeusError{}
+		hasErrors := false
 
 		for _, sourceFile := range sourceFiles {
 			if len(sourceFile.Errors) > 0 {
-				errors = append(errors, sourceFile.Errors...)
+				hasErrors = true
+				logger.PrettyPrintError(entryFilePath, sourceFile.Source, sourceFile.Errors)
 			}
 		}
 
-		if len(errors) > 0 {
-			logger.PrettyPrintError(entryFilePath, sourceFiles[0].Source, errors)
+		if hasErrors {
 			os.Exit(1)
 		}
 	}
