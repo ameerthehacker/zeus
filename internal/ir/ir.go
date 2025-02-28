@@ -333,11 +333,12 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 
 	switch exportedValue := exportedValue.(type) {
 	case *zeus_value.Function:
-		exportedFnName := exportedValue.Name
 		// track the exported values from the module
-		g.exportedSymbols[exportedFnName] = exportedValue
 		// make the exported function module scoped to avoid conflicts between modules
-		exportedValue.Name = module.GetModuleScopedName(g.modulePath, exportedFnName)
+		exportedValueName := exportedValue.Name
+		moduleScopedName := module.GetModuleScopedName(g.modulePath, exportedValueName)
+		g.exportedSymbols[moduleScopedName] = exportedValue
+		exportedValue.Name = moduleScopedName
 	default:
 		g.pushError(&zeus_error.ZeusError{
 			Message: "cannot export non-function expression",
@@ -355,7 +356,8 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	zeus_error.Assert(irModule != nil, fmt.Sprintf("IR module %s not found", absoluteModulePath))
 
 	for _, _import := range stmt.Imports {
-		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)
+		symbolName := module.GetModuleScopedName(absoluteModulePath, _import.Name.Value)
+		importedValue, ok := irModule.GetExportedSymbol(symbolName)
 
 		if !ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("module '%s' does not export '%s'", stmt.Source.Value, _import.Name.Value), _import.Name.Span))

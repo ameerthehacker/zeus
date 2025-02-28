@@ -4,6 +4,8 @@ import (
 	"fmt"
 )
 
+const MAIN_FUNCTION_NAME = "main"
+
 type TokenType int
 
 const (

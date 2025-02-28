@@ -38,16 +38,21 @@ func PrettyPrintError(filePath string, source string, errors []*zeus_error.ZeusE
 	lines := strings.Split(source, "\n")
 
 	for _, err := range errors {
-		line, col := err.Span.Start.Line - 1, err.Span.Start.Column - 1
-		errorIndicator := "^"
-		if err.Span.End.Column > err.Span.Start.Column {
-			errorIndicator = strings.Repeat("~", err.Span.End.Column - err.Span.Start.Column + 1)
-		}
+		if err.Span != nil {
+			line, col := err.Span.Start.Line - 1, err.Span.Start.Column - 1
+			errorIndicator := "^"
+			if err.Span.End.Column > err.Span.Start.Column {
+				errorIndicator = strings.Repeat("~", err.Span.End.Column - err.Span.Start.Column + 1)
+			}
 
-		LogZeusError(filePath, err)
-		if line < len(lines) {
-			fmt.Fprintln(os.Stderr, lines[line])
-			fmt.Fprintln(os.Stderr, strings.Repeat(" ", col)+errorIndicator)
+			LogZeusError(filePath, err)
+			if line < len(lines) {
+				fmt.Fprintln(os.Stderr, lines[line])
+				fmt.Fprintln(os.Stderr, strings.Repeat(" ", col)+errorIndicator)
+			}
+		} else {
+			prefix := filePath
+			fmt.Fprintln(os.Stderr, formatError(err.Severity, prefix, err.Message))
 		}
 	}
 

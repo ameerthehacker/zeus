@@ -384,12 +384,12 @@ func (p *Parser) parseImportStmt() *ast.ImportStmtNode {
 
 func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
 	exportKeyword := p.consumeToken(token.TokenTypeExport)
-	expr := p.ParseExpr("export")
+	expr := p.ParseExpr()
 
 	switch expr.(type) {
 	case *ast.FunctionDeclExprNode:
 	default:
-		p.consumeSemicolon()
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "export can only be used with function declaration", expr.GetSpan()))
 	}
 
 	return &ast.ExportStmtNode{Expr: expr, Span: &token.Span{Start: exportKeyword.Span.Start, End: expr.GetSpan().End}}

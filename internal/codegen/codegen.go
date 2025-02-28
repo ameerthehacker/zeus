@@ -6,6 +6,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
+	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"tinygo.org/x/go-llvm"
 )
@@ -20,6 +21,7 @@ type CodegenModule struct {
 	ctx llvm.Context
 	symbolTable *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks map[int]llvm.BasicBlock
+	isEntryPoint bool
 }
 
 func NewCodegen() *Codegen {
@@ -33,11 +35,11 @@ func NewCodegen() *Codegen {
 	return &Codegen{ ctx }
 }
 
-func (c *Codegen) NewModule(name string) *CodegenModule {
+func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock) }
+	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint }
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -72,6 +74,11 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
 	llvmFunc := llvm.AddFunction(c.module, input.Function.Name, ToLLVMFunctionType(zeus_value.ToFunctionType(*input.Function)))
+	if c.isEntryPoint && input.Function.Name == token.MAIN_FUNCTION_NAME {
+		llvmFunc.SetLinkage(llvm.ExternalLinkage)
+	} else {
+		llvmFunc.SetLinkage(llvm.PrivateLinkage)
+	}
 	funcParams := input.Function.Params
 
 	for index, param := range llvmFunc.Params() {

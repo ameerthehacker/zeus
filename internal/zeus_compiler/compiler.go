@@ -14,6 +14,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/logger"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"tinygo.org/x/go-llvm"
@@ -39,6 +40,7 @@ type SourceFile struct {
 	Errors []*zeus_error.ZeusError
 	IRBuilder *ir.IRBuilder
 	Exports []*zeus_value.Value
+	IsEntryPoint bool
 }
 
 func (s *SourceFile) Print() {
@@ -133,28 +135,29 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		}
 	}()
 	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
-		hasErrors := false
+		errors := []*zeus_error.ZeusError{}
 
 		for _, sourceFile := range sourceFiles {
 			if len(sourceFile.Errors) > 0 {
-				logger.PrettyPrintError(sourceFile.Path, sourceFile.Source, sourceFile.Errors)
-				hasErrors = true
+				errors = append(errors, sourceFile.Errors...)
 			}
 		}
 
-		if hasErrors {
+		if len(errors) > 0 {
+			logger.PrettyPrintError(entryFilePath, sourceFiles[0].Source, errors)
 			os.Exit(1)
 		}
 	}
-	entryPointInput, err := c.ReadSourceFile(entryFilePath)
-	
+	entryPointSourceFile, err := c.ReadSourceFile(entryFilePath)
+	entryPointSourceFile.IsEntryPoint = true
+
 	if err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, err.Error())
 		os.Exit(1)
 	}
 
 	// parse and generate AST
-	sourceFiles := c.GenerateSourceFiles(*entryPointInput)
+	sourceFiles := c.CompileSourceFile(entryPointSourceFile)
 
 	defer func() {
 		if debug.IsDebug() {
@@ -191,13 +194,29 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 
 func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
-		llvmModule := c.codegen.NewModule(sourceFile.Path)
+		llvmModule := c.codegen.NewModule(sourceFile.Path, sourceFile.IsEntryPoint)
 		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
 		llvmModule.Generate(*sourceFile.IRBuilder)
 		sourceFile.Module = llvmModule
 	}
 
 	return sourceFiles
+}
+
+func (c *Compiler) CheckMainFunction(sourceFile *SourceFile) {
+	hasMainFunction := false
+
+	sourceFile.IRBuilder.Walk(func(instr *ir.Instr) {
+		if instr.Type == ir.InstrTypeDeclFunc {
+			if ir.AsDeclFuncInstrInput(instr.Input).Function.Name == token.MAIN_FUNCTION_NAME {
+				hasMainFunction = true
+			}
+		}
+	}, func(block *ir.BasicBlock) {})
+
+	if !hasMainFunction {
+		sourceFile.Errors = append(sourceFile.Errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "main function not found", nil))
+	}
 }
 
 func (c *Compiler) TypeCheckSourceFiles(sourceFiles []*SourceFile) []*SourceFile {
@@ -232,14 +251,17 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 		irModuleFilePathMap[sourceFile.Path] = irModule
 		errors := irModule.Generate(sourceFile.Program)
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
+		if sourceFile.IsEntryPoint {
+			c.CheckMainFunction(sourceFile)
+		}
 	}
 
 	return sourceFiles
 }
 
-func (c *Compiler) GenerateSourceFiles(entry SourceFile) []*SourceFile {
+func (c *Compiler) CompileSourceFile(entry *SourceFile) []*SourceFile {
 	sourceFiles := []*SourceFile{}
-	queue := []SourceFile{entry}
+	queue := []*SourceFile{entry}
 
 	// BFS traversal so that we can generate the source files in the order they are imported
 	for len(queue) > 0 {
@@ -254,44 +276,32 @@ func (c *Compiler) GenerateSourceFiles(entry SourceFile) []*SourceFile {
 			// append the module resolution errors
 			sourceFile.Errors = append(sourceFile.Errors, errors...)
 
-			for _, dependency := range dependencies {
-				queue = append(queue, *dependency)
-			}
+			queue = append(queue, dependencies...)
 		}
 	}
 
 	return sourceFiles
 }
 
-func (c *Compiler) CompileFile(input SourceFile) *SourceFile {
+func (c *Compiler) CompileFile(input *SourceFile) *SourceFile {
 	lexer := lexer.NewLexer(input.Source)
 	tokens, lexerErrors := lexer.Lex()
 
 	if len(lexerErrors) > 0 {
-		return &SourceFile{
-			Path: input.Path,
-			Source: input.Source,
-			Errors: lexerErrors,
-		}
+		input.Errors = lexerErrors
+		return input
 	}
 
 	parser := parser.NewParser(tokens)
 	program, parserErrors := parser.ParseProgram()
 
 	if len(parserErrors) > 0 {
-		return &SourceFile{
-			Path: input.Path,
-			Source: input.Source,
-			Errors: parserErrors,
-		}
+		input.Errors = parserErrors
+		return input
 	}
 
-	return &SourceFile{
-		Path: input.Path,
-		Source: input.Source,
-		Program: program,
-		Errors: []*zeus_error.ZeusError{},
-	}
+	input.Program = program
+	return input
 }
 
 func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
