@@ -127,7 +127,7 @@ func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_val
 		args[i] = c.toLLVMValue(arg)
 	}
 
-	llvmValue := c.builder.CreateCall(functionType, function, args, function.Name())
+	llvmValue := c.builder.CreateCall(functionType, function, args, fmt.Sprintf("%s_call_result", function.Name()))
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 

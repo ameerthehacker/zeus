@@ -148,6 +148,11 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 func (tc *TypeChecker) tryImplicitCast(instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
 
+	// if they both are same type, no need to cast
+	if tc.cmpValueType(valueType, targetType) {
+		return value, true
+	}
+
 	zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
 	tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
 
@@ -379,10 +384,7 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 				})
 			}
 		}
-		instr.Input = CallFuncInstrInput{
-			Callee: input.Callee,
-			Args:   input.Args,
-		}
+		instr.Input = NewCallFuncInstrInput(input.Callee, input.Args)
 	}
 
 	instr.Output.ValueType = functionType.ReturnType

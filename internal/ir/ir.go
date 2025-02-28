@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -15,13 +16,15 @@ type IRModule struct {
 	isLValueExpr bool
 	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
 	errors []*zeus_error.ZeusError
+	modulePath string
 }
 
-func NewIRModule(ir_builder *IRBuilder) *IRModule {
+func NewIRModule(ir_builder *IRBuilder, modulePath string) *IRModule {
 	return &IRModule{
 		irBuilder: ir_builder,
 		isLValueExpr: false,
 		symbolTable: symbol_table.NewSymbolTable[zeus_value.Value](),
+		modulePath: modulePath,
 	}
 }
 
@@ -214,7 +217,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
 	fn := g.irBuilder.BuildFuncDecl(expr.Name.Name.Value, params, body, zeus_value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
-	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, fn)
+	g.symbolTable.DeclareGlobalSymbol(expr.Name.Name.Value, fn)
 	g.symbolTable.EnterScope()
 
 	for index, param := range expr.Params {
@@ -231,7 +234,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 
 	g.symbolTable.ExitScope()
 
-	return zeus_value.NewVar(expr.Name.Name.Value, zeus_value.ToFunctionType(*fn), false, expr.Name.Name.Span)
+	return fn
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -311,7 +314,20 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 }
 
 func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
-	g.irBuilder.BuildExport(stmt.Expr.Accept(g), stmt.GetSpan())
+	exportedValue := stmt.Expr.Accept(g)
+
+	switch exportedValue := exportedValue.(type) {
+	case *zeus_value.Function:
+		// make the exported function module scoped to avoid conflicts between modules
+		exportedValue.Name = module.GetModuleScopedName(g.modulePath, exportedValue.Name)
+	default:
+		g.pushError(&zeus_error.ZeusError{
+			Message: "cannot export non-function expression",
+			Span: stmt.GetSpan(),
+		})
+	}
+
+	g.irBuilder.BuildExport(exportedValue, stmt.GetSpan())
 }
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {}

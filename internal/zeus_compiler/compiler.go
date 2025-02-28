@@ -15,6 +15,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/logger"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"tinygo.org/x/go-llvm"
 )
 
@@ -37,6 +38,7 @@ type SourceFile struct {
 	Module *codegen.CodegenModule
 	Errors []*zeus_error.ZeusError
 	IRBuilder *ir.IRBuilder
+	Exports []*zeus_value.Value
 }
 
 func (s *SourceFile) Print() {
@@ -49,11 +51,6 @@ func (s *SourceFile) Print() {
 		fmt.Println("---:LLVM IR:---")
 		s.Module.Dump()
 	}
-}
-
-type Input struct {
-	Path string
-	Source string
 }
 
 type SourceFileErrorType int
@@ -85,8 +82,8 @@ func NewCompiler() *Compiler {
 	}
 }
 
-func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*Input, []*zeus_error.ZeusError) {
-	dependencies := []*Input{}
+func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*SourceFile, []*zeus_error.ZeusError) {
+	dependencies := []*SourceFile{}
 	errors := []*zeus_error.ZeusError{}
 
 	for _, stmt := range program.Statements {
@@ -111,7 +108,7 @@ func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) 
 }
 
 
-func (c *Compiler) ReadSourceFile(path string) (*Input, *SourceFileError) {
+func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	content, err := os.ReadFile(path)
 
 	if err != nil && os.IsNotExist(err) {
@@ -120,7 +117,7 @@ func (c *Compiler) ReadSourceFile(path string) (*Input, *SourceFileError) {
 		return nil, NewSourceFileError(Unknown, err.Error())
 	}
 
-	return &Input{
+	return &SourceFile{
 		Path: path,
 		Source: string(content),
 	}, nil
@@ -224,7 +221,7 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
 		irBuilder := ir.NewIRBuilder()
 		sourceFile.IRBuilder = irBuilder
-		irModule := ir.NewIRModule(irBuilder)
+		irModule := ir.NewIRModule(irBuilder, sourceFile.Path)
 		zeus_error.Assert(sourceFile.Program != nil, "source file program is nil")
 		errors := irModule.Generate(sourceFile.Program)
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
@@ -233,9 +230,9 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 	return sourceFiles
 }
 
-func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
+func (c *Compiler) GenerateSourceFiles(entry SourceFile) []*SourceFile {
 	sourceFiles := []*SourceFile{}
-	queue := []Input{entry}
+	queue := []SourceFile{entry}
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -258,7 +255,7 @@ func (c *Compiler) GenerateSourceFiles(entry Input) []*SourceFile {
 	return sourceFiles
 }
 
-func (c *Compiler) CompileFile(input Input) *SourceFile {
+func (c *Compiler) CompileFile(input SourceFile) *SourceFile {
 	lexer := lexer.NewLexer(input.Source)
 	tokens, lexerErrors := lexer.Lex()
 
