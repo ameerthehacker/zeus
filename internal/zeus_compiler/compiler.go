@@ -23,6 +23,7 @@ import (
 
 type Compiler struct {
 	codegen *codegen.Codegen
+	outputDir string
 }
 
 type EmitFileType string
@@ -49,18 +50,6 @@ type SourceFileDependency struct {
 	SourceFile *SourceFile
 }
 
-func (s *SourceFile) Print() {
-	fmt.Printf("---:Source File (%s):---\n", s.Path)
-	if s.IRBuilder != nil {
-		fmt.Println("---:Zeus IR:---")
-		s.IRBuilder.Print()	
-	}
-	if s.Module != nil {
-		fmt.Println("---:LLVM IR:---")
-		s.Module.Dump()
-	}
-}
-
 type SourceFileErrorType int
 
 const (
@@ -84,9 +73,10 @@ func (e *SourceFileError) Error() string {
 	return e.Message
 }
 
-func NewCompiler() *Compiler {
+func NewCompiler(outputDir string) *Compiler {
 	return &Compiler{
 		codegen: codegen.NewCodegen(),
+		outputDir: outputDir,
 	}
 }
 
@@ -171,7 +161,10 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	defer func() {
 		if debug.IsDebug() {
 			for _, sourceFile := range sourceFiles {
-				sourceFile.Print()
+				if sourceFile.IRBuilder != nil {
+					fmt.Printf("---:Zeus IR [%s]:---\n", sourceFile.Path)
+					sourceFile.IRBuilder.Print()	
+				}
 			}
 		}
 	}()
@@ -347,7 +340,8 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 		return "", err
 	}
 
-	objDir, err := os.MkdirTemp(os.TempDir(), "zeus-obj-*")
+	objDir, err := os.MkdirTemp(c.outputDir, "zeus-obj-*")
+	llDir, llDirErr := os.MkdirTemp(c.outputDir, "zeus-ll-*")
 	if err != nil {
 		return "", err
 	}
@@ -368,7 +362,19 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		tempFile.Write(buffer.Bytes())
+		_, err = tempFile.Write(buffer.Bytes())
+		if err != nil {
+			return "", err
+		}
+		// write llvm ir to temp file
+		if debug.IsDebug() && llDirErr == nil {
+			tempLLFile, err := os.CreateTemp(llDir, "zeus-*.ll")
+			if err != nil {
+				continue
+			}
+			tempLLFile.Write([]byte(sourceFile.Module.String()))
+			defer tempLLFile.Close()
+		}
 	}
 
 	return objDir, nil

@@ -2,7 +2,7 @@
 
 always:
 	rm -rf playground/debug
-	mkdir -p playground/debug
+	mkdir -p playground/debug playground/debug/out
 
 test-verbose:
 	go test ./test/... -v
@@ -15,7 +15,7 @@ test:
 
 play: always
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_DEBUG=true go run zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 	else \
 		go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi

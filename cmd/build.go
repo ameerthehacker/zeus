@@ -15,6 +15,7 @@ import (
 
 const (
 	FlagOutputPath     = "out"
+	FlagTargetDir      = "target-dir"
 )
 
 func buildCmd() *cobra.Command {
@@ -43,18 +44,23 @@ func buildCmd() *cobra.Command {
 			outputFileName := getOutputFileNameWithExtension(zeus_compiler.EmitFileTypeEXE)
 
 			var outputPath string
+			targetDir := os.TempDir()
 			if cmd.Flag(FlagOutputPath).Changed {
 				outputPath = cmd.Flag(FlagOutputPath).Value.String()
 			} else {
 				outputPath = filepath.Join(folderPath, outputFileName)
 			}
+			if cmd.Flag(FlagTargetDir).Changed {
+				targetDir = cmd.Flag(FlagTargetDir).Value.String()
+			}
 
-			compiler := zeus_compiler.NewCompiler()
+			compiler := zeus_compiler.NewCompiler(targetDir)
 			compiler.Compile(filePath, zeus_compiler.EmitFileTypeEXE, outputPath)
 		},
 	}
 
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
+	buildCmd.Flags().String(FlagTargetDir, "", "the directory to store the output files")
 
 	return buildCmd
 }
