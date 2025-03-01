@@ -11,7 +11,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
-const modZeusFile = "mod.zs"
+const modZeusFile = "index.zs"
 const stdZeusModulePrefix = "@"
 const stdZeusModuleDir = "lib"
 const zeusHomeEnvVar = "ZEUS_HOME"
