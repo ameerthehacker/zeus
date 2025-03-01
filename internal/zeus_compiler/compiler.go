@@ -43,6 +43,11 @@ type SourceFile struct {
 	IsEntryPoint bool
 }
 
+type SourceFileDependency struct {
+	Span *token.Span
+	SourceFile *SourceFile
+}
+
 func (s *SourceFile) Print() {
 	fmt.Printf("---:Source File (%s):---\n", s.Path)
 	if s.IRBuilder != nil {
@@ -84,8 +89,8 @@ func NewCompiler() *Compiler {
 	}
 }
 
-func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*SourceFile, []*zeus_error.ZeusError) {
-	dependencies := []*SourceFile{}
+func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*SourceFileDependency, []*zeus_error.ZeusError) {
+	dependencies := []*SourceFileDependency{}
 	errors := []*zeus_error.ZeusError{}
 
 	for _, stmt := range program.Statements {
@@ -102,7 +107,10 @@ func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) 
 				continue
 			}
 
-			dependencies = append(dependencies, dependency)
+			dependencies = append(dependencies, &SourceFileDependency{
+				Span: stmt.Source.Span,
+				SourceFile: dependency,
+			})
 		}
 	}
 
@@ -156,8 +164,8 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		os.Exit(1)
 	}
 
-	// parse and generate AST
-	sourceFiles := c.CompileSourceFile(entryPointSourceFile)
+	// parse and collect dependencies
+	sourceFiles := c.CollectDependencies(entryPointSourceFile)
 
 	defer func() {
 		if debug.IsDebug() {
@@ -172,7 +180,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	sourceFiles = c.GenerateZeusIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
 	// type check the zeus IR
-	sourceFiles = c.TypeCheckSourceFiles(sourceFiles)
+	sourceFiles = c.TypeCheck(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
 	// generate llvm IR
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
@@ -219,7 +227,7 @@ func (c *Compiler) CheckMainFunction(sourceFile *SourceFile) {
 	}
 }
 
-func (c *Compiler) TypeCheckSourceFiles(sourceFiles []*SourceFile) []*SourceFile {
+func (c *Compiler) TypeCheck(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
 		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
 		typeChecker := ir.NewTypeChecker(sourceFile.IRBuilder)
@@ -259,25 +267,43 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 	return sourceFiles
 }
 
-func (c *Compiler) CompileSourceFile(entry *SourceFile) []*SourceFile {
+func (c *Compiler) CollectDependencies(entry *SourceFile) []*SourceFile {
 	sourceFiles := []*SourceFile{}
-	queue := []*SourceFile{entry}
-
+	queue := []*SourceFileDependency{{
+		Span: nil,
+		SourceFile: entry,
+	}}
+	visited := map[string]bool{}
+	inProgress := map[string]bool{}
+	
 	// BFS traversal so that we can generate the source files in the order they are imported
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
+		if visited[current.SourceFile.Path] {
+			continue
+		}
 
-		sourceFile := c.CompileFile(current)
+		inProgress[current.SourceFile.Path] = true
+		sourceFile := c.CompileFile(current.SourceFile)
 		sourceFiles = append([]*SourceFile{sourceFile}, sourceFiles...)
 
 		if sourceFile.Program != nil {
 			dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)
+
+			for _, dependency := range dependencies {
+				if inProgress[dependency.SourceFile.Path] {
+					sourceFile.Errors = append(sourceFile.Errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "circular dependency detected", dependency.Span))
+					continue
+				}
+			}
+
 			// append the module resolution errors
 			sourceFile.Errors = append(sourceFile.Errors, errors...)
-
 			queue = append(queue, dependencies...)
 		}
+
+		visited[current.SourceFile.Path] = true
 	}
 
 	return sourceFiles
