@@ -2,7 +2,6 @@ package ir
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/module"
@@ -350,7 +349,7 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 }
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
-	absoluteModulePath := filepath.Join(filepath.Dir(g.modulePath), stmt.Source.Value)
+	absoluteModulePath := module.ResolveFilePath(g.modulePath, stmt.Source.Value)
 	irModule := g.getModule(absoluteModulePath)
 
 	zeus_error.Assert(irModule != nil, fmt.Sprintf("IR module %s not found", absoluteModulePath))

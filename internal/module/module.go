@@ -1,6 +1,20 @@
 package module
 
-import "unicode"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"unicode"
+
+	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
+)
+
+const modZeusFile = "mod.zs"
+const stdZeusModulePrefix = "@"
+const stdZeusModuleDir = "lib"
+const zeusHomeEnvVar = "ZEUS_HOME"
 
 func GetModulePrefix(modulePath string) string {
 	moduleName := "$"
@@ -18,4 +32,30 @@ func GetModulePrefix(modulePath string) string {
 func GetModuleScopedName(modulePath string, name string) string {
 	moduleName := GetModulePrefix(modulePath)
 	return moduleName + "_" + name
+}
+
+func ResolveFilePath(sourcePath string, importPath string) string {
+	var resolvedPath string = importPath
+
+	if (strings.HasPrefix(importPath, stdZeusModulePrefix)) {
+		zeusHomePath, err := os.Getwd()
+		
+		if os.Getenv(zeusHomeEnvVar) != "" {
+			zeusHomePath = os.Getenv(zeusHomeEnvVar)
+		} else if err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
+			os.Exit(1)
+		}
+		
+		resolvedPath = filepath.Join(zeusHomePath, stdZeusModuleDir, strings.TrimPrefix(importPath, stdZeusModulePrefix))
+	} else {
+		resolvedPath = filepath.Join(filepath.Dir(sourcePath), importPath)
+	}
+
+	stat, err := os.Stat(resolvedPath)
+	if err == nil && stat.IsDir() {
+		resolvedPath = filepath.Join(resolvedPath, modZeusFile)
+	}
+
+	return resolvedPath
 }

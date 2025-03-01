@@ -13,6 +13,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -96,7 +97,7 @@ func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) 
 	for _, stmt := range program.Statements {
 		switch stmt := stmt.(type) {
 		case *ast.ImportStmtNode:
-			dependencyPath := filepath.Join(filepath.Dir(sourcePath), stmt.Source.Value)
+			dependencyPath := module.ResolveFilePath(sourcePath, stmt.Source.Value)
 			dependency, err := c.ReadSourceFile(dependencyPath)
 
 			if err != nil && err.Type == SourceFileNotFound {
@@ -275,7 +276,7 @@ func (c *Compiler) CollectDependencies(entry *SourceFile) []*SourceFile {
 	}}
 	visited := map[string]bool{}
 	inProgress := map[string]bool{}
-	
+
 	// BFS traversal so that we can generate the source files in the order they are imported
 	for len(queue) > 0 {
 		current := queue[0]
