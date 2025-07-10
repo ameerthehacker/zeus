@@ -111,6 +111,22 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.FunctionDeclExprNode{Name: functionName, Params: params, Body: body, ReturnType: dataType, Span: &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End}}
 	}
 
+	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
+		className := parser.consumeIdentifier("class name")
+		parser.consumeToken(token.TokenTypeLeftBrace, "after class name")
+	
+		methods := []*ast.ClassMethod{}
+		properties := []*ast.ClassProperty{}
+
+		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
+
+		}
+
+		closeBrace := parser.consumeToken(token.TokenTypeRightBrace, "after class members")
+
+		return &ast.ClassDeclExprNode{Name: className, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -131,6 +147,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus:    unaryOperatorParseLet,
+		token.TokenTypeClass:    classParselet,
 	}
 
 	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
@@ -244,6 +261,7 @@ func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
 
 	switch expr.(type) {
 	case *ast.FunctionDeclExprNode:
+	case *ast.ClassDeclExprNode:
 	default:
 		p.consumeSemicolon()
 	}

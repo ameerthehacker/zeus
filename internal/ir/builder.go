@@ -285,6 +285,14 @@ func (b *IRBuilder) BuildImport(importedValue zeus_value.Value, span *token.Span
 	})
 }
 
+func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeDeclClass,
+		Input: NewDeclClassInstrInput(class),
+		Span: span,
+	})
+}
+
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
 	worklist := []*BasicBlock{}
 	i := 0

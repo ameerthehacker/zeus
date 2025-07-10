@@ -393,6 +393,89 @@ func AsCastInstrInput(input InstrInput) *CastInstrInput {
 	return nil
 }
 
+type DeclClassInstrInput struct {
+	Class *zeus_value.Class
+}
+
+func NewDeclClassInstrInput(class *zeus_value.Class) *DeclClassInstrInput {
+	return &DeclClassInstrInput{
+		Class: class,
+	}
+}
+
+func (i DeclClassInstrInput) String() string {
+	return i.Class.String()
+}
+
+func AsDeclClassInstrInput(input InstrInput) *DeclClassInstrInput {
+	switch input := input.(type) {
+	case *DeclClassInstrInput:
+		return input
+	default:
+		panicInvalidInputType("DeclClassInstrInput", input)
+	}
+
+	return nil
+}
+
+type DeclClassMethodInstrInput struct {
+	Class *zeus_value.Class
+	Method *zeus_value.FunctionType
+}
+
+func NewDeclClassMethodInstrInput(class *zeus_value.Class, method *zeus_value.FunctionType) *DeclClassMethodInstrInput {
+	return &DeclClassMethodInstrInput{
+		Class:   class,
+		Method:  method,
+	}
+}
+
+func (i DeclClassMethodInstrInput) String() string {
+	return fmt.Sprintf("%s %s", i.Class, i.Method)
+}
+
+func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
+	switch input := input.(type) {
+	case *DeclClassMethodInstrInput:
+		return input
+	default:
+		panicInvalidInputType("DeclClassMethodInstrInput", input)
+	}
+
+	return nil
+}
+
+type NewObjInstrInput struct {
+	Class *zeus_value.Class
+	Args []zeus_value.Value
+}
+
+func NewNewObjInstrInput(class *zeus_value.Class, args []zeus_value.Value) *NewObjInstrInput {
+	return &NewObjInstrInput{
+		Class: class,
+		Args:  args,
+	}
+}
+
+func (i NewObjInstrInput) String() string {
+	args := []string{}
+	for _, arg := range i.Args {
+		args = append(args, arg.String())
+	}
+	return fmt.Sprintf("%s(%s)", i.Class, strings.Join(args, ", "))
+}
+
+func AsNewObjInstrInput(input InstrInput) *NewObjInstrInput {
+	switch input := input.(type) {
+	case *NewObjInstrInput:
+		return input
+	default:
+		panicInvalidInputType("NewObjInstrInput", input)
+	}
+
+	return nil
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -426,6 +509,10 @@ const (
 	// import and export
 	InstrTypeImport
 	InstrTypeExport
+	// class
+	InstrTypeDeclClass
+	InstrTypeDeclClassMethod
+	InstrTypeNewObj
 )
 
 func (i InstrType) String() string {
@@ -476,6 +563,12 @@ func (i InstrType) String() string {
 		return "IMPORT"
 	case InstrTypeExport:
 		return "EXPORT"
+	case InstrTypeDeclClass:
+		return "DECLARE_CLASS"
+	case InstrTypeDeclClassMethod:
+		return "DECLARE_CLASS_METHOD"
+	case InstrTypeNewObj:
+		return "NEW_OBJ"
 	default:
 		panic("unknown instruction type")
 	}

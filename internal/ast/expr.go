@@ -57,6 +57,29 @@ type FunctionDeclExprNode struct {
 	Span *token.Span
 }
 
+type ClassProperty struct {
+	Name *IdentifierExprNode
+	ValueType *token.Token
+	AccessModifier *token.Token
+	Span *token.Span
+}
+
+type ClassMethod struct {
+	Name *IdentifierExprNode
+	Params []*VarDeclNode
+	Body *BlockStmtNode
+	ReturnType *token.Token
+	AccessModifier *token.Token
+	Span *token.Span
+}
+
+type ClassDeclExprNode struct {
+	Name *IdentifierExprNode
+	Properties []*ClassProperty
+	Methods []*ClassMethod
+	Span *token.Span
+}
+
 func exprNodesString(params []ExprNode, pretty bool) string {
 	paramsStr := []string{}
 	for _, param := range params {
@@ -217,6 +240,46 @@ func (b *BooleanExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_val
 	return visitor.VisitBoolean(b)
 }
 
+func (c *ClassDeclExprNode) GetSpan() *token.Span {
+	return c.Span
+}
+
+func classPropertiesString(properties []*ClassProperty) string {
+	propertiesStr := []string{}
+	for _, property := range properties {
+		propertiesStr = append(propertiesStr, property.Name.String())
+	}
+	return strings.Join(propertiesStr, ", ")
+}
+
+func classMethodsString(methods []*ClassMethod) string {
+	methodsStr := []string{}
+	for _, method := range methods {
+		methodsStr = append(methodsStr, method.Name.String())
+	}
+	return strings.Join(methodsStr, ", ")
+}
+
+func (c *ClassDeclExprNode) String() string {
+	return fmt.Sprintf("{ type: ClassDeclExprNode, Name: %s, Properties: [%s], Methods: [%s], Span: %s }", c.Name.String(), classPropertiesString(c.Properties), classMethodsString(c.Methods), c.GetSpan())
+}
+
+func (c *ClassDeclExprNode) PrettyString() string {
+	properties := []string{}
+	for _, property := range c.Properties {
+		properties = append(properties, fmt.Sprintf("%s: %s", property.Name.PrettyString(), property.ValueType.Type))
+	}
+	methods := []string{}
+	for _, method := range c.Methods {
+		methods = append(methods, method.Name.PrettyString())
+	}
+	return fmt.Sprintf("class %s {\n%s\n%s\n}", c.Name.PrettyString(), strings.Join(properties, "\n"), strings.Join(methods, "\n"))
+}
+
+func (c *ClassDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitClassDeclExpr(c)
+}
+
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
 	VisitNumber(node *NumberExprNode) T
@@ -226,4 +289,5 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitGroupingExpr(node *GroupingExprNode) T
 	VisitFunctionCallExpr(node *FunctionCallExprNode) T
 	VisitFunctionDeclExpr(node *FunctionDeclExprNode) T
+	VisitClassDeclExpr(node *ClassDeclExprNode) T
 }

@@ -98,6 +98,70 @@ func (f Function) String() string {
 	return fmt.Sprintf("%s(%s) %s", f.Name, strings.Join(params, ", "), f.ReturnType)
 }
 
+type ClassProperty struct {
+	Property *Var
+	AccessModifier *token.Token
+}
+
+func NewClassProperty(property *Var, accessModifier *token.Token) *ClassProperty {
+	return &ClassProperty{
+		Property: property,
+		AccessModifier: accessModifier,
+	}
+}
+
+func (p *ClassProperty) String() string {
+	return fmt.Sprintf("%s %s", p.AccessModifier, p.Property)
+}
+
+type ClassMethod struct {
+	Method *Function
+	AccessModifier *token.Token
+}
+
+func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
+	return &ClassMethod{
+		Method: method,
+		AccessModifier: accessModifier,
+	}
+}
+
+func (m *ClassMethod) String() string {
+	return fmt.Sprintf("%s %s", m.AccessModifier, m.Method)
+}
+
+type Class struct {
+	Name string
+	Properties []*ClassProperty
+	Methods []*ClassMethod
+	Span *token.Span
+}
+
+func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, span *token.Span) *Class {
+	return &Class{
+		Name: name,
+		Properties: properties,
+		Methods: methods,
+		Span: span,
+	}
+}
+
+func (c Class) GetSpan() *token.Span {
+	return c.Span
+}
+
+func (c Class) String() string {
+	fields := []string{}
+	for _, property := range c.Properties {
+		fields = append(fields, property.String())
+	}
+	for _, method := range c.Methods {
+		fields = append(fields, method.String())
+	}
+
+	return fmt.Sprintf("class %s { %s }", c.Name, strings.Join(fields, ", "))
+}
+
 func GetValueType(value Value) ValueType {
 	switch value := value.(type) {
 	case *Var:

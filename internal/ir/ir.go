@@ -348,6 +348,29 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	g.irBuilder.BuildExport(exportedValue, stmt.GetSpan())
 }
 
+func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
+	properties := []*zeus_value.ClassProperty{}
+	for _, property := range expr.Properties {
+		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, zeus_value.ToValueType(property.ValueType), false, property.Name.GetSpan()), property.AccessModifier))
+	}
+
+	methods := []*zeus_value.ClassMethod{}
+	for _, method := range expr.Methods {
+		params := []*zeus_value.Var{}
+		for _, param := range method.Params {
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, zeus_value.ToValueType(param.DataType), false, param.Identifier.Name.Span))
+		}
+
+		methods = append(methods, zeus_value.NewClassMethod(zeus_value.NewFunction(method.Name.Name.Value, params, zeus_value.ToValueType(method.ReturnType), method.Name.GetSpan()), method.AccessModifier))
+	}
+
+	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
+	g.irBuilder.BuildClassDecl(class, expr.GetSpan())
+	g.symbolTable.DeclareGlobalSymbol(expr.Name.Name.Value, class)
+
+	return class
+}
+
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	absoluteModulePath := module.ResolveFilePath(g.modulePath, stmt.Source.Value)
 	irModule := g.getModule(absoluteModulePath)

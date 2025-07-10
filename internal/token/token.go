@@ -54,6 +54,11 @@ const (
 	TokenTypeImport
 	TokenTypeExport
 	TokenTypeFrom
+	TokenTypeClass
+	TokenTypePrivate
+	TokenTypePublic
+	TokenTypeProtected
+	TokenTypeNew
 	keyword_end
 	// data types
 	datatype_beg
@@ -178,6 +183,16 @@ func (t TokenType) String() string {
 		return "f64"
 	case TokenTypeBoolean:
 		return "boolean"
+	case TokenTypeClass:
+		return "class"
+	case TokenTypePrivate:
+		return "private"
+	case TokenTypePublic:
+		return "public"
+	case TokenTypeProtected:
+		return "protected"
+	case TokenTypeNew:
+		return "new"
 	case TokenTypeEOF:
 		return "EOF"
 	}
@@ -197,6 +212,11 @@ var Keywords = map[string]TokenType{
 	TokenTypeImport.String(): TokenTypeImport,
 	TokenTypeExport.String(): TokenTypeExport,
 	TokenTypeFrom.String(): TokenTypeFrom,
+	TokenTypeClass.String(): TokenTypeClass,
+	TokenTypePrivate.String(): TokenTypePrivate,
+	TokenTypePublic.String(): TokenTypePublic,
+	TokenTypeProtected.String(): TokenTypeProtected,
+	TokenTypeNew.String(): TokenTypeNew,
 }
 
 var DataTypes = map[string]TokenType{
