@@ -402,6 +402,10 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	instr.Output.ValueType = functionType.ReturnType
 }
 
+func (tc *TypeChecker) tcDeclClass(instr *Instr) {
+	
+}
+
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 	tc.builder.Walk(func(instr *Instr) {
 		switch instr.Type {
@@ -467,6 +471,8 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcExport(instr)
 		case InstrTypeImport:
 			tc.tcImport(instr)
+		case InstrTypeDeclClass:
+			tc.tcDeclClass(instr)
 		case InstrTypeCast:
 			// TODO: add type checking for cast
 		default:

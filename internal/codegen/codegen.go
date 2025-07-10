@@ -288,6 +288,10 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 	c.symbolTable.DeclareSymbol(output.Name, result)
 }
 
+func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput) {
+	
+}
+
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	var currentFunction llvm.Value
 
@@ -343,6 +347,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genExport(*ir.AsExportInstrInput(instr.Input))
 		case ir.InstrTypeImport:
 			c.genImport(*ir.AsImportInstrInput(instr.Input))
+		case ir.InstrTypeDeclClass:
+			c.genDeclClass(*ir.AsDeclClassInstrInput(instr.Input))
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

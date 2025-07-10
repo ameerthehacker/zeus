@@ -51,6 +51,25 @@ func getPrecedence(token *token.Token) int {
 	return precedence
 }
 
+func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *token.Token, *ast.BlockStmtNode) {
+	// consume the params
+	params := []*ast.VarDeclNode{}
+	p.consumeToken(token.TokenTypeLeftParen, "after function name")
+	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
+		param := p.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
+		params = append(params, param)
+		p.consumeOptionalToken(token.TokenTypeComma)
+	}
+	p.consumeToken(token.TokenTypeRightParen, "after function parameters")
+	// consume the return type
+	p.consumeToken(token.TokenTypeColon, "after function parameters")
+	dataType := p.consumeDataType("return type", "function declaration")
+	// consume the body
+	body := p.parseBlockStmt()
+
+	return functionName, params, dataType, body
+}
+
 func NewParser(tokens []*token.Token) *Parser {
 	unaryOperatorParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
 		expr := parser.parseExprOfPrecedence(UnaryOperatorPrecedence, false)
@@ -92,23 +111,14 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
 		functionName := parser.consumeIdentifier("for function name")
-
-		// consume the params
-		params := []*ast.VarDeclNode{}
-		parser.consumeToken(token.TokenTypeLeftParen, "after function name")
-		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightParen {
-			param := parser.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
-			params = append(params, param)
-			parser.consumeOptionalToken(token.TokenTypeComma)
+		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName)
+		return &ast.FunctionDeclExprNode{
+			Name: name,
+			Params: params,
+			Body: body,
+			ReturnType: returnType,
+			Span: &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End},
 		}
-		parser.consumeToken(token.TokenTypeRightParen, "after function parameters")
-		// consume the return type
-		parser.consumeToken(token.TokenTypeColon, "after function parameters")
-		dataType := parser.consumeDataType("return type", "function declaration")
-		// consume the body
-		body := parser.parseBlockStmt()
-
-		return &ast.FunctionDeclExprNode{Name: functionName, Params: params, Body: body, ReturnType: dataType, Span: &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End}}
 	}
 
 	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
@@ -118,8 +128,36 @@ func NewParser(tokens []*token.Token) *Parser {
 		methods := []*ast.ClassMethod{}
 		properties := []*ast.ClassProperty{}
 
-		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
-
+		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {			
+			accessModifier := parser.consumeAccessModifier()
+			if parser.checkToken(token.TokenTypeIdentifier, "in class property or method declaration") && parser.lookahead(1, token.TokenTypeLeftParen) {
+				methodName, params, returnType, body := parser.parseFunctionSignatureAndBody(parser.consumeIdentifier("method name"))
+				spanStart := methodName.GetSpan().Start
+				if accessModifier != nil {
+					spanStart = accessModifier.Span.Start
+				}
+				methods = append(methods, &ast.ClassMethod{
+					Name: methodName,
+					Params: params,
+					Body: body,
+					ReturnType: returnType,
+					AccessModifier: accessModifier,
+					Span: &token.Span{Start: spanStart, End: body.GetSpan().End},
+				})
+			} else {
+				property := parser.parseVarDecl(false, ast.VarDeclTypeLet, "class property")
+				spanStart := property.Identifier.GetSpan().Start
+				if accessModifier != nil {
+					spanStart = accessModifier.Span.Start
+				}
+				properties = append(properties, &ast.ClassProperty{
+					Name: property.Identifier,
+					ValueType: property.DataType,
+					AccessModifier: accessModifier,
+					Span: &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
+				})
+				parser.consumeSemicolon()
+			}
 		}
 
 		closeBrace := parser.consumeToken(token.TokenTypeRightBrace, "after class members")
@@ -174,6 +212,36 @@ func (p *Parser) isEOF() bool {
 
 func (p *Parser) peek() *token.Token {
 	return p.tokens[p.current]
+}
+
+func (p* Parser) checkToken(tokenType token.TokenType, extraInfo ...string) bool {
+	if (p.peek().Type == tokenType) {
+		return true
+	}
+	
+	p.expectedButGotError(tokenType.String(), p.peek(), extraInfo...)
+
+	return false
+}
+
+func (p *Parser) lookahead(n int, tokenType token.TokenType) bool {
+	index := p.current + n
+	if index >= len(p.tokens) {
+		return false
+	}
+	return p.tokens[index].Type == tokenType
+}
+
+func (p *Parser) consumeAccessModifier() *token.Token {
+	accessModifierTokens := []token.TokenType{token.TokenTypePublic, token.TokenTypePrivate, token.TokenTypeProtected}
+
+	for _, tokenType := range accessModifierTokens {
+		if p.peek().Type == tokenType {
+			return p.consume()
+		}
+	}
+
+	return nil
 }
 
 func (p *Parser) consume() *token.Token {
