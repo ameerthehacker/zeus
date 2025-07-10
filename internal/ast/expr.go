@@ -80,6 +80,12 @@ type ClassDeclExprNode struct {
 	Span *token.Span
 }
 
+type NewExprNode struct {
+	Callee ExprNode
+	Args []ExprNode
+	Span *token.Span
+}
+
 func exprNodesString(params []ExprNode, pretty bool) string {
 	paramsStr := []string{}
 	for _, param := range params {
@@ -280,6 +286,22 @@ func (c *ClassDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_v
 	return visitor.VisitClassDeclExpr(c)
 }
 
+func (n *NewExprNode) GetSpan() *token.Span {
+	return n.Span
+}
+
+func (n *NewExprNode) PrettyString() string {
+	return fmt.Sprintf("new %s(%s)", n.Callee.PrettyString(), exprNodesString(n.Args, true))
+}
+
+func (n *NewExprNode) String() string {
+	return fmt.Sprintf("{ type: NewExprNode, Callee: %s, Args: [%s], Span: %s }", n.Callee.String(), exprNodesString(n.Args, false), n.GetSpan())
+}
+
+func (n *NewExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitNewExpr(n)
+}
+
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
 	VisitNumber(node *NumberExprNode) T
@@ -290,4 +312,5 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitFunctionCallExpr(node *FunctionCallExprNode) T
 	VisitFunctionDeclExpr(node *FunctionDeclExprNode) T
 	VisitClassDeclExpr(node *ClassDeclExprNode) T
+	VisitNewExpr(node *NewExprNode) T
 }

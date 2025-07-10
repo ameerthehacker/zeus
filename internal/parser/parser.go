@@ -35,6 +35,7 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypeEqualEqual:       2,
 	token.TokenTypeBangEqual:        2,
 	token.TokenTypeEqual:            1,
+	token.TokenTypeNew:              5,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
@@ -90,23 +91,8 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	functionCallParseLet := func(parser *Parser, left ast.ExprNode, openParen *token.Token) ast.ExprNode {
-		params := []ast.ExprNode{}
-
-		for {
-			right := parser.parseExprOfPrecedence(0, true)
-			if right == nil {
-				break
-			}
-			params = append(params, right)
-			if parser.peek().Type != token.TokenTypeComma {
-				break
-			}
-			parser.consume()
-		}
-
-		closeParen := parser.consumeToken(token.TokenTypeRightParen)
-
-		return &ast.FunctionCallExprNode{Callee: left, Params: params, Span: &token.Span{Start: left.GetSpan().Start, End: closeParen.Span.End}}
+		callee, params, span := parser.parseFunctionCall(left)
+		return &ast.FunctionCallExprNode{Callee: callee, Params: params, Span: span}
 	}
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
@@ -182,6 +168,17 @@ func NewParser(tokens []*token.Token) *Parser {
 			expr := parser.parseExprOfPrecedence(0, false)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen)
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
+		},
+		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
+			callee := parser.parseExprOfPrecedence(getPrecedence(newKeyword), false)
+			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
+			args, closeParen := parser.parseArgumentList()
+			
+			return &ast.NewExprNode{
+				Callee: callee,
+				Args: args,
+				Span: &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
+			}
 		},
 		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus:    unaryOperatorParseLet,
@@ -279,13 +276,13 @@ func (p *Parser) consumeSemicolon(extraInfo ...string) {
 }
 
 func (p *Parser) consumeDataType(dataType string, cxt string) *token.Token {
-	token := p.peek()
-	if !token.IsDataType() {
-		p.expectedButGotError(dataType, token, fmt.Sprintf("in %s", cxt))
-	} else {
+	nextToken := p.peek()
+	if nextToken.IsDataType() || nextToken.Type == token.TokenTypeIdentifier {
 		p.consume()
+	} else {
+		p.expectedButGotError(dataType, nextToken, fmt.Sprintf("in %s", cxt))
 	}
-	return token
+	return nextToken
 }
 
 func (p *Parser) pushError(err *zeus_error.ZeusError) {
@@ -446,6 +443,32 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 	}
 
 	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, DataType: dataType}
+}
+
+func (p *Parser) parseArgumentList() ([]ast.ExprNode, *token.Token) {
+	params := []ast.ExprNode{}
+
+	for {
+		right := p.parseExprOfPrecedence(0, true)
+		if right == nil {
+			break
+		}
+		params = append(params, right)
+		if p.peek().Type != token.TokenTypeComma {
+			break
+		}
+		p.consume()
+	}
+
+	closeParen := p.consumeToken(token.TokenTypeRightParen)
+	return params, closeParen
+}
+
+func (p *Parser) parseFunctionCall(callee ast.ExprNode) (ast.ExprNode, []ast.ExprNode, *token.Span) {
+	params, closeParen := p.parseArgumentList()
+	span := &token.Span{Start: callee.GetSpan().Start, End: closeParen.Span.End}
+
+	return callee, params, span
 }
 
 func (p *Parser) parseImportStmt() *ast.ImportStmtNode {

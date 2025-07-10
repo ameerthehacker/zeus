@@ -38,6 +38,26 @@ func (i Constant) String() string {
 	return fmt.Sprintf("%s %s", i.ValueType, i.Value)
 }
 
+type Object struct {
+	ValueType *ClassType
+	Span *token.Span
+}
+
+func NewObject(classType *ClassType, span *token.Span) *Object {
+	return &Object{
+		ValueType: classType,
+		Span: span,
+	}
+}
+
+func (o Object) GetSpan() *token.Span {
+	return o.Span
+}
+
+func (o Object) String() string {
+	return o.ValueType.String()
+}
+
 type Var struct {
 	Name string
 	ValueType ValueType
@@ -180,6 +200,15 @@ func GetValueType(value Value) ValueType {
 		}
 	default:
 		panic(fmt.Sprintf("unable to identify type for value: %T", value))
+	}
+}
+
+func AsClass(value Value) *Class {
+	switch value := value.(type) {
+	case *Class:
+		return value
+	default:
+		return nil
 	}
 }
 

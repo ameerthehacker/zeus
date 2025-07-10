@@ -446,13 +446,13 @@ func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
 }
 
 type NewObjInstrInput struct {
-	Class *zeus_value.Class
+	Callee zeus_value.Value
 	Args []zeus_value.Value
 }
 
-func NewNewObjInstrInput(class *zeus_value.Class, args []zeus_value.Value) *NewObjInstrInput {
+func NewNewObjInstrInput(callee zeus_value.Value, args []zeus_value.Value) *NewObjInstrInput {
 	return &NewObjInstrInput{
-		Class: class,
+		Callee: callee,
 		Args:  args,
 	}
 }
@@ -462,7 +462,7 @@ func (i NewObjInstrInput) String() string {
 	for _, arg := range i.Args {
 		args = append(args, arg.String())
 	}
-	return fmt.Sprintf("%s(%s)", i.Class, strings.Join(args, ", "))
+	return fmt.Sprintf("%s(%s)", i.Callee, strings.Join(args, ", "))
 }
 
 func AsNewObjInstrInput(input InstrInput) *NewObjInstrInput {

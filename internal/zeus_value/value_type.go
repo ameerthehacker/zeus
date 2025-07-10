@@ -70,6 +70,14 @@ type FloatType struct {
 	Size FloatSize
 }
 
+type UserDefinedType struct {
+	Name string
+}
+
+func (u UserDefinedType) String() string {
+	return u.Name
+}
+
 func (f FloatType) String() string {
 	return fmt.Sprintf("f%s", f.Size)
 }
@@ -89,6 +97,14 @@ func (v VoidType) String() string {
 type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
+}
+
+type ClassType struct {
+	Class *Class
+}
+
+func (c ClassType) String() string {
+	return c.Class.Name
 }
 
 func (f FunctionType) String() string {
@@ -125,6 +141,8 @@ func ToValueType(t *token.Token) ValueType {
 		return BoolType{}
 	case token.TokenTypeVoid:
 		return VoidType{}
+	case token.TokenTypeIdentifier:
+		return UserDefinedType{Name: t.Value}
 	default:
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}
@@ -194,6 +212,15 @@ func IsIntType(value ValueType) bool {
 func IsFloatType(value ValueType) bool {
 	switch value.(type) {
 	case FloatType:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsClassType(value ValueType) bool {
+	switch value.(type) {
+	case ClassType:
 		return true
 	default:
 		return false

@@ -270,12 +270,22 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 	}
 
 	asVar := zeus_value.AsVar(variable)
+	asClass := zeus_value.AsClass(variable)
 
-	if asVar.IsPtr {
-		return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
-	} else {
-		return asVar
+
+	if asVar != nil {
+		if asVar.IsPtr {
+			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+		} else {
+			return asVar
+		}
 	}
+
+	if asClass != nil {
+		return asClass
+	}
+
+	panic(fmt.Sprintf("unknown identifier type: %s", expr.Name.Value))
 }
 
 func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
@@ -327,6 +337,16 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	)
 }
 
+func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
+	callee := expr.Callee.Accept(g)
+	args := []zeus_value.Value{}
+	for _, arg := range expr.Args {
+		args = append(args, arg.Accept(g))
+	}
+
+	return g.irBuilder.BuildNewObj(callee, args, expr.GetSpan())
+}
+
 func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	exportedValue := stmt.Expr.Accept(g)
 
@@ -366,7 +386,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
 	g.irBuilder.BuildClassDecl(class, expr.GetSpan())
-	g.symbolTable.DeclareGlobalSymbol(expr.Name.Name.Value, class)
+	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 
 	return class
 }

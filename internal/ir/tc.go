@@ -78,6 +78,10 @@ func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType
 		return zeus_value.ToFunctionType(*value)
 	case *zeus_value.Constant:
 		return value.ValueType
+	case *zeus_value.Object:
+		return value.ValueType
+	case *zeus_value.Class:
+		return zeus_value.ClassType{Class: value}
 	default:
 		panic(fmt.Sprintf("cannot get value type of value: %T", value))
 	}
@@ -136,6 +140,18 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 		}
 
 		return true
+	
+	case zeus_value.ClassType:
+		b, isUserDefinedType := b.(zeus_value.UserDefinedType)
+		variable, varFound := tc.builder.symbolTable.GetSymbol(b.Name)
+
+		if !isUserDefinedType || !varFound {
+			return false
+		}
+
+	 classType, ok := tc.getValueType(variable).(zeus_value.ClassType)
+	
+		return ok && classType.Class.Name == a.Class.Name;
 	}
 
 	return false
@@ -406,6 +422,20 @@ func (tc *TypeChecker) tcDeclClass(instr *Instr) {
 	
 }
 
+func (tc *TypeChecker) tcNewObj(instr *Instr) {
+	input := AsNewObjInstrInput(instr.Input)
+	calleeType := tc.getValueType(input.Callee)
+
+	if !zeus_value.IsClassType(calleeType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot create object of type '%s'", calleeType),
+			Span:    input.Callee.GetSpan(),
+		})
+	}
+
+	instr.Output.ValueType = calleeType
+}
+
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 	tc.builder.Walk(func(instr *Instr) {
 		switch instr.Type {
@@ -473,6 +503,8 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcImport(instr)
 		case InstrTypeDeclClass:
 			tc.tcDeclClass(instr)
+		case InstrTypeNewObj:
+			tc.tcNewObj(instr)
 		case InstrTypeCast:
 			// TODO: add type checking for cast
 		default:

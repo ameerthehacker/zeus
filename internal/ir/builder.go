@@ -285,17 +285,32 @@ func (b *IRBuilder) BuildImport(importedValue zeus_value.Value, span *token.Span
 	})
 }
 
+func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+
+	b.pushInstr(&Instr{
+		Type: InstrTypeNewObj,
+		Output: result,
+		Input: NewNewObjInstrInput(callee, args),
+		Span: span,
+	})
+
+	return result
+}
+
 func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) {
+	result := b.createTempVariable(span)
 	_class := *class
 	_class.Name = b.generateUniqueSymbolName(class.Name)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclClass,
+		Output: result,
 		Input: NewDeclClassInstrInput(&_class),
 		Span: span,
 	})
 
-	b.symbolTable.DeclareSymbol(_class.Name, _class)
+	b.symbolTable.DeclareSymbol(_class.Name, &_class)
 }
 
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
