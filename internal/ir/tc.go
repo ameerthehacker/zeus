@@ -462,11 +462,11 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 
 	class := zeus_value.AsClassType(calleeType).Class
 
-	var constructorMethod *zeus_value.Function = nil
+	var constructorMethod *zeus_value.FunctionType = nil
 
 	for _, method := range class.Methods {
-		if method.Method.Name == "constructor" {
-			constructorMethod = method.Method
+		if method.MethodName == "constructor" {
+			constructorMethod = &method.MethodSignature
 			break
 		}
 	}
@@ -480,14 +480,14 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	}
 
 	if constructorMethod != nil {
-		if len(input.Args) != len(constructorMethod.Params) {
+		if len(input.Args) != len(constructorMethod.ParamTypes) {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.Params), len(input.Args)),
+				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.ParamTypes), len(input.Args)),
 				Span:    instr.Output.Span,
 			})
 		} else {
 			for i := range input.Args {
-				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.Params[i].ValueType, input.Args[i])
+				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.ParamTypes[i], input.Args[i])
 			}
 		}
 	}
@@ -523,12 +523,12 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 		}
 
 		for _, method := range methods {
-			if method.Method.Name == input.Property {
+			if method.MethodName == input.Property {
 				isFound = true
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
-				instr.Output.ValueType = zeus_value.ToFunctionType(*method.Method)
+				instr.Output.ValueType = method.MethodSignature
 			}
 		}
 
@@ -557,7 +557,7 @@ func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 	if functionType == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "expression is not callable",
-			Span:    instr.Span,
+			Span:    instr.Output.Span,
 		})
 		return
 	}

@@ -392,7 +392,17 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, zeus_value.ToValueType(param.DataType), false, param.Identifier.Name.Span))
 		}
 
-		methods = append(methods, zeus_value.NewClassMethod(zeus_value.NewFunction(method.Name.Name.Value, params, zeus_value.ToValueType(method.ReturnType), method.Name.GetSpan()), method.AccessModifier))
+		functionType := zeus_value.ToFunctionType(*zeus_value.NewFunction(
+			method.Name.Name.Value,
+			params,
+			zeus_value.ToValueType(method.ReturnType),
+			method.Span,
+		))
+		methods = append(methods, zeus_value.NewClassMethod(
+			method.Name.Name.Value,
+			functionType,
+			method.AccessModifier,
+		))
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())

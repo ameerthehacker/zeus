@@ -135,19 +135,21 @@ func (p *ClassProperty) String() string {
 }
 
 type ClassMethod struct {
-	Method *Function
+	MethodName string
+	MethodSignature FunctionType
 	AccessModifier *token.Token
 }
 
-func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
+func NewClassMethod(methodName string, methodSignature FunctionType, accessModifier *token.Token) *ClassMethod {
 	return &ClassMethod{
-		Method: method,
+		MethodName: methodName,
+		MethodSignature: methodSignature,
 		AccessModifier: accessModifier,
 	}
 }
 
 func (m *ClassMethod) String() string {
-	return fmt.Sprintf("%s %s", m.AccessModifier, m.Method)
+	return fmt.Sprintf("%s %s", m.AccessModifier, m.MethodName)
 }
 
 type Class struct {
