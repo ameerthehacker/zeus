@@ -1,5 +1,8 @@
 .PHONY: test play llvmc always
 
+clean:
+	rm -rf playground/debug
+
 always:
 	rm -rf playground/debug
 	mkdir -p playground/debug playground/debug/out

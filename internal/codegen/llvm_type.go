@@ -19,6 +19,14 @@ func ToLLVMFunctionType(functionType zeus_value.FunctionType) llvm.Type {
 	return llvm.FunctionType(ToLLVMType(functionType.ReturnType), param_llvm_types, false)
 }
 
+func ToLLVMStructType(classType zeus_value.ClassType) llvm.Type {
+	properties := []llvm.Type{}
+	for _, field := range classType.Class.Properties {
+		properties = append(properties, ToLLVMType(field.Property.ValueType))
+	}
+	return llvm.StructType(properties, false)
+}
+
 func ToLLVMIntType(intType zeus_value.IntType) llvm.Type {
 	switch intType.Size {
 	case zeus_value.I8:
@@ -57,6 +65,8 @@ func ToLLVMType(_type zeus_value.ValueType) llvm.Type {
 		return ToLLVMFunctionType(_type)
 	case zeus_value.VoidType:
 		return llvm.GlobalContext().VoidType()
+	case zeus_value.ClassType:
+		return ToLLVMStructType(_type)
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %s", _type))
 	}

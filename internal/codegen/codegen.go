@@ -22,6 +22,7 @@ type CodegenModule struct {
 	symbolTable *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks map[int]llvm.BasicBlock
 	isEntryPoint bool
+	llvmStructTypes map[string]llvm.Type
 }
 
 func NewCodegen() *Codegen {
@@ -39,7 +40,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint }
+	return &CodegenModule{ module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]llvm.Type) }
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -48,6 +49,14 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 		panic(fmt.Sprintf("symbol %s not found in symbol table", name))
 	}
 	return symbol
+}
+
+func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
+	llvmStructType, ok := c.llvmStructTypes[name]
+	if !ok {
+		panic(fmt.Sprintf("llvm struct type %s not found", name))
+	}
+	return llvmStructType
 }
 
 func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
@@ -60,6 +69,15 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 		return c.getSymbol(value.Name)
 	default:
 		panic(fmt.Sprintf("unable to convert zeus value %s to llvm value", value))
+	}
+}
+
+func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
+	switch _type := _type.(type) {
+	case zeus_value.UserDefinedType:
+		return c.getLLVMStructType(_type.Name)
+	default:
+		return ToLLVMType(_type)
 	}
 }
 
@@ -99,7 +117,7 @@ func (c *CodegenModule) genReturn(input ir.ReturnInstrInput) {
 }
 
 func (c* CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
-	variableType := ToLLVMType(input.Variable.ValueType)
+	variableType := c.toLLVMType(input.Variable.ValueType)
 	variable := c.builder.CreateAlloca(variableType, input.Variable.Name)
 
 	if input.Initializer != nil {
@@ -122,13 +140,13 @@ func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output zeus_value.Var) 
 	if !ok {
 		panic(fmt.Sprintf("symbol %s not found in symbol table", input.Addr.Name))
 	}
-	llvmValue := c.builder.CreateLoad(ToLLVMType(input.Addr.ValueType), addr, input.Addr.Name)
+	llvmValue := c.builder.CreateLoad(c.toLLVMType(input.Addr.ValueType), addr, input.Addr.Name)
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
 func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_value.Var) {
 	function := c.toLLVMValue(input.Callee)
-	functionType := ToLLVMType(zeus_value.GetValueType(input.Callee))
+	functionType := c.toLLVMType(zeus_value.GetValueType(input.Callee))
 	args := make([]llvm.Value, len(input.Args))
 	for i, arg := range input.Args {
 		args[i] = c.toLLVMValue(arg)
@@ -266,21 +284,21 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 			switch castType := input.CastType.(type) {
 				case zeus_value.FloatType:
 					if valueType.Signed {
-						result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+						result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					} else {
-						result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+						result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					}
 				case zeus_value.IntType:
 					if castType.Signed {
-						result = c.builder.CreateSExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+						result = c.builder.CreateSExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					} else {
-						result = c.builder.CreateZExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+						result = c.builder.CreateZExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 					}
 				default:
 					panic(castErrorMsg)
 			}
 		case zeus_value.FloatType:
-			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), ToLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
 		default:
 			panic(castErrorMsg)
 	}
@@ -289,11 +307,24 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 }
 
 func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
-	
+	elementTypes := []llvm.Type{}
+	for _, property := range input.Class.Properties {
+		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
+	}
+	llvmStructType := llvm.StructType(elementTypes, false)
+
+	c.llvmStructTypes[input.Class.Name] = llvmStructType
+	c.llvmStructTypes[output.Name] = llvmStructType
 }
 
 func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.Var) {
-	
+	callee, ok := input.Callee.(*zeus_value.Class)
+	if !ok {
+		panic(fmt.Sprintf("trying to create new object of non class type %s", input.Callee))
+	}
+	llvmStructType := c.getLLVMStructType(callee.Name)
+	llvmStruct := c.builder.CreateAlloca(llvmStructType, output.Name)
+	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
 }
 
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
