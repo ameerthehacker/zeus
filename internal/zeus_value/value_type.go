@@ -75,7 +75,7 @@ type UserDefinedType struct {
 }
 
 func (u UserDefinedType) String() string {
-	return u.Name
+	return fmt.Sprintf("UserDefined (%s)", u.Name)
 }
 
 func (f FloatType) String() string {
@@ -104,7 +104,7 @@ type ClassType struct {
 }
 
 func (c ClassType) String() string {
-	return c.Class.Name
+	return fmt.Sprintf("Class (%s)", c.Class.Name)
 }
 
 func (f FunctionType) String() string {
@@ -173,6 +173,24 @@ func ToFunctionType(value Function) FunctionType {
 	}
 }
 
+func IsUserDefinedType(value ValueType) bool {
+	switch value.(type) {
+	case UserDefinedType:
+		return true
+	default:
+		return false
+	}
+}
+
+func AsUserDefinedType(value ValueType) *UserDefinedType {
+	switch valueType := value.(type) {
+	case UserDefinedType:
+		return &valueType
+	default:
+		return nil
+	}
+}
+
 func IsNumberType(value ValueType) bool {
 	switch value.(type) {
 	case IntType, FloatType:
@@ -224,6 +242,15 @@ func IsClassType(value ValueType) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func AsClassType(value ValueType) *ClassType {
+	switch value := value.(type) {
+	case ClassType:
+		return &value
+	default:
+		return nil
 	}
 }
 

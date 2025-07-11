@@ -20,9 +20,11 @@ type Parser struct {
 
 const (
 	UnaryOperatorPrecedence = 4
+	NewOperatorPrecedence = 5
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
+	token.TokenTypeDot:              6,
 	token.TokenTypeLeftParen:        5,
 	token.TokenTypeStar:             4,
 	token.TokenTypeSlash:            4,
@@ -35,7 +37,6 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypeEqualEqual:       2,
 	token.TokenTypeBangEqual:        2,
 	token.TokenTypeEqual:            1,
-	token.TokenTypeNew:              5,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
@@ -151,6 +152,11 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.ClassDeclExprNode{Name: className, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
 	}
 
+	objectPropertyAccessParseLet := func(parser *Parser, left ast.ExprNode, dot *token.Token) ast.ExprNode {
+		property := parser.consumeIdentifier("in object property access")
+		return &ast.ObjectPropertyAccessExprNode{Object: left, Property: property, Span: &token.Span{Start: dot.Span.Start, End: property.GetSpan().End}}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -170,7 +176,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
-			callee := parser.parseExprOfPrecedence(getPrecedence(newKeyword), false)
+			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
 			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
 			args, closeParen := parser.parseArgumentList()
 			
@@ -198,6 +204,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeLessThanEqual:    binaryOperatorParseLet,
 		token.TokenTypeEqual:            binaryOperatorParseLet,
 		token.TokenTypeLeftParen:        functionCallParseLet,
+		token.TokenTypeDot:              objectPropertyAccessParseLet,
 	}
 
 	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}

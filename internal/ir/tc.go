@@ -3,6 +3,7 @@ package ir
 import (
 	"fmt"
 
+	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -65,12 +66,12 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 			Span:    decl_var.Variable.Span,
 		})
 	} else if decl_var.Initializer != nil {
-		initializer := tc.cmpValueWithImplicitCast(instr, decl_var.Variable.ValueType, decl_var.Initializer)
+		initializer := tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(decl_var.Variable.ValueType), decl_var.Initializer)
 		decl_var.Initializer = initializer
 	}
 }
 
-func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
+func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.ValueType {
 	switch value := value.(type) {
 	case *zeus_value.Var:
 		return value.ValueType
@@ -87,6 +88,27 @@ func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType
 	}
 }
 
+func (tc *TypeChecker) asKnownValueType(valueType zeus_value.ValueType) zeus_value.ValueType {
+	if zeus_value.IsUserDefinedType(valueType) {
+		userDefinedType := zeus_value.AsUserDefinedType(valueType)
+		variable, ok := tc.builder.symbolTable.GetSymbol(userDefinedType.Name)
+
+		if !ok {
+			panic(fmt.Sprintf("symbol %s not found", userDefinedType.Name))
+		}
+
+		return tc.getValueType(variable)
+	}
+
+	return valueType
+}
+
+func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
+	valueType := tc.getBuiltInValueType(value)
+
+	return tc.asKnownValueType(valueType)
+}
+
 func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
 	bType := tc.getValueType(b)
 
@@ -96,8 +118,12 @@ func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_va
 		if ok {
 			return castedB
 		} else {
+			_bType := "undefined"
+			if bType != nil {
+				_bType = bType.String()
+			}
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType, targetType),
+				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", _bType, targetType),
 				Span:    instr.Span,
 			})
 		}
@@ -142,16 +168,8 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 		return true
 	
 	case zeus_value.ClassType:
-		b, isUserDefinedType := b.(zeus_value.UserDefinedType)
-		variable, varFound := tc.builder.symbolTable.GetSymbol(b.Name)
-
-		if !isUserDefinedType || !varFound {
-			return false
-		}
-
-	 classType, ok := tc.getValueType(variable).(zeus_value.ClassType)
-	
-		return ok && classType.Class.Name == a.Class.Name;
+	  bClassType, ok := b.(zeus_value.ClassType)
+	  return ok && a.Class.Name == bClassType.Class.Name
 	}
 
 	return false
@@ -436,6 +454,59 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	instr.Output.ValueType = calleeType
 }
 
+func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
+	input := AsObjectPropertyAccessInstrInput(instr.Input)
+	output := instr.Output
+	objectType := tc.getValueType(input.Object)
+
+	if !zeus_value.IsClassType(objectType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, objectType),
+			Span:   output.Span,
+		})
+	} else {
+		class := zeus_value.AsClassType(objectType).Class
+		properties := class.Properties
+		methods := class.Methods
+		isFound := false
+		isAccessible := false
+
+		for _, property := range properties {
+			if property.Property.Name == input.Property {
+				isFound = true
+				if property.AccessModifier != nil {
+					isAccessible = property.AccessModifier.Type == token.TokenTypePublic
+				}
+				instr.Output.ValueType = property.Property.ValueType
+			}
+		}
+
+		for _, method := range methods {
+			if method.Method.Name == input.Property {
+				isFound = true
+				if method.AccessModifier != nil {
+					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
+				}
+				instr.Output.ValueType = method.Method.ReturnType
+			}
+		}
+
+		if !isFound {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("property %s not found in class %s", input.Property, class.Name),
+				Span:    output.Span,
+			})
+		}
+
+		if !isAccessible {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),
+				Span:    output.Span,
+			})
+		}
+	}
+}
+
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 	tc.builder.Walk(func(instr *Instr) {
 		switch instr.Type {
@@ -505,6 +576,8 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcDeclClass(instr)
 		case InstrTypeNewObj:
 			tc.tcNewObj(instr)
+		case InstrTypeObjectPropertyAccess:
+			tc.tcObjectPropertyAccess(instr)
 		case InstrTypeCast:
 			// TODO: add type checking for cast
 		default:

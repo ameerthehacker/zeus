@@ -404,7 +404,7 @@ func NewDeclClassInstrInput(class *zeus_value.Class) *DeclClassInstrInput {
 }
 
 func (i DeclClassInstrInput) String() string {
-	return i.Class.String()
+	return fmt.Sprintf("Class (%s)", i.Class.Name)
 }
 
 func AsDeclClassInstrInput(input InstrInput) *DeclClassInstrInput {
@@ -413,33 +413,6 @@ func AsDeclClassInstrInput(input InstrInput) *DeclClassInstrInput {
 		return input
 	default:
 		panicInvalidInputType("DeclClassInstrInput", input)
-	}
-
-	return nil
-}
-
-type DeclClassMethodInstrInput struct {
-	Class *zeus_value.Class
-	Method *zeus_value.FunctionType
-}
-
-func NewDeclClassMethodInstrInput(class *zeus_value.Class, method *zeus_value.FunctionType) *DeclClassMethodInstrInput {
-	return &DeclClassMethodInstrInput{
-		Class:   class,
-		Method:  method,
-	}
-}
-
-func (i DeclClassMethodInstrInput) String() string {
-	return fmt.Sprintf("%s %s", i.Class, i.Method)
-}
-
-func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
-	switch input := input.(type) {
-	case *DeclClassMethodInstrInput:
-		return input
-	default:
-		panicInvalidInputType("DeclClassMethodInstrInput", input)
 	}
 
 	return nil
@@ -474,6 +447,33 @@ func AsNewObjInstrInput(input InstrInput) *NewObjInstrInput {
 	}
 
 	return nil
+}
+
+type ObjectPropertyAccessInstrInput struct {
+	Object zeus_value.Value
+	Property string
+}
+
+func NewObjectPropertyAccessInstrInput(object zeus_value.Value, property string) *ObjectPropertyAccessInstrInput {
+	return &ObjectPropertyAccessInstrInput{
+		Object: object,
+		Property: property,
+	}
+}
+
+func AsObjectPropertyAccessInstrInput(input InstrInput) *ObjectPropertyAccessInstrInput {
+	switch input := input.(type) {
+	case *ObjectPropertyAccessInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ObjectPropertyAccessInstrInput", input)
+	}
+
+	return nil
+}
+
+func (i ObjectPropertyAccessInstrInput) String() string {
+	return fmt.Sprintf("%s, %s", i.Object, i.Property)
 }
 
 const (
@@ -511,8 +511,9 @@ const (
 	InstrTypeExport
 	// class
 	InstrTypeDeclClass
-	InstrTypeDeclClassMethod
 	InstrTypeNewObj
+	// object property access
+	InstrTypeObjectPropertyAccess
 )
 
 func (i InstrType) String() string {
@@ -565,10 +566,10 @@ func (i InstrType) String() string {
 		return "EXPORT"
 	case InstrTypeDeclClass:
 		return "DECLARE_CLASS"
-	case InstrTypeDeclClassMethod:
-		return "DECLARE_CLASS_METHOD"
 	case InstrTypeNewObj:
 		return "NEW_OBJ"
+	case InstrTypeObjectPropertyAccess:
+		return "OBJECT_PROPERTY_ACCESS"
 	default:
 		panic("unknown instruction type")
 	}

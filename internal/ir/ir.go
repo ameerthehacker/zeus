@@ -391,6 +391,14 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	return class
 }
 
+func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
+	object := expr.Object.Accept(g)
+	property := expr.Property.Name.Value
+
+	return g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+}
+
+
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	absoluteModulePath := module.ResolveFilePath(g.modulePath, stmt.Source.Value)
 	irModule := g.getModule(absoluteModulePath)
