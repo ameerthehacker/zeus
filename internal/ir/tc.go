@@ -460,6 +460,38 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 		})
 	}
 
+	class := zeus_value.AsClassType(calleeType).Class
+
+	var constructorMethod *zeus_value.Function = nil
+
+	for _, method := range class.Methods {
+		if method.Method.Name == "constructor" {
+			constructorMethod = method.Method
+			break
+		}
+	}
+	
+
+	if constructorMethod == nil && len(input.Args) > 0 {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "no constructor method found in class",
+			Span:    instr.Output.Span,
+		})
+	}
+
+	if constructorMethod != nil {
+		if len(input.Args) != len(constructorMethod.Params) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.Params), len(input.Args)),
+				Span:    instr.Output.Span,
+			})
+		} else {
+			for i := range input.Args {
+				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.Params[i].ValueType, input.Args[i])
+			}
+		}
+	}
+
 	instr.Output.ValueType = calleeType
 }
 

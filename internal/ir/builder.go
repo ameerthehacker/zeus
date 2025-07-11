@@ -22,6 +22,7 @@ type IRBuilder struct {
 	tempVarCount int
 	blocksCount int
 	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
+	instrIdCount int
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -33,6 +34,7 @@ func NewIRBuilder() *IRBuilder {
 		tempVarCount: 0,
 		blocksCount: 0,
 		insertionIndex: 0,
+		instrIdCount: 0,
 		blockIdInsetionIndexMap: make(map[int]int),
 		symbolTable: symbol_table,
 	}
@@ -65,6 +67,8 @@ func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
 }
 
 func (b *IRBuilder) pushInstr(instr *Instr) {
+	instr.Id = b.instrIdCount
+	b.instrIdCount += 1
 	if b.currentBlock == nil {
 		b.instrs = append(b.instrs[:b.insertionIndex], append([]*Instr{instr}, b.instrs[b.insertionIndex:]...)...)
 		b.insertionIndex++
@@ -327,10 +331,19 @@ func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) {
 
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
 	worklist := []*BasicBlock{}
+	// avoid rewalking the same instruction when new instructions are pushed
+	// on top of existing instructions
+	visitedInstrs := map[int]bool{}
 	i := 0
 
 	for i < len(b.instrs) {
 		instr := b.instrs[i]
+		_, isVisited := visitedInstrs[instr.Id]
+		if isVisited {
+			i++
+			continue
+		}
+		visitedInstrs[instr.Id] = true
 		fnInstr(instr)
 
 		if IsFunctionDeclInstr(instr.Type) {
@@ -345,6 +358,12 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 			// walk the instructions in the block
 			for j < len(block.Instrs) {
 				instr := block.Instrs[j]
+				_, isVisited := visitedInstrs[instr.Id]
+				if isVisited {
+					j++
+					continue
+				}
+				visitedInstrs[instr.Id] = true
 				fnInstr(instr)
 				j++
 			}

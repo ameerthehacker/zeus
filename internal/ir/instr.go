@@ -614,6 +614,7 @@ func IsFunctionDeclInstr(instrType InstrType) bool {
 }
 
 type Instr struct {
+	Id int
 	Type InstrType
 	Output *zeus_value.Var
 	Input InstrInput
