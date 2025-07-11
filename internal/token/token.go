@@ -5,6 +5,8 @@ import (
 )
 
 const MAIN_FUNCTION_NAME = "main"
+const CONSTRUCTOR_METHOD_NAME = "constructor"
+const THIS_KEYWORD = "this"
 
 type TokenType int
 

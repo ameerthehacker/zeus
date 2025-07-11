@@ -135,21 +135,19 @@ func (p *ClassProperty) String() string {
 }
 
 type ClassMethod struct {
-	MethodName string
-	MethodSignature FunctionType
+	Method *Function
 	AccessModifier *token.Token
 }
 
-func NewClassMethod(methodName string, methodSignature FunctionType, accessModifier *token.Token) *ClassMethod {
+func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
 	return &ClassMethod{
-		MethodName: methodName,
-		MethodSignature: methodSignature,
+		Method: method,
 		AccessModifier: accessModifier,
 	}
 }
 
 func (m *ClassMethod) String() string {
-	return fmt.Sprintf("%s %s", m.AccessModifier, m.MethodName)
+	return fmt.Sprintf("%s %s", m.AccessModifier, m.Method)
 }
 
 type Class struct {
@@ -173,15 +171,7 @@ func (c Class) GetSpan() *token.Span {
 }
 
 func (c Class) String() string {
-	fields := []string{}
-	for _, property := range c.Properties {
-		fields = append(fields, property.String())
-	}
-	for _, method := range c.Methods {
-		fields = append(fields, method.String())
-	}
-
-	return fmt.Sprintf("class %s { %s }", c.Name, strings.Join(fields, ", "))
+	return c.Name
 }
 
 func GetValueType(value Value) ValueType {

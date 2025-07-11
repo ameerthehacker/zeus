@@ -201,7 +201,7 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	return result
 }
 
-func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, span *token.Span) *zeus_value.Function {
+func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, class *zeus_value.Class, span *token.Span) *zeus_value.Function {
 	b.symbolTable.EnterScope()
 	params := []*zeus_value.Var{}
 	for _, arg := range args {
@@ -220,11 +220,19 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 	// functions are global
 	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
 
-	b.pushInstr(&Instr{
-		Type: InstrTypeDeclFunc,
-		Input: NewDeclFuncInstrInput(fn, body),
-		Span: span,
-	})
+	if class != nil {
+		b.pushInstr(&Instr{
+			Type: InstrTypeDeclClassMethod,
+			Input: NewDeclClassMethodInstrInput(fn, body, class),
+			Span: span,
+		})
+	} else {
+		b.pushInstr(&Instr{
+			Type: InstrTypeDeclFunc,
+			Input: NewDeclFuncInstrInput(fn, body),
+			Span: span,
+		})
+	}
 
 	b.symbolTable.ExitScope()
 
@@ -314,7 +322,15 @@ func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value
 	return result
 }
 
-func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) {
+func (b *IRBuilder) BuildClassMethodDecl(method *zeus_value.Function, body *BasicBlock, class *zeus_value.Class, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeDeclClassMethod,
+		Input: NewDeclClassMethodInstrInput(method, body, class),
+		Span: span,
+	})
+}
+
+func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) string {
 	result := b.createTempVariable(span)
 	_class := *class
 	_class.Name = b.generateUniqueSymbolName(class.Name)
@@ -327,6 +343,8 @@ func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) {
 	})
 
 	b.symbolTable.DeclareSymbol(_class.Name, &_class)
+
+	return _class.Name
 }
 
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {
@@ -348,6 +366,10 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 
 		if IsFunctionDeclInstr(instr.Type) {
 			worklist = append(worklist, AsDeclFuncInstrInput(instr.Input).Body)
+		}
+
+		if IsClassMethodDeclInstr(instr.Type) {
+			worklist = append(worklist, AsDeclClassMethodInstrInput(instr.Input).Body)
 		}
 
 		for len(worklist) > 0 {
@@ -463,6 +485,10 @@ func (b *IRBuilder) GetFunctionBlocks() []*BasicBlock {
 	for _, instr := range b.instrs {
 		if IsFunctionDeclInstr(instr.Type) {
 			functionBlocks = append(functionBlocks, AsDeclFuncInstrInput(instr.Input).Body)
+		}
+
+		if IsClassMethodDeclInstr(instr.Type) {
+			functionBlocks = append(functionBlocks, AsDeclClassMethodInstrInput(instr.Input).Body)
 		}
 	}
 

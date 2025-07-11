@@ -11,6 +11,7 @@ import (
 type TypeChecker struct {
 	errors          []*zeus_error.ZeusError
 	currentFunction *zeus_value.Function
+	currentClass *zeus_value.Class
 	builder         *IRBuilder
 	currentBlock    *BasicBlock
 }
@@ -336,14 +337,7 @@ func (tc *TypeChecker) tcLoad(instr *Instr) {
 func (tc *TypeChecker) tcStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
 
-	if input.Addr.IsTempVariable() {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: "invalid assignment",
-			Span:    input.Addr.Span,
-		})
-	} else {
-		input.Value = tc.cmpValueWithImplicitCast(instr, input.Addr.ValueType, input.Value)
-	}
+	input.Value = tc.cmpValueWithImplicitCast(instr, input.Addr.ValueType, input.Value)
 }
 
 func (tc *TypeChecker) tcReturn(instr *Instr) {
@@ -462,11 +456,11 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 
 	class := zeus_value.AsClassType(calleeType).Class
 
-	var constructorMethod *zeus_value.FunctionType = nil
+	var constructorMethod *zeus_value.Function = nil
 
 	for _, method := range class.Methods {
-		if method.MethodName == "constructor" {
-			constructorMethod = &method.MethodSignature
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			constructorMethod = method.Method
 			break
 		}
 	}
@@ -480,14 +474,14 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	}
 
 	if constructorMethod != nil {
-		if len(input.Args) != len(constructorMethod.ParamTypes) {
+		if len(input.Args) != len(constructorMethod.Params) {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.ParamTypes), len(input.Args)),
+				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.Params), len(input.Args)),
 				Span:    instr.Output.Span,
 			})
 		} else {
 			for i := range input.Args {
-				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.ParamTypes[i], input.Args[i])
+				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.Params[i].ValueType, input.Args[i])
 			}
 		}
 	}
@@ -523,12 +517,12 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 		}
 
 		for _, method := range methods {
-			if method.MethodName == input.Property {
+			if method.Method.Name == input.Property {
 				isFound = true
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
-				instr.Output.ValueType = method.MethodSignature
+				instr.Output.ValueType = zeus_value.ToFunctionType(*method.Method)
 			}
 		}
 
@@ -539,7 +533,8 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 			})
 		}
 
-		if !isAccessible {
+		propertyOfSameClass := tc.currentClass.Name == class.Name
+		if !isAccessible && !propertyOfSameClass {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),
 				Span:    output.Span,
@@ -566,6 +561,12 @@ func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 	instr.Input = NewIndirectFuncCallInstrInput(input.Method, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType
+}
+
+func (tc *TypeChecker) tcDeclClassMethod(instr *Instr) {
+	input := AsDeclClassMethodInstrInput(instr.Input)
+	tc.currentClass = input.Class
+	tc.currentFunction = input.Method
 }
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
@@ -641,6 +642,8 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcNewObj(instr)
 		case InstrTypeObjectPropertyAccess:
 			tc.tcObjectPropertyAccess(instr)
+		case InstrTypeDeclClassMethod:
+			tc.tcDeclClassMethod(instr)
 		case InstrTypeCast:
 			// TODO: add type checking for cast
 		default:

@@ -224,10 +224,10 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	return nil
 }
 
-func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
+func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, span *token.Span) zeus_value.Value {
 	params := []*VarDecl{}
 
-	for _, param := range expr.Params {
+	for _, param := range fnParams {
 		params = append(params, NewVarDecl(
 			param.Identifier.Name.Value,
 			zeus_value.ToValueType(param.DataType),
@@ -241,11 +241,11 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 	// functions are global
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
-	fn := g.irBuilder.BuildFuncDecl(expr.Name.Name.Value, params, body, zeus_value.ToValueType(expr.ReturnType), expr.Name.Name.Span)
-	g.symbolTable.DeclareGlobalSymbol(expr.Name.Name.Value, fn)
+	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
+	g.symbolTable.DeclareGlobalSymbol(name, fn)
 	g.symbolTable.EnterScope()
 
-	for index, param := range expr.Params {
+	for index, param := range fnParams {
 		if _, ok := g.symbolTable.GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare parameter '%s' in the same scope", param.Identifier.Name.Value), param.Identifier.Name.Span))
 			return nil
@@ -253,13 +253,21 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		g.symbolTable.DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
 	}
 
+	if class != nil {
+		g.symbolTable.DeclareSymbol(token.THIS_KEYWORD, class)
+	}
+
 	g.irBuilder.SetInsertionBlock(body)
-	expr.Body.Accept(g)
+	fnBody.Accept(g)
 	g.irBuilder.SetInsertionBlock(current_block)
 
 	g.symbolTable.ExitScope()
 
 	return fn
+}
+
+func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
+	return g.emitFunction(expr.Name.Name.Value, expr.Params, zeus_value.ToValueType(expr.ReturnType), expr.Body, nil, expr.Name.Name.Span)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -392,22 +400,26 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, zeus_value.ToValueType(param.DataType), false, param.Identifier.Name.Span))
 		}
 
-		functionType := zeus_value.ToFunctionType(*zeus_value.NewFunction(
+		function := zeus_value.NewFunction(
 			method.Name.Name.Value,
 			params,
 			zeus_value.ToValueType(method.ReturnType),
 			method.Span,
-		))
+		)
 		methods = append(methods, zeus_value.NewClassMethod(
-			method.Name.Name.Value,
-			functionType,
+			function,
 			method.AccessModifier,
 		))
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
-	g.irBuilder.BuildClassDecl(class, expr.GetSpan())
+	irClassName := g.irBuilder.BuildClassDecl(class, expr.GetSpan())
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
+
+	for _, method := range expr.Methods {
+		// emit global class methods
+		g.emitFunction(irClassName + "." + method.Name.Name.Value, method.Params, zeus_value.ToValueType(method.ReturnType), method.Body, class, method.Name.Name.Span)
+	}
 
 	return class
 }

@@ -503,6 +503,35 @@ func (i IndirectFuncCallInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Method.String(), i.Args)
 }
 
+type DeclClassMethodInstrInput struct {
+	Method *zeus_value.Function
+	Body *BasicBlock
+	Class *zeus_value.Class
+}
+
+func NewDeclClassMethodInstrInput(method *zeus_value.Function, body *BasicBlock, class *zeus_value.Class) *DeclClassMethodInstrInput {
+	return &DeclClassMethodInstrInput{
+		Method: method,
+		Body: body,
+		Class: class,
+	}
+}
+
+func (i DeclClassMethodInstrInput) String() string {
+	return i.Method.Name 
+}
+
+func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
+	switch input := input.(type) {
+	case *DeclClassMethodInstrInput:
+		return input
+	default:
+		panicInvalidInputType("DeclClassMethodInstrInput", input)
+	}
+
+	return nil
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -539,6 +568,7 @@ const (
 	InstrTypeExport
 	// class
 	InstrTypeDeclClass
+	InstrTypeDeclClassMethod
 	InstrTypeNewObj
 	// object property access
 	InstrTypeObjectPropertyAccess
@@ -600,6 +630,8 @@ func (i InstrType) String() string {
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:
 		return "OBJECT_PROPERTY_ACCESS"
+	case InstrTypeDeclClassMethod:
+		return "DECLARE_CLASS_METHOD"
 	default:
 		panic("unknown instruction type")
 	}
@@ -611,6 +643,10 @@ func IsControlFlowInstr(instrType InstrType) bool {
 
 func IsFunctionDeclInstr(instrType InstrType) bool {
 	return instrType == InstrTypeDeclFunc
+}
+
+func IsClassMethodDeclInstr(instrType InstrType) bool {
+	return instrType == InstrTypeDeclClassMethod
 }
 
 type Instr struct {
