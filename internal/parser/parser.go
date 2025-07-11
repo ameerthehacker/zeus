@@ -61,7 +61,7 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
-	var dataType *token.Token
+	dataType := &token.Token{Type: token.TokenTypeVoid, Span: token.NewSpan(functionName.Name.Span.Start, functionName.Name.Span.Start)}
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
 		param := p.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
