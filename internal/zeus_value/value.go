@@ -212,6 +212,15 @@ func AsClass(value Value) *Class {
 	}
 }
 
+func IsVar(value Value) bool {
+	switch value.(type) {
+	case *Var:
+		return true
+	default:
+		return false
+	}
+}
+
 func AsVar(value Value) *Var {
 	switch value := value.(type) {
 	case *Var:
@@ -227,6 +236,15 @@ func AsFunction(value Value) *Function {
 		return value
 	default:
 		return nil
+	}
+}
+
+func IsFunction(value Value) bool {
+	switch value.(type) {
+	case *Function:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -476,6 +476,33 @@ func (i ObjectPropertyAccessInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Object, i.Property)
 }
 
+type IndirectFuncCallInstrInput struct {
+	Method zeus_value.Value
+	Args []zeus_value.Value
+}
+
+func NewIndirectFuncCallInstrInput(method zeus_value.Value, args []zeus_value.Value) *IndirectFuncCallInstrInput {
+	return &IndirectFuncCallInstrInput{
+		Method: method,
+		Args: args,
+	}
+}
+
+func AsIndirectFuncCallInstrInput(input InstrInput) *IndirectFuncCallInstrInput {
+	switch input := input.(type) {
+	case *IndirectFuncCallInstrInput:
+		return input
+	default:
+		panicInvalidInputType("IndirectFuncCallInstrInput", input)
+	}
+
+	return nil
+}
+
+func (i IndirectFuncCallInstrInput) String() string {
+	return fmt.Sprintf("%s, %s", i.Method.String(), i.Args)
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -502,6 +529,7 @@ const (
 	// function
 	InstrTypeDeclFunc
 	InstrTypeCallFunc
+	InstrTypeIndirectFuncCall
 	InstrTypeReturn
 	// control flow
 	InstrTypeJmp
@@ -568,6 +596,8 @@ func (i InstrType) String() string {
 		return "DECLARE_CLASS"
 	case InstrTypeNewObj:
 		return "NEW_OBJ"
+	case InstrTypeIndirectFuncCall:
+		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:
 		return "OBJECT_PROPERTY_ACCESS"
 	default:

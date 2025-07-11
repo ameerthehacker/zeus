@@ -208,9 +208,20 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		params = append(params, arg.Accept(g))
 	}
 
-	addr := zeus_value.AsFunction(callee)
 
-	return g.irBuilder.BuildCallFunc(addr, params, expr.GetSpan())
+	if zeus_value.IsFunction(callee) {
+		return g.irBuilder.BuildCallFunc(zeus_value.AsFunction(callee), params, expr.GetSpan())
+	} else if zeus_value.IsVar(callee) {
+		addr := zeus_value.AsVar(callee)
+		return g.irBuilder.BuildIndirectFuncCall(addr, params, expr.GetSpan())
+	}
+
+	g.pushError(&zeus_error.ZeusError{
+		Message: fmt.Sprintf("%s is not callable", expr.Callee.PrettyString()),
+		Span: expr.GetSpan(),
+	})
+
+	return nil
 }
 
 func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {

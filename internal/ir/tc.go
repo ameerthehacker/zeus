@@ -399,6 +399,32 @@ func (tc *TypeChecker) tcImport(instr *Instr) {
 	}
 }
 
+// tcFunctionCall performs common type checking logic for function calls
+// It validates arguments and performs implicit casting based on function signature
+func (tc *TypeChecker) tcFunctionCall(instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
+	if len(args) != len(functionType.ParamTypes) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("expected %d arguments for function, but found %d", len(functionType.ParamTypes), len(args)),
+			Span:    calleeSpan,
+		})
+		return args
+	}
+
+	// Perform implicit casting on arguments
+	for i := range args {
+		castedArg, ok := tc.tryImplicitCast(instr, args[i], functionType.ParamTypes[i])
+		args[i] = castedArg
+		if !ok {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), functionType.ParamTypes[i]),
+				Span:    args[i].GetSpan(),
+			})
+		}
+	}
+
+	return args
+}
+
 func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
 	function := zeus_value.AsFunction(input.Callee)
@@ -414,31 +440,14 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 
 	functionType := zeus_value.ToFunctionType(*function)
 
-	if len(input.Args) != len(functionType.ParamTypes) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("expected %d arguments for function '%s', but found %d", len(functionType.ParamTypes), function.Name, len(input.Args)),
-			Span:    input.Callee.GetSpan(),
-		})
-	} else {
-		for i := range input.Args {
-			castedArg, ok := tc.tryImplicitCast(instr, input.Args[i], functionType.ParamTypes[i])
-			input.Args[i] = castedArg
-			if !ok {
-				tc.pushError(&zeus_error.ZeusError{
-					Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(input.Args[i]), functionType.ParamTypes[i]),
-					Span:    input.Args[i].GetSpan(),
-				})
-			}
-		}
-		instr.Input = NewCallFuncInstrInput(input.Callee, input.Args)
-	}
+	// Use the abstracted function call type checking
+	input.Args = tc.tcFunctionCall(instr, functionType, input.Args, input.Callee.GetSpan())
+	instr.Input = NewCallFuncInstrInput(input.Callee, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType
 }
 
-func (tc *TypeChecker) tcDeclClass(instr *Instr) {
-	
-}
+func (tc *TypeChecker) tcDeclClass(instr *Instr) {}
 
 func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
@@ -487,7 +496,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
-				instr.Output.ValueType = method.Method.ReturnType
+				instr.Output.ValueType = zeus_value.ToFunctionType(*method.Method)
 			}
 		}
 
@@ -505,6 +514,26 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 			})
 		}
 	}
+}
+
+func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
+	input := AsIndirectFuncCallInstrInput(instr.Input)
+
+	methodType := tc.getValueType(input.Method)
+	functionType := zeus_value.AsFunctionType(methodType)
+
+	if functionType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "expression is not callable",
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	input.Args = tc.tcFunctionCall(instr, *functionType, input.Args, input.Method.GetSpan())
+	instr.Input = NewIndirectFuncCallInstrInput(input.Method, input.Args)
+
+	instr.Output.ValueType = functionType.ReturnType
 }
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
@@ -568,6 +597,8 @@ func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 			tc.tcReturn(instr)
 		case InstrTypeCallFunc:
 			tc.tcCallFunc(instr)
+		case InstrTypeIndirectFuncCall:
+			tc.tcIndirectFuncCall(instr)
 		case InstrTypeExport:
 			tc.tcExport(instr)
 		case InstrTypeImport:

@@ -256,6 +256,18 @@ func (b *IRBuilder) BuildCallFunc(callee *zeus_value.Function, args []zeus_value
 	return result
 }
 
+func (b *IRBuilder) BuildIndirectFuncCall(callee zeus_value.Value, args []zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+
+	b.pushInstr(&Instr{
+		Type: InstrTypeIndirectFuncCall,
+		Output: result,
+		Input: NewIndirectFuncCallInstrInput(callee, args),
+	})
+
+	return result
+}
+
 func (b *IRBuilder) BuildReturn(value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeReturn,
