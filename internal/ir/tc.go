@@ -120,11 +120,17 @@ func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_va
 			return castedB
 		} else {
 			_bType := "undefined"
+			_targetType := "undefined"
 			if bType != nil {
 				_bType = bType.String()
 			}
+
+			if targetType != nil {
+				_targetType = targetType.String()
+			}
+
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", _bType, targetType),
+				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", _bType, _targetType),
 				Span:    instr.Span,
 			})
 		}
@@ -373,7 +379,7 @@ func (tc *TypeChecker) tcExport(instr *Instr) {
 	input := AsExportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
-	if !zeus_value.IsFunctionType(valueType) {
+	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClassType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot export value of type '%s'", valueType),
 			Span:    instr.Span,
@@ -385,7 +391,7 @@ func (tc *TypeChecker) tcImport(instr *Instr) {
 	input := AsImportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
-	if !zeus_value.IsFunctionType(valueType) {
+	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClassType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot import value of type '%s'", valueType),
 			Span:    instr.Span,
@@ -533,7 +539,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 			})
 		}
 
-		propertyOfSameClass := tc.currentClass.Name == class.Name
+		propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
 		if !isAccessible && !propertyOfSameClass {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),

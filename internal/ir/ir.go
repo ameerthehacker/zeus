@@ -370,9 +370,14 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	exportedValue := stmt.Expr.Accept(g)
 
 	switch exportedValue := exportedValue.(type) {
+	// track the exported values from the module
+	// make the exported function module scoped to avoid conflicts between modules
 	case *zeus_value.Function:
-		// track the exported values from the module
-		// make the exported function module scoped to avoid conflicts between modules
+		exportedValueName := exportedValue.Name
+		moduleScopedName := module.GetModuleScopedName(g.modulePath, exportedValueName)
+		g.exportedSymbols[moduleScopedName] = exportedValue
+		exportedValue.Name = moduleScopedName
+	case *zeus_value.Class:
 		exportedValueName := exportedValue.Name
 		moduleScopedName := module.GetModuleScopedName(g.modulePath, exportedValueName)
 		g.exportedSymbols[moduleScopedName] = exportedValue
@@ -447,7 +452,7 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 			return
 		}
 
-		g.irBuilder.BuildImport(importedValue, _import.Name.Span)
+		g.irBuilder.BuildImport(_import.Name.Value, importedValue, _import.Name.Span)
 		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
 	}
 }

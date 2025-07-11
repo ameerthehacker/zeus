@@ -301,12 +301,14 @@ func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *tok
 	return result
 }
 
-func (b *IRBuilder) BuildImport(importedValue zeus_value.Value, span *token.Span) {
+func (b *IRBuilder) BuildImport(name string, importedValue zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeImport,
 		Input: NewImportInstrInput(importedValue),
 		Span: span,
 	})
+
+	b.symbolTable.DeclareGlobalSymbol(name, importedValue)
 }
 
 func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value, span *token.Span) zeus_value.Value {

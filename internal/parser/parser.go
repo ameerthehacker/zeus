@@ -504,6 +504,7 @@ func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
 
 	switch expr.(type) {
 	case *ast.FunctionDeclExprNode:
+	case *ast.ClassDeclExprNode:
 	default:
 		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "export can only be used with function declaration", expr.GetSpan()))
 	}
