@@ -53,19 +53,33 @@ func getPrecedence(token *token.Token) int {
 	return precedence
 }
 
-func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *token.Token, *ast.BlockStmtNode) {
+func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *token.Token, *ast.BlockStmtNode) {
+	fnType := "function"
+	if isClassMethod {
+		fnType = "method"
+	}
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
+	var dataType *token.Token
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
 		param := p.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
-	p.consumeToken(token.TokenTypeRightParen, "after function parameters")
-	// consume the return type
-	p.consumeToken(token.TokenTypeColon, "after function parameters")
-	dataType := p.consumeDataType("return type", "function declaration")
+
+	p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("after %s parameters", fnType))
+
+	if isClassMethod && functionName.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
+		colon := p.consumeOptionalToken(token.TokenTypeColon)
+		if colon != nil {
+			dataType = p.consumeDataType("return type", fmt.Sprintf("%s declaration", fnType))
+		}
+	} else {
+		p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after %s parameters", fnType))
+		// consume the return type
+		dataType = p.consumeDataType("return type", fmt.Sprintf("%s declaration", fnType))
+	}
 	// consume the body
 	body := p.parseBlockStmt()
 
@@ -98,7 +112,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
 		functionName := parser.consumeIdentifier("for function name")
-		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName)
+		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName, false)
 		return &ast.FunctionDeclExprNode{
 			Name: name,
 			Params: params,
@@ -118,7 +132,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {			
 			accessModifier := parser.consumeAccessModifier()
 			if parser.checkToken(token.TokenTypeIdentifier, "in class property or method declaration") && parser.lookahead(1, token.TokenTypeLeftParen) {
-				methodName, params, returnType, body := parser.parseFunctionSignatureAndBody(parser.consumeIdentifier("method name"))
+				methodName, params, returnType, body := parser.parseFunctionSignatureAndBody(parser.consumeIdentifier("method name"), true)
 				spanStart := methodName.GetSpan().Start
 				if accessModifier != nil {
 					spanStart = accessModifier.Span.Start

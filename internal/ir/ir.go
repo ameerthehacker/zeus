@@ -400,6 +400,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 	methods := []*zeus_value.ClassMethod{}
 	for _, method := range expr.Methods {
+		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
+			if method.ReturnType != nil {
+				g.pushError(&zeus_error.ZeusError{
+					Message: "constructor method cannot have a return type",
+					Span:    method.ReturnType.Span,
+				})
+				fmt.Println(method.ReturnType.Span)
+			}
+		}
 		params := []*zeus_value.Var{}
 		for _, param := range method.Params {
 			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, zeus_value.ToValueType(param.DataType), false, param.Identifier.Name.Span))
