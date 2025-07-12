@@ -100,6 +100,13 @@ type FunctionType struct {
 	ParamTypes []ValueType
 }
 
+func NewFunctionType(returnType ValueType, paramTypes []ValueType) FunctionType {
+	return FunctionType{
+		ReturnType: returnType,
+		ParamTypes: paramTypes,
+	}
+}
+
 type ClassType struct {
 	Class Class
 }

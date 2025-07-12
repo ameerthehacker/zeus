@@ -296,7 +296,7 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 
 	if asVar != nil {
-		if asVar.IsPtr && !zeus_value.IsUserDefinedType(asVar.ValueType) {
+		if asVar.IsPtr {
 			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
 		} else {
 			return asVar

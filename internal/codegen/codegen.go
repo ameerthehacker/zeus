@@ -92,7 +92,7 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
 	case zeus_value.UserDefinedType:
-		return c.getLLVMStructType(_type.Name)
+		return llvm.PointerType(c.getLLVMStructType(_type.Name), 0)
 	case zeus_value.FunctionType:
 		return c.toLLVMFunctionType(_type)
 	default:
@@ -365,6 +365,26 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
 	llvmStruct := c.builder.CreateAlloca(llvmStructType, output.Name)
+	if len(input.Args) > 0 {
+		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
+		constructorMethod := c.module.NamedFunction(constructorMethodName)
+		zeus_error.Assert(!constructorMethod.IsNil(), fmt.Sprintf("constructor method %s not found", constructorMethodName))
+		// create the param types
+		constructorParamTypes := []zeus_value.ValueType{}
+		for _, arg := range input.Args {
+			constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
+		}
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
+		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
+		// create the param values
+		constructorMethodParams := []llvm.Value{}
+		for _, arg := range input.Args {
+			constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
+		}
+		constructorMethodParams = append(constructorMethodParams, llvmStruct)
+		// call the constructor method
+		c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
+	}
 	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
 }
 
@@ -375,7 +395,7 @@ func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) l
 		zeus_value.NewVar(
 			token.THIS_KEYWORD,
 			zeus_value.NewObjectType(*input.Class),
-			true,
+			false,
 			input.Method.Span,
 		),
 	)
