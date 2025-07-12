@@ -76,7 +76,7 @@ type UserDefinedType struct {
 
 
 func (u UserDefinedType) String() string {
-	return fmt.Sprintf("UserDefined (%s)", u.Name)
+	return u.Name
 }
 
 func (f FloatType) String() string {
@@ -121,7 +121,7 @@ type ObjectType struct {
 }
 
 func (o ObjectType) String() string {
-	return fmt.Sprintf("Object [%s]", o.Class.Name)
+	return o.Class.Name
 }
 
 func NewObjectType(class Class) ObjectType {
