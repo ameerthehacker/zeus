@@ -296,7 +296,7 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 
 	if asVar != nil {
-		if asVar.IsPtr {
+		if asVar.IsPtr && !zeus_value.IsUserDefinedType(asVar.ValueType) {
 			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
 		} else {
 			return asVar
@@ -445,7 +445,12 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	object := expr.Object.Accept(g)
 	property := expr.Property.Name.Value
 
-	return g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+	if g.isLValueExpr {
+		return g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+	} else {
+		ptr := g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+		return g.irBuilder.BuildLoad(zeus_value.AsVar(ptr), expr.GetSpan())
+	}
 }
 
 

@@ -74,6 +74,7 @@ type UserDefinedType struct {
 	Name string
 }
 
+
 func (u UserDefinedType) String() string {
 	return fmt.Sprintf("UserDefined (%s)", u.Name)
 }

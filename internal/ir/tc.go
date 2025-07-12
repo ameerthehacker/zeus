@@ -26,19 +26,17 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
 }
 
-func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
-	input := AsDeclFuncInstrInput(instr.Input)
-	tc.currentFunction = input.Function
-	functionBlock := input.Body
+// validateFunctionReturns checks if a function returns in all code paths
+func (tc *TypeChecker) validateFunctionReturns(function *zeus_value.Function, functionBody *BasicBlock) {
 	returnsInAllBlocks := true
-	worklist := []*BasicBlock{functionBlock}
+	worklist := []*BasicBlock{functionBody}
 
 	for len(worklist) > 0 {
 		block := worklist[0]
 
-		if len(block.Instrs) == 0 || !IsControlFlowInstr(block.Instrs[len(block.Instrs) -1 ].Type) {
+		if len(block.Instrs) == 0 || !IsControlFlowInstr(block.Instrs[len(block.Instrs)-1].Type) {
 			// add implicit return
-			if zeus_value.IsVoidType(input.Function.ReturnType) {
+			if zeus_value.IsVoidType(function.ReturnType) {
 				tc.builder.SetInsertionBlock(block)
 				tc.builder.BuildReturn(nil, nil)
 			} else {
@@ -52,10 +50,16 @@ func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
 
 	if !returnsInAllBlocks {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("function '%s' does not return value of type '%s' in all paths", tc.currentFunction.Name, tc.currentFunction.ReturnType),
-			Span:    input.Function.Span,
+			Message: fmt.Sprintf("function '%s' does not return value of type '%s' in all paths", function.Name, function.ReturnType),
+			Span:    function.Span,
 		})
 	}
+}
+
+func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
+	input := AsDeclFuncInstrInput(instr.Input)
+	tc.currentFunction = input.Function
+	tc.validateFunctionReturns(input.Function, input.Body)
 }
 
 func (tc *TypeChecker) tcDeclVar(instr *Instr) {
@@ -343,6 +347,13 @@ func (tc *TypeChecker) tcLoad(instr *Instr) {
 func (tc *TypeChecker) tcStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
 
+	if !input.Addr.IsPtr {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "invalid lvalue in assignment",
+			Span:    instr.Span,
+		})
+	}
+
 	input.Value = tc.cmpValueWithImplicitCast(instr, input.Addr.ValueType, input.Value)
 }
 
@@ -574,6 +585,7 @@ func (tc *TypeChecker) tcDeclClassMethod(instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
 	tc.currentClass = input.Class
 	tc.currentFunction = input.Method
+	tc.validateFunctionReturns(input.Method, input.Body)
 }
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {

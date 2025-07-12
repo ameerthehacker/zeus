@@ -471,6 +471,7 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 
 func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property string, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
+	result.IsPtr = true
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeObjectPropertyAccess,

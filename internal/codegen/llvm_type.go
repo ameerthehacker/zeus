@@ -9,20 +9,10 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-func ToLLVMFunctionType(functionType zeus_value.FunctionType) llvm.Type {
-	param_llvm_types := []llvm.Type{}
-
-	for _, param := range functionType.ParamTypes {
-		param_llvm_types = append(param_llvm_types, ToLLVMType(param))
-	}
-
-	return llvm.FunctionType(ToLLVMType(functionType.ReturnType), param_llvm_types, false)
-}
-
 func ToLLVMStructType(classType zeus_value.ClassType) llvm.Type {
 	properties := []llvm.Type{}
 	for _, field := range classType.Class.Properties {
-		properties = append(properties, ToLLVMType(field.Property.ValueType))
+		properties = append(properties, ToLLVMBuiltInType(field.Property.ValueType))
 	}
 	return llvm.StructType(properties, false)
 }
@@ -53,7 +43,7 @@ func ToLLVMFloatType(floatType zeus_value.FloatType) llvm.Type {
 	}
 }
 
-func ToLLVMType(_type zeus_value.ValueType) llvm.Type {
+func ToLLVMBuiltInType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
 	case zeus_value.IntType:
 		return ToLLVMIntType(_type)
@@ -61,12 +51,12 @@ func ToLLVMType(_type zeus_value.ValueType) llvm.Type {
 		return ToLLVMFloatType(_type)
 	case zeus_value.BoolType:
 		return llvm.GlobalContext().Int1Type()
-	case zeus_value.FunctionType:
-		return ToLLVMFunctionType(_type)
 	case zeus_value.VoidType:
 		return llvm.GlobalContext().VoidType()
 	case zeus_value.ClassType:
 		return ToLLVMStructType(_type)
+	case zeus_value.ObjectType:
+		return llvm.PointerType(ToLLVMStructType(zeus_value.NewClassType(_type.Class)), 0)
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %T", _type))
 	}
@@ -88,9 +78,9 @@ func ToLLVMConstant(value zeus_value.Constant) llvm.Value {
 		return llvm.ConstFloat(ToLLVMFloatType(floatType), floatValue)
 	case zeus_value.BoolType:
 		if value.Value == "true" {
-			return llvm.ConstInt(ToLLVMType(value.ValueType), 1, false)
+			return llvm.ConstInt(ToLLVMBuiltInType(value.ValueType), 1, false)
 		} else {
-			return llvm.ConstInt(ToLLVMType(value.ValueType), 0, false)
+			return llvm.ConstInt(ToLLVMBuiltInType(value.ValueType), 0, false)
 		}
 	default:
 		panic(fmt.Sprintf("cannot convert constant to llvm constant: %s", value))

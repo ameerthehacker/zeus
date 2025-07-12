@@ -57,7 +57,7 @@ func (o Object) GetSpan() *token.Span {
 }
 
 func (o Object) String() string {
-	return o.ValueType.String()
+	return o.Name
 }
 
 type Var struct {

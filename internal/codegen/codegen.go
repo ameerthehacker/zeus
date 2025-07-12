@@ -25,6 +25,7 @@ type CodegenModule struct {
 	basicBlocks     map[int]llvm.BasicBlock
 	isEntryPoint    bool
 	llvmStructTypes map[string]llvm.Type
+	classTypes      map[string]zeus_value.ClassType
 }
 
 func NewCodegen() *Codegen {
@@ -42,7 +43,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]llvm.Type)}
+	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]llvm.Type), make(map[string]zeus_value.ClassType)}
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -59,6 +60,16 @@ func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
 		panic(fmt.Sprintf("llvm struct type %s not found", name))
 	}
 	return llvmStructType
+}
+
+func (c *CodegenModule) getValueType(value zeus_value.Value) zeus_value.ValueType {
+	valueType := zeus_value.GetValueType(value)
+	switch valueType := valueType.(type) {
+	case zeus_value.UserDefinedType:
+		return c.classTypes[valueType.Name]
+	default:
+		return valueType
+	}
 }
 
 func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
@@ -82,8 +93,10 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
 	case zeus_value.UserDefinedType:
 		return c.getLLVMStructType(_type.Name)
+	case zeus_value.FunctionType:
+		return c.toLLVMFunctionType(_type)
 	default:
-		return ToLLVMType(_type)
+		return ToLLVMBuiltInType(_type)
 	}
 }
 
@@ -96,8 +109,19 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 	return basicBlock
 }
 
+
+func (c *CodegenModule) toLLVMFunctionType(functionType zeus_value.FunctionType) llvm.Type {
+	param_llvm_types := []llvm.Type{}
+
+	for _, param := range functionType.ParamTypes {
+		param_llvm_types = append(param_llvm_types, c.toLLVMType(param))
+	}
+
+	return llvm.FunctionType(c.toLLVMType(functionType.ReturnType), param_llvm_types, false)
+}
+
 func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
-	llvmFunc := llvm.AddFunction(c.module, function.Name, ToLLVMFunctionType(zeus_value.ToFunctionType(function)))
+	llvmFunc := llvm.AddFunction(c.module, function.Name, c.toLLVMFunctionType(zeus_value.ToFunctionType(function)))
 	funcParams := function.Params
 
 	for index, param := range llvmFunc.Params() {
@@ -142,9 +166,11 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 
 func (c *CodegenModule) genStore(input ir.StoreInstrInput) {
 	addr, ok := c.symbolTable.GetSymbol(input.Addr.Name)
+
 	if !ok {
 		panic(fmt.Sprintf("symbol %s not found in symbol table", input.Addr.Name))
 	}
+
 	c.builder.CreateStore(c.toLLVMValue(input.Value), addr)
 }
 
@@ -280,7 +306,7 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 
 	switch importedValue := importedValue.(type) {
 	case *zeus_value.Function:
-		importedFunc := llvm.AddFunction(c.module, importedValue.Name, ToLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
+		importedFunc := llvm.AddFunction(c.module, importedValue.Name, c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
 		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
 	default:
 		panic(fmt.Sprintf("cannot codegen for imported value %s", importedValue))
@@ -324,10 +350,12 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	for _, property := range input.Class.Properties {
 		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
 	}
-	llvmStructType := llvm.StructType(elementTypes, false)
+	llvmStructType := llvm.GlobalContext().StructCreateNamed(input.Class.Name)
+	llvmStructType.StructSetBody(elementTypes, false)
 
 	c.llvmStructTypes[input.Class.Name] = llvmStructType
 	c.llvmStructTypes[output.Name] = llvmStructType
+	c.classTypes[input.Class.Name] = zeus_value.NewClassType(*input.Class)
 }
 
 func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.Var) {
@@ -340,28 +368,28 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
 }
 
-func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) {
+func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
 	methodWithThisParam := *input.Method
 	methodWithThisParam.Params = append(
 		methodWithThisParam.Params,
 		zeus_value.NewVar(
 			token.THIS_KEYWORD,
-			zeus_value.NewClassType(*input.Class),
-			false,
+			zeus_value.NewObjectType(*input.Class),
+			true,
 			input.Method.Span,
 		),
 	)
-	c.genFunc(methodWithThisParam)
+	return c.genFunc(methodWithThisParam)
 }
 
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
-	objectType := zeus_value.GetValueType(input.Object)
+	objectType := c.getValueType(input.Object)
 	llvmValue := c.toLLVMValue(input.Object)
 	objectClass := zeus_value.AsClassType(objectType)
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("object %s is not a class", input.Object))
 	propertyIndex := util.GetPropertyIndex(objectClass.Class, input.Property)
 	zeus_error.Assert(propertyIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
-	llvmValue = c.builder.CreateStructGEP(llvmValue.Type(), llvmValue, propertyIndex, input.Property)
+	llvmValue = c.builder.CreateStructGEP(c.toLLVMType(objectType), llvmValue, propertyIndex, input.Property)
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
@@ -373,13 +401,19 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	irBuilder.Walk(func(instr *ir.Instr) {
 		switch instr.Type {
 		case ir.InstrTypeDeclFunc:
+			fallthrough
+		case ir.InstrTypeDeclClassMethod:
 			// maintain function level scoping
 			if !c.symbolTable.IsGlobalScope() {
 				c.symbolTable.ExitScope()
 			} else {
 				c.symbolTable.EnterScope()
 			}
-			currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
+			if instr.Type == ir.InstrTypeDeclClassMethod {
+				currentFunction = c.genDeclClassMethod(*ir.AsDeclClassMethodInstrInput(instr.Input))
+			} else {
+				currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
+			}
 		case ir.InstrTypeDeclVar:
 			c.genDeclVar(*ir.AsDeclVarInstrInput(instr.Input))
 		case ir.InstrTypeStore:
@@ -424,8 +458,6 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genDeclClass(*ir.AsDeclClassInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeNewObj:
 			c.genNewObj(*ir.AsNewObjInstrInput(instr.Input), *instr.Output)
-		case ir.InstrTypeDeclClassMethod:
-			c.genDeclClassMethod(*ir.AsDeclClassMethodInstrInput(instr.Input))
 		case ir.InstrTypeObjectPropertyAccess:
 			c.genObjectPropertyAccess(*ir.AsObjectPropertyAccessInstrInput(instr.Input), *instr.Output)
 		default:
