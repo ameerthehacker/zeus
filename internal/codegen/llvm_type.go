@@ -68,7 +68,7 @@ func ToLLVMType(_type zeus_value.ValueType) llvm.Type {
 	case zeus_value.ClassType:
 		return ToLLVMStructType(_type)
 	default:
-		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %s", _type))
+		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %T", _type))
 	}
 }
 

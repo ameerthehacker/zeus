@@ -100,11 +100,11 @@ type FunctionType struct {
 }
 
 type ClassType struct {
-	Class *Class
+	Class Class
 }
 
 func (c ClassType) String() string {
-	return fmt.Sprintf("Class (%s)", c.Class.Name)
+	return c.Class.Name
 }
 
 func (f FunctionType) String() string {
@@ -113,6 +113,18 @@ func (f FunctionType) String() string {
 		param_types = append(param_types, param.String())
 	}
 	return fmt.Sprintf("(%s) => %s", strings.Join(param_types, ", "), f.ReturnType)
+}
+
+type ObjectType struct {
+	Class Class
+}
+
+func (o ObjectType) String() string {
+	return fmt.Sprintf("Object [%s]", o.Class.Name)
+}
+
+func NewObjectType(class Class) ObjectType {
+	return ObjectType{Class: class}
 }
 
 func ToValueType(t *token.Token) ValueType {
@@ -252,6 +264,10 @@ func AsClassType(value ValueType) *ClassType {
 	default:
 		return nil
 	}
+}
+
+func NewClassType(class Class) ClassType {
+	return ClassType{Class: class}
 }
 
 // currently supports only int and float

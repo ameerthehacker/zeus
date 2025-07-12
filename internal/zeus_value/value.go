@@ -39,12 +39,14 @@ func (i Constant) String() string {
 }
 
 type Object struct {
-	ValueType *ClassType
+	ValueType ClassType
+	Name string
 	Span *token.Span
 }
 
-func NewObject(classType *ClassType, span *token.Span) *Object {
-	return &Object{
+func NewObject(name string, classType ClassType, span *token.Span) Object {
+	return Object{
+		Name: name,
 		ValueType: classType,
 		Span: span,
 	}
@@ -180,6 +182,10 @@ func GetValueType(value Value) ValueType {
 		return value.ValueType
 	case *Constant:
 		return value.ValueType
+	case *Object:
+		return value.ValueType
+	case *Class:
+		return NewClassType(*value)
 	case *Function:
 		param_types := []ValueType{}
 		for _, param := range value.Params {

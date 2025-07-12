@@ -83,7 +83,7 @@ func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.Va
 	case *zeus_value.Object:
 		return value.ValueType
 	case *zeus_value.Class:
-		return zeus_value.ClassType{Class: value}
+		return zeus_value.NewClassType(*value)
 	default:
 		panic(fmt.Sprintf("cannot get value type of value: %T", value))
 	}
@@ -174,9 +174,9 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 
 		return true
 	
-	case zeus_value.ClassType:
+	case zeus_value.ObjectType:
 	  bClassType, ok := b.(zeus_value.ClassType)
-	  return ok && a.Class.Name == bClassType.Class.Name
+		return ok && a.Class.Name == bClassType.Class.Name
 	}
 
 	return false
@@ -460,7 +460,8 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 		})
 	}
 
-	class := zeus_value.AsClassType(calleeType).Class
+	classType := zeus_value.AsClassType(calleeType)
+	class := classType.Class
 
 	var constructorMethod *zeus_value.Function = nil
 
@@ -492,7 +493,7 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 		}
 	}
 
-	instr.Output.ValueType = calleeType
+	instr.Output.ValueType = zeus_value.NewObjectType(class)
 }
 
 func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {

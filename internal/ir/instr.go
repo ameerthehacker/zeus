@@ -404,7 +404,7 @@ func NewDeclClassInstrInput(class *zeus_value.Class) *DeclClassInstrInput {
 }
 
 func (i DeclClassInstrInput) String() string {
-	return fmt.Sprintf("Class (%s)", i.Class.Name)
+	return i.Class.Name 
 }
 
 func AsDeclClassInstrInput(input InstrInput) *DeclClassInstrInput {

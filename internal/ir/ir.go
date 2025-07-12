@@ -7,6 +7,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -254,7 +255,9 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	if class != nil {
-		g.symbolTable.DeclareSymbol(token.THIS_KEYWORD, class)
+		classType := zeus_value.NewClassType(*class)
+		object := zeus_value.NewObject(token.THIS_KEYWORD, classType, span)
+		g.symbolTable.DeclareSymbol(token.THIS_KEYWORD, &object)
 	}
 
 	g.irBuilder.SetInsertionBlock(body)
@@ -432,7 +435,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 	for _, method := range expr.Methods {
 		// emit global class methods
-		g.emitFunction(irClassName + "." + method.Name.Name.Value, method.Params, zeus_value.ToValueType(method.ReturnType), method.Body, class, method.Name.Name.Span)
+		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, zeus_value.ToValueType(method.ReturnType), method.Body, class, method.Name.Name.Span)
 	}
 
 	return class
