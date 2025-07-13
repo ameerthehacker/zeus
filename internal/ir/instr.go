@@ -513,7 +513,7 @@ type DeclClassMethodInstrInput struct {
 	Class *zeus_value.Class
 }
 
-func NewDeclClassMethodInstrInput(method *zeus_value.Function, methodIndex int, body *BasicBlock, class *zeus_value.Class) *DeclClassMethodInstrInput {
+func NewDeclClassMethodInstrInput(method *zeus_value.Function, body *BasicBlock, class *zeus_value.Class) *DeclClassMethodInstrInput {
 	return &DeclClassMethodInstrInput{
 		Method: method,
 		Body: body,
