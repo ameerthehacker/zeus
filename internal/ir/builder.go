@@ -152,6 +152,7 @@ func (b *IRBuilder) BuildExport(value zeus_value.Value, span *token.Span) {
 
 func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(addr.Span)
+	result.Cxt = addr.Cxt
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeLoad,
@@ -472,6 +473,7 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property string, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 	result.IsPtr = true
+	result.Cxt = &object
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeObjectPropertyAccess,

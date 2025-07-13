@@ -405,7 +405,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	vtableStructType := llvm.GlobalContext().StructCreateNamed(vtableStructName)
 
   // create the class struct with the vtable struct as the first element
-	elementTypes := []llvm.Type{vtableStructType}
+	elementTypes := []llvm.Type{llvm.PointerType(vtableStructType, 0)}
 	for _, property := range input.Class.Properties {
 		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
 	}
@@ -509,7 +509,8 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 		methodIndex := util.GetMethodIndex(objectClass.Class, input.Property)
 		zeus_error.Assert(methodIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
 		llvmVTablePtr := c.builder.CreateStructGEP(c.toLLVMType(objectType), llvmValue, VTABLE_STRUCT_INDEX, "vTable")
-		classMethodPtr := c.builder.CreateStructGEP(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, methodIndex, input.Property)
+		llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
+		classMethodPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.Property)
 		c.symbolTable.DeclareSymbol(output.Name, classMethodPtr)
 		return
 	}
@@ -518,8 +519,27 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 }
 
 func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
+	functionVar := zeus_value.AsVar(input.Function)
+	zeus_error.Assert(functionVar != nil, fmt.Sprintf("function %s is not a variable", input.Function))
+	cxt := functionVar.Cxt
 	function := c.toLLVMValue(input.Function)
-	fmt.Println(function)
+	functionType := zeus_value.AsFunctionType(zeus_value.GetValueType(input.Function))
+	functionArgs := []llvm.Value{}
+
+	for _, arg := range input.Args {
+		functionArgs = append(functionArgs, c.toLLVMValue(arg))
+	}
+
+	if cxt != nil {
+		llvmObject := c.toLLVMValue(*cxt)
+		functionArgs = append(functionArgs, llvmObject)
+		objectType := zeus_value.AsClassType(c.getValueType(*cxt))
+		zeus_error.Assert(objectType != nil, fmt.Sprintf("cxt is not an object %s", *cxt))
+		functionType.ParamTypes = append(functionType.ParamTypes, zeus_value.NewObjectType(objectType.Class))
+	}
+
+	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
+	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
