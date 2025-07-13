@@ -293,6 +293,7 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	asVar := zeus_value.AsVar(variable)
 	asClass := zeus_value.AsClass(variable)
+	asObject := zeus_value.AsObject(variable)
 
 
 	if asVar != nil {
@@ -307,7 +308,11 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 		return asClass
 	}
 
-	panic(fmt.Sprintf("unknown identifier type: %s", expr.Name.Value))
+	if asObject != nil {
+		return asObject
+	}
+
+	panic(fmt.Sprintf("unknown identifier type: %T", variable))
 }
 
 func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {

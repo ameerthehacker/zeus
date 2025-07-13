@@ -53,10 +53,6 @@ func ToLLVMBuiltInType(_type zeus_value.ValueType) llvm.Type {
 		return llvm.GlobalContext().Int1Type()
 	case zeus_value.VoidType:
 		return llvm.GlobalContext().VoidType()
-	case zeus_value.ClassType:
-		return ToLLVMStructType(_type)
-	case zeus_value.ObjectType:
-		return llvm.PointerType(ToLLVMStructType(zeus_value.NewClassType(_type.Class)), 0)
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %T", _type))
 	}

@@ -17,6 +17,16 @@ type Codegen struct {
 	ctx llvm.Context
 }
 
+type ZeusClassLLVMStruct struct {
+	ClassType zeus_value.ClassType
+	LLVMStruct llvm.Type
+	LLVMVTableStruct llvm.Type
+}
+
+func NewZeusClassLLVMStruct(classType zeus_value.ClassType, llvmStruct llvm.Type, llvmVTableStruct llvm.Type) ZeusClassLLVMStruct {
+	return ZeusClassLLVMStruct{classType, llvmStruct, llvmVTableStruct}
+}
+
 type CodegenModule struct {
 	module          llvm.Module
 	builder         llvm.Builder
@@ -24,8 +34,7 @@ type CodegenModule struct {
 	symbolTable     *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks     map[int]llvm.BasicBlock
 	isEntryPoint    bool
-	llvmStructTypes map[string]llvm.Type
-	classTypes      map[string]zeus_value.ClassType
+	zeusClassLLVMStructMap map[string]ZeusClassLLVMStruct
 }
 
 func NewCodegen() *Codegen {
@@ -43,7 +52,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]llvm.Type), make(map[string]zeus_value.ClassType)}
+	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassLLVMStruct)}
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -55,18 +64,29 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 }
 
 func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
-	llvmStructType, ok := c.llvmStructTypes[name]
+	zeusClassLLVMStruct, ok := c.zeusClassLLVMStructMap[name]
 	if !ok {
 		panic(fmt.Sprintf("llvm struct type %s not found", name))
 	}
-	return llvmStructType
+	return zeusClassLLVMStruct.LLVMStruct
+}
+
+func (c *CodegenModule) toLLVMClassMethodType(method zeus_value.ClassMethod, llvmStructType llvm.Type) llvm.Type {
+	paramLLVMTypes := []llvm.Type{}
+	for _, param := range method.Method.Params {
+		paramLLVMTypes = append(paramLLVMTypes, c.toLLVMType(param))
+	}
+
+	paramLLVMTypes = append(paramLLVMTypes, llvmStructType)
+
+	return llvm.FunctionType(c.toLLVMType(method.Method.ReturnType), paramLLVMTypes, false)
 }
 
 func (c *CodegenModule) getValueType(value zeus_value.Value) zeus_value.ValueType {
 	valueType := zeus_value.GetValueType(value)
 	switch valueType := valueType.(type) {
 	case zeus_value.UserDefinedType:
-		return c.classTypes[valueType.Name]
+		return c.zeusClassLLVMStructMap[valueType.Name].ClassType
 	default:
 		return valueType
 	}
@@ -95,6 +115,10 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 		return llvm.PointerType(c.getLLVMStructType(_type.Name), 0)
 	case zeus_value.FunctionType:
 		return c.toLLVMFunctionType(_type)
+	case zeus_value.ClassType:
+		return c.getLLVMStructType(_type.Class.Name)
+	case zeus_value.ObjectType:
+		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 0)
 	default:
 		return ToLLVMBuiltInType(_type)
 	}
@@ -346,16 +370,34 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 }
 
 func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
-	elementTypes := []llvm.Type{}
+	// create the vtable struct
+	vtableStructName := GetVTableStructName(input.Class.Name)
+	vtableStructType := llvm.GlobalContext().StructCreateNamed(vtableStructName)
+
+  // create the class struct with the vtable struct as the first element
+	elementTypes := []llvm.Type{vtableStructType}
 	for _, property := range input.Class.Properties {
 		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
 	}
 	llvmStructType := llvm.GlobalContext().StructCreateNamed(input.Class.Name)
 	llvmStructType.StructSetBody(elementTypes, false)
 
-	c.llvmStructTypes[input.Class.Name] = llvmStructType
-	c.llvmStructTypes[output.Name] = llvmStructType
-	c.classTypes[input.Class.Name] = zeus_value.NewClassType(*input.Class)
+	// set the vtable struct body
+	vtableElementTypes := []llvm.Type{}
+	for _, method := range input.Class.Methods {
+		// constructor method is not part of the vtable
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			continue
+		}
+		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
+	}
+	vtableStructType.StructSetBody(vtableElementTypes, false)
+
+	// track the class type and the llvm struct type
+	classType := zeus_value.NewClassType(*input.Class)
+	zeusClassLLVMStruct := NewZeusClassLLVMStruct(classType, llvmStructType, vtableStructType)
+	c.zeusClassLLVMStructMap[input.Class.Name] = zeusClassLLVMStruct
+	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
 }
 
 func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.Var) {
@@ -409,6 +451,7 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("object %s is not a class", input.Object))
 	propertyIndex := util.GetPropertyIndex(objectClass.Class, input.Property)
 	zeus_error.Assert(propertyIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
+	propertyIndex = propertyIndex + 1 // skip the vtable struct
 	llvmValue = c.builder.CreateStructGEP(c.toLLVMType(objectType), llvmValue, propertyIndex, input.Property)
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }

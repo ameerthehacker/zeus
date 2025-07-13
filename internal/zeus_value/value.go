@@ -210,6 +210,15 @@ func AsClass(value Value) *Class {
 	}
 }
 
+func AsObject(value Value) *Object {
+	switch value := value.(type) {
+	case *Object:
+		return value
+	default:
+		return nil
+	}
+}
+
 func IsVar(value Value) bool {
 	switch value.(type) {
 	case *Var:
