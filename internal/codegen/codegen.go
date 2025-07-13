@@ -21,10 +21,11 @@ type ZeusClassLLVMStruct struct {
 	ClassType zeus_value.ClassType
 	LLVMStruct llvm.Type
 	LLVMVTableStruct llvm.Type
+	LLVMVTable llvm.Value
 }
 
-func NewZeusClassLLVMStruct(classType zeus_value.ClassType, llvmStruct llvm.Type, llvmVTableStruct llvm.Type) ZeusClassLLVMStruct {
-	return ZeusClassLLVMStruct{classType, llvmStruct, llvmVTableStruct}
+func NewZeusClassLLVMStruct(classType zeus_value.ClassType, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTable llvm.Value) ZeusClassLLVMStruct {
+	return ZeusClassLLVMStruct{classType, llvmStruct, llvmVTableStruct, llvmVTable}
 }
 
 type CodegenModule struct {
@@ -395,7 +396,9 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 
 	// track the class type and the llvm struct type
 	classType := zeus_value.NewClassType(*input.Class)
-	zeusClassLLVMStruct := NewZeusClassLLVMStruct(classType, llvmStructType, vtableStructType)
+	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(input.Class.Name))
+	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
+	zeusClassLLVMStruct := NewZeusClassLLVMStruct(classType, llvmStructType, vtableStructType, llvmVTable)
 	c.zeusClassLLVMStructMap[input.Class.Name] = zeusClassLLVMStruct
 	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
 }
@@ -407,6 +410,9 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
 	llvmStruct := c.builder.CreateAlloca(llvmStructType, output.Name)
+	llvmStructVTableField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, VTABLE_STRUCT_INDEX, "vTable")
+	llvmVTable := c.zeusClassLLVMStructMap[callee.Name].LLVMVTable
+	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
 	if len(input.Args) > 0 {
 		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
 		constructorMethod := c.module.NamedFunction(constructorMethodName)
@@ -441,6 +447,7 @@ func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) l
 			input.Method.Span,
 		),
 	)
+
 	return c.genFunc(methodWithThisParam)
 }
 
