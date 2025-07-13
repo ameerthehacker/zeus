@@ -522,7 +522,11 @@ func NewDeclClassMethodInstrInput(method *zeus_value.Function, body *BasicBlock,
 }
 
 func (i DeclClassMethodInstrInput) String() string {
-	return i.Method.Name 
+	params := []string{}
+	for _, param := range i.Method.Params {
+		params = append(params, param.String())
+	}
+	return fmt.Sprintf("%s %s(%s)", i.Class.Name, i.Method.Name, strings.Join(params, ", "))
 }
 
 func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {

@@ -444,12 +444,18 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
 	property := expr.Property.Name.Value
+  asVar := zeus_value.AsVar(object)
+
+	// if the object is stored in a pointer variable then dereference it first
+	if asVar != nil && asVar.IsPtr {
+		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
+	} 
+	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
 
 	if g.isLValueExpr {
-		return g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+		return propertyPtr
 	} else {
-		ptr := g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
-		return g.irBuilder.BuildLoad(zeus_value.AsVar(ptr), expr.GetSpan())
+		return g.irBuilder.BuildLoad(zeus_value.AsVar(propertyPtr), expr.GetSpan())
 	}
 }
 
