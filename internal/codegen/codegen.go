@@ -22,10 +22,12 @@ type ZeusClassLLVMStruct struct {
 	LLVMStruct llvm.Type
 	LLVMVTableStruct llvm.Type
 	LLVMVTable llvm.Value
+	LLVMVTableMethods []llvm.Value
+	CurrentVTableMethodIndex int
 }
 
-func NewZeusClassLLVMStruct(classType zeus_value.ClassType, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTable llvm.Value) ZeusClassLLVMStruct {
-	return ZeusClassLLVMStruct{classType, llvmStruct, llvmVTableStruct, llvmVTable}
+func NewZeusClassLLVMStruct(classType zeus_value.ClassType, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTable llvm.Value, llvmVTableMethods []llvm.Value) *ZeusClassLLVMStruct {
+	return &ZeusClassLLVMStruct{classType, llvmStruct, llvmVTableStruct, llvmVTable, llvmVTableMethods, 0}
 }
 
 type CodegenModule struct {
@@ -35,7 +37,7 @@ type CodegenModule struct {
 	symbolTable     *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks     map[int]llvm.BasicBlock
 	isEntryPoint    bool
-	zeusClassLLVMStructMap map[string]ZeusClassLLVMStruct
+	zeusClassLLVMStructMap map[string]*ZeusClassLLVMStruct
 }
 
 func NewCodegen() *Codegen {
@@ -53,7 +55,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassLLVMStruct)}
+	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]*ZeusClassLLVMStruct)}
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -72,6 +74,31 @@ func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
 	return zeusClassLLVMStruct.LLVMStruct
 }
 
+
+func (c *CodegenModule) getLLVMVTablePtr(name string) llvm.Value {
+	zeusClassLLVMStruct, ok := c.zeusClassLLVMStructMap[name]
+	if !ok {
+		panic(fmt.Sprintf("llvm vtable ptr %s not found", name))
+	}
+	return zeusClassLLVMStruct.LLVMVTable
+}
+
+func (c *CodegenModule) getLLVMVTableStruct(name string) llvm.Type {
+	zeusClassLLVMStruct, ok := c.zeusClassLLVMStructMap[name]
+	if !ok {
+		panic(fmt.Sprintf("llvm vtable struct %s not found", name))
+	}
+	return zeusClassLLVMStruct.LLVMVTableStruct
+}
+
+func (c *CodegenModule) getZeusClassType(name string) zeus_value.ClassType {
+	zeusClassLLVMStruct, ok := c.zeusClassLLVMStructMap[name]
+	if !ok {
+		panic(fmt.Sprintf("zeus class type %s not found", name))
+	}
+	return zeusClassLLVMStruct.ClassType
+}
+
 func (c *CodegenModule) toLLVMClassMethodType(method zeus_value.ClassMethod, llvmStructType llvm.Type) llvm.Type {
 	paramLLVMTypes := []llvm.Type{}
 	for _, param := range method.Method.Params {
@@ -87,7 +114,7 @@ func (c *CodegenModule) getValueType(value zeus_value.Value) zeus_value.ValueTyp
 	valueType := zeus_value.GetValueType(value)
 	switch valueType := valueType.(type) {
 	case zeus_value.UserDefinedType:
-		return c.zeusClassLLVMStructMap[valueType.Name].ClassType
+		return c.getZeusClassType(valueType.Name)
 	default:
 		return valueType
 	}
@@ -115,7 +142,7 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	case zeus_value.UserDefinedType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Name), 0)
 	case zeus_value.FunctionType:
-		return c.toLLVMFunctionType(_type)
+		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
 	case zeus_value.ClassType:
 		return c.getLLVMStructType(_type.Class.Name)
 	case zeus_value.ObjectType:
@@ -210,13 +237,15 @@ func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output zeus_value.Var) 
 
 func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_value.Var) {
 	function := c.toLLVMValue(input.Callee)
-	functionType := c.toLLVMType(zeus_value.GetValueType(input.Callee))
+	functionType := zeus_value.AsFunctionType(zeus_value.GetValueType(input.Callee))
+	zeus_error.Assert(functionType != nil, fmt.Sprintf("%s is not a function", input.Callee))
+	llvmFunctionType := c.toLLVMFunctionType(*functionType)
 	args := make([]llvm.Value, len(input.Args))
 	for i, arg := range input.Args {
 		args[i] = c.toLLVMValue(arg)
 	}
 
-	llvmValue := c.builder.CreateCall(functionType, function, args, fmt.Sprintf("%s_call_result", function.Name()))
+	llvmValue := c.builder.CreateCall(llvmFunctionType, function, args, fmt.Sprintf("%s_call_result", function.Name()))
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
@@ -385,20 +414,29 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 
 	// set the vtable struct body
 	vtableElementTypes := []llvm.Type{}
+	methodsCount := 0
 	for _, method := range input.Class.Methods {
 		// constructor method is not part of the vtable
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
+		methodsCount += 1
 	}
 	vtableStructType.StructSetBody(vtableElementTypes, false)
 
-	// track the class type and the llvm struct type
-	classType := zeus_value.NewClassType(*input.Class)
+	// create the vtable global
 	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(input.Class.Name))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
-	zeusClassLLVMStruct := NewZeusClassLLVMStruct(classType, llvmStructType, vtableStructType, llvmVTable)
+	// initialize the vtable methods to null
+	// this is done here because the vtable methods are not known until we encounter the DECL_CLASS_METHOD instructions
+	llvmVTableMethods := make([]llvm.Value, methodsCount)
+	for llvmVTableMethodIndex := range llvmVTableMethods {
+		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(llvm.GlobalContext().VoidType(), []llvm.Type{}, false), 0))
+	}
+	// track the struct info
+	classType := zeus_value.NewClassType(*input.Class)
+	zeusClassLLVMStruct := NewZeusClassLLVMStruct(classType, llvmStructType, vtableStructType, llvmVTable, llvmVTableMethods)
 	c.zeusClassLLVMStructMap[input.Class.Name] = zeusClassLLVMStruct
 	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
 }
@@ -411,7 +449,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	llvmStructType := c.getLLVMStructType(callee.Name)
 	llvmStruct := c.builder.CreateAlloca(llvmStructType, output.Name)
 	llvmStructVTableField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, VTABLE_STRUCT_INDEX, "vTable")
-	llvmVTable := c.zeusClassLLVMStructMap[callee.Name].LLVMVTable
+	llvmVTable := c.getLLVMVTablePtr(callee.Name)
 	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
 	if len(input.Args) > 0 {
 		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
@@ -447,8 +485,18 @@ func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) l
 			input.Method.Span,
 		),
 	)
+	function := c.genFunc(methodWithThisParam)
+	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(input.Class.Name, token.CONSTRUCTOR_METHOD_NAME)
 
-	return c.genFunc(methodWithThisParam)
+	if !isConstructor {
+		// update the vtable global initializer
+		structInfo := c.zeusClassLLVMStructMap[input.Class.Name]
+		structInfo.LLVMVTableMethods[structInfo.CurrentVTableMethodIndex] = function
+		structInfo.CurrentVTableMethodIndex += 1
+		structInfo.LLVMVTable.SetInitializer(llvm.ConstStruct(structInfo.LLVMVTableMethods, true))
+	}
+
+	return function
 }
 
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
@@ -457,10 +505,21 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 	objectClass := zeus_value.AsClassType(objectType)
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("object %s is not a class", input.Object))
 	propertyIndex := util.GetPropertyIndex(objectClass.Class, input.Property)
-	zeus_error.Assert(propertyIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
-	propertyIndex = propertyIndex + 1 // skip the vtable struct
+	if propertyIndex == -1 {
+		methodIndex := util.GetMethodIndex(objectClass.Class, input.Property)
+		zeus_error.Assert(methodIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
+		llvmVTablePtr := c.builder.CreateStructGEP(c.toLLVMType(objectType), llvmValue, VTABLE_STRUCT_INDEX, "vTable")
+		classMethodPtr := c.builder.CreateStructGEP(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, methodIndex, input.Property)
+		c.symbolTable.DeclareSymbol(output.Name, classMethodPtr)
+		return
+	}
 	llvmValue = c.builder.CreateStructGEP(c.toLLVMType(objectType), llvmValue, propertyIndex, input.Property)
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+}
+
+func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
+	function := c.toLLVMValue(input.Function)
+	fmt.Println(function)
 }
 
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
@@ -530,6 +589,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genNewObj(*ir.AsNewObjInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeObjectPropertyAccess:
 			c.genObjectPropertyAccess(*ir.AsObjectPropertyAccessInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeIndirectFuncCall:
+			c.genIndirectFuncCall(*ir.AsIndirectFuncCallInstrInput(instr.Input), *instr.Output)
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

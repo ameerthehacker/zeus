@@ -481,13 +481,13 @@ func (i ObjectPropertyAccessInstrInput) String() string {
 }
 
 type IndirectFuncCallInstrInput struct {
-	Method zeus_value.Value
+	Function zeus_value.Value
 	Args []zeus_value.Value
 }
 
 func NewIndirectFuncCallInstrInput(method zeus_value.Value, args []zeus_value.Value) *IndirectFuncCallInstrInput {
 	return &IndirectFuncCallInstrInput{
-		Method: method,
+		Function: method,
 		Args: args,
 	}
 }
@@ -504,7 +504,7 @@ func AsIndirectFuncCallInstrInput(input InstrInput) *IndirectFuncCallInstrInput 
 }
 
 func (i IndirectFuncCallInstrInput) String() string {
-	return fmt.Sprintf("%s, %s", i.Method.String(), i.Args)
+	return fmt.Sprintf("%s, %s", i.Function.String(), i.Args)
 }
 
 type DeclClassMethodInstrInput struct {

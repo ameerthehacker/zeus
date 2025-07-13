@@ -564,7 +564,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
 
-	methodType := tc.getValueType(input.Method)
+	methodType := tc.getValueType(input.Function)
 	functionType := zeus_value.AsFunctionType(methodType)
 
 	if functionType == nil {
@@ -575,8 +575,8 @@ func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 		return
 	}
 
-	input.Args = tc.tcFunctionCall(instr, *functionType, input.Args, input.Method.GetSpan())
-	instr.Input = NewIndirectFuncCallInstrInput(input.Method, input.Args)
+	input.Args = tc.tcFunctionCall(instr, *functionType, input.Args, input.Function.GetSpan())
+	instr.Input = NewIndirectFuncCallInstrInput(input.Function, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType
 }
