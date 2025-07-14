@@ -590,6 +590,15 @@ func (tc *TypeChecker) tcDeclClassMethod(instr *Instr) {
 
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 	tc.builder.Walk(func(instr *Instr) {
+		isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type)
+		if !isTopLevelInstr && tc.currentFunction == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: "statement not supported outside of function",
+				Span:    instr.Span,
+			})
+			return
+		}
+
 		switch instr.Type {
 		// jmp requires no type checking
 		case InstrTypeJmp:

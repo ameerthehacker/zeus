@@ -97,7 +97,7 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			zeus_value.ToValueType(decl.DataType),
 			isConst,
 			initializer,
-			decl.Identifier.Name.Span,
+			decl.GetSpan(),	
 		))
 
 		g.symbolTable.DeclareSymbol(decl.Identifier.Name.Value, variable)
@@ -125,7 +125,7 @@ func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
 	merge_block := g.irBuilder.BuildSuccessorBlock()
 
 	// build jump to if block
-	g.irBuilder.BuildCondJmp(then_block, else_block, condition, stmt.Condition.GetSpan())
+	g.irBuilder.BuildCondJmp(then_block, else_block, condition, stmt.GetSpan())
 
 	// generate the then block
 	g.irBuilder.SetInsertionBlock(then_block)

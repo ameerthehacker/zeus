@@ -661,6 +661,18 @@ func IsClassMethodDeclInstr(instrType InstrType) bool {
 	return instrType == InstrTypeDeclClassMethod
 }
 
+func IsClassDeclInstr(instrType InstrType) bool {
+	return instrType == InstrTypeDeclClass
+}
+
+func IsExportInstr(instrType InstrType) bool {
+	return instrType == InstrTypeExport
+}
+
+func IsImportInstr(instrType InstrType) bool {
+	return instrType == InstrTypeImport
+}
+
 type Instr struct {
 	Id int
 	Type InstrType

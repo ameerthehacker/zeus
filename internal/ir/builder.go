@@ -400,7 +400,9 @@ func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBl
 
 func (b *IRBuilder) deleteBlock(block *BasicBlock) {
 	blockIndex := slices.Index(b.blocks, block)
-	zeus_error.Assert(blockIndex != -1, "block not found in blocks list")
+	if blockIndex == -1 {
+		return
+	}
 	b.blocks = slices.Delete(b.blocks, blockIndex, blockIndex + 1)
 
 	// remove this block as successor in other blocks
