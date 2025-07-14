@@ -32,7 +32,7 @@ export class Point {
 // import the class
 import {Point} from "./math.zs";
 
-function main() {
+function main(): i32 {
   let point: Point = new Point(1, 2);
 
   return point.sum();
