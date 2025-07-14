@@ -87,7 +87,7 @@ func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.Va
 	case *zeus_value.Object:
 		return value.ValueType
 	case *zeus_value.Class:
-		return zeus_value.NewClassType(*value)
+		return zeus_value.NewObjectType(*value)
 	default:
 		panic(fmt.Sprintf("cannot get value type of value: %T", value))
 	}
@@ -181,7 +181,7 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 		return true
 	
 	case zeus_value.ObjectType:
-	  bClassType, ok := b.(zeus_value.ClassType)
+	  bClassType, ok := b.(zeus_value.ObjectType)
 		return ok && a.Class.Name == bClassType.Class.Name
 	}
 
@@ -425,7 +425,7 @@ func (tc *TypeChecker) tcFunctionCall(instr *Instr, functionType zeus_value.Func
 
 	// Perform implicit casting on arguments
 	for i := range args {
-		castedArg, ok := tc.tryImplicitCast(instr, args[i], functionType.ParamTypes[i])
+		castedArg, ok := tc.tryImplicitCast(instr, args[i], tc.asKnownValueType(functionType.ParamTypes[i]))
 		args[i] = castedArg
 		if !ok {
 			tc.pushError(&zeus_error.ZeusError{
@@ -464,17 +464,15 @@ func (tc *TypeChecker) tcDeclClass(instr *Instr) {}
 
 func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
-	calleeType := tc.getValueType(input.Callee)
 
-	if !zeus_value.IsClassType(calleeType) {
+	if !zeus_value.IsClass(input.Callee) {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot create object of type '%s'", calleeType),
+			Message: fmt.Sprintf("cannot create object of type '%s'", tc.getValueType(input.Callee)),
 			Span:    input.Callee.GetSpan(),
 		})
 	}
 
-	classType := zeus_value.AsClassType(calleeType)
-	class := classType.Class
+	class := zeus_value.AsClass(input.Callee)
 
 	var constructorMethod *zeus_value.Function = nil
 
@@ -506,7 +504,7 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 		}
 	}
 
-	instr.Output.ValueType = zeus_value.NewObjectType(class)
+	instr.Output.ValueType = zeus_value.NewObjectType(*class)
 }
 
 func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
@@ -514,13 +512,13 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 	output := instr.Output
 	objectType := tc.getValueType(input.Object)
 
-	if !zeus_value.IsClassType(objectType) {
+	if !zeus_value.IsObjectType(objectType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, objectType),
 			Span:   output.Span,
 		})
 	} else {
-		class := zeus_value.AsClassType(objectType).Class
+		class := zeus_value.AsObjectType(objectType).Class
 		properties := class.Properties
 		methods := class.Methods
 		isFound := false

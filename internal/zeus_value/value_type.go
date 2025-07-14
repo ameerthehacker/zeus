@@ -113,14 +113,6 @@ func (u UndefinedType) String() string {
 	return "undefined"
 }
 
-type ClassType struct {
-	Class Class
-}
-
-func (c ClassType) String() string {
-	return c.Class.Name
-}
-
 func (f FunctionType) String() string {
 	param_types := []string{}
 	for _, param := range f.ParamTypes {
@@ -139,6 +131,45 @@ func (o ObjectType) String() string {
 
 func NewObjectType(class Class) ObjectType {
 	return ObjectType{Class: class}
+}
+
+func AsObjectType(value ValueType) *ObjectType {
+
+	switch value := value.(type) {
+	case ObjectType:
+		return &value
+	default:
+		return nil
+	}
+}
+
+func IsObjectType(value ValueType) bool {
+	return AsObjectType(value) != nil
+}
+
+type ClassType struct {
+	Class Class
+}
+
+func (c ClassType) String() string {
+	return c.Class.Name
+}
+
+func NewClassType(class Class) ClassType {
+	return ClassType{Class: class}
+}
+
+func AsClassType(value ValueType) *ClassType {
+	switch value := value.(type) {
+	case ClassType:
+		return &value
+	default:
+		return nil
+	}
+}
+
+func IsClassType(value ValueType) bool {
+	return AsClassType(value) != nil
 }
 
 func ToValueType(t *token.Token) ValueType {
@@ -260,28 +291,6 @@ func IsFloatType(value ValueType) bool {
 	default:
 		return false
 	}
-}
-
-func IsClassType(value ValueType) bool {
-	switch value.(type) {
-	case ClassType:
-		return true
-	default:
-		return false
-	}
-}
-
-func AsClassType(value ValueType) *ClassType {
-	switch value := value.(type) {
-	case ClassType:
-		return &value
-	default:
-		return nil
-	}
-}
-
-func NewClassType(class Class) ClassType {
-	return ClassType{Class: class}
 }
 
 // currently supports only int and float

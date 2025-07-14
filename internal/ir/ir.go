@@ -263,8 +263,8 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	if class != nil {
-		classType := zeus_value.NewClassType(*class)
-		object := zeus_value.NewObject(token.THIS_KEYWORD, classType, span)
+		valueType := zeus_value.NewObjectType(*class)
+		object := zeus_value.NewObject(token.THIS_KEYWORD, valueType, span)
 		g.symbolTable.DeclareSymbol(token.THIS_KEYWORD, &object)
 	}
 

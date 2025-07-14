@@ -39,15 +39,15 @@ func (i Constant) String() string {
 }
 
 type Object struct {
-	ValueType ClassType
+	ValueType ObjectType
 	Name string
 	Span *token.Span
 }
 
-func NewObject(name string, classType ClassType, span *token.Span) Object {
+func NewObject(name string, objectType ObjectType, span *token.Span) Object {
 	return Object{
 		Name: name,
-		ValueType: classType,
+		ValueType: objectType,
 		Span: span,
 	}
 }
@@ -175,6 +175,15 @@ func (c Class) GetSpan() *token.Span {
 
 func (c Class) String() string {
 	return c.Name
+}
+
+func IsClass(value Value) bool {
+	switch value.(type) {
+	case *Class:
+		return true
+	default:
+		return false
+	}
 }
 
 func GetValueType(value Value) ValueType {

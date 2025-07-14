@@ -9,9 +9,9 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-func ToLLVMStructType(classType zeus_value.ClassType) llvm.Type {
+func ToLLVMStructType(objectType zeus_value.ObjectType) llvm.Type {
 	properties := []llvm.Type{}
-	for _, field := range classType.Class.Properties {
+	for _, field := range objectType.Class.Properties {
 		properties = append(properties, ToLLVMBuiltInType(field.Property.ValueType))
 	}
 	return llvm.StructType(properties, false)
