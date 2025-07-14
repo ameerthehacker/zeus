@@ -10,14 +10,32 @@ TypeScript like compiled language
 Below is an example `main.zs` file
 
 ```ts
-function main() {
-  let i: i8 = 0;
+// math.zs
+// export class
+export class Point {
+  public x: i32;
+  public y: i8;
 
-  while (i < 10) {
-    i = i + 1;
+  constructor(x: i32, y: i8) {
+    this.x = x;
+    this.y = y;
   }
-  
-  return i;
+
+  public sum(): i32 {
+    return this.x + this.y;
+  }
+}
+```
+
+```ts
+// main.zs
+// import the class
+import {Point} from "./math.zs";
+
+function main() {
+  let point: Point = new Point(1, 2);
+
+  return point.sum();
 }
 ```
 
