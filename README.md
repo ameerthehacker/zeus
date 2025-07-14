@@ -7,7 +7,7 @@ TypeScript like compiled language
 
 ## Language
 
-Below is an example `main.zs` file
+Below is an example
 
 ```ts
 // math.zs
