@@ -142,10 +142,10 @@ func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, sp
 	return result
 }
 
-func (b *IRBuilder) BuildExport(value zeus_value.Value, span *token.Span) {
+func (b *IRBuilder) BuildExport(modulePath string, value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeExport,
-		Input: NewExportInstrInput(value),
+		Input: NewExportInstrInput(modulePath, value),
 		Span: span,
 	})
 }
@@ -302,10 +302,10 @@ func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *tok
 	return result
 }
 
-func (b *IRBuilder) BuildImport(name string, importedValue zeus_value.Value, span *token.Span) {
+func (b *IRBuilder) BuildImport(modulePath string, name string, importedValue zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypeImport,
-		Input: NewImportInstrInput(importedValue),
+		Input: NewImportInstrInput(modulePath, importedValue),
 		Span: span,
 	})
 

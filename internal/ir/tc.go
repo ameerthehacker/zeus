@@ -392,7 +392,7 @@ func (tc *TypeChecker) tcExport(instr *Instr) {
 	input := AsExportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
-	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClassType(valueType) {
+	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClass(input.Value) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot export value of type '%s'", valueType),
 			Span:    instr.Span,
@@ -404,7 +404,7 @@ func (tc *TypeChecker) tcImport(instr *Instr) {
 	input := AsImportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
-	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClassType(valueType) {
+	if !zeus_value.IsFunctionType(valueType) && !zeus_value.IsClass(input.Value) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot import value of type '%s'", valueType),
 			Span:    instr.Span,

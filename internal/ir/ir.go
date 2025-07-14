@@ -389,15 +389,9 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	// track the exported values from the module
 	// make the exported function module scoped to avoid conflicts between modules
 	case *zeus_value.Function:
-		exportedValueName := exportedValue.Name
-		moduleScopedName := module.GetModuleScopedName(g.modulePath, exportedValueName)
-		g.exportedSymbols[moduleScopedName] = exportedValue
-		exportedValue.Name = moduleScopedName
+		g.exportedSymbols[exportedValue.Name] = exportedValue
 	case *zeus_value.Class:
-		exportedValueName := exportedValue.Name
-		moduleScopedName := module.GetModuleScopedName(g.modulePath, exportedValueName)
-		g.exportedSymbols[moduleScopedName] = exportedValue
-		exportedValue.Name = moduleScopedName
+		g.exportedSymbols[exportedValue.Name] = exportedValue
 	default:
 		g.pushError(&zeus_error.ZeusError{
 			Message: "cannot export non-function expression",
@@ -405,7 +399,7 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 		})
 	}
 
-	g.irBuilder.BuildExport(exportedValue, stmt.GetSpan())
+	g.irBuilder.BuildExport(g.modulePath, exportedValue, stmt.GetSpan())
 }
 
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
@@ -497,15 +491,14 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	zeus_error.Assert(irModule != nil, fmt.Sprintf("IR module %s not found", absoluteModulePath))
 
 	for _, _import := range stmt.Imports {
-		symbolName := module.GetModuleScopedName(absoluteModulePath, _import.Name.Value)
-		importedValue, ok := irModule.GetExportedSymbol(symbolName)
+		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)
 
 		if !ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("module '%s' does not export '%s'", stmt.Source.Value, _import.Name.Value), _import.Name.Span))
 			return
 		}
 
-		g.irBuilder.BuildImport(_import.Name.Value, importedValue, _import.Name.Span)
+		g.irBuilder.BuildImport(absoluteModulePath, _import.Name.Value, importedValue, _import.Name.Span)
 		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
 	}
 }

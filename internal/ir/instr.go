@@ -288,17 +288,19 @@ func AsJmpInstrInput(input InstrInput) *JmpInstrInput {
 }
 
 type ExportInstrInput struct {
+	ModulePath string
 	Value zeus_value.Value
 }
 
-func NewExportInstrInput(value zeus_value.Value) *ExportInstrInput {
+func NewExportInstrInput(modulePath string, value zeus_value.Value) *ExportInstrInput {
 	return &ExportInstrInput{
+		ModulePath: modulePath,
 		Value: value,
 	}
 }
 
 func (i ExportInstrInput) String() string {
-	return i.Value.String()
+	return fmt.Sprintf("%s, %s", i.ModulePath, i.Value)
 }
 
 func AsExportInstrInput(input InstrInput) *ExportInstrInput {
@@ -313,17 +315,19 @@ func AsExportInstrInput(input InstrInput) *ExportInstrInput {
 }
 
 type ImportInstrInput struct {
+	ModulePath string
 	Value zeus_value.Value
 }
 
-func NewImportInstrInput(value zeus_value.Value) *ImportInstrInput {
+func NewImportInstrInput(modulePath string, value zeus_value.Value) *ImportInstrInput {
 	return &ImportInstrInput{
+		ModulePath: modulePath,
 		Value: value,
 	}
 }
 
 func (i ImportInstrInput) String() string {
-	return i.Value.String()
+	return fmt.Sprintf("%s, %s", i.ModulePath, i.Value)
 }
 
 func AsImportInstrInput(input InstrInput) *ImportInstrInput {

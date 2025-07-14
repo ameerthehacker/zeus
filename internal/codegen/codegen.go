@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/ameerthehacker/zeus/internal/ir"
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/util"
@@ -26,6 +27,15 @@ type ZeusClassLLVMStruct struct {
 	CurrentVTableMethodIndex int
 }
 
+type ZeusClassModule struct {
+	ModulePath string
+	Class zeus_value.Class
+}
+
+func NewZeusClassModule(modulePath string, class zeus_value.Class) ZeusClassModule {
+	return ZeusClassModule{modulePath, class}
+}
+
 func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTable llvm.Value, llvmVTableMethods []llvm.Value) *ZeusClassLLVMStruct {
 	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTable, llvmVTableMethods, 0}
 }
@@ -37,6 +47,8 @@ type CodegenModule struct {
 	symbolTable     *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks     map[int]llvm.BasicBlock
 	isEntryPoint    bool
+	exportedClasses map[string]ZeusClassModule
+	importedClasses map[string]ZeusClassModule
 	zeusClassLLVMStructMap map[string]*ZeusClassLLVMStruct
 }
 
@@ -51,11 +63,11 @@ func NewCodegen() *Codegen {
 	return &Codegen{ctx}
 }
 
-func (c *Codegen) NewModule(name string, isEntryPoint bool) *CodegenModule {
+func (c *Codegen) NewModule(name string,isEntryPoint bool) *CodegenModule {
 	module := c.ctx.NewModule(name)
 	builder := c.ctx.NewBuilder()
 
-	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]*ZeusClassLLVMStruct)}
+	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct)}
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
@@ -64,6 +76,20 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 		panic(fmt.Sprintf("symbol %s not found in symbol table", name))
 	}
 	return symbol
+}
+
+func (c *CodegenModule) isExportedClass(name string) bool {
+	_, ok := c.exportedClasses[name]
+	return ok
+}
+
+func (c *CodegenModule) isImportedClass(name string) bool {
+	_, ok := c.importedClasses[name]
+	return ok
+}
+
+func (c *CodegenModule) getImportedClass(name string) ZeusClassModule {
+	return c.importedClasses[name]
 }
 
 func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
@@ -123,8 +149,6 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 	case *zeus_value.Var:
 		return c.getSymbol(value.Name)
 	case *zeus_value.Function:
-		return c.getSymbol(value.Name)
-	case *zeus_value.Class:
 		return c.getSymbol(value.Name)
 	case *zeus_value.Object:
 		return c.getSymbol(value.Name)
@@ -356,8 +380,21 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 }
 
 func (c *CodegenModule) genExport(input ir.ExportInstrInput) {
-	llvmValue := c.toLLVMValue(input.Value)
-	llvmValue.SetLinkage(llvm.ExternalLinkage)
+	exportedValue := input.Value
+
+	switch exportedValue := exportedValue.(type) {
+	case *zeus_value.Function:
+		llvmValue := c.toLLVMValue(input.Value)
+		llvmValue.SetName(module.GetModuleScopedName(input.ModulePath, exportedValue.Name))
+		llvmValue.SetLinkage(llvm.ExternalLinkage)
+	case *zeus_value.Class:
+		c.exportedClasses[exportedValue.Name] = NewZeusClassModule(input.ModulePath, *exportedValue)
+		llvmVTable := c.zeusClassLLVMStructMap[exportedValue.Name].LLVMVTable
+		scopedVTableName := module.GetModuleScopedName(input.ModulePath, llvmVTable.Name())
+		llvmVTable.SetName(scopedVTableName)
+		constructorMethod := c.module.NamedFunction(util.GetClassMethodName(exportedValue.Name, token.CONSTRUCTOR_METHOD_NAME))
+		constructorMethod.SetName(module.GetModuleScopedName(input.ModulePath, constructorMethod.Name()))
+	}
 }
 
 func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
@@ -365,8 +402,25 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 
 	switch importedValue := importedValue.(type) {
 	case *zeus_value.Function:
-		importedFunc := llvm.AddFunction(c.module, importedValue.Name, c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
+		importedFunc := llvm.AddFunction(c.module, module.GetModuleScopedName(input.ModulePath, importedValue.Name), c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
 		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
+	case *zeus_value.Class:
+		llvmStructType, vtableStructType, structName  := c.createClassStructTypes(*importedValue)
+		moduleScopedName := module.GetModuleScopedName(input.ModulePath, structName)
+		llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(moduleScopedName))
+		zeusClassLLVMStruct := NewZeusClassLLVMStruct(*importedValue, llvmStructType, vtableStructType, llvmVTable, make([]llvm.Value, 0))
+		c.zeusClassLLVMStructMap[importedValue.Name] = zeusClassLLVMStruct
+		c.importedClasses[importedValue.Name] = NewZeusClassModule(input.ModulePath, *importedValue)
+		// declare the external constructor method
+		for _, method := range importedValue.Methods {
+			constructorMethodName := util.GetClassMethodName(importedValue.Name, token.CONSTRUCTOR_METHOD_NAME)
+			scopedConstructorName := module.GetModuleScopedName(input.ModulePath, constructorMethodName)
+			if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+				constructorMethod := method.Method
+				llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
+				break
+			}
+		}
 	default:
 		panic(fmt.Sprintf("cannot codegen for imported value %s", importedValue))
 	}
@@ -404,19 +458,35 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 	c.symbolTable.DeclareSymbol(output.Name, result)
 }
 
-func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
+func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Type, llvm.Type, string) {
 	// create the vtable struct
-	vtableStructName := GetVTableStructName(input.Class.Name)
+	vtableStructName := GetVTableStructName(class.Name)
 	vtableStructType := llvm.GlobalContext().StructCreateNamed(vtableStructName)
 
-  // create the class struct with the vtable struct as the first element
+	// create the class struct with the vtable struct as the first element
 	elementTypes := []llvm.Type{llvm.PointerType(vtableStructType, 0)}
-	for _, property := range input.Class.Properties {
+	for _, property := range class.Properties {
 		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
 	}
-	llvmStructType := llvm.GlobalContext().StructCreateNamed(input.Class.Name)
+	llvmStructType := llvm.GlobalContext().StructCreateNamed(class.Name)
 	llvmStructType.StructSetBody(elementTypes, false)
-	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(input.Class.Name))
+
+	vtableElementTypes := []llvm.Type{}
+	for _, method := range class.Methods {
+		// constructor method is not part of the vtable
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			continue
+		}
+		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
+	}
+	vtableStructType.StructSetBody(vtableElementTypes, false)
+	
+	return llvmStructType, vtableStructType, class.Name 
+}
+
+func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
+	llvmStructType, vtableStructType, structName := c.createClassStructTypes(*input.Class)
+	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(structName))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
 	methodCount := 0
 	for _, method := range input.Class.Methods {
@@ -428,17 +498,6 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	llvmVTableMethods := make([]llvm.Value, methodCount)
 	zeusClassLLVMStruct := NewZeusClassLLVMStruct(*input.Class, llvmStructType, vtableStructType, llvmVTable, llvmVTableMethods)
 	c.zeusClassLLVMStructMap[input.Class.Name] = zeusClassLLVMStruct
-
-	// set the vtable struct body
-	vtableElementTypes := []llvm.Type{}
-	for _, method := range input.Class.Methods {
-		// constructor method is not part of the vtable
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
-			continue
-		}
-		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
-	}
-	vtableStructType.StructSetBody(vtableElementTypes, false)
 
 	// create the vtable global
 	// initialize the vtable methods to null
@@ -462,6 +521,10 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
 	if len(input.Args) > 0 {
 		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
+		if c.isImportedClass(callee.Name) {
+			classModule := c.importedClasses[callee.Name]
+			constructorMethodName = module.GetModuleScopedName(classModule.ModulePath, constructorMethodName)
+		}
 		constructorMethod := c.module.NamedFunction(constructorMethodName)
 		zeus_error.Assert(!constructorMethod.IsNil(), fmt.Sprintf("constructor method %s not found", constructorMethodName))
 		// create the param types
@@ -483,19 +546,24 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
 }
 
-func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
-	methodWithThisParam := *input.Method
-	methodWithThisParam.Params = append(
-		methodWithThisParam.Params,
+func (c *CodegenModule) appendThisParam(method zeus_value.Function, class zeus_value.Class) zeus_value.Function {
+	method.Params = append(
+		method.Params,
 		zeus_value.NewVar(
 			token.THIS_KEYWORD,
-			zeus_value.NewObjectType(*input.Class),
+			zeus_value.NewObjectType(class),
 			false,
-			input.Method.Span,
+			method.Span,
 		),
 	)
-	function := c.genFunc(methodWithThisParam)
+
+	return method
+}
+
+func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
+	methodWithThisParam := c.appendThisParam(*input.Method, *input.Class)
 	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(input.Class.Name, token.CONSTRUCTOR_METHOD_NAME)
+	function := c.genFunc(methodWithThisParam)
 
 	if !isConstructor {
 		// update the vtable global initializer
