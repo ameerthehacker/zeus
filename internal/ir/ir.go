@@ -58,6 +58,15 @@ func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	return g.errors
 }
 
+func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
+	if _, ok := g.symbolTable.GetSymbolInCurrentScope(name); ok {
+		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), span))
+		return true
+	}
+
+	return false
+}
+
 func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) { 
 	g.symbolTable.EnterScope()
 	for _, stmt := range stmt.Statements {
@@ -68,9 +77,8 @@ func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 
 func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
-		if _, ok := g.symbolTable.GetSymbolInCurrentScope(decl.Identifier.Name.Value); ok {
-			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", decl.Identifier.Name.Value), decl.Identifier.Name.Span))
-			return
+		if g.isSymbolDeclared(decl.Identifier.Name.Value, decl.Identifier.Name.Span) {
+			continue
 		}
 
 		var initializer zeus_value.Value
@@ -401,13 +409,27 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 }
 
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
+	if g.isSymbolDeclared(expr.Name.Name.Value, expr.Name.GetSpan()) {
+		return nil
+	}
+
+	g.symbolTable.EnterScope()
 	properties := []*zeus_value.ClassProperty{}
 	for _, property := range expr.Properties {
+		if g.isSymbolDeclared(property.Name.Name.Value, property.Name.GetSpan()) {
+			continue
+		}
+		g.symbolTable.DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, zeus_value.ToValueType(property.ValueType), false, property.Name.GetSpan()))
+
 		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, zeus_value.ToValueType(property.ValueType), false, property.Name.GetSpan()), property.AccessModifier))
 	}
 
 	methods := []*zeus_value.ClassMethod{}
 	for _, method := range expr.Methods {
+		if g.isSymbolDeclared(method.Name.Name.Value, method.Name.GetSpan()) {
+			continue
+		}
+
 		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
 			if method.ReturnType.Type != token.TokenTypeVoid {
 				g.pushError(&zeus_error.ZeusError{
@@ -432,6 +454,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			function,
 			method.AccessModifier,
 		))
+		g.symbolTable.DeclareSymbol(method.Name.Name.Value, function)
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
@@ -442,7 +465,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		// emit global class methods
 		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, zeus_value.ToValueType(method.ReturnType), method.Body, class, method.Name.Name.Span)
 	}
+	g.symbolTable.ExitScope()
 
+	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 	return class
 }
 

@@ -111,7 +111,13 @@ func (tc *TypeChecker) asKnownValueType(valueType zeus_value.ValueType) zeus_val
 func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
 	valueType := tc.getBuiltInValueType(value)
 
-	return tc.asKnownValueType(valueType)
+	valueType = tc.asKnownValueType(valueType)
+
+	if valueType == nil {
+		return zeus_value.UndefinedType{}
+	}
+
+	return valueType
 }
 
 func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
@@ -123,18 +129,14 @@ func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_va
 		if ok {
 			return castedB
 		} else {
-			_bType := "undefined"
-			_targetType := "undefined"
-			if bType != nil {
-				_bType = bType.String()
+			if bType == nil {
+				bType = zeus_value.UndefinedType{}
 			}
-
-			if targetType != nil {
-				_targetType = targetType.String()
+			if targetType == nil {
+				targetType = zeus_value.UndefinedType{}
 			}
-
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", _bType, _targetType),
+				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType.String(), targetType.String()),
 				Span:    instr.Span,
 			})
 		}

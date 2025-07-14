@@ -107,6 +107,12 @@ func NewFunctionType(returnType ValueType, paramTypes []ValueType) FunctionType 
 	}
 }
 
+type UndefinedType struct {}
+
+func (u UndefinedType) String() string {
+	return "undefined"
+}
+
 type ClassType struct {
 	Class Class
 }
