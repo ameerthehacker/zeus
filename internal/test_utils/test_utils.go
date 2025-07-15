@@ -115,6 +115,39 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 			CompareVarDecl(t, *aNode.Params[i], *bNode.Params[i])
 		}
 		CompareStmtNodes(t, aNode.Body, bNode.Body)
+	case *ast.BooleanExprNode:
+		bNode, ok := expected.(*ast.BooleanExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, expected)
+			return
+		}
+		if aNode.Value.Value != bNode.Value.Value {
+			logExprNotEqualError(aNode, expected)
+		}
+	case *ast.ClassDeclExprNode:
+		bNode, ok := expected.(*ast.ClassDeclExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, expected)
+			return
+		}
+		CompareExprNodes(t, aNode.Name, bNode.Name)
+		if len(aNode.Properties) != len(bNode.Properties) {
+			t.Errorf("expected %d properties, got %d", len(bNode.Properties), len(aNode.Properties))
+			return
+		}
+		for i := range aNode.Properties {
+			CompareExprNodes(t, aNode.Properties[i].Name, bNode.Properties[i].Name)
+			if aNode.Properties[i].ValueType.Type != bNode.Properties[i].ValueType.Type {
+				t.Errorf("expected property type %s, got %s", bNode.Properties[i].ValueType.Type, aNode.Properties[i].ValueType.Type)
+			}
+		}
+		if len(aNode.Methods) != len(bNode.Methods) {
+			t.Errorf("expected %d methods, got %d", len(bNode.Methods), len(aNode.Methods))
+			return
+		}
+		for i := range aNode.Methods {
+			CompareExprNodes(t, aNode.Methods[i].Name, bNode.Methods[i].Name)
+		}
 	default:
 		panic(fmt.Sprintf("unsupported node type: %T", aNode))
 	}
@@ -187,6 +220,44 @@ func CompareStmtNodes(t *testing.T, stmt ast.StmtNode, expected ast.StmtNode) {
 		if expectedStmt.ElseStmt != nil {
 			CompareStmtNodes(t, ifStmt.ElseStmt, expectedStmt.ElseStmt)
 		}
+	case *ast.WhileStmtNode:
+		whileStmt, ok := stmt.(*ast.WhileStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareExprNodes(t, whileStmt.Condition, expectedStmt.Condition)
+		CompareStmtNodes(t, whileStmt.Body, expectedStmt.Body)
+	case *ast.ImportStmtNode:
+		importStmt, ok := stmt.(*ast.ImportStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		if len(importStmt.Imports) != len(expectedStmt.Imports) {
+			t.Errorf("expected %d imports, got %d", len(expectedStmt.Imports), len(importStmt.Imports))
+			return
+		}
+		for i := range importStmt.Imports {
+			CompareExprNodes(t, importStmt.Imports[i], expectedStmt.Imports[i])
+		}
+		if importStmt.Source.Value != expectedStmt.Source.Value {
+			t.Errorf("expected source %s, got %s", expectedStmt.Source.Value, importStmt.Source.Value)
+		}
+	case *ast.ExportStmtNode:
+		exportStmt, ok := stmt.(*ast.ExportStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareExprNodes(t, exportStmt.Expr, expectedStmt.Expr)
+	case *ast.ExprStmtNode:
+		exprStmt, ok := stmt.(*ast.ExprStmtNode)
+		if !ok {
+			logStmtNotEqualError(stmt, expected)
+			return
+		}
+		CompareExprNodes(t, exprStmt.Expr, expectedStmt.Expr)
 	default:
 		t.Errorf("unknown statement type: %s", stmt.PrettyString())
 	}
