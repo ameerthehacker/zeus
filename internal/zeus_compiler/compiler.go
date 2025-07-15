@@ -21,9 +21,13 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
+const zeusRuntimeDir = "ZEUS_RUNTIME_DIR"
+
 type Compiler struct {
 	codegen *codegen.Codegen
 	outputDir string
+	targetMachine llvm.TargetMachine
+	targetDataLayout llvm.TargetData
 }
 
 type EmitFileType string
@@ -73,11 +77,34 @@ func (e *SourceFileError) Error() string {
 	return e.Message
 }
 
-func NewCompiler(outputDir string) *Compiler {
+func NewCompiler(outputDir string) (*Compiler, error) {
+	llvm.InitializeAllTargets()
+	llvm.InitializeAllTargetMCs()
+	llvm.InitializeAllTargetInfos()
+	llvm.InitializeAllAsmParsers()
+	llvm.InitializeAllAsmPrinters()
+	targetTriple := llvm.DefaultTargetTriple()
+	target, err := llvm.GetTargetFromTriple(targetTriple)
+
+	if err != nil {
+		return nil, err
+	}
+
+	targetMachine := target.CreateTargetMachine(
+		targetTriple,
+		"generic",
+		"",
+		llvm.CodeGenLevelDefault,
+		llvm.RelocDefault,
+		llvm.CodeModelDefault,
+	)
+	targetDataLayout := targetMachine.CreateTargetData()
 	return &Compiler{
 		codegen: codegen.NewCodegen(),
 		outputDir: outputDir,
-	}
+		targetMachine: targetMachine,
+		targetDataLayout: targetDataLayout,
+	}, nil
 }
 
 func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*SourceFileDependency, []*zeus_error.ZeusError) {
@@ -196,7 +223,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 
 func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
-		llvmModule := c.codegen.NewModule(sourceFile.Path, sourceFile.IsEntryPoint)
+		llvmModule := c.codegen.NewModule(sourceFile.Path, sourceFile.IsEntryPoint, c.targetDataLayout)
 		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
 		llvmModule.Generate(*sourceFile.IRBuilder)
 		sourceFile.Module = llvmModule
@@ -325,21 +352,6 @@ func (c *Compiler) CompileFile(input *SourceFile) *SourceFile {
 }
 
 func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
-	targetTriple := llvm.DefaultTargetTriple()
-	target, err := llvm.GetTargetFromTriple(targetTriple)
-	targetMachine := target.CreateTargetMachine(
-		targetTriple,
-		"generic",
-		"",
-		llvm.CodeGenLevelDefault,
-		llvm.RelocDefault,
-		llvm.CodeModelDefault,
-	)
-
-	if err != nil {
-		return "", err
-	}
-
 	objDir, err := os.MkdirTemp(c.outputDir, "zeus-obj-*")
 	llDir, llDirErr := os.MkdirTemp(c.outputDir, "zeus-ll-*")
 	if err != nil {
@@ -358,7 +370,7 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 
 		// write buffer to temp file
 		zeus_error.Assert(sourceFile.Module != nil, "source file module is nil")
-		buffer, err := targetMachine.EmitToMemoryBuffer(sourceFile.Module.GetModule(), llvm.ObjectFile)
+		buffer, err := c.targetMachine.EmitToMemoryBuffer(sourceFile.Module.GetModule(), llvm.ObjectFile)
 		if err != nil {
 			return "", err
 		}
@@ -380,19 +392,42 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 	return objDir, nil
 }
 
+func GetRuntimeDir() string {
+	runtimeDir := os.Getenv(zeusRuntimeDir)
+	if runtimeDir == "" {
+		runtimeDir, err := os.Getwd()
+		if err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
+			os.Exit(1)
+		}
+		return filepath.Join(runtimeDir, "runtime", "out")
+	}
+	return runtimeDir
+}
+
 func LinkObjFiles(objDir string, outputPath string) error {
 	objFiles, err := filepath.Glob(fmt.Sprintf("%s/zeus-*.o", objDir))
 	if err != nil {
 		return err
 	}
+	runtimeDir := GetRuntimeDir()
+	runtimeObjFiles, err := filepath.Glob(fmt.Sprintf("%s/*.o", runtimeDir))
+	if err != nil {
+		return err
+	}
+	objFiles = append(objFiles, runtimeObjFiles...)
 	// link object file to platform executable
 	var linkerCmd *exec.Cmd
 		
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		linker := "gcc"
+		if runtime.GOOS == "darwin" {
+			linker = "clang"
+		}
 		args := []string{}
 		args = append(args, objFiles...)
 		args = append(args, "-o", outputPath)
-		linkerCmd = exec.Command("ld", args...)
+		linkerCmd = exec.Command(linker, args...)
 		linkerCmd.Stdout = os.Stdout
 		linkerCmd.Stderr = os.Stderr
 	} else {

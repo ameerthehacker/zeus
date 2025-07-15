@@ -27,3 +27,6 @@ go.work.sum
 # macos
 .DS_Store
 playground/
+
+# zig
+runtime/out

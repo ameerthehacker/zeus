@@ -54,7 +54,11 @@ func buildCmd() *cobra.Command {
 				targetDir = cmd.Flag(FlagTargetDir).Value.String()
 			}
 
-			compiler := zeus_compiler.NewCompiler(targetDir)
+			compiler, err := zeus_compiler.NewCompiler(targetDir)
+			if err != nil {
+				logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to initialize compiler: %s", err.Error()))
+				os.Exit(1)
+			}
 			compiler.Compile(filePath, zeus_compiler.EmitFileTypeEXE, outputPath)
 		},
 	}

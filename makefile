@@ -2,6 +2,7 @@
 
 clean:
 	rm -rf playground/debug
+	rm -rf runtime/out
 
 always:
 	rm -rf playground/debug
@@ -16,14 +17,16 @@ test-race:
 test:
 	go test ./test/...
 
-play: always
+build-runtime: runtime/out/zeus-runtime.o
+
+runtime/out/zeus-runtime.o: runtime/main.zig
+	mkdir -p runtime/out
+	zig build-obj runtime/main.zig -target native -O ReleaseSafe -femit-bin=runtime/out/zeus-runtime
+
+play: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
 		ZEUS_DEBUG=true go run zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 	else \
 		go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi
-
-llvmc:
-	llc -filetype=obj -o ./playground/debug/$(file).o ./playground/debug/$(file).ll
-	clang ./playground/debug/$(file).o -o ./playground/debug/$(file)
 
