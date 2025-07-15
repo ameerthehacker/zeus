@@ -475,10 +475,14 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	class := zeus_value.AsClass(input.Callee)
 
 	var constructorMethod *zeus_value.Function = nil
+	var constructorAccessModifier token.TokenType = token.TokenTypePublic
 
 	for _, method := range class.Methods {
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 			constructorMethod = method.Method
+			if method.AccessModifier != nil {
+				constructorAccessModifier = method.AccessModifier.Type
+			}
 			break
 		}
 	}
@@ -492,7 +496,12 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	}
 
 	if constructorMethod != nil {
-		if len(input.Args) != len(constructorMethod.Params) {
+		if constructorAccessModifier == token.TokenTypePrivate {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: "cannot create object of class with private constructor",
+				Span:    instr.Output.Span,
+			})
+		} else if len(input.Args) != len(constructorMethod.Params) {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("expected %d arguments for constructor, but found %d", len(constructorMethod.Params), len(input.Args)),
 				Span:    instr.Output.Span,
@@ -551,12 +560,19 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 			})
 		}
 
-		propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
-		if !isAccessible && !propertyOfSameClass {
+		if input.Property == token.CONSTRUCTOR_METHOD_NAME {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),
+				Message: "cannot access constructor method of a class",
 				Span:    output.Span,
 			})
+		} else {
+			propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
+			if !isAccessible && !propertyOfSameClass {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),
+					Span:    output.Span,
+				})
+			}
 		}
 	}
 }
