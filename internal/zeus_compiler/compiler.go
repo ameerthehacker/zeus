@@ -135,7 +135,6 @@ func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) 
 	return dependencies, errors
 }
 
-
 func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	content, err := os.ReadFile(path)
 
@@ -151,6 +150,42 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	}, nil
 }
 
+// RunOptimizationPasses runs LLVM optimization passes on the modules, specifically
+// PlaceSafepoints and RewriteStatepointsForGC for garbage collection support
+func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
+	for _, sourceFile := range sourceFiles {
+		if sourceFile.Module == nil {
+			continue
+		}
+
+		// Get the LLVM module
+		llvmModule := sourceFile.Module.GetModule()
+
+		// Create PassBuilder options
+		options := llvm.NewPassBuilderOptions()
+		defer options.Dispose()
+
+		// Enable debug logging for pass execution (optional)
+		options.SetDebugLogging(false)
+		options.SetVerifyEach(true) // Verify after each pass for debugging
+
+		// Run GC-related passes using the new PassBuilder system
+		// PlaceSafepoints: Inserts safepoint polls at function entries and loop backedges
+		// RewriteStatepointsForGC: Transforms calls to explicit statepoint relocations
+
+		// Run the passes on the module
+		err := llvmModule.RunPasses("place-safepoints", c.targetMachine, options)
+		if err != nil {
+			return fmt.Errorf("failed to run place-safepoints pass on module %s: %v", sourceFile.Path, err)
+		}
+		err = llvmModule.RunPasses("rewrite-statepoints-for-gc", c.targetMachine, options)
+		if err != nil {
+			return fmt.Errorf("failed to run rewrite-statepoints-for-gc pass on module %s: %v", sourceFile.Path, err)
+		}
+	}
+
+	return nil
+}
 
 func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
 	defer func() {
@@ -206,6 +241,13 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	// generate llvm IR
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
+
+	optimizationError := c.RunOptimizationPasses(sourceFiles)
+	if optimizationError != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to run optimization passes: %s", optimizationError.Error()))
+		os.Exit(1)
+	}
+
 	// emit llvm object files
 	objDir, emitError := c.EmitObjFiles(sourceFiles)
 
