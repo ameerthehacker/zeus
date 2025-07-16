@@ -77,9 +77,31 @@ func (c *Codegen) NewModule(name string,isEntryPoint bool, targetDataLayout llvm
 
 func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]GlobalLLVMFunction {
 	globalFunctions := make(map[string]GlobalLLVMFunction)
+	
+	// Memory allocation function
 	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.ctx.VoidType(), 0), []llvm.Type{c.ctx.Int32Type()}, false)
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
+
+	// GC safepoint slow path function (external declaration)
+	gcSafepointSlowPathType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
+	gcSafepointSlowPathFunction := llvm.AddFunction(module, "gc_safepoint_slow_path", gcSafepointSlowPathType)
+	gcSafepointSlowPathFunction.SetLinkage(llvm.InternalLinkage)
+	globalFunctions["gc_safepoint_slow_path"] = GlobalLLVMFunction{gcSafepointSlowPathFunction, gcSafepointSlowPathType}
+
+	// GC safepoint poll function (defined function)
+	gcSafepointPollType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
+	gcSafepointPollFunction := llvm.AddFunction(module, "gc.safepoint_poll", gcSafepointPollType)
+	gcSafepointPollFunction.SetLinkage(llvm.InternalLinkage)
+	globalFunctions["gc.safepoint_poll"] = GlobalLLVMFunction{gcSafepointPollFunction, gcSafepointPollType}
+
+	// Create the body for gc.safepoint_poll
+	builder := c.ctx.NewBuilder()
+	entryBlock := c.ctx.AddBasicBlock(gcSafepointPollFunction, "entry")
+	builder.SetInsertPointAtEnd(entryBlock)
+	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
+	builder.CreateRetVoid()
+	builder.Dispose()
 
 	return globalFunctions
 }
@@ -230,6 +252,9 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 	for index, param := range llvmFunc.Params() {
 		c.symbolTable.DeclareSymbol(funcParams[index].Name, param)
 	}
+
+	// Set GC strategy for functions that might allocate memory
+	llvmFunc.SetGC("statepoint-example")
 
 	c.symbolTable.DeclareGlobalSymbol(function.Name, llvmFunc)
 
@@ -426,6 +451,8 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	switch importedValue := importedValue.(type) {
 	case *zeus_value.Function:
 		importedFunc := llvm.AddFunction(c.module, module.GetModuleScopedName(input.ModulePath, importedValue.Name), c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
+		// Set GC strategy for imported functions
+		importedFunc.SetGC("statepoint-example")
 		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
 	case *zeus_value.Class:
 		llvmStructType, vtableStructType, structName  := c.createClassStructTypes(*importedValue)
@@ -442,7 +469,9 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 			scopedConstructorName := module.GetModuleScopedName(input.ModulePath, constructorMethodName)
 			if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 				constructorMethod := method.Method
-				llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
+				constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
+				// Set GC strategy for imported constructor methods
+				constructorFunc.SetGC("statepoint-example")
 				break
 			}
 		}

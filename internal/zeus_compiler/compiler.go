@@ -166,8 +166,8 @@ func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
 		defer options.Dispose()
 
 		// Enable debug logging for pass execution (optional)
-		options.SetDebugLogging(false)
-		options.SetVerifyEach(true) // Verify after each pass for debugging
+		options.SetDebugLogging(debug.IsDebug())
+		options.SetVerifyEach(false) // Verify after each pass for debugging
 
 		// Run GC-related passes using the new PassBuilder system
 		// PlaceSafepoints: Inserts safepoint polls at function entries and loop backedges

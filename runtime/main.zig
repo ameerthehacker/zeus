@@ -14,6 +14,10 @@ fn log(comptime fmt: []const u8, args: anytype) void {
     std.debug.print("zeus_gc: " ++ fmt ++ "\n", args);
 }
 
+export fn gc_safepoint_slow_path() void {
+    log("gc_safepoint_slow_path", .{});
+}
+
 export fn gc_alloc(size: u32) ?*anyopaque {
     const bytes = allocator.alloc(u8, size) catch return null;
     log("gc_alloc: {} bytes", .{size});
