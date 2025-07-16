@@ -77,7 +77,7 @@ func (c *Codegen) NewModule(name string,isEntryPoint bool, targetDataLayout llvm
 
 func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]GlobalLLVMFunction {
 	globalFunctions := make(map[string]GlobalLLVMFunction)
-	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(llvm.GlobalContext().VoidType(), 0), []llvm.Type{llvm.GlobalContext().Int32Type()}, false)
+	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.ctx.VoidType(), 0), []llvm.Type{c.ctx.Int32Type()}, false)
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
 
@@ -167,7 +167,7 @@ func (c *CodegenModule) getValueType(value zeus_value.Value) zeus_value.ValueTyp
 func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 	switch value := value.(type) {
 	case *zeus_value.Constant:
-		return ToLLVMConstant(*value)
+		return c.toLLVMConstant(*value)
 	case *zeus_value.Var:
 		return c.getSymbol(value.Name)
 	case *zeus_value.Function:
@@ -188,7 +188,7 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	case zeus_value.ObjectType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 0)
 	default:
-		return ToLLVMBuiltInType(_type)
+		return c.toLLVMBuiltInType(_type)
 	}
 }
 
@@ -486,14 +486,14 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Type, llvm.Type, string) {
 	// create the vtable struct
 	vtableStructName := GetVTableStructName(class.Name)
-	vtableStructType := llvm.GlobalContext().StructCreateNamed(vtableStructName)
+	vtableStructType := c.ctx.StructCreateNamed(vtableStructName)
 
 	// create the class struct with the vtable struct as the first element
 	elementTypes := []llvm.Type{llvm.PointerType(vtableStructType, 0)}
 	for _, property := range class.Properties {
 		elementTypes = append(elementTypes, c.toLLVMType(property.Property.ValueType))
 	}
-	llvmStructType := llvm.GlobalContext().StructCreateNamed(class.Name)
+	llvmStructType := c.ctx.StructCreateNamed(class.Name)
 	llvmStructType.StructSetBody(elementTypes, false)
 
 	vtableElementTypes := []llvm.Type{}
@@ -528,7 +528,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	// initialize the vtable methods to null
 	// this is done here because the vtable methods are not known until we encounter the DECL_CLASS_METHOD instructions
 	for llvmVTableMethodIndex := range llvmVTableMethods {
-		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(llvm.GlobalContext().VoidType(), []llvm.Type{}, false), 0))
+		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false), 0))
 	}
 	// track the struct info
 	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
@@ -540,7 +540,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 		panic(fmt.Sprintf("trying to create new object of non class type %s", input.Callee))
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
-	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(llvm.GlobalContext().Int32Type(), c.getSizeOfClass(*callee), false))
+	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.ctx.Int32Type(), c.getSizeOfClass(*callee), false))
 	llvmStructVTableField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, VTABLE_STRUCT_INDEX, "vTable")
 	llvmVTable := c.getLLVMVTablePtr(callee.Name)
 	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
