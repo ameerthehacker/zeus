@@ -143,7 +143,6 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
 
             // ALWAYS parse statepoint records to see what they contain
             var ptr = record_ptr + @sizeOf(StackMapRecord);
-            log("gc_statepoint: parsing record with {} locations", .{record.num_locations});
 
             if (record.num_locations >= 3) {
                 // Ignore calling convention
@@ -225,7 +224,6 @@ fn trackGCRoot(location: *Location) void {
 
     // Validate location before processing
     if (location.location_size == 0) {
-        log("gc_root: skipping zero-size location (type={})", .{location.location_type});
         return;
     }
 
@@ -233,33 +231,27 @@ fn trackGCRoot(location: *Location) void {
         2 => blk: { // Direct - value at stack offset
             const offset = @as(isize, location.offset_or_constant);
             const addr = frame_addr + @as(usize, @bitCast(offset));
-            log("gc_root: direct access at frame+{} = 0x{X}", .{ offset, addr });
             break :blk addr;
         },
         3 => blk: { // Indirect - read pointer from stack location
             const offset = @as(isize, location.offset_or_constant);
             const ptr_addr = frame_addr + @as(usize, @bitCast(offset));
-            log("gc_root: indirect read from frame+{} = 0x{X}", .{ offset, ptr_addr });
 
             // Safety check: ensure we're reading from a reasonable stack location
             if (ptr_addr < frame_addr - 4096 or ptr_addr > frame_addr + 4096) {
-                log("gc_root: skipping unsafe indirect access at 0x{X}", .{ptr_addr});
                 return;
             }
 
             const value = @as(*usize, @ptrFromInt(ptr_addr)).*;
-            log("gc_root: indirect value = 0x{X}", .{value});
             break :blk value;
         },
         else => {
-            log("gc_root: unsupported location type {}", .{location.location_type});
             return;
         },
     };
 
     // Skip null pointers
     if (root_addr == 0) {
-        log("gc_root: skipping null pointer", .{});
         return;
     }
 
