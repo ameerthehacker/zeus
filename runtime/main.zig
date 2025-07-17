@@ -3,16 +3,29 @@ const types = @import("stackmap_types.zig");
 
 // Import the stackmap and GC types
 const StackMapHeader = types.StackMapHeader;
-const StkSizeRecord = types.StackSizeRecord; // Note: StackSizeRecord in the types file
+const StkSizeRecord = types.StackSizeRecord; // Corrected from StkSizeRecord to StackSizeRecord
 const LiveOut = types.LiveOut;
 const StackMapRecord = types.StackMapRecord;
 const Location = types.Location;
 const GCRoot = types.GCRoot;
 
+// Structure to track allocated objects
+const AllocatedObject = struct {
+    ptr: *anyopaque,
+    size: u32,
+    marked: bool,
+    // Protection counter to prevent premature freeing of recently returned objects
+    protection_count: u32,
+};
+
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
 var gc_roots = std.ArrayList(GCRoot).init(allocator);
+// Global tracking of all allocated objects
+var allocated_objects = std.ArrayList(AllocatedObject).init(allocator);
+// Mutex to protect allocated_objects list during concurrent access
+var alloc_mutex = std.Thread.Mutex{};
 
 // LLVM places the stack map in a special section
 // We access it via linker symbols that LLVM generates
@@ -28,7 +41,7 @@ fn isDebugEnabled() bool {
 
 fn log(comptime fmt: []const u8, args: anytype) void {
     if (!isDebugEnabled()) return;
-    std.debug.print("zeus_gc: " ++ fmt ++ "\n", args);
+    std.io.getStdOut().writer().print("zeus_gc: " ++ fmt ++ "\n", args) catch {};
 }
 
 // Try to locate the LLVM stack map section at runtime
@@ -275,15 +288,57 @@ fn trackGCRoot(location: *Location) void {
 
 fn performGarbageCollection() void {
     log("gc_cycle: starting", .{});
-    log("gc_cycle: tracked roots: {}", .{gc_roots.items.len});
+    log("gc_cycle: tracked roots: {}, allocated objects: {}", .{ gc_roots.items.len, allocated_objects.items.len });
 
-    // Mark phase: mark all reachable objects
+    alloc_mutex.lock();
+    defer alloc_mutex.unlock();
+
+    // Clear all marks before marking phase
+    for (allocated_objects.items) |*obj| {
+        obj.marked = false;
+    }
+
+    // Mark phase: mark all reachable objects starting from GC roots
     for (gc_roots.items) |*root| {
         markObject(root);
     }
 
-    // Sweep phase would go here...
-    log("gc_cycle: complete", .{});
+        // Sweep phase: free all unmarked and unprotected objects
+    var freed_count: u32 = 0;
+    var freed_bytes: u32 = 0;
+    var i: usize = 0;
+    while (i < allocated_objects.items.len) {
+        const obj = &allocated_objects.items[i];
+        
+        // Decrement protection count
+        if (obj.protection_count > 0) {
+            obj.protection_count -= 1;
+        }
+        
+        // Only free if object is not marked AND not protected
+        if (!obj.marked and obj.protection_count == 0) {
+            // Object is not reachable and not protected, free it
+            log("gc_sweep: freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
+            
+            // Create a slice from the pointer and size to free it properly
+            // const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];
+            // allocator.free(bytes);
+            
+            freed_count += 1;
+            freed_bytes += obj.size;
+            
+            // Remove from tracking list by swapping with last element
+            _ = allocated_objects.swapRemove(i);
+            // Don't increment i since we swapped a new element to this position
+        } else {
+            if (!obj.marked and obj.protection_count > 0) {
+                log("gc_sweep: protecting object at 0x{X} (protection_count={})", .{ @intFromPtr(obj.ptr), obj.protection_count });
+            }
+            i += 1;
+        }
+    }
+
+    log("gc_cycle: complete, freed {} objects ({} bytes), {} objects remaining", .{ freed_count, freed_bytes, allocated_objects.items.len });
 
     // Clear roots for next cycle
     gc_roots.clearRetainingCapacity();
@@ -292,8 +347,31 @@ fn performGarbageCollection() void {
 fn markObject(root: *GCRoot) void {
     if (root.marked) return;
     root.marked = true;
-    log("gc_mark: object at 0x{X} (size={})", .{ @intFromPtr(root.ptr), root.size });
-    // TODO: traverse object references here
+    log("gc_mark: root at 0x{X} (size={})", .{ @intFromPtr(root.ptr), root.size });
+
+    // Find the corresponding allocated object and mark it
+    markAllocatedObject(@intFromPtr(root.ptr));
+
+    // TODO: traverse object references here to mark transitively reachable objects
+}
+
+fn markAllocatedObject(ptr_addr: usize) void {
+    for (allocated_objects.items) |*obj| {
+        const obj_addr = @intFromPtr(obj.ptr);
+        const obj_end = obj_addr + obj.size;
+
+        // Check if the pointer points into this allocated object
+        if (ptr_addr >= obj_addr and ptr_addr < obj_end) {
+            if (!obj.marked) {
+                obj.marked = true;
+                log("gc_mark: allocated object at 0x{X} (size={})", .{ obj_addr, obj.size });
+
+                // TODO: Scan this object for references to other objects
+                // For now, we only mark the directly referenced object
+            }
+            break;
+        }
+    }
 }
 
 export fn gc_safepoint_slow_path() void {
@@ -306,6 +384,21 @@ export fn gc_safepoint_slow_path() void {
 
 export fn gc_alloc(size: u32) ?*anyopaque {
     const bytes = allocator.alloc(u8, size) catch return null;
-    log("gc_alloc: {} bytes", .{size});
+
+    // Track the allocated object
+    alloc_mutex.lock();
+    defer alloc_mutex.unlock();
+
+    allocated_objects.append(AllocatedObject{
+        .ptr = bytes.ptr,
+        .size = size,
+        .marked = false,
+        .protection_count = 3, // Protect for 3 GC cycles (adjustable)
+    }) catch |err| {
+        log("gc_alloc: failed to track allocation: {}", .{err});
+        // Still return the allocation even if tracking fails
+    };
+
+    log("gc_alloc: {} bytes at 0x{X}, total objects: {}", .{ size, @intFromPtr(bytes.ptr), allocated_objects.items.len });
     return bytes.ptr;
 }
