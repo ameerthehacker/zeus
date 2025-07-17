@@ -170,8 +170,8 @@ fn processStackMapAtSafepoint(_: usize) void {
 
     log("  processing {} stack map records...", .{stack_map.num_records});
 
-    // Process only the first record to avoid parsing issues
-    const max_records_to_process = @min(stack_map.num_records, 1);
+    // Process more records to find the GC pointer information
+    const max_records_to_process = @min(stack_map.num_records, 5);
     for (0..max_records_to_process) |i| {
         // Ensure proper alignment for the record structure (8-byte aligned)
         const aligned_addr = std.mem.alignForward(usize, @intFromPtr(record_ptr), 8);
@@ -188,9 +188,9 @@ fn processStackMapAtSafepoint(_: usize) void {
         }
 
         // Process each location (these are your GC roots!)
-        var loc_ptr = record_ptr + @sizeOf(StackMapRecord);
+        var ptr = record_ptr + @sizeOf(StackMapRecord);
         for (0..record.num_locations) |j| {
-            const location = @as(*Location, @ptrCast(@alignCast(loc_ptr)));
+            const location = @as(*Location, @ptrCast(@alignCast(ptr)));
 
             const loc_type_name = switch (location.location_type) {
                 1 => "Register",
@@ -211,13 +211,24 @@ fn processStackMapAtSafepoint(_: usize) void {
                 log("      -> Skipping constant value (not a GC root)", .{});
             }
 
-            loc_ptr += @sizeOf(Location);
+            ptr += @sizeOf(Location);
         }
 
-        log("  successfully processed Record {}", .{i});
+        // After locations, there's padding and LiveOuts we need to skip
+        // Align to 2-byte boundary after locations
+        ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 2)));
 
-        // For now, only process the first record to avoid parsing complexity
-        break;
+        // Read number of LiveOuts (uint16)
+        const num_liveouts = @as(*u16, @ptrCast(@alignCast(ptr))).*;
+        ptr += @sizeOf(u16);
+
+        // Skip LiveOut entries (4 bytes each)
+        ptr += num_liveouts * @sizeOf(LiveOut);
+
+        // Align to 8-byte boundary for next record
+        record_ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
+
+        log("  successfully processed Record {} (skipped {} liveouts)", .{ i, num_liveouts });
     }
 }
 

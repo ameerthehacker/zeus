@@ -79,7 +79,7 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	globalFunctions := make(map[string]GlobalLLVMFunction)
 	
 	// Memory allocation function
-	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.ctx.VoidType(), 0), []llvm.Type{c.ctx.Int32Type()}, false)
+	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.ctx.VoidType(), 1), []llvm.Type{c.ctx.Int32Type()}, false)
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
 
@@ -204,11 +204,11 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
 	case zeus_value.UserDefinedType:
-		return llvm.PointerType(c.getLLVMStructType(_type.Name), 0)
+		return llvm.PointerType(c.getLLVMStructType(_type.Name), 1)
 	case zeus_value.FunctionType:
-		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
+		return llvm.PointerType(c.toLLVMFunctionType(_type), 1)
 	case zeus_value.ObjectType:
-		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 0)
+		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
 	default:
 		return c.toLLVMBuiltInType(_type)
 	}

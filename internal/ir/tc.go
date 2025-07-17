@@ -371,20 +371,22 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 		return
 	}
 
-	if zeus_value.IsVoidType(tc.currentFunction.ReturnType) && input.Value != nil {
+	returnType := tc.asKnownValueType(tc.currentFunction.ReturnType)
+
+	if zeus_value.IsVoidType(returnType) && input.Value != nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot return a value from void function",
 			Span:    instr.Span,
 		})
-	} else if !zeus_value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil {
+	} else if !zeus_value.IsVoidType(returnType) && input.Value == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("return value of type '%s' is expected", tc.getValueType(input.Value)),
 			Span:    instr.Span,
 		})
-	} else if zeus_value.IsVoidType(tc.currentFunction.ReturnType) && input.Value == nil {
+	} else if zeus_value.IsVoidType(returnType) && input.Value == nil {
 		return
 	} else {
-		input.Value = tc.cmpValueWithImplicitCast(instr, tc.currentFunction.ReturnType, input.Value)
+		input.Value = tc.cmpValueWithImplicitCast(instr, returnType, input.Value)
 	}
 }
 
