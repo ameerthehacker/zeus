@@ -21,7 +21,7 @@ build-runtime: runtime/out/zeus-runtime.o
 
 runtime/out/zeus-runtime.o: runtime/main.zig
 	mkdir -p runtime/out
-	zig build-obj runtime/main.zig -target native -O ReleaseSafe -femit-bin=runtime/out/zeus-runtime
+	zig build-obj runtime/main.zig -target native -O Debug -femit-bin=runtime/out/zeus-runtime
 
 play: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \

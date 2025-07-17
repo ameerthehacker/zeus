@@ -143,6 +143,7 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
 
             // ALWAYS parse statepoint records to see what they contain
             var ptr = record_ptr + @sizeOf(StackMapRecord);
+            log("gc_statepoint: parsing record with {} locations", .{record.num_locations});
 
             if (record.num_locations >= 3) {
                 // Ignore calling convention
@@ -197,11 +198,13 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
         // Skip locations
         ptr += record.num_locations * @sizeOf(Location);
 
-        // Align to 2-byte boundary after locations
-        ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 2)));
+        // Align to 8-byte boundary after locations (LLVM uses 8-byte alignment)
+        ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
 
-        // Read number of LiveOuts (uint16)
-        const num_liveouts = @as(*u16, @ptrCast(@alignCast(ptr))).*;
+        // Read number of LiveOuts (uint16) with bounds checking
+        const num_liveouts_ptr = @as(*u16, @ptrCast(@alignCast(ptr)));
+        const num_liveouts = num_liveouts_ptr.*;
+
         ptr += @sizeOf(u16);
 
         // Skip LiveOut entries (4 bytes each)
