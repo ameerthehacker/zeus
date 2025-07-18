@@ -399,9 +399,6 @@ fn performGarbageCollection() void {
     }
 
     log("gc_cycle: complete, freed {} objects ({} bytes), {} objects remaining", .{ freed_count, freed_bytes, allocated_objects.items.len });
-
-    // Clean up stale roots by validating against current call stack
-    cleanupStaleRoots();
 }
 
 fn markObject(root: *GCRoot) void {
@@ -432,115 +429,6 @@ fn markAllocatedObject(ptr_addr: usize) void {
             break;
         }
     }
-}
-
-fn cleanupStaleRoots() void {
-    log("gc_cleanup: cleaning stale roots", .{});
-
-    // Get current call stack function addresses
-    var active_functions = std.ArrayList(u64).init(allocator);
-    defer active_functions.deinit();
-
-    // Walk call stack to get active function addresses
-    walkCallStack(&active_functions) catch {
-        log("gc_cleanup: failed to walk call stack, keeping all roots", .{});
-        return;
-    };
-
-    log("gc_cleanup: found {} active functions", .{active_functions.items.len});
-
-    // Remove roots from functions no longer on the stack
-    var i: usize = 0;
-    while (i < gc_roots.items.len) {
-        const root = &gc_roots.items[i];
-
-        // Check if this root's function is still active
-        var function_still_active = false;
-        for (active_functions.items) |active_func_addr| {
-            if (root.function_addr == active_func_addr or root.function_addr == 0) {
-                function_still_active = true;
-                break;
-            }
-        }
-
-        if (function_still_active) {
-            i += 1; // Keep this root
-        } else {
-            log("gc_cleanup: removing stale root from function 0x{X}", .{root.function_addr});
-            _ = gc_roots.swapRemove(i);
-            // Don't increment i since we removed an element
-        }
-    }
-
-    log("gc_cleanup: {} roots remaining after cleanup", .{gc_roots.items.len});
-}
-
-fn walkCallStack(active_functions: *std.ArrayList(u64)) !void {
-    // Simple approach: use frame pointer to walk the stack
-    var current_frame = @frameAddress();
-    var depth: u32 = 0;
-    const max_depth = 32; // Prevent infinite loops
-
-    while (depth < max_depth) {
-        // Try to get return address from current frame
-        const return_addr = getReturnAddressFromFrame(current_frame) catch break;
-
-        // Find which function this return address belongs to
-        const function_addr = findFunctionForAddress(return_addr) catch break;
-
-        if (function_addr != 0) {
-            active_functions.append(function_addr) catch break;
-            log("gc_cleanup: active function at 0x{X}", .{function_addr});
-        }
-
-        // Move to parent frame
-        current_frame = getParentFrame(current_frame) catch break;
-        depth += 1;
-    }
-}
-
-fn getReturnAddressFromFrame(frame_addr: usize) !usize {
-    // On most architectures, return address is at [frame_pointer + word_size]
-    const return_addr_ptr = frame_addr + @sizeOf(usize);
-
-    // Basic bounds check
-    if (return_addr_ptr < frame_addr or return_addr_ptr > frame_addr + 1024) {
-        return error.InvalidFrame;
-    }
-
-    return @as(*usize, @ptrFromInt(return_addr_ptr)).*;
-}
-
-fn getParentFrame(frame_addr: usize) !usize {
-    // On most architectures, parent frame pointer is at [frame_pointer]
-    const parent_frame_ptr = @as(*usize, @ptrFromInt(frame_addr)).*;
-
-    // Basic validation - parent frame should be higher on stack
-    if (parent_frame_ptr <= frame_addr or parent_frame_ptr > frame_addr + 0x10000) {
-        return error.InvalidFrame;
-    }
-
-    return parent_frame_ptr;
-}
-
-fn findFunctionForAddress(addr: usize) !u64 {
-    const stack_map = getStackMap() orelse return error.NoStackMap;
-    var record_ptr = @as([*]u8, @ptrCast(stack_map)) + @sizeOf(StackMapHeader);
-
-    // Check each function's address range
-    for (0..stack_map.num_functions) |_| {
-        const func_record = @as(*StkSizeRecord, @ptrCast(@alignCast(record_ptr)));
-
-        // Simple check: if address is >= function start, assume it's this function
-        // (This is approximate - better would check function end address too)
-        if (addr >= func_record.function_address) {
-            return func_record.function_address;
-        }
-
-        record_ptr += @sizeOf(StkSizeRecord);
-    }
-
-    return 0; // Function not found
 }
 
 export fn gc_safepoint_slow_path() void {
