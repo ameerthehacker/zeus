@@ -52,7 +52,7 @@
 //! | +------------------------------------------+ |
 //! +==============================================+
 //! | Location[3]: GC Base Pointer (12 bytes)     |
-//! | +------------------------------------------+ |  
+//! | +------------------------------------------+ |
 //! | | location_type: 2 (Direct)               | | ─┐
 //! | | location_size: 8 (pointer size)         | |  │
 //! | | offset_or_constant: -16 (stack offset)  | |  │ GC ROOT PAIR
@@ -96,31 +96,31 @@
 //! +==============================================+
 //!
 //! LOCATION TYPE → GC ROOT MAPPING:
-//! 
+//!
 //! Type 1 (Register): Value in CPU register
 //! ┌─────────────────┐    ┌─────────────────┐
 //! │ dwarf_reg_num:5 │ ──→│ Register %rbp   │ ──→ [GC Object*]
 //! │ (location info) │    │ (runtime)       │
 //! └─────────────────┘    └─────────────────┘
-//! 
+//!
 //! Type 2 (Direct): Value at stack offset
 //! ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 //! │ offset: -16     │ ──→│ Frame Ptr - 16  │ ──→│ [GC Object*]    │
 //! │ (location info) │    │ (stack address) │    │ (actual object) │
 //! └─────────────────┘    └─────────────────┘    └─────────────────┘
-//! 
-//! Type 3 (Indirect): Pointer to value at stack offset  
+//!
+//! Type 3 (Indirect): Pointer to value at stack offset
 //! ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 //! │ offset: -8      │ ──→│ Frame Ptr - 8   │ ──→│ [Pointer*]      │ ──→│ [GC Object*]    │
 //! │ (location info) │    │ (stack address) │    │ (intermediate)  │    │ (actual object) │
 //! └─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
-//! 
+//!
 //! Type 4 (Constant): Compile-time constant value
 //! ┌─────────────────┐    ┌─────────────────┐
 //! │ constant: 0x0   │ ──→│ NULL pointer    │ (typically ignored for GC)
 //! │ (location info) │    │ (literal value) │
 //! └─────────────────┘    └─────────────────┘
-//! 
+//!
 //! Type 5 (ConstantIndex): Index into constants table
 //! ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 //! │ index: 0        │ ──→│ Constants[0]    │ ──→│ [GC Object*]    │
@@ -155,7 +155,7 @@
 //! +================================+
 //! | Constants[0]: 0x123...DEF0 (8) | ← Large immediate value
 //! +================================+
-//! | Constants[1]: 0x7FF...1000 (8) | ← Static object address  
+//! | Constants[1]: 0x7FF...1000 (8) | ← Static object address
 //! +================================+
 //! | Constants[2]: 0x000...1234 (8) | ← Type metadata
 //! +================================+
@@ -182,7 +182,7 @@ const std = @import("std");
 /// Memory layout: 16 bytes total
 /// +0:  version (u8)        - Stackmap format version (typically 3)
 /// +1:  reserved1 (u8)      - Reserved, must be 0
-/// +2:  reserved2 (u16)     - Reserved, must be 0  
+/// +2:  reserved2 (u16)     - Reserved, must be 0
 /// +4:  num_functions (u32) - Count of StkSizeRecord entries
 /// +8:  num_constants (u32) - Count of u64 constant values
 /// +12: num_records (u32)   - Count of StackMapRecord entries
@@ -190,21 +190,21 @@ pub const StackMapHeader = extern struct {
     /// Stackmap format version. Current version is typically 3.
     /// Determines the layout and interpretation of subsequent data.
     version: u8,
-    
+
     /// Reserved field, always 0. Provides alignment and future extensibility.
     reserved1: u8,
-    
+
     /// Reserved field, always 0. Provides alignment and future extensibility.
     reserved2: u16,
-    
+
     /// Number of function entries (StkSizeRecord) that follow the header.
     /// Each function that contains statepoints gets an entry here.
     num_functions: u32,
-    
+
     /// Number of 64-bit constants that follow the function records.
     /// These are literal values referenced by Location entries.
     num_constants: u32,
-    
+
     /// Number of stackmap records (StackMapRecord) in this section.
     /// Each statepoint/patchpoint generates one record.
     num_records: u32,
@@ -224,11 +224,11 @@ pub const StackSizeRecord = extern struct {
     /// Used to correlate instruction offsets in StackMapRecord entries
     /// back to this specific function.
     function_address: u64,
-    
+
     /// Size of this function's stack frame in bytes.
     /// Useful for stack walking and determining frame boundaries.
     stack_size: u64,
-    
+
     /// Number of StackMapRecord entries that belong to this function.
     /// Helps with parsing and validation of the stackmap data.
     record_count: u64,
@@ -247,10 +247,10 @@ pub const LiveOut = extern struct {
     /// DWARF register number identifying which register contains the live value.
     /// Uses the DWARF register numbering convention for the target architecture.
     reg_num: u16,
-    
+
     /// Reserved field for alignment, always 0.
     reserved: u8,
-    
+
     /// Size of the live value in the register, in bytes.
     /// Typically 4 for 32-bit values, 8 for 64-bit values.
     size_in_bytes: u8,
@@ -271,14 +271,14 @@ pub const StackMapRecord = extern struct {
     /// - 2882400000 (0xABCDEF00) indicates a statepoint (GC safepoint)
     /// - Other values indicate different types of patchpoints
     patchpoint_id: u64,
-    
+
     /// Byte offset from the start of the function to this statepoint instruction.
     /// Combined with function_address from StkSizeRecord, gives absolute address.
     instruction_offset: u32,
-    
+
     /// Reserved field for alignment, always 0.
     reserved: u16,
-    
+
     /// Number of Location entries that immediately follow this record.
     /// For statepoints, includes calling convention, flags, deopt args, and GC relocations.
     num_locations: u16,
@@ -304,20 +304,20 @@ pub const Location = extern struct {
     /// - 4: Constant - value is a compile-time constant
     /// - 5: ConstantIndex - value is a constant from the constants table
     location_type: u8,
-    
+
     /// Reserved field for alignment, always 0.
     reserved_1: u8,
-    
+
     /// Size of the value in bytes. For pointers, typically 8 on 64-bit systems.
     location_size: u16,
-    
+
     /// DWARF register number when location_type is Register.
     /// Ignored for other location types but may contain padding data.
     dwarf_reg_num: u16,
-    
+
     /// Reserved field for alignment, always 0.
     reserved_2: u16,
-    
+
     /// Interpretation depends on location_type:
     /// - Register: register value or additional register info
     /// - Direct: signed offset from frame pointer to value
@@ -332,22 +332,31 @@ pub const Location = extern struct {
 /// runtime data structure for tracking GC roots extracted from
 /// the stackmap Location entries.
 ///
-/// Memory layout: 16 bytes total (on 64-bit)
+/// Memory layout: 32 bytes total (on 64-bit)
 /// +0:  ptr (*anyopaque)  - Pointer to the GC-managed object
-/// +8:  size (u32)        - Size of the object in bytes  
+/// +8:  size (u32)        - Size of the object in bytes
 /// +12: marked (bool)     - GC mark bit for mark-and-sweep
-/// +13: [padding]         - Alignment padding
+/// +16: function_addr (u64) - Address of function that owns this root
+/// +24: frame_addr (u64)  - Frame address where this root was found
 pub const GCRoot = struct {
     /// Pointer to the start of the GC-managed object.
     /// This address is extracted from stackmap Location entries
     /// and represents a live GC pointer at a safepoint.
     ptr: *anyopaque,
-    
+
     /// Size of the GC object in bytes.
     /// Extracted from the location_size field of the corresponding Location.
     size: u32,
-    
+
     /// Mark bit used during garbage collection mark phase.
     /// Set to true when the object is determined to be reachable.
     marked: bool,
-}; 
+
+    /// Address of the function that owns this GC root.
+    /// Used to determine when roots should be cleaned up.
+    function_addr: u64,
+
+    /// Frame address where this root was found.
+    /// Used for stack validation and cleanup.
+    frame_addr: u64,
+};

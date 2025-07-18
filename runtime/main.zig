@@ -10,13 +10,7 @@ const Location = types.Location;
 const GCRoot = types.GCRoot;
 
 // Structure to track allocated objects
-const AllocatedObject = struct {
-    ptr: *anyopaque,
-    size: u32,
-    marked: bool,
-    // Protection counter to prevent premature freeing of recently returned objects
-    protection_count: u32,
-};
+const AllocatedObject = struct { ptr: *anyopaque, size: u32, marked: bool };
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
@@ -106,7 +100,7 @@ fn getStackMap() ?*StackMapHeader {
     return stack_map;
 }
 
-fn processStackMapAtSafepoint(return_addr: usize) void {
+fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void {
     const stack_map = getStackMap().?; // Unwrap the optional since it panics if null
 
     // Find the record for this safepoint
@@ -114,11 +108,15 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
 
     // Skip function records (each StkSizeRecord) but save function information
     var function_start_addr: u64 = 0;
-    for (0..stack_map.num_functions) |_| {
+    var current_function_record_count: u64 = 0;
+    var function_index: u64 = 0;
+    for (0..stack_map.num_functions) |i| {
         const func_record = @as(*StkSizeRecord, @ptrCast(@alignCast(record_ptr)));
         // Find which function our return address belongs to
         if (return_addr >= func_record.function_address) {
             function_start_addr = func_record.function_address;
+            current_function_record_count = func_record.record_count;
+            function_index = i;
         }
 
         record_ptr += @sizeOf(StkSizeRecord);
@@ -133,28 +131,33 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
     else
         0;
 
-    // Examine ALL records to find the statepoint record
-    var found_matching_record = false;
-    for (0..stack_map.num_records) |_| {
+    // Examine ALL records to find first matching statepoint, then process function records
+    var found_first_match = false;
+    var records_processed_in_function: u64 = 0;
+
+    log("gc_safepoint_slow_path: function_index: {}", .{function_index});
+    log("gc_safepoint_slow_path: function_record_count: {}", .{current_function_record_count});
+
+    for (0..stack_map.num_records) |j| {
         // Ensure proper alignment for the record structure (8-byte aligned)
         const aligned_addr = std.mem.alignForward(usize, @intFromPtr(record_ptr), 8);
         record_ptr = @as([*]u8, @ptrFromInt(aligned_addr));
 
         const record = @as(*StackMapRecord, @ptrCast(@alignCast(record_ptr)));
 
-        // Check if this record matches our instruction offset (or is close)
-        const offset_match = (record.instruction_offset == instruction_offset) or
-            (instruction_offset > record.instruction_offset and instruction_offset < record.instruction_offset + 20);
-
+        // Check if this record matches our instruction offset
+        const offset_match = (record.instruction_offset == instruction_offset);
         const is_statepoint = record.patchpoint_id == 2882400000;
         const is_matching_statepoint = offset_match and is_statepoint;
 
-        if (is_statepoint) {
-            if (offset_match) {
-                found_matching_record = true;
-            }
+        // If we found the first matching statepoint, start processing this function's records
+        if (is_matching_statepoint) {
+            found_first_match = true;
+            log("gc_safepoint_slow_path: function {}: first record: {}", .{ function_index, j });
+        }
 
-            // ALWAYS parse statepoint records to see what they contain
+        // Process statepoint records if we're in the target function
+        if (found_first_match and records_processed_in_function < current_function_record_count) {
             var ptr = record_ptr + @sizeOf(StackMapRecord);
 
             if (record.num_locations >= 3) {
@@ -175,10 +178,13 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
 
                 // Calculate remaining locations
                 const remaining_locations = record.num_locations - 3 - num_deopt_args;
+                log("gc_safepoint_slow_path: remaining_locations: {}", .{remaining_locations});
 
                 if (remaining_locations > 0) {
                     if (remaining_locations % 2 == 0) {
                         const num_relocation_pairs = remaining_locations / 2;
+
+                        log("gc_safepoint_slow_path: num_relocation_pairs: {}", .{num_relocation_pairs});
 
                         for (0..num_relocation_pairs) |_| {
                             // Base pointer location
@@ -189,19 +195,26 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
                             const derived_location = @as(*Location, @ptrCast(@alignCast(ptr)));
                             ptr += @sizeOf(Location);
 
-                            // Track GC roots from ANY statepoint record for testing
+                            // Track GC roots from this function's statepoint records
                             if (base_location.location_type == 2 or base_location.location_type == 3) {
-                                trackGCRoot(base_location);
+                                trackGCRootWithFunction(base_location, caller_frame_addr, function_start_addr);
                             }
 
                             if (derived_location.location_type == 2 or derived_location.location_type == 3) {
-                                trackGCRoot(derived_location);
+                                trackGCRootWithFunction(derived_location, caller_frame_addr, function_start_addr);
                             }
                         }
                     } else {
                         std.debug.panic("error: odd number of remaining locations ({}) - cannot form pairs", .{remaining_locations});
                     }
                 }
+            }
+
+            records_processed_in_function += 1;
+
+            // If we've processed all records for this function, we're done
+            if (records_processed_in_function >= current_function_record_count) {
+                break;
             }
         }
 
@@ -224,16 +237,69 @@ fn processStackMapAtSafepoint(return_addr: usize) void {
 
         // Align to 8-byte boundary for next record
         record_ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
-
-        if (is_matching_statepoint) {
-            break; // Found our record, no need to continue
-        }
     }
 }
 
-fn trackGCRoot(location: *Location) void {
-    // Calculate actual address based on location info
-    const frame_addr = @frameAddress();
+fn trackGCRootWithFunction(location: *Location, frame_addr: usize, function_addr: u64) void {
+    // Calculate actual address based on location info (using caller's frame address)
+    log("gc_root: frame_addr: 0x{X}, function_addr: 0x{X}", .{ frame_addr, function_addr });
+
+    // Validate location before processing
+    if (location.location_size == 0) {
+        return;
+    }
+
+    const root_addr = switch (location.location_type) {
+        2 => blk: { // Direct - value at stack offset
+            const offset = @as(isize, location.offset_or_constant);
+            const addr = frame_addr + @as(usize, @bitCast(offset));
+            break :blk addr;
+        },
+        3 => blk: { // Indirect - read pointer from stack location
+            const offset = @as(isize, location.offset_or_constant);
+            const ptr_addr = frame_addr + @as(usize, @bitCast(offset));
+
+            // Safety check: ensure we're reading from a reasonable stack location
+            if (ptr_addr < frame_addr - 4096 or ptr_addr > frame_addr + 4096) {
+                return;
+            }
+
+            const value = @as(*usize, @ptrFromInt(ptr_addr)).*;
+            break :blk value;
+        },
+        else => {
+            return;
+        },
+    };
+
+    // Skip null pointers
+    if (root_addr == 0) {
+        return;
+    }
+
+    const location_type_str = switch (location.location_type) {
+        2 => "Direct",
+        3 => "Indirect",
+        else => "Other",
+    };
+
+    log("gc_root: tracking at 0x{X} (size={}, type={s}, function=0x{X})", .{ root_addr, location.location_size, location_type_str, function_addr });
+
+    // Add to our GC root set with function information
+    gc_roots.append(GCRoot{
+        .ptr = @ptrFromInt(root_addr),
+        .size = @as(u32, location.location_size),
+        .marked = false,
+        .function_addr = function_addr,
+        .frame_addr = frame_addr,
+    }) catch |err| {
+        log("gc_root: failed to add root: {}", .{err});
+    };
+}
+
+fn trackGCRoot(location: *Location, frame_addr: usize) void {
+    // Calculate actual address based on location info (using caller's frame address)
+    log("gc_root: frame_addr: 0x{X}", .{frame_addr});
 
     // Validate location before processing
     if (location.location_size == 0) {
@@ -281,6 +347,8 @@ fn trackGCRoot(location: *Location) void {
         .ptr = @ptrFromInt(root_addr),
         .size = @as(u32, location.location_size),
         .marked = false,
+        .function_addr = 0, // Unknown function for now
+        .frame_addr = frame_addr,
     }) catch |err| {
         log("gc_root: failed to add root: {}", .{err});
     };
@@ -303,45 +371,37 @@ fn performGarbageCollection() void {
         markObject(root);
     }
 
-        // Sweep phase: free all unmarked and unprotected objects
+    // Sweep phase: free all unmarked and unprotected objects
     var freed_count: u32 = 0;
     var freed_bytes: u32 = 0;
     var i: usize = 0;
     while (i < allocated_objects.items.len) {
         const obj = &allocated_objects.items[i];
-        
-        // Decrement protection count
-        if (obj.protection_count > 0) {
-            obj.protection_count -= 1;
-        }
-        
-        // Only free if object is not marked AND not protected
-        if (!obj.marked and obj.protection_count == 0) {
+
+        // Only free if object is not marked
+        if (!obj.marked) {
             // Object is not reachable and not protected, free it
             log("gc_sweep: freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
-            
+
             // Create a slice from the pointer and size to free it properly
             // const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];
             // allocator.free(bytes);
-            
+
             freed_count += 1;
             freed_bytes += obj.size;
-            
+
             // Remove from tracking list by swapping with last element
             _ = allocated_objects.swapRemove(i);
             // Don't increment i since we swapped a new element to this position
         } else {
-            if (!obj.marked and obj.protection_count > 0) {
-                log("gc_sweep: protecting object at 0x{X} (protection_count={})", .{ @intFromPtr(obj.ptr), obj.protection_count });
-            }
             i += 1;
         }
     }
 
     log("gc_cycle: complete, freed {} objects ({} bytes), {} objects remaining", .{ freed_count, freed_bytes, allocated_objects.items.len });
 
-    // Clear roots for next cycle
-    gc_roots.clearRetainingCapacity();
+    // Clean up stale roots by validating against current call stack
+    cleanupStaleRoots();
 }
 
 fn markObject(root: *GCRoot) void {
@@ -374,12 +434,125 @@ fn markAllocatedObject(ptr_addr: usize) void {
     }
 }
 
+fn cleanupStaleRoots() void {
+    log("gc_cleanup: cleaning stale roots", .{});
+
+    // Get current call stack function addresses
+    var active_functions = std.ArrayList(u64).init(allocator);
+    defer active_functions.deinit();
+
+    // Walk call stack to get active function addresses
+    walkCallStack(&active_functions) catch {
+        log("gc_cleanup: failed to walk call stack, keeping all roots", .{});
+        return;
+    };
+
+    log("gc_cleanup: found {} active functions", .{active_functions.items.len});
+
+    // Remove roots from functions no longer on the stack
+    var i: usize = 0;
+    while (i < gc_roots.items.len) {
+        const root = &gc_roots.items[i];
+
+        // Check if this root's function is still active
+        var function_still_active = false;
+        for (active_functions.items) |active_func_addr| {
+            if (root.function_addr == active_func_addr or root.function_addr == 0) {
+                function_still_active = true;
+                break;
+            }
+        }
+
+        if (function_still_active) {
+            i += 1; // Keep this root
+        } else {
+            log("gc_cleanup: removing stale root from function 0x{X}", .{root.function_addr});
+            _ = gc_roots.swapRemove(i);
+            // Don't increment i since we removed an element
+        }
+    }
+
+    log("gc_cleanup: {} roots remaining after cleanup", .{gc_roots.items.len});
+}
+
+fn walkCallStack(active_functions: *std.ArrayList(u64)) !void {
+    // Simple approach: use frame pointer to walk the stack
+    var current_frame = @frameAddress();
+    var depth: u32 = 0;
+    const max_depth = 32; // Prevent infinite loops
+
+    while (depth < max_depth) {
+        // Try to get return address from current frame
+        const return_addr = getReturnAddressFromFrame(current_frame) catch break;
+
+        // Find which function this return address belongs to
+        const function_addr = findFunctionForAddress(return_addr) catch break;
+
+        if (function_addr != 0) {
+            active_functions.append(function_addr) catch break;
+            log("gc_cleanup: active function at 0x{X}", .{function_addr});
+        }
+
+        // Move to parent frame
+        current_frame = getParentFrame(current_frame) catch break;
+        depth += 1;
+    }
+}
+
+fn getReturnAddressFromFrame(frame_addr: usize) !usize {
+    // On most architectures, return address is at [frame_pointer + word_size]
+    const return_addr_ptr = frame_addr + @sizeOf(usize);
+
+    // Basic bounds check
+    if (return_addr_ptr < frame_addr or return_addr_ptr > frame_addr + 1024) {
+        return error.InvalidFrame;
+    }
+
+    return @as(*usize, @ptrFromInt(return_addr_ptr)).*;
+}
+
+fn getParentFrame(frame_addr: usize) !usize {
+    // On most architectures, parent frame pointer is at [frame_pointer]
+    const parent_frame_ptr = @as(*usize, @ptrFromInt(frame_addr)).*;
+
+    // Basic validation - parent frame should be higher on stack
+    if (parent_frame_ptr <= frame_addr or parent_frame_ptr > frame_addr + 0x10000) {
+        return error.InvalidFrame;
+    }
+
+    return parent_frame_ptr;
+}
+
+fn findFunctionForAddress(addr: usize) !u64 {
+    const stack_map = getStackMap() orelse return error.NoStackMap;
+    var record_ptr = @as([*]u8, @ptrCast(stack_map)) + @sizeOf(StackMapHeader);
+
+    // Check each function's address range
+    for (0..stack_map.num_functions) |_| {
+        const func_record = @as(*StkSizeRecord, @ptrCast(@alignCast(record_ptr)));
+
+        // Simple check: if address is >= function start, assume it's this function
+        // (This is approximate - better would check function end address too)
+        if (addr >= func_record.function_address) {
+            return func_record.function_address;
+        }
+
+        record_ptr += @sizeOf(StkSizeRecord);
+    }
+
+    return 0; // Function not found
+}
+
 export fn gc_safepoint_slow_path() void {
+    log("===GC START===", .{});
+    const frame_addr = @frameAddress();
+    // Get the frame address of the calling function
     const return_addr = @returnAddress();
     // Process the stack map at the safepoint to find GC roots
-    processStackMapAtSafepoint(return_addr);
+    processStackMapAtSafepoint(return_addr, frame_addr);
     // TODO: Trigger GC based on good heuristics
     performGarbageCollection();
+    log("===GC END===", .{});
 }
 
 export fn gc_alloc(size: u32) ?*anyopaque {
@@ -389,12 +562,7 @@ export fn gc_alloc(size: u32) ?*anyopaque {
     alloc_mutex.lock();
     defer alloc_mutex.unlock();
 
-    allocated_objects.append(AllocatedObject{
-        .ptr = bytes.ptr,
-        .size = size,
-        .marked = false,
-        .protection_count = 3, // Protect for 3 GC cycles (adjustable)
-    }) catch |err| {
+    allocated_objects.append(AllocatedObject{ .ptr = bytes.ptr, .size = size, .marked = false }) catch |err| {
         log("gc_alloc: failed to track allocation: {}", .{err});
         // Still return the allocation even if tracking fails
     };
