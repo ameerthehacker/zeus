@@ -7,7 +7,8 @@ const StkSizeRecord = types.StackSizeRecord; // Corrected from StkSizeRecord to 
 const LiveOut = types.LiveOut;
 const StackMapRecord = types.StackMapRecord;
 const Location = types.Location;
-const GCRoot = types.GCRoot;
+// Structure to track GC roots - just the pointer and whether it's marked
+const GCRoot = struct { ptr: *anyopaque, marked: bool };
 
 // Structure to track allocated objects
 const AllocatedObject = struct { ptr: *anyopaque, size: u32, marked: bool };
@@ -101,28 +102,22 @@ fn getStackMap() ?*StackMapHeader {
 }
 
 fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void {
-    const stack_map = getStackMap().?; // Unwrap the optional since it panics if null
+    const stack_map = getStackMap().?;
 
     // Find the record for this safepoint
     var record_ptr = @as([*]u8, @ptrCast(stack_map)) + @sizeOf(StackMapHeader);
 
-    // Skip function records (each StkSizeRecord) but save function information
+    // Find which function our return address belongs to
     var function_start_addr: u64 = 0;
-    var current_function_record_count: u64 = 0;
-    var function_index: u64 = 0;
-    for (0..stack_map.num_functions) |i| {
+    for (0..stack_map.num_functions) |_| {
         const func_record = @as(*StkSizeRecord, @ptrCast(@alignCast(record_ptr)));
-        // Find which function our return address belongs to
         if (return_addr >= func_record.function_address) {
             function_start_addr = func_record.function_address;
-            current_function_record_count = func_record.record_count;
-            function_index = i;
         }
-
         record_ptr += @sizeOf(StkSizeRecord);
     }
 
-    // Skip constants (each is u64)
+    // Skip constants
     record_ptr += stack_map.num_constants * @sizeOf(u64);
 
     // Calculate instruction offset from return address
@@ -131,108 +126,38 @@ fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void
     else
         0;
 
-    // Examine ALL records to find first matching statepoint, then process function records
-    var found_first_match = false;
-    var records_processed_in_function: u64 = 0;
+    log("gc_safepoint: looking for instruction_offset: {}", .{instruction_offset});
 
-    log("gc_safepoint_slow_path: function_index: {}", .{function_index});
-    log("gc_safepoint_slow_path: function_record_count: {}", .{current_function_record_count});
-
-    for (0..stack_map.num_records) |j| {
+    // Find the exact statepoint record that matches our return address
+    for (0..stack_map.num_records) |_| {
         // Ensure proper alignment for the record structure (8-byte aligned)
         const aligned_addr = std.mem.alignForward(usize, @intFromPtr(record_ptr), 8);
         record_ptr = @as([*]u8, @ptrFromInt(aligned_addr));
 
         const record = @as(*StackMapRecord, @ptrCast(@alignCast(record_ptr)));
 
-        // Check if this record matches our instruction offset
+        // Check if this is the exact statepoint record we're looking for
         const offset_match = (record.instruction_offset == instruction_offset);
         const is_statepoint = record.patchpoint_id == 2882400000;
-        const is_matching_statepoint = offset_match and is_statepoint;
 
-        // If we found the first matching statepoint, start processing this function's records
-        if (is_matching_statepoint) {
-            found_first_match = true;
-            log("gc_safepoint_slow_path: function {}: first record: {}", .{ function_index, j });
+        if (offset_match and is_statepoint) {
+            log("gc_safepoint: found matching statepoint record at offset {}", .{instruction_offset});
+            processStatemapRecord(record, caller_frame_addr);
+            break; // We found our record, no need to continue
         }
 
-        // Process statepoint records if we're in the target function
-        if (found_first_match and records_processed_in_function < current_function_record_count) {
-            var ptr = record_ptr + @sizeOf(StackMapRecord);
-
-            if (record.num_locations >= 3) {
-                // Ignore calling convention
-                ptr += @sizeOf(Location);
-
-                // Ignore flags
-                ptr += @sizeOf(Location);
-
-                // Ignore number of deopt arguments
-                const num_deopt_args = @as(u32, @intCast(@as(*Location, @ptrCast(@alignCast(ptr))).offset_or_constant));
-                ptr += @sizeOf(Location);
-
-                // Skip deopt arguments
-                for (0..num_deopt_args) |_| {
-                    ptr += @sizeOf(Location);
-                }
-
-                // Calculate remaining locations
-                const remaining_locations = record.num_locations - 3 - num_deopt_args;
-                log("gc_safepoint_slow_path: remaining_locations: {}", .{remaining_locations});
-
-                if (remaining_locations > 0) {
-                    if (remaining_locations % 2 == 0) {
-                        const num_relocation_pairs = remaining_locations / 2;
-
-                        log("gc_safepoint_slow_path: num_relocation_pairs: {}", .{num_relocation_pairs});
-
-                        for (0..num_relocation_pairs) |_| {
-                            // Base pointer location
-                            const base_location = @as(*Location, @ptrCast(@alignCast(ptr)));
-                            ptr += @sizeOf(Location);
-
-                            // Derived pointer location
-                            const derived_location = @as(*Location, @ptrCast(@alignCast(ptr)));
-                            ptr += @sizeOf(Location);
-
-                            // Track GC roots from this function's statepoint records
-                            if (base_location.location_type == 2 or base_location.location_type == 3) {
-                                trackGCRootWithFunction(base_location, caller_frame_addr, function_start_addr);
-                            }
-
-                            if (derived_location.location_type == 2 or derived_location.location_type == 3) {
-                                trackGCRootWithFunction(derived_location, caller_frame_addr, function_start_addr);
-                            }
-                        }
-                    } else {
-                        std.debug.panic("error: odd number of remaining locations ({}) - cannot form pairs", .{remaining_locations});
-                    }
-                }
-            }
-
-            records_processed_in_function += 1;
-
-            // If we've processed all records for this function, we're done
-            if (records_processed_in_function >= current_function_record_count) {
-                break;
-            }
-        }
-
+        // Skip to next record
         var ptr = record_ptr + @sizeOf(StackMapRecord);
 
         // Skip locations
         ptr += record.num_locations * @sizeOf(Location);
 
-        // Align to 8-byte boundary after locations (LLVM uses 8-byte alignment)
+        // Align to 8-byte boundary after locations
         ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
 
-        // Read number of LiveOuts (uint16) with bounds checking
-        const num_liveouts_ptr = @as(*u16, @ptrCast(@alignCast(ptr)));
-        const num_liveouts = num_liveouts_ptr.*;
-
+        // Read and skip LiveOuts
+        const num_liveouts = @as(*u16, @ptrCast(@alignCast(ptr))).*;
         ptr += @sizeOf(u16);
-
-        // Skip LiveOut entries (4 bytes each)
         ptr += num_liveouts * @sizeOf(LiveOut);
 
         // Align to 8-byte boundary for next record
@@ -240,97 +165,79 @@ fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void
     }
 }
 
-fn trackGCRootWithFunction(location: *Location, frame_addr: usize, function_addr: u64) void {
-    // Calculate actual address based on location info (using caller's frame address)
-    log("gc_root: frame_addr: 0x{X}, function_addr: 0x{X}", .{ frame_addr, function_addr });
+fn processStatemapRecord(record: *StackMapRecord, caller_frame_addr: usize) void {
+    var ptr = @as([*]u8, @ptrCast(record)) + @sizeOf(StackMapRecord);
 
-    // Validate location before processing
-    if (location.location_size == 0) {
-        return;
+    if (record.num_locations < 3) {
+        return; // Not enough locations for a valid statepoint
     }
 
-    const root_addr = switch (location.location_type) {
-        2 => blk: { // Direct - value at stack offset
-            const offset = @as(isize, location.offset_or_constant);
-            const addr = frame_addr + @as(usize, @bitCast(offset));
-            break :blk addr;
-        },
-        3 => blk: { // Indirect - read pointer from stack location
-            const offset = @as(isize, location.offset_or_constant);
-            const ptr_addr = frame_addr + @as(usize, @bitCast(offset));
+    // Skip calling convention
+    ptr += @sizeOf(Location);
 
-            // Safety check: ensure we're reading from a reasonable stack location
-            if (ptr_addr < frame_addr - 4096 or ptr_addr > frame_addr + 4096) {
-                return;
-            }
+    // Skip flags
+    ptr += @sizeOf(Location);
 
-            const value = @as(*usize, @ptrFromInt(ptr_addr)).*;
-            break :blk value;
-        },
-        else => {
-            return;
-        },
-    };
+    // Get number of deopt arguments
+    const num_deopt_args = @as(u32, @intCast(@as(*Location, @ptrCast(@alignCast(ptr))).offset_or_constant));
+    ptr += @sizeOf(Location);
 
-    // Skip null pointers
-    if (root_addr == 0) {
-        return;
+    // Skip deopt arguments
+    for (0..num_deopt_args) |_| {
+        ptr += @sizeOf(Location);
     }
 
-    const location_type_str = switch (location.location_type) {
-        2 => "Direct",
-        3 => "Indirect",
-        else => "Other",
-    };
+    // Calculate remaining locations (should be base/derived pointer pairs)
+    const remaining_locations = record.num_locations - 3 - num_deopt_args;
+    log("gc_safepoint: remaining_locations: {}", .{remaining_locations});
 
-    log("gc_root: tracking at 0x{X} (size={}, type={s}, function=0x{X})", .{ root_addr, location.location_size, location_type_str, function_addr });
+    if (remaining_locations > 0 and remaining_locations % 2 == 0) {
+        const num_relocation_pairs = remaining_locations / 2;
+        log("gc_safepoint: num_relocation_pairs: {}", .{num_relocation_pairs});
 
-    // Add to our GC root set with function information
-    gc_roots.append(GCRoot{
-        .ptr = @ptrFromInt(root_addr),
-        .size = @as(u32, location.location_size),
-        .marked = false,
-        .function_addr = function_addr,
-        .frame_addr = frame_addr,
-    }) catch |err| {
-        log("gc_root: failed to add root: {}", .{err});
-    };
+        for (0..num_relocation_pairs) |_| {
+            // Base pointer location
+            const base_location = @as(*Location, @ptrCast(@alignCast(ptr)));
+            ptr += @sizeOf(Location);
+
+            // Derived pointer location
+            const derived_location = @as(*Location, @ptrCast(@alignCast(ptr)));
+            ptr += @sizeOf(Location);
+
+            // Track GC roots from stack locations
+            trackGCRoot(base_location, caller_frame_addr);
+            trackGCRoot(derived_location, caller_frame_addr);
+        }
+    }
 }
 
 fn trackGCRoot(location: *Location, frame_addr: usize) void {
-    // Calculate actual address based on location info (using caller's frame address)
-    log("gc_root: frame_addr: 0x{X}", .{frame_addr});
-
-    // Validate location before processing
-    if (location.location_size == 0) {
+    // Only process Direct and Indirect locations that contain pointers
+    if (location.location_type != 2 and location.location_type != 3) {
         return;
     }
 
-    const root_addr = switch (location.location_type) {
-        2 => blk: { // Direct - value at stack offset
-            const offset = @as(isize, location.offset_or_constant);
-            const addr = frame_addr + @as(usize, @bitCast(offset));
-            break :blk addr;
-        },
-        3 => blk: { // Indirect - read pointer from stack location
-            const offset = @as(isize, location.offset_or_constant);
-            const ptr_addr = frame_addr + @as(usize, @bitCast(offset));
+    // Skip if location size is not pointer-sized
+    if (location.location_size != @sizeOf(*anyopaque)) {
+        return;
+    }
 
-            // Safety check: ensure we're reading from a reasonable stack location
-            if (ptr_addr < frame_addr - 4096 or ptr_addr > frame_addr + 4096) {
-                return;
-            }
-
-            const value = @as(*usize, @ptrFromInt(ptr_addr)).*;
-            break :blk value;
-        },
-        else => {
-            return;
-        },
+    const stack_location_addr = blk: {
+        const offset = @as(isize, location.offset_or_constant);
+        break :blk frame_addr + @as(usize, @bitCast(offset));
     };
 
+    // Safety check: ensure we're reading from a reasonable stack location
+    if (stack_location_addr < frame_addr - 4096 or stack_location_addr > frame_addr + 4096) {
+        return;
+    }
+
+    // Read the pointer value from the stack location
+    // +16 to skip the return address
+    const pointer_value = @as(*usize, @ptrFromInt(stack_location_addr + 16)).*;
+
     // Skip null pointers
-    if (root_addr == 0) {
+    if (pointer_value == 0) {
         return;
     }
 
@@ -340,15 +247,12 @@ fn trackGCRoot(location: *Location, frame_addr: usize) void {
         else => "Other",
     };
 
-    log("gc_root: tracking at 0x{X} (size={}, type={s})", .{ root_addr, location.location_size, location_type_str });
+    log("gc_root: found pointer 0x{X} at stack location 0x{X} (type={s})", .{ pointer_value, stack_location_addr, location_type_str });
 
-    // Add to our GC root set
+    // Add the actual pointer value to our GC root set
     gc_roots.append(GCRoot{
-        .ptr = @ptrFromInt(root_addr),
-        .size = @as(u32, location.location_size),
+        .ptr = @ptrFromInt(pointer_value),
         .marked = false,
-        .function_addr = 0, // Unknown function for now
-        .frame_addr = frame_addr,
     }) catch |err| {
         log("gc_root: failed to add root: {}", .{err});
     };
@@ -399,12 +303,15 @@ fn performGarbageCollection() void {
     }
 
     log("gc_cycle: complete, freed {} objects ({} bytes), {} objects remaining", .{ freed_count, freed_bytes, allocated_objects.items.len });
+
+    // Clear GC roots after collection (they're specific to this safepoint)
+    gc_roots.clearRetainingCapacity();
 }
 
 fn markObject(root: *GCRoot) void {
     if (root.marked) return;
     root.marked = true;
-    log("gc_mark: root at 0x{X} (size={})", .{ @intFromPtr(root.ptr), root.size });
+    log("gc_mark: root at 0x{X}", .{@intFromPtr(root.ptr)});
 
     // Find the corresponding allocated object and mark it
     markAllocatedObject(@intFromPtr(root.ptr));
@@ -432,8 +339,9 @@ fn markAllocatedObject(ptr_addr: usize) void {
 }
 
 export fn gc_safepoint_slow_path() void {
-    log("===GC START===", .{});
     const frame_addr = @frameAddress();
+    log("===GC START===", .{});
+    log("gc_safepoint_slow_path: caller_frame_addr: 0x{X}", .{frame_addr});
     // Get the frame address of the calling function
     const return_addr = @returnAddress();
     // Process the stack map at the safepoint to find GC roots

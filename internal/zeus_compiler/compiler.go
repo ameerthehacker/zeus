@@ -466,7 +466,7 @@ func LinkObjFiles(objDir string, outputPath string) error {
 		if runtime.GOOS == "darwin" {
 			linker = "clang"
 		}
-		args := []string{}
+		args := []string{"-fno-omit-frame-pointer"}
 		args = append(args, objFiles...)
 		args = append(args, "-o", outputPath)
 		linkerCmd = exec.Command(linker, args...)

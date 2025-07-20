@@ -326,37 +326,3 @@ pub const Location = extern struct {
     /// - ConstantIndex: index into the constants table
     offset_or_constant: i32,
 };
-
-/// Runtime representation of a GC root for the garbage collector.
-/// This is NOT part of the LLVM stackmap format, but rather our
-/// runtime data structure for tracking GC roots extracted from
-/// the stackmap Location entries.
-///
-/// Memory layout: 32 bytes total (on 64-bit)
-/// +0:  ptr (*anyopaque)  - Pointer to the GC-managed object
-/// +8:  size (u32)        - Size of the object in bytes
-/// +12: marked (bool)     - GC mark bit for mark-and-sweep
-/// +16: function_addr (u64) - Address of function that owns this root
-/// +24: frame_addr (u64)  - Frame address where this root was found
-pub const GCRoot = struct {
-    /// Pointer to the start of the GC-managed object.
-    /// This address is extracted from stackmap Location entries
-    /// and represents a live GC pointer at a safepoint.
-    ptr: *anyopaque,
-
-    /// Size of the GC object in bytes.
-    /// Extracted from the location_size field of the corresponding Location.
-    size: u32,
-
-    /// Mark bit used during garbage collection mark phase.
-    /// Set to true when the object is determined to be reachable.
-    marked: bool,
-
-    /// Address of the function that owns this GC root.
-    /// Used to determine when roots should be cleaned up.
-    function_addr: u64,
-
-    /// Frame address where this root was found.
-    /// Used for stack validation and cleanup.
-    frame_addr: u64,
-};
