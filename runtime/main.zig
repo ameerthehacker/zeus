@@ -1,5 +1,25 @@
+// Zeus Garbage Collector Runtime with libunwind-based stack walking
+//
+// To compile this runtime on macOS, make sure to link with libunwind:
+// zig build-lib runtime/main.zig -lc -lunwind -target aarch64-macos
+// or add to your build.zig: lib.linkSystemLibrary("unwind");
+//
+// libunwind provides robust stack traversal that handles:
+// - Optimized code with frame pointer omission
+// - Different calling conventions
+// - Exception handling frames
+// - Signal handler frames
+// - More accurate unwinding than manual frame walking
+
 const std = @import("std");
 const types = @import("stackmap_types.zig");
+
+// Import libunwind for stack walking
+const c = @cImport({
+    @cInclude("libunwind.h");
+    @cInclude("mach-o/getsect.h");
+    @cInclude("mach-o/dyld.h");
+});
 
 // Import the stackmap and GC types
 const StackMapHeader = types.StackMapHeader;
@@ -12,6 +32,12 @@ const GCRoot = struct { ptr: *anyopaque, marked: bool };
 
 // Structure to track allocated objects
 const AllocatedObject = struct { ptr: *anyopaque, size: u32, marked: bool };
+
+// Structure to represent a stack frame
+const StackFrame = struct {
+    instruction_pointer: usize,
+    frame_pointer: usize,
+};
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
@@ -41,12 +67,6 @@ fn log(comptime fmt: []const u8, args: anytype) void {
 
 // Try to locate the LLVM stack map section at runtime
 fn tryFindStackMapSymbol() ?*StackMapHeader {
-    // On macOS/Darwin, access the section directly using mach-o APIs
-    const c = @cImport({
-        @cInclude("mach-o/getsect.h");
-        @cInclude("mach-o/dyld.h");
-    });
-
     // Get the main executable (index 0)
     const header = c._dyld_get_image_header(0);
     if (header == null) {
@@ -99,6 +119,105 @@ fn getStackMap() ?*StackMapHeader {
     }
 
     return stack_map;
+}
+
+// Walk the stack using libunwind and collect all frames
+// This provides more accurate stack traversal compared to manual frame walking,
+// handling various calling conventions, optimized code, and exception unwinding correctly
+fn walkStack() !std.ArrayList(StackFrame) {
+    var frames = std.ArrayList(StackFrame).init(allocator);
+    errdefer frames.deinit();
+
+    var cursor: c.unw_cursor_t = undefined;
+    var context: c.unw_context_t = undefined;
+
+    // Get the current machine context (registers, stack pointer, etc.)
+    const get_context_result = c.unw_getcontext(&context);
+    if (get_context_result != 0) {
+        log("libunwind: failed to get context: {}", .{get_context_result});
+        return error.UnwindGetContextFailed;
+    }
+
+    // Initialize cursor for local unwinding (same process)
+    const init_local_result = c.unw_init_local(&cursor, &context);
+    if (init_local_result != 0) {
+        log("libunwind: failed to init local: {}", .{init_local_result});
+        return error.UnwindInitLocalFailed;
+    }
+
+    var frame_count: u32 = 0;
+    const max_frames: u32 = 1000; // Prevent infinite loops in case of stack corruption
+
+    // Walk the stack frame by frame
+    while (frame_count < max_frames) {
+        var ip: c.unw_word_t = 0;
+        var sp: c.unw_word_t = 0;
+
+        // Get instruction pointer (where we are in the code)
+        const get_reg_ip_result = c.unw_get_reg(&cursor, c.UNW_REG_IP, &ip);
+        if (get_reg_ip_result != 0) {
+            log("libunwind: failed to get IP: {}", .{get_reg_ip_result});
+            break;
+        }
+
+        // Get stack pointer (current frame's stack location)
+        const get_reg_sp_result = c.unw_get_reg(&cursor, c.UNW_REG_SP, &sp);
+        if (get_reg_sp_result != 0) {
+            log("libunwind: failed to get SP: {}", .{get_reg_sp_result});
+            break;
+        }
+
+        // Skip frames that might be in system libraries or have invalid addresses
+        if (ip == 0 or sp == 0) {
+            log("stack_walk: skipping frame with null IP or SP", .{});
+            const step_result = c.unw_step(&cursor);
+            if (step_result <= 0) break;
+            frame_count += 1;
+            continue;
+        }
+
+        // Add frame to our collection
+        try frames.append(StackFrame{
+            .instruction_pointer = @intCast(ip),
+            .frame_pointer = @intCast(sp),
+        });
+
+        log("stack_walk: frame {}: IP=0x{X}, SP=0x{X}", .{ frame_count, ip, sp });
+
+        // Move to the next frame up the stack
+        const step_result = c.unw_step(&cursor);
+        if (step_result <= 0) {
+            if (step_result < 0) {
+                log("libunwind: step failed: {}", .{step_result});
+            }
+            break; // End of stack reached or unwind error
+        }
+
+        frame_count += 1;
+    }
+
+    if (frame_count >= max_frames) {
+        log("stack_walk: reached maximum frame limit, possible stack corruption", .{});
+    }
+
+    log("stack_walk: collected {} frames", .{frames.items.len});
+    return frames;
+}
+
+// Process stack maps for all frames in the stack
+fn processStackMapsForAllFrames() void {
+    const frames = walkStack() catch |err| {
+        log("stack_walk: failed to walk stack: {}", .{err});
+        return;
+    };
+    defer frames.deinit();
+
+    log("gc_safepoint: processing {} stack frames", .{frames.items.len});
+
+    // Process each frame
+    for (frames.items) |frame| {
+        processStackMapAtSafepoint(frame.instruction_pointer, frame.frame_pointer);
+    }
 }
 
 fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void {
@@ -280,8 +399,17 @@ fn trackGCRoot(location: *Location, frame_addr: usize) void {
     };
 
     // Read the pointer value from the stack location
-    // +16 to skip the return address
-    const pointer_value = @as(*usize, @ptrFromInt(stack_location_addr + 16)).*;
+    // For libunwind-provided frame addresses, we don't need the +16 offset
+    // as the frame_addr is already the correct stack pointer
+
+    // Basic bounds checking - ensure the address looks reasonable
+    if (stack_location_addr == 0 or stack_location_addr < 0x1000) {
+        log("gc_root: invalid stack location 0x{X}", .{stack_location_addr});
+        return;
+    }
+
+    const pointer_value_ptr = @as(*usize, @ptrFromInt(stack_location_addr));
+    const pointer_value = pointer_value_ptr.*;
 
     // Skip null pointers
     if (pointer_value == 0) {
@@ -303,6 +431,24 @@ fn trackGCRoot(location: *Location, frame_addr: usize) void {
     }) catch |err| {
         log("gc_root: failed to add root: {}", .{err});
     };
+}
+
+// Test function to demonstrate stack walking (for debugging)
+export fn gc_test_stack_walk() void {
+    log("=== STACK WALK TEST ===", .{});
+
+    const frames = walkStack() catch |err| {
+        log("stack_walk_test: failed: {}", .{err});
+        return;
+    };
+    defer frames.deinit();
+
+    log("stack_walk_test: successfully walked {} frames:", .{frames.items.len});
+    for (frames.items, 0..) |frame, i| {
+        log("  frame[{}]: IP=0x{X}, SP=0x{X}", .{ i, frame.instruction_pointer, frame.frame_pointer });
+    }
+
+    log("=== STACK WALK TEST COMPLETE ===", .{});
 }
 
 fn performGarbageCollection() void {
@@ -383,19 +529,18 @@ fn markAllocatedObject(ptr_addr: usize) void {
 }
 
 export fn gc_safepoint_slow_path() void {
-    const frame_addr = @frameAddress();
-    const return_addr = @returnAddress();
     log("===GC START===", .{});
-    log("gc_safepoint_slow_path: caller_frame_addr: 0x{X}", .{frame_addr});
-    // Get the frame address of the calling function
-    // Process the stack map at the safepoint to find GC roots
-    processStackMapAtSafepoint(return_addr, frame_addr);
+
+    // Clear previous GC roots
+    gc_roots.clearRetainingCapacity();
+
+    // Walk the entire stack and process stack maps for all frames
+    processStackMapsForAllFrames();
+
     // TODO: Trigger GC based on good heuristics
     performGarbageCollection();
     log("===GC END===", .{});
 }
-
-export fn gc_track_roots() void {}
 
 export fn gc_alloc(size: u32) ?*anyopaque {
     // Get the frame address of the calling function
@@ -414,3 +559,5 @@ export fn gc_alloc(size: u32) ?*anyopaque {
     log("gc_alloc: {} bytes at 0x{X}, total objects: {}", .{ size, @intFromPtr(bytes.ptr), allocated_objects.items.len });
     return bytes.ptr;
 }
+
+export fn gc_track_root(_: *anyopaque) void {}
