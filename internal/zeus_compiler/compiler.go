@@ -174,7 +174,7 @@ func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
 		// RewriteStatepointsForGC: Transforms calls to explicit statepoint relocations
 
 		// Run the passes on the module
-		err := llvmModule.RunPasses("place-safepoints", c.targetMachine, options)
+		err := llvmModule.RunPasses("mem2reg,place-safepoints", c.targetMachine, options)
 		if err != nil {
 			return fmt.Errorf("failed to run place-safepoints pass on module %s: %v", sourceFile.Path, err)
 		}

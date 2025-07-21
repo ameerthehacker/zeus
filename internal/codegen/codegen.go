@@ -95,12 +95,6 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	gcSafepointPollFunction.SetLinkage(llvm.InternalLinkage)
 	globalFunctions["gc.safepoint_poll"] = GlobalLLVMFunction{gcSafepointPollFunction, gcSafepointPollType}
 
-	// GC track roots function (defined function)
-	gcTrackRootsType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{llvm.PointerType(c.ctx.VoidType(), 0)}, false)
-	gcTrackRootsFunction := llvm.AddFunction(module, "gc_track_root", gcTrackRootsType)
-	gcTrackRootsFunction.SetLinkage(llvm.InternalLinkage)
-	globalFunctions["gc_track_root"] = GlobalLLVMFunction{gcTrackRootsFunction, gcTrackRootsType}
-
 	// Create the body for gc.safepoint_poll
 	builder := c.ctx.NewBuilder()
 	entryBlock := c.ctx.AddBasicBlock(gcSafepointPollFunction, "entry")
@@ -580,7 +574,6 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	llvmVTable := c.getLLVMVTablePtr(callee.Name)
 	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
 	// Track the allocated object with the GC
-	c.callGlobalLLVMFunction("gc_track_root", llvmStruct)
 	if len(input.Args) > 0 {
 		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
 		// imported constructor name has module resolution in name

@@ -559,5 +559,3 @@ export fn gc_alloc(size: u32) ?*anyopaque {
     log("gc_alloc: {} bytes at 0x{X}, total objects: {}", .{ size, @intFromPtr(bytes.ptr), allocated_objects.items.len });
     return bytes.ptr;
 }
-
-export fn gc_track_root(_: *anyopaque) void {}
