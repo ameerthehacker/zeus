@@ -95,6 +95,12 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	gcSafepointPollFunction.SetLinkage(llvm.InternalLinkage)
 	globalFunctions["gc.safepoint_poll"] = GlobalLLVMFunction{gcSafepointPollFunction, gcSafepointPollType}
 
+	// GC track roots function (defined function)
+	gcTrackRootsType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
+	gcTrackRootsFunction := llvm.AddFunction(module, "gc_track_roots", gcTrackRootsType)
+	gcTrackRootsFunction.SetLinkage(llvm.InternalLinkage)
+	globalFunctions["gc_track_roots"] = GlobalLLVMFunction{gcTrackRootsFunction, gcTrackRootsType}
+
 	// Create the body for gc.safepoint_poll
 	builder := c.ctx.NewBuilder()
 	entryBlock := c.ctx.AddBasicBlock(gcSafepointPollFunction, "entry")
@@ -570,7 +576,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
 	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.ctx.Int32Type(), c.getSizeOfClass(*callee), false))
-	llvmStructVTableField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, VTABLE_STRUCT_INDEX, "vTable")
+	llvmStructVTableField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, VTABLE_STRUCT_INDEX, fmt.Sprintf("%s_vtable_field", callee.Name))
 	llvmVTable := c.getLLVMVTablePtr(callee.Name)
 	c.builder.CreateStore(llvmVTable, llvmStructVTableField)
 	if len(input.Args) > 0 {
@@ -596,6 +602,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 		}
 		constructorMethodParams = append(constructorMethodParams, llvmStruct)
 		// call the constructor method
+		c.callGlobalLLVMFunction("gc_track_roots")
 		c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
 	}
 	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)

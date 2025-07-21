@@ -3,7 +3,7 @@ const types = @import("stackmap_types.zig");
 
 // Import the stackmap and GC types
 const StackMapHeader = types.StackMapHeader;
-const StkSizeRecord = types.StackSizeRecord; // Corrected from StkSizeRecord to StackSizeRecord
+const StackSizeRecord = types.StackSizeRecord;
 const LiveOut = types.LiveOut;
 const StackMapRecord = types.StackMapRecord;
 const Location = types.Location;
@@ -107,14 +107,40 @@ fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void
     // Find the record for this safepoint
     var record_ptr = @as([*]u8, @ptrCast(stack_map)) + @sizeOf(StackMapHeader);
 
-    // Find which function our return address belongs to
+    // Find which function our return address belongs to and track function info
     var function_start_addr: u64 = 0;
-    for (0..stack_map.num_functions) |_| {
-        const func_record = @as(*StkSizeRecord, @ptrCast(@alignCast(record_ptr)));
+    var target_function_index: ?u32 = null;
+    var records_to_skip: u64 = 0;
+    var target_function_record_count: u64 = 0;
+
+    for (0..stack_map.num_functions) |func_idx| {
+        const func_record = @as(*StackSizeRecord, @ptrCast(@alignCast(record_ptr)));
         if (return_addr >= func_record.function_address) {
+            // This could be our function, but keep looking for a better match
             function_start_addr = func_record.function_address;
+            target_function_index = @as(u32, @intCast(func_idx));
+            target_function_record_count = func_record.record_count;
+            // Don't update records_to_skip yet - we'll calculate it after we find the best match
+        } else if (target_function_index != null) {
+            // We found a function address that's higher than our return address,
+            // so the previous function was our target
+            break;
         }
-        record_ptr += @sizeOf(StkSizeRecord);
+        record_ptr += @sizeOf(StackSizeRecord);
+    }
+
+    // If we didn't find a matching function, bail out
+    if (target_function_index == null) {
+        log("gc_safepoint: no matching function found for return address 0x{X}", .{return_addr});
+        return;
+    }
+
+    // Calculate how many records we need to skip to get to our function's records
+    record_ptr = @as([*]u8, @ptrCast(stack_map)) + @sizeOf(StackMapHeader);
+    for (0..target_function_index.?) |_| {
+        const func_record = @as(*StackSizeRecord, @ptrCast(@alignCast(record_ptr)));
+        records_to_skip += func_record.record_count;
+        record_ptr += @sizeOf(StackSizeRecord);
     }
 
     // Skip constants
@@ -126,10 +152,36 @@ fn processStackMapAtSafepoint(return_addr: usize, caller_frame_addr: usize) void
     else
         0;
 
-    log("gc_safepoint: looking for instruction_offset: {}", .{instruction_offset});
+    log("gc_safepoint: looking for instruction_offset: {} in function {} (skipping {} records, searching {} records)", .{ instruction_offset, target_function_index.?, records_to_skip, target_function_record_count });
 
-    // Find the exact statepoint record that matches our return address
-    for (0..stack_map.num_records) |_| {
+    // Skip to the start of our function's records
+    for (0..records_to_skip) |_| {
+        // Ensure proper alignment for the record structure (8-byte aligned)
+        const aligned_addr = std.mem.alignForward(usize, @intFromPtr(record_ptr), 8);
+        record_ptr = @as([*]u8, @ptrFromInt(aligned_addr));
+
+        const record = @as(*StackMapRecord, @ptrCast(@alignCast(record_ptr)));
+
+        // Skip to next record
+        var ptr = record_ptr + @sizeOf(StackMapRecord);
+
+        // Skip locations
+        ptr += record.num_locations * @sizeOf(Location);
+
+        // Align to 8-byte boundary after locations
+        ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
+
+        // Read and skip LiveOuts
+        const num_liveouts = @as(*u16, @ptrCast(@alignCast(ptr))).*;
+        ptr += @sizeOf(u16);
+        ptr += num_liveouts * @sizeOf(LiveOut);
+
+        // Align to 8-byte boundary for next record
+        record_ptr = @as([*]u8, @ptrFromInt(std.mem.alignForward(usize, @intFromPtr(ptr), 8)));
+    }
+
+    // Find the exact statepoint record that matches our return address within our function's records
+    for (0..target_function_record_count) |_| {
         // Ensure proper alignment for the record structure (8-byte aligned)
         const aligned_addr = std.mem.alignForward(usize, @intFromPtr(record_ptr), 8);
         record_ptr = @as([*]u8, @ptrFromInt(aligned_addr));
@@ -227,11 +279,6 @@ fn trackGCRoot(location: *Location, frame_addr: usize) void {
         break :blk frame_addr + @as(usize, @bitCast(offset));
     };
 
-    // Safety check: ensure we're reading from a reasonable stack location
-    if (stack_location_addr < frame_addr - 4096 or stack_location_addr > frame_addr + 4096) {
-        return;
-    }
-
     // Read the pointer value from the stack location
     // +16 to skip the return address
     const pointer_value = @as(*usize, @ptrFromInt(stack_location_addr + 16)).*;
@@ -272,6 +319,7 @@ fn performGarbageCollection() void {
 
     // Mark phase: mark all reachable objects starting from GC roots
     for (gc_roots.items) |*root| {
+        root.marked = false;
         markObject(root);
     }
 
@@ -288,8 +336,8 @@ fn performGarbageCollection() void {
             log("gc_sweep: freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
 
             // Create a slice from the pointer and size to free it properly
-            // const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];
-            // allocator.free(bytes);
+            const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];
+            allocator.free(bytes);
 
             freed_count += 1;
             freed_bytes += obj.size;
@@ -303,13 +351,9 @@ fn performGarbageCollection() void {
     }
 
     log("gc_cycle: complete, freed {} objects ({} bytes), {} objects remaining", .{ freed_count, freed_bytes, allocated_objects.items.len });
-
-    // Clear GC roots after collection (they're specific to this safepoint)
-    gc_roots.clearRetainingCapacity();
 }
 
 fn markObject(root: *GCRoot) void {
-    if (root.marked) return;
     root.marked = true;
     log("gc_mark: root at 0x{X}", .{@intFromPtr(root.ptr)});
 
@@ -340,10 +384,10 @@ fn markAllocatedObject(ptr_addr: usize) void {
 
 export fn gc_safepoint_slow_path() void {
     const frame_addr = @frameAddress();
+    const return_addr = @returnAddress();
     log("===GC START===", .{});
     log("gc_safepoint_slow_path: caller_frame_addr: 0x{X}", .{frame_addr});
     // Get the frame address of the calling function
-    const return_addr = @returnAddress();
     // Process the stack map at the safepoint to find GC roots
     processStackMapAtSafepoint(return_addr, frame_addr);
     // TODO: Trigger GC based on good heuristics
@@ -351,7 +395,11 @@ export fn gc_safepoint_slow_path() void {
     log("===GC END===", .{});
 }
 
+export fn gc_track_roots() void {}
+
 export fn gc_alloc(size: u32) ?*anyopaque {
+    // Get the frame address of the calling function
+    // Process the stack map at the safepoint to find GC roots
     const bytes = allocator.alloc(u8, size) catch return null;
 
     // Track the allocated object
