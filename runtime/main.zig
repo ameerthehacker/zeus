@@ -23,14 +23,14 @@ const allocator = gpa.allocator();
 var gc_instance = gc_mod.GC.init(allocator);
 
 export fn zeus_gc_poll() void {
-    debug.log(allocator, "===GC POLL START===", .{});
+    debug.log(allocator, "gc_poll", "===GC POLL START===", .{});
 
     // Clear previous GC roots
     gc_instance.clearRoots();
 
     // Walk the entire stack and get all GC root pointers
     const gc_roots = stackmap.walkStackAndProcessRoots(allocator) catch |err| {
-        debug.log(allocator, "stack_walk: failed to collect GC roots: {}", .{err});
+        debug.log(allocator, "gc_stack_walk", "failed to collect GC roots: {}", .{err});
         return;
     };
     defer gc_roots.deinit();
@@ -40,7 +40,7 @@ export fn zeus_gc_poll() void {
 
     // TODO: Trigger GC based on good heuristics
     gc_instance.gc();
-    debug.log(allocator, "===GC POLL END===", .{});
+    debug.log(allocator, "gc_poll", "===GC POLL END===", .{});
 }
 
 export fn zeus_gc_alloc(size: u32) ?*anyopaque {

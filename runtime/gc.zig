@@ -28,7 +28,7 @@ pub const GC = struct {
     }
 
     pub fn registerRoots(self: *GC, root_ptrs: []const *anyopaque) void {
-        debug.log(self.allocator, "gc_register_roots: registering {} pointers", .{root_ptrs.len});
+        debug.log(self.allocator, "gc_register_roots", "registering {} pointers", .{root_ptrs.len});
 
         // Add all pointers to our GC root set
         for (root_ptrs) |root_ptr| {
@@ -36,14 +36,14 @@ pub const GC = struct {
                 .ptr = root_ptr,
                 .marked = false,
             }) catch |err| {
-                debug.log(self.allocator, "gc_register_roots: failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
+                debug.log(self.allocator, "gc_register_roots", "failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
             };
         }
     }
 
     pub fn gc(self: *GC) void {
-        debug.log(self.allocator, "gc_cycle: starting", .{});
-        debug.log(self.allocator, "gc_cycle: tracked roots: {}, allocated objects: {}", .{ self.gc_roots.items.len, self.allocated_objects.items.len });
+        debug.log(self.allocator, "gc_cycle", "starting", .{});
+        debug.log(self.allocator, "gc_cycle", "tracked roots: {}, allocated objects: {}", .{ self.gc_roots.items.len, self.allocated_objects.items.len });
 
         self.alloc_mutex.lock();
         defer self.alloc_mutex.unlock();
@@ -62,12 +62,12 @@ pub const GC = struct {
         // Sweep phase: free all unmarked and unprotected objects
         self.sweep();
 
-        debug.log(self.allocator, "gc_cycle: complete, {} objects remaining", .{self.allocated_objects.items.len});
+        debug.log(self.allocator, "gc_cycle", "complete, {} objects remaining", .{self.allocated_objects.items.len});
     }
 
     fn markObject(self: *GC, root: *GCRoot) void {
         root.marked = true;
-        debug.log(self.allocator, "gc_mark: marking root at 0x{X}", .{@intFromPtr(root.ptr)});
+        debug.log(self.allocator, "gc_mark", "marking root at 0x{X}", .{@intFromPtr(root.ptr)});
 
         // Find the corresponding allocated object and mark it
         self.markAllocatedObject(@intFromPtr(root.ptr));
@@ -84,7 +84,7 @@ pub const GC = struct {
             if (ptr_addr >= obj_addr and ptr_addr < obj_end) {
                 if (!obj.marked) {
                     obj.marked = true;
-                    debug.log(self.allocator, "gc_mark: marked object at 0x{X} (size={})", .{ obj_addr, obj.size });
+                    debug.log(self.allocator, "gc_mark", "marked object at 0x{X} (size={})", .{ obj_addr, obj.size });
 
                     // TODO: Scan this object for references to other objects
                     // For now, we only mark the directly referenced object
@@ -104,7 +104,7 @@ pub const GC = struct {
             // Only free if object is not marked
             if (!obj.marked) {
                 // Object is not reachable and not protected, free it
-                debug.log(self.allocator, "gc_sweep: freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
+                debug.log(self.allocator, "gc_sweep", "freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
 
                 // Create a slice from the pointer and size to free it properly
                 const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];
@@ -121,7 +121,7 @@ pub const GC = struct {
             }
         }
 
-        debug.log(self.allocator, "gc_sweep: freed {} objects ({} bytes)", .{ freed_count, freed_bytes });
+        debug.log(self.allocator, "gc_sweep", "freed {} objects ({} bytes)", .{ freed_count, freed_bytes });
     }
 
     pub fn alloc(self: *GC, size: u32) ?*anyopaque {
@@ -132,11 +132,11 @@ pub const GC = struct {
         defer self.alloc_mutex.unlock();
 
         self.allocated_objects.append(AllocatedObject{ .ptr = bytes.ptr, .size = size, .marked = false }) catch |err| {
-            debug.log(self.allocator, "gc_alloc: failed to track allocation: {}", .{err});
+            debug.log(self.allocator, "gc_alloc", "failed to track allocation: {}", .{err});
             // Still return the allocation even if tracking fails
         };
 
-        debug.log(self.allocator, "gc_alloc: {} bytes at 0x{X}, total objects: {}", .{ size, @intFromPtr(bytes.ptr), self.allocated_objects.items.len });
+        debug.log(self.allocator, "gc_alloc", "{} bytes at 0x{X}, total objects: {}", .{ size, @intFromPtr(bytes.ptr), self.allocated_objects.items.len });
         return bytes.ptr;
     }
 
