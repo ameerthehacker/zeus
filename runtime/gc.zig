@@ -28,7 +28,7 @@ pub const GC = struct {
     }
 
     pub fn registerRoots(self: *GC, root_ptrs: []const *anyopaque) void {
-        debug.log(self.allocator, "gc_root: registering {} pointers", .{root_ptrs.len});
+        debug.log(self.allocator, "gc_register_roots: registering {} pointers", .{root_ptrs.len});
 
         // Add all pointers to our GC root set
         for (root_ptrs) |root_ptr| {
@@ -36,7 +36,7 @@ pub const GC = struct {
                 .ptr = root_ptr,
                 .marked = false,
             }) catch |err| {
-                debug.log(self.allocator, "gc_root: failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
+                debug.log(self.allocator, "gc_register_roots: failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
             };
         }
     }
@@ -67,7 +67,7 @@ pub const GC = struct {
 
     fn markObject(self: *GC, root: *GCRoot) void {
         root.marked = true;
-        debug.log(self.allocator, "gc_mark: root at 0x{X}", .{@intFromPtr(root.ptr)});
+        debug.log(self.allocator, "gc_mark: marking root at 0x{X}", .{@intFromPtr(root.ptr)});
 
         // Find the corresponding allocated object and mark it
         self.markAllocatedObject(@intFromPtr(root.ptr));
@@ -84,7 +84,7 @@ pub const GC = struct {
             if (ptr_addr >= obj_addr and ptr_addr < obj_end) {
                 if (!obj.marked) {
                     obj.marked = true;
-                    debug.log(self.allocator, "gc_mark: allocated object at 0x{X} (size={})", .{ obj_addr, obj.size });
+                    debug.log(self.allocator, "gc_mark: marked object at 0x{X} (size={})", .{ obj_addr, obj.size });
 
                     // TODO: Scan this object for references to other objects
                     // For now, we only mark the directly referenced object
@@ -131,11 +131,7 @@ pub const GC = struct {
         self.alloc_mutex.lock();
         defer self.alloc_mutex.unlock();
 
-        self.allocated_objects.append(AllocatedObject{ 
-            .ptr = bytes.ptr, 
-            .size = size, 
-            .marked = false 
-        }) catch |err| {
+        self.allocated_objects.append(AllocatedObject{ .ptr = bytes.ptr, .size = size, .marked = false }) catch |err| {
             debug.log(self.allocator, "gc_alloc: failed to track allocation: {}", .{err});
             // Still return the allocation even if tracking fails
         };
@@ -147,4 +143,4 @@ pub const GC = struct {
     pub fn clearRoots(self: *GC) void {
         self.gc_roots.clearRetainingCapacity();
     }
-}; 
+};

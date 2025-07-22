@@ -2,8 +2,8 @@
 //!
 //! This file contains the data structures that mirror LLVM's stackmap format
 //! and provides functionality for walking the stack and parsing stackmaps to
-//! find GC roots. LLVM generates stackmaps to track GC roots and other metadata 
-//! at specific program points (safepoints). The stackmap is emitted as binary 
+//! find GC roots. LLVM generates stackmaps to track GC roots and other metadata
+//! at specific program points (safepoints). The stackmap is emitted as binary
 //! data in a special section (__llvm_stackmaps) that can be parsed at runtime.
 //!
 //! The overall memory layout of an LLVM stackmap section is:
@@ -370,7 +370,7 @@ fn extractPointerFromLocation(allocator: std.mem.Allocator, location: *Location,
 
     // Basic bounds checking - ensure the address looks reasonable
     if (stack_location_addr == 0 or stack_location_addr < 0x1000) {
-        debug.log(allocator, "gc_root: invalid stack location 0x{X}", .{stack_location_addr});
+        debug.log(allocator, "gc_stackmap: invalid stack location 0x{X}", .{stack_location_addr});
         return null;
     }
 
@@ -388,7 +388,7 @@ fn extractPointerFromLocation(allocator: std.mem.Allocator, location: *Location,
         else => "Other",
     };
 
-    debug.log(allocator, "gc_root: found pointer 0x{X} at stack location 0x{X} (type={s})", .{ pointer_value, stack_location_addr, location_type_str });
+    debug.log(allocator, "gc_stackmap: found pointer 0x{X} at stack location 0x{X} (type={s})", .{ pointer_value, stack_location_addr, location_type_str });
 
     return @ptrFromInt(pointer_value);
 }
@@ -474,7 +474,7 @@ fn walkStack(allocator: std.mem.Allocator) !std.ArrayList(StackFrame) {
     }
 
     var frame_count: u32 = 0;
-    const max_frames: u32 = 1000; // Prevent infinite loops in case of stack corruption
+    const max_frames: u32 = 10000; // Prevent infinite loops in case of stack corruption
 
     // Walk the stack frame by frame
     while (frame_count < max_frames) {
@@ -497,7 +497,7 @@ fn walkStack(allocator: std.mem.Allocator) !std.ArrayList(StackFrame) {
 
         // Skip frames that might be in system libraries or have invalid addresses
         if (ip == 0 or sp == 0) {
-            debug.log(allocator, "stack_walk: skipping frame with null IP or SP", .{});
+            debug.log(allocator, "gc_stackwalk: skipping frame with null IP or SP", .{});
             const step_result = c.unw_step(&cursor);
             if (step_result <= 0) break;
             frame_count += 1;
@@ -510,7 +510,7 @@ fn walkStack(allocator: std.mem.Allocator) !std.ArrayList(StackFrame) {
             .frame_pointer = @intCast(sp),
         });
 
-        debug.log(allocator, "stack_walk: frame {}: IP=0x{X}, SP=0x{X}", .{ frame_count, ip, sp });
+        debug.log(allocator, "gc_stackwalk: frame {}: IP=0x{X}, SP=0x{X}", .{ frame_count, ip, sp });
 
         // Move to the next frame up the stack
         const step_result = c.unw_step(&cursor);
@@ -525,10 +525,10 @@ fn walkStack(allocator: std.mem.Allocator) !std.ArrayList(StackFrame) {
     }
 
     if (frame_count >= max_frames) {
-        debug.log(allocator, "stack_walk: reached maximum frame limit, possible stack corruption", .{});
+        debug.log(allocator, "gc_stackwalk: reached maximum frame limit, possible stack corruption", .{});
     }
 
-    debug.log(allocator, "stack_walk: collected {} frames", .{frames.items.len});
+    debug.log(allocator, "gc_stackwalk: collected {} frames", .{frames.items.len});
     return frames;
 }
 
@@ -562,7 +562,7 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
 
     // If we didn't find a matching function, bail out
     if (target_function_index == null) {
-        debug.log(allocator, "gc_safepoint: no matching function found for return address 0x{X}", .{return_addr});
+        debug.log(allocator, "gc_stackmap: no matching function found for return address 0x{X}", .{return_addr});
         return;
     }
 
@@ -583,7 +583,7 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
     else
         0;
 
-    debug.log(allocator, "gc_safepoint: looking for instruction_offset: {} in function {} (skipping {} records, searching {} records)", .{ instruction_offset, target_function_index.?, records_to_skip, target_function_record_count });
+    debug.log(allocator, "gc_stackmap: looking for instruction_offset: {} in function {} (skipping {} records, searching {} records)", .{ instruction_offset, target_function_index.?, records_to_skip, target_function_record_count });
 
     // Skip to the start of our function's records
     for (0..records_to_skip) |_| {
@@ -624,7 +624,7 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
         const is_statepoint = record.patchpoint_id == 2882400000;
 
         if (offset_match and is_statepoint) {
-            debug.log(allocator, "gc_safepoint: found matching statepoint record at offset {}", .{instruction_offset});
+            debug.log(allocator, "gc_stackmap: found matching statepoint record at offset {}", .{instruction_offset});
             processStatemapRecord(allocator, record, caller_frame_addr, pointers);
             break; // We found our record, no need to continue
         }
@@ -672,11 +672,11 @@ fn processStatemapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, 
 
     // Calculate remaining locations (should be base/derived pointer pairs)
     const remaining_locations = record.num_locations - 3 - num_deopt_args;
-    debug.log(allocator, "gc_safepoint: remaining_locations: {}", .{remaining_locations});
+    debug.log(allocator, "gc_stackmap: remaining_locations: {}", .{remaining_locations});
 
     if (remaining_locations > 0 and remaining_locations % 2 == 0) {
         const num_relocation_pairs = remaining_locations / 2;
-        debug.log(allocator, "gc_safepoint: num_relocation_pairs: {}", .{num_relocation_pairs});
+        debug.log(allocator, "gc_stackmap: num_relocation_pairs: {}", .{num_relocation_pairs});
 
         for (0..num_relocation_pairs) |_| {
             // Base pointer location
@@ -690,12 +690,12 @@ fn processStatemapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, 
             // Extract and collect GC root pointers
             if (extractPointerFromLocation(allocator, base_location, caller_frame_addr)) |base_ptr| {
                 pointers.append(base_ptr) catch |err| {
-                    debug.log(allocator, "gc_root: failed to add base pointer: {}", .{err});
+                    debug.log(allocator, "gc_stackmap: failed to add base pointer: {}", .{err});
                 };
             }
             if (extractPointerFromLocation(allocator, derived_location, caller_frame_addr)) |derived_ptr| {
                 pointers.append(derived_ptr) catch |err| {
-                    debug.log(allocator, "gc_root: failed to add derived pointer: {}", .{err});
+                    debug.log(allocator, "gc_stackmap: failed to add derived pointer: {}", .{err});
                 };
             }
         }
@@ -715,7 +715,7 @@ fn processStatemapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, 
 ///     return;
 /// };
 /// defer gc_roots.deinit();
-/// 
+///
 /// for (gc_roots.items) |root_ptr| {
 ///     // Process each GC root pointer...
 /// }
@@ -725,12 +725,12 @@ pub fn walkStackAndProcessRoots(allocator: std.mem.Allocator) !std.ArrayList(*an
     errdefer pointers.deinit();
 
     const frames = walkStack(allocator) catch |err| {
-        debug.log(allocator, "stack_walk: failed to walk stack: {}", .{err});
+        debug.log(allocator, "gc_stackwalk: failed to walk stack: {}", .{err});
         return err;
     };
     defer frames.deinit();
 
-    debug.log(allocator, "gc_safepoint: processing {} stack frames", .{frames.items.len});
+    debug.log(allocator, "gc_stackwalk: processing {} stack frames", .{frames.items.len});
 
     // Process each frame
     for (frames.items) |frame| {
@@ -739,4 +739,3 @@ pub fn walkStackAndProcessRoots(allocator: std.mem.Allocator) !std.ArrayList(*an
 
     return pointers;
 }
-

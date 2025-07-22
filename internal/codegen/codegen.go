@@ -45,7 +45,7 @@ func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, ll
 	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTable, llvmVTableMethods, 0}
 }
 
-const MemAllocFunctionName = "gc_alloc"
+const MemAllocFunctionName = "zeus_gc_alloc"
 
 type CodegenModule struct {
 	module          llvm.Module
@@ -85,9 +85,9 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 
 	// GC safepoint slow path function (external declaration)
 	gcSafepointSlowPathType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
-	gcSafepointSlowPathFunction := llvm.AddFunction(module, "gc_safepoint_slow_path", gcSafepointSlowPathType)
+	gcSafepointSlowPathFunction := llvm.AddFunction(module, "zeus_gc_poll", gcSafepointSlowPathType)
 	gcSafepointSlowPathFunction.SetLinkage(llvm.InternalLinkage)
-	globalFunctions["gc_safepoint_slow_path"] = GlobalLLVMFunction{gcSafepointSlowPathFunction, gcSafepointSlowPathType}
+	globalFunctions["zeus_gc_poll"] = GlobalLLVMFunction{gcSafepointSlowPathFunction, gcSafepointSlowPathType}
 
 	// GC safepoint poll function (defined function)
 	gcSafepointPollType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
