@@ -625,7 +625,7 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
 
         if (offset_match and is_statepoint) {
             debug.log(allocator, "gc_stackmap", "found matching statepoint record at offset {}", .{instruction_offset});
-            processStatemapRecord(allocator, record, caller_frame_addr, pointers);
+            processStateMapRecord(allocator, record, caller_frame_addr, pointers);
             break; // We found our record, no need to continue
         }
 
@@ -648,7 +648,7 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
     }
 }
 
-fn processStatemapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, caller_frame_addr: usize, pointers: *std.ArrayList(*anyopaque)) void {
+fn processStateMapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, caller_frame_addr: usize, pointers: *std.ArrayList(*anyopaque)) void {
     var ptr = @as([*]u8, @ptrCast(record)) + @sizeOf(StackMapRecord);
 
     if (record.num_locations < 3) {
