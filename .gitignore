@@ -30,3 +30,5 @@ playground/
 
 # zig
 runtime/out
+.zig-cache
+zig-out

@@ -442,7 +442,7 @@ func GetRuntimeDir() string {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
 			os.Exit(1)
 		}
-		return filepath.Join(runtimeDir, "runtime", "out")
+		return filepath.Join(runtimeDir, "runtime", "zig-out", "out")
 	}
 	return runtimeDir
 }
@@ -466,7 +466,7 @@ func LinkObjFiles(objDir string, outputPath string) error {
 		if runtime.GOOS == "darwin" {
 			linker = "clang"
 		}
-		args := []string{"-fno-omit-frame-pointer"}
+		args := []string{}
 		args = append(args, objFiles...)
 		args = append(args, "-o", outputPath)
 		linkerCmd = exec.Command(linker, args...)

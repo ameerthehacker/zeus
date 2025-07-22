@@ -1,8 +1,8 @@
-.PHONY: test play llvmc always
+.PHONY: test test-go test-runtime build-runtime clean compile run always
 
 clean:
 	rm -rf playground/debug
-	rm -rf runtime/out
+	cd runtime && zig build clean
 
 always:
 	rm -rf playground/debug
@@ -14,14 +14,16 @@ test-verbose:
 test-race:
 	go test ./test/... -race
 
-test:
+test: test-go test-runtime
+
+test-go:
 	go test ./test/...
 
-build-runtime: runtime/out/zeus-runtime.o
+test-runtime:
+	cd runtime && zig build test
 
-runtime/out/zeus-runtime.o: runtime/main.zig
-	mkdir -p runtime/out
-	zig build-obj runtime/main.zig -fno-omit-frame-pointer -target native -O Debug -lc -lunwind -femit-bin=runtime/out/zeus-runtime
+build-runtime:
+	cd runtime && zig build
 
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
