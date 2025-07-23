@@ -176,7 +176,7 @@ func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
 		// Run the passes on the module
 		err := llvmModule.RunPasses("mem2reg,place-safepoints", c.targetMachine, options)
 		if err != nil {
-			return fmt.Errorf("failed to run place-safepoints pass on module %s: %v", sourceFile.Path, err)
+			return fmt.Errorf("failed to run optimization passes on module %s: %v", sourceFile.Path, err)
 		}
 		err = llvmModule.RunPasses("rewrite-statepoints-for-gc", c.targetMachine, options)
 		if err != nil {
