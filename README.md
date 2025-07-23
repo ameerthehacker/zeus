@@ -73,14 +73,14 @@ go run zeus.go build --file-type=asm main.zs
 - [ ] Variable Type Inference
 - [ ] Function Type Inference
 - [ ] Closure
-[ ] String Type
-[ ] Arrays
-[ ] Union Type
-[ ] Match Expression
-[ ] Exception Handling
-[ ] HTTP Server v1
-[ ] Standard Lib v1
-[ ] Release build mode
-[ ] Linux Support
-[ ] Package for Mac and Linux
-[ ] Docs site
+- [ ] String Type
+- [ ] Arrays
+- [ ] Union Type
+- [ ] Match Expression
+- [ ] Exception Handling
+- [ ] HTTP Server v1
+- [ ] Standard Lib v1
+- [ ] Release build mode
+- [ ] Linux Support
+- [ ] Package for Mac and Linux
+- [ ] Docs site
