@@ -60,19 +60,19 @@ go run zeus.go build --file-type=asm main.zs
 ## Roadmap
 
 ### Beta
-[x] Tokenizer
-[x] Parser
-[x] Zeus IR
-[x] Type Checker
-[x] LLVM codegen
-[x] Scalar types
-[x] Class
-[x] GC v1
-[ ] Inheritance
-[ ] Interfaces
-[ ] Variable Type Inference
-[ ] Function Type Inference
-[ ] Closure
+- [x] Tokenizer
+- [x] Parser
+- [x] Zeus IR
+- [x] Type Checker
+- [x] LLVM codegen
+- [x] Scalar types
+- [x] Class
+- [x] GC v1
+- [ ] Inheritance
+- [ ] Interfaces
+- [ ] Variable Type Inference
+- [ ] Function Type Inference
+- [ ] Closure
 [ ] String Type
 [ ] Arrays
 [ ] Union Type
