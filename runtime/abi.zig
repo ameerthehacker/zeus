@@ -3,7 +3,7 @@
 // the interface we use to interact with objects created in the Zeus language.
 const std = @import("std");
 
-// Zeus class ABI struct - matches LLVM layout: { ptr, i8, [N x i8] }
+// Header of the zeus object
 pub const ZeusObjectHeader = struct {
     vtable: *anyopaque,
     gc_offsets_count: u8,
@@ -17,7 +17,7 @@ pub const ZeusObjectHeader = struct {
     }
 };
 
-// Structure to track GC roots - just the pointer and whether it's marked
+// Zeus object ABI
 pub const ZeusObj = struct {
     obj_header: *ZeusObjectHeader,
 };
