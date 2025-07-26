@@ -25,6 +25,9 @@ test-runtime:
 build-runtime:
 	cd runtime && zig build
 
+build-runtime-release: always
+	cd runtime && zig build --release=small
+
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
 		ZEUS_DEBUG=true go run zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
