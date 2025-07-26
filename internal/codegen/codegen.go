@@ -582,12 +582,24 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
   // create the obj header global 
   llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
   gcOffsetsArray := []llvm.Value{}
-	gcSizeOffset := uint64(0)
+	
+	// Calculate proper field offsets manually with alignment
+	currentOffset := c.targetDataLayout.TypeAllocSize(llvm.PointerType(objectHeaderStructType, 0)) // Start after header pointer
   for _, property := range input.Class.Properties {
-    if zeus_value.IsUserDefinedType(property.Property.ValueType) {
-      gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), gcSizeOffset, false))
+		propertyType := c.toLLVMType(property.Property.ValueType)
+		// Get required alignment for this type
+		typeAlign := uint64(c.targetDataLayout.ABITypeAlignment(propertyType))
+		// Round up current offset to proper alignment
+		if currentOffset%typeAlign != 0 {
+			currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
 		}
-		gcSizeOffset += c.targetDataLayout.TypeAllocSize(c.toLLVMType(property.Property.ValueType))
+		
+    if zeus_value.IsUserDefinedType(property.Property.ValueType) {
+      gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), currentOffset, false))
+		}
+		
+		// Move to next field
+		currentOffset += c.targetDataLayout.TypeAllocSize(propertyType)
   }
   llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstInt(c.ctx.Int8Type(), uint64(len(gcOffsetsArray)), false), llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
   // initialize the llvm methods array

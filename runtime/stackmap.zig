@@ -389,7 +389,7 @@ fn extractPointerFromLocation(allocator: std.mem.Allocator, location: *Location,
         else => "Other",
     };
 
-    debug.log(allocator, "gc_stackmap", "found pointer 0x{X} at stack location 0x{X} (type={s})", .{ pointer_value, stack_location_addr, location_type_str });
+    debug.log(allocator, "gc_stackmap", "found gc root at 0x{X} at stack location 0x{X} (type={s})", .{ pointer_value, stack_location_addr, location_type_str });
 
     return @ptrFromInt(pointer_value);
 }
@@ -713,19 +713,17 @@ fn processStateMapRecord(allocator: std.mem.Allocator, record: *StackMapRecord, 
             const base_location = @as(*Location, @ptrCast(@alignCast(ptr)));
             ptr += @sizeOf(Location);
 
-            // Derived pointer location
+            // Derived pointer location (skip for non-relocating GC)
             const derived_location = @as(*Location, @ptrCast(@alignCast(ptr)));
+            _ = derived_location; // Mark as unused since we skip it for non-relocating GC
             ptr += @sizeOf(Location);
 
-            // Extract and collect GC root pointers
+            // Only collect base pointers for non-relocating GC
+            // The derived pointer points into the same object, so marking
+            // the base object will keep the derived location alive too
             if (extractPointerFromLocation(allocator, base_location, caller_frame_addr)) |base_ptr| {
                 pointers.append(base_ptr) catch |err| {
                     debug.log(allocator, "gc_stackmap", "failed to add base pointer: {}", .{err});
-                };
-            }
-            if (extractPointerFromLocation(allocator, derived_location, caller_frame_addr)) |derived_ptr| {
-                pointers.append(derived_ptr) catch |err| {
-                    debug.log(allocator, "gc_stackmap", "failed to add derived pointer: {}", .{err});
                 };
             }
         }

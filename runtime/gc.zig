@@ -1,22 +1,38 @@
 const std = @import("std");
 const debug = @import("debug.zig");
 
+// Zeus class ABI struct - matches LLVM layout: { ptr, i8, [N x i8] }
+const ZeusObjectHeader = struct {
+    vtable: *anyopaque,
+    gc_offsets_count: u8,
+    // Note: gc_offsets are stored as an inline array immediately after gc_offsets_count within this struct
+
+    fn getGcOffsets(self: *const ZeusObjectHeader) []const u8 {
+        // The gc_offsets array is embedded right after gc_offsets_count in the LLVM struct
+        const self_ptr = @as([*]const u8, @ptrCast(self));
+        const offsets_start = self_ptr + @sizeOf(*anyopaque) + @sizeOf(u8);
+        return offsets_start[0..self.gc_offsets_count];
+    }
+};
+
 // Structure to track GC roots - just the pointer and whether it's marked
-const GCRoot = struct { ptr: *anyopaque, marked: bool };
+const ZeusObj = struct {
+    obj_header: *ZeusObjectHeader,
+};
 
 // Structure to track allocated objects
 const AllocatedObject = struct { ptr: *anyopaque, size: u32, marked: bool };
 
 pub const GC = struct {
     allocator: std.mem.Allocator,
-    gc_roots: std.ArrayList(GCRoot),
+    gc_roots: std.ArrayList(*ZeusObj),
     allocated_objects: std.ArrayList(AllocatedObject),
     alloc_mutex: std.Thread.Mutex,
 
     pub fn init(allocator: std.mem.Allocator) GC {
         return GC{
             .allocator = allocator,
-            .gc_roots = std.ArrayList(GCRoot).init(allocator),
+            .gc_roots = std.ArrayList(*ZeusObj).init(allocator),
             .allocated_objects = std.ArrayList(AllocatedObject).init(allocator),
             .alloc_mutex = std.Thread.Mutex{},
         };
@@ -32,10 +48,8 @@ pub const GC = struct {
 
         // Add all pointers to our GC root set
         for (root_ptrs) |root_ptr| {
-            self.gc_roots.append(GCRoot{
-                .ptr = root_ptr,
-                .marked = false,
-            }) catch |err| {
+            const casted_root_ptr = @as(*ZeusObj, @ptrFromInt(@intFromPtr(root_ptr)));
+            self.gc_roots.append(casted_root_ptr) catch |err| {
                 debug.log(self.allocator, "gc_register_roots", "failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
             };
         }
@@ -54,8 +68,7 @@ pub const GC = struct {
         }
 
         // Mark phase: mark all reachable objects starting from GC roots
-        for (self.gc_roots.items) |*root| {
-            root.marked = false;
+        for (self.gc_roots.items) |root| {
             self.markObject(root);
         }
 
@@ -65,20 +78,11 @@ pub const GC = struct {
         debug.log(self.allocator, "gc_cycle", "complete, {} objects remaining", .{self.allocated_objects.items.len});
     }
 
-    fn markObject(self: *GC, root: *GCRoot) void {
-        root.marked = true;
-        debug.log(self.allocator, "gc_mark", "marking root at 0x{X}", .{@intFromPtr(root.ptr)});
-
-        // Find the corresponding allocated object and mark it
-        self.markAllocatedObject(@intFromPtr(root.ptr));
-
-        // TODO: traverse object references here to mark transitively reachable objects
-    }
-
-    fn markAllocatedObject(self: *GC, ptr_addr: usize) void {
+    fn markObject(self: *GC, ptr: *ZeusObj) void {
         for (self.allocated_objects.items) |*obj| {
             const obj_addr = @intFromPtr(obj.ptr);
             const obj_end = obj_addr + obj.size;
+            const ptr_addr = @intFromPtr(ptr);
 
             // Check if the pointer points into this allocated object
             if (ptr_addr >= obj_addr and ptr_addr < obj_end) {
@@ -86,8 +90,18 @@ pub const GC = struct {
                     obj.marked = true;
                     debug.log(self.allocator, "gc_mark", "marked object at 0x{X} (size={})", .{ obj_addr, obj.size });
 
-                    // TODO: Scan this object for references to other objects
-                    // For now, we only mark the directly referenced object
+                    // total nested objects to mark
+                    const gc_offsets = ptr.obj_header.getGcOffsets();
+                    debug.log(self.allocator, "gc_mark", "marking {} nested objects", .{gc_offsets.len});
+
+                    for (gc_offsets) |offset_u8| {
+                        const offset = @as(usize, offset_u8);
+                        const offset_addr = obj_addr + offset;
+                        const nested_obj_addr = @as(**ZeusObj, @ptrFromInt(offset_addr));
+                        const nested_obj = nested_obj_addr.*;
+                        debug.log(self.allocator, "gc_mark", "marking nested object at 0x{X} (offset={})", .{ @intFromPtr(nested_obj), offset });
+                        self.markObject(nested_obj);
+                    }
                 }
                 break;
             }
