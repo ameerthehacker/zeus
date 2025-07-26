@@ -24,9 +24,9 @@ import (
 const zeusRuntimeDir = "ZEUS_RUNTIME_DIR"
 
 type Compiler struct {
-	codegen *codegen.Codegen
-	outputDir string
-	targetMachine llvm.TargetMachine
+	codegen          *codegen.Codegen
+	outputDir        string
+	targetMachine    llvm.TargetMachine
 	targetDataLayout llvm.TargetData
 }
 
@@ -39,18 +39,18 @@ const (
 )
 
 type SourceFile struct {
-	Path string
-	Source string
-	Program *ast.ProgramNode
-	Module *codegen.CodegenModule
-	Errors []*zeus_error.ZeusError
-	IRBuilder *ir.IRBuilder
-	Exports []*zeus_value.Value
+	Path         string
+	Source       string
+	Program      *ast.ProgramNode
+	Module       *codegen.CodegenModule
+	Errors       []*zeus_error.ZeusError
+	IRBuilder    *ir.IRBuilder
+	Exports      []*zeus_value.Value
 	IsEntryPoint bool
 }
 
 type SourceFileDependency struct {
-	Span *token.Span
+	Span       *token.Span
 	SourceFile *SourceFile
 }
 
@@ -62,7 +62,7 @@ const (
 )
 
 type SourceFileError struct {
-	Type SourceFileErrorType
+	Type    SourceFileErrorType
 	Message string
 }
 
@@ -100,9 +100,9 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 	)
 	targetDataLayout := targetMachine.CreateTargetData()
 	return &Compiler{
-		codegen: codegen.NewCodegen(),
-		outputDir: outputDir,
-		targetMachine: targetMachine,
+		codegen:          codegen.NewCodegen(),
+		outputDir:        outputDir,
+		targetMachine:    targetMachine,
 		targetDataLayout: targetDataLayout,
 	}, nil
 }
@@ -126,7 +126,7 @@ func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) 
 			}
 
 			dependencies = append(dependencies, &SourceFileDependency{
-				Span: stmt.Source.Span,
+				Span:       stmt.Source.Span,
 				SourceFile: dependency,
 			})
 		}
@@ -145,7 +145,7 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	}
 
 	return &SourceFile{
-		Path: path,
+		Path:   path,
 		Source: string(content),
 	}, nil
 }
@@ -153,6 +153,7 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 // RunOptimizationPasses runs LLVM optimization passes on the modules, specifically
 // PlaceSafepoints and RewriteStatepointsForGC for garbage collection support
 func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
+	noGc := os.Getenv("ZEUS_NO_GC") == "true"
 	for _, sourceFile := range sourceFiles {
 		if sourceFile.Module == nil {
 			continue
@@ -169,18 +170,23 @@ func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
 		options.SetDebugLogging(debug.IsDebug())
 		options.SetVerifyEach(false) // Verify after each pass for debugging
 
+		passes := []string{"mem2reg"}
+
+
+		if !noGc {
+			passes = append(passes, "place-safepoints", "rewrite-statepoints-for-gc")
+		}
+
 		// Run GC-related passes using the new PassBuilder system
 		// PlaceSafepoints: Inserts safepoint polls at function entries and loop backedges
 		// RewriteStatepointsForGC: Transforms calls to explicit statepoint relocations
 
 		// Run the passes on the module
-		err := llvmModule.RunPasses("mem2reg,place-safepoints", c.targetMachine, options)
-		if err != nil {
-			return fmt.Errorf("failed to run optimization passes on module %s: %v", sourceFile.Path, err)
-		}
-		err = llvmModule.RunPasses("rewrite-statepoints-for-gc", c.targetMachine, options)
-		if err != nil {
-			return fmt.Errorf("failed to run rewrite-statepoints-for-gc pass on module %s: %v", sourceFile.Path, err)
+		for _, pass := range passes {
+			err := llvmModule.RunPasses(pass, c.targetMachine, options)
+			if err != nil {
+				return fmt.Errorf("failed to run optimization pass %s on module %s: %v", pass, sourceFile.Path, err)
+			}
 		}
 	}
 
@@ -225,7 +231,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 			for _, sourceFile := range sourceFiles {
 				if sourceFile.IRBuilder != nil {
 					fmt.Printf("---:Zeus IR [%s]:---\n", sourceFile.Path)
-					sourceFile.IRBuilder.Print()	
+					sourceFile.IRBuilder.Print()
 				}
 			}
 		}
@@ -333,7 +339,7 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 func (c *Compiler) CollectDependencies(entry *SourceFile) []*SourceFile {
 	sourceFiles := []*SourceFile{}
 	queue := []*SourceFileDependency{{
-		Span: nil,
+		Span:       nil,
 		SourceFile: entry,
 	}}
 	visited := map[string]bool{}
@@ -460,7 +466,7 @@ func LinkObjFiles(objDir string, outputPath string) error {
 	objFiles = append(objFiles, runtimeObjFiles...)
 	// link object file to platform executable
 	var linkerCmd *exec.Cmd
-		
+
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		linker := "gcc"
 		if runtime.GOOS == "darwin" {
