@@ -1,0 +1,12 @@
+[
+  {
+    "name": "If statement",
+    "exit": "2",
+    "entry": "if.zs"
+  },
+  {
+    "name": "If-else statement",
+    "exit": "0",
+    "entry": "if-else.zs"
+  }
+]
