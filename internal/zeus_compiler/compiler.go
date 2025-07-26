@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/codegen"
@@ -453,6 +454,23 @@ func GetRuntimeDir() string {
 	return runtimeDir
 }
 
+// getCurrentMacOSVersion gets the current macOS version from sw_vers
+func getCurrentMacOSVersion() string {
+	cmd := exec.Command("sw_vers", "-productVersion")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to a reasonable default if we can't detect the version
+		return "11.0"
+	}
+	version := strings.TrimSpace(string(output))
+	// Return just major.minor (e.g., "15.0" from "15.0.1")
+	parts := strings.Split(version, ".")
+	if len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return version
+}
+
 func LinkObjFiles(objDir string, outputPath string) error {
 	objFiles, err := filepath.Glob(fmt.Sprintf("%s/zeus-*.o", objDir))
 	if err != nil {
@@ -466,16 +484,18 @@ func LinkObjFiles(objDir string, outputPath string) error {
 	objFiles = append(objFiles, runtimeObjFiles...)
 	// link object file to platform executable
 	var linkerCmd *exec.Cmd
+	linkerArgs := []string{}
 
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		linker := "gcc"
 		if runtime.GOOS == "darwin" {
 			linker = "clang"
+			currentVersion := getCurrentMacOSVersion()
+			linkerArgs = append(linkerArgs, fmt.Sprintf("-mmacosx-version-min=%s", currentVersion))
 		}
-		args := []string{}
-		args = append(args, objFiles...)
-		args = append(args, "-o", outputPath)
-		linkerCmd = exec.Command(linker, args...)
+		linkerArgs = append(linkerArgs, objFiles...)
+		linkerArgs = append(linkerArgs, "-o", outputPath)
+		linkerCmd = exec.Command(linker, linkerArgs...)
 		linkerCmd.Stdout = os.Stdout
 		linkerCmd.Stderr = os.Stderr
 	} else {
