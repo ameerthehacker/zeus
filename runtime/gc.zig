@@ -21,7 +21,7 @@ const ZeusObj = struct {
 };
 
 // Structure to track allocated objects
-const AllocatedObject = struct { ptr: *anyopaque, size: u32, marked: bool };
+const AllocatedObject = struct { ptr: *ZeusObj, size: u32, marked: bool };
 
 pub const GC = struct {
     allocator: std.mem.Allocator,
@@ -91,7 +91,7 @@ pub const GC = struct {
                     debug.log(self.allocator, "gc_mark", "marked object at 0x{X} (size={})", .{ obj_addr, obj.size });
 
                     // total nested objects to mark
-                    const gc_offsets = ptr.obj_header.getGcOffsets();
+                    const gc_offsets = obj.ptr.obj_header.getGcOffsets();
                     debug.log(self.allocator, "gc_mark", "marking {} nested objects", .{gc_offsets.len});
 
                     for (gc_offsets) |offset_u8| {
@@ -145,7 +145,8 @@ pub const GC = struct {
         self.alloc_mutex.lock();
         defer self.alloc_mutex.unlock();
 
-        self.allocated_objects.append(AllocatedObject{ .ptr = bytes.ptr, .size = size, .marked = false }) catch |err| {
+        const casted_ptr = @as(*ZeusObj, @ptrFromInt(@intFromPtr(bytes.ptr)));
+        self.allocated_objects.append(AllocatedObject{ .ptr = casted_ptr, .size = size, .marked = false }) catch |err| {
             debug.log(self.allocator, "gc_alloc", "failed to track allocation: {}", .{err});
             // Still return the allocation even if tracking fails
         };
