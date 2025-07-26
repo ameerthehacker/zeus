@@ -584,12 +584,41 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
   gcOffsetsArray := []llvm.Value{}
 	
 	// Calculate proper field offsets manually with alignment
-	currentOffset := c.targetDataLayout.TypeAllocSize(llvm.PointerType(objectHeaderStructType, 0)) // Start after header pointer
+	//
+	// Memory layout alignment ensures fields are placed at addresses that are multiples
+	// of their natural alignment requirements. This prevents performance penalties and
+	// potential crashes on some architectures.
+	//
+	// Example layout for a class with fields: i8, i64, i32, ptr
+	//
+	// Without alignment:     With proper alignment:
+	// ┌─────────────────┐   ┌─────────────────┐
+	// │ header ptr  (8) │   │ header ptr  (8) │  offset: 0
+	// ├─────────────────┤   ├─────────────────┤
+	// │ i8 field    (1) │   │ i8 field    (1) │  offset: 8
+	// ├─────────────────┤   ├─────────────────┤
+	// │ i64 field   (8) │   │ padding     (7) │  offset: 9-15 (padding for i64 alignment)
+	// ├─────────────────┤   ├─────────────────┤
+	// │ i32 field   (4) │   │ i64 field   (8) │  offset: 16 (aligned to 8-byte boundary)
+	// ├─────────────────┤   ├─────────────────┤
+	// │ ptr field   (8) │   │ i32 field   (4) │  offset: 24 (aligned to 4-byte boundary)
+	// └─────────────────┘   ├─────────────────┤
+	//                       │ padding     (4) │  offset: 28-31 (padding for ptr alignment)
+	//                       ├─────────────────┤
+	//                       │ ptr field   (8) │  offset: 32 (aligned to 8-byte boundary)
+	//                       └─────────────────┘
+	//
+	// The algorithm: currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
+	// rounds up to the next multiple of the required alignment.
+	//
+	currentOffset := c.targetDataLayout.TypeAllocSize(llvm.PointerType(objectHeaderStructType, 1)) // Start after object header pointer
   for _, property := range input.Class.Properties {
 		propertyType := c.toLLVMType(property.Property.ValueType)
-		// Get required alignment for this type
+		// Get required alignment for this type (e.g., 8 bytes for i64, 4 bytes for i32)
 		typeAlign := uint64(c.targetDataLayout.ABITypeAlignment(propertyType))
-		// Round up current offset to proper alignment
+		// Round up current offset to proper alignment boundary
+		// Formula: ((offset + align - 1) / align) * align
+		// Example: offset=9, align=8 → ((9+8-1)/8)*8 = (16/8)*8 = 2*8 = 16
 		if currentOffset%typeAlign != 0 {
 			currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
 		}
@@ -598,7 +627,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
       gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), currentOffset, false))
 		}
 		
-		// Move to next field
+		// Move to next field position
 		currentOffset += c.targetDataLayout.TypeAllocSize(propertyType)
   }
   llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstInt(c.ctx.Int8Type(), uint64(len(gcOffsetsArray)), false), llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
