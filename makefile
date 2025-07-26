@@ -19,6 +19,9 @@ test: test-go test-runtime
 test-go:
 	go test ./test/...
 
+test-e2e: build-runtime
+	go test ./test/e2e/... -v
+
 test-runtime:
 	cd runtime && zig build test
 
