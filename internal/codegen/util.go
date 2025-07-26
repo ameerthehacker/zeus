@@ -1,6 +1,7 @@
 package codegen
 
 const VTABLE_STRUCT_INDEX = 0
+const OBJ_HEADER_STRUCT_INDEX = 0
 
 func GetVTableStructName(className string) string {
 	return className + ".vTable"
@@ -8,4 +9,12 @@ func GetVTableStructName(className string) string {
 
 func GetVTableStructPtrName(className string) string {
 	return className + ".vTablePtr"
+}
+
+func GetObjectHeaderStructName(className string) string {
+	return className + ".header"
+}
+
+func GetObjectHeaderStructPtrName(className string) string {
+	return className + ".headerPtr"
 }
