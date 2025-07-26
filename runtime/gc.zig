@@ -1,24 +1,10 @@
 const std = @import("std");
 const debug = @import("debug.zig");
+const abi = @import("abi.zig");
 
-// Zeus class ABI struct - matches LLVM layout: { ptr, i8, [N x i8] }
-const ZeusObjectHeader = struct {
-    vtable: *anyopaque,
-    gc_offsets_count: u8,
-    // Note: gc_offsets are stored as an inline array immediately after gc_offsets_count within this struct
-
-    fn getGcOffsets(self: *const ZeusObjectHeader) []const u8 {
-        // The gc_offsets array is embedded right after gc_offsets_count in the LLVM struct
-        const self_ptr = @as([*]const u8, @ptrCast(self));
-        const offsets_start = self_ptr + @sizeOf(*anyopaque) + @sizeOf(u8);
-        return offsets_start[0..self.gc_offsets_count];
-    }
-};
-
-// Structure to track GC roots - just the pointer and whether it's marked
-const ZeusObj = struct {
-    obj_header: *ZeusObjectHeader,
-};
+// Import types from ABI module
+const ZeusObjectHeader = abi.ZeusObjectHeader;
+const ZeusObj = abi.ZeusObj;
 
 // Structure to track allocated objects
 const AllocatedObject = struct { ptr: *ZeusObj, size: u32, marked: bool };
