@@ -143,9 +143,7 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 	if actualExitCode != expectedExitCode {
 		t.Errorf("Test '%s' failed: expected exit code %d, got %d", 
 			spec.Name, expectedExitCode, actualExitCode)
-	} else {
-		t.Logf("Test '%s' passed: exit code %d", spec.Name, actualExitCode)
-	}
+	} 
 }
 
 // TestE2E is the main e2e test function

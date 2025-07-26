@@ -1,12 +1,12 @@
 [
-  {
-    "name": "Main function return is the exit code",
-    "exit": "2",
-    "entry": "exit.zs"
-  },
-  {
-    "name": "Can call a function from main",
-    "exit": "10",
-    "entry": "call.zs"
-  }
+    {
+        "name": "Main function return is the exit code",
+        "exit": "2",
+        "entry": "exit.zs"
+    },
+    {
+        "name": "Can call a function from main",
+        "exit": "10",
+        "entry": "call.zs"
+    }
 ]

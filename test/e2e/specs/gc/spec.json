@@ -1,7 +1,12 @@
 [
-  {
-    "name": "Basic GC",
-    "exit": "11",
-    "entry": "basic.zs"
-  }
+    {
+        "name": "Basic GC",
+        "exit": "13",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "Nested objects",
+        "exit": "30",
+        "entry": "nested-obj.zs"
+    }
 ]
