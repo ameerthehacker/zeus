@@ -349,6 +349,7 @@ const StackFrame = struct {
 // We access it via linker symbols that LLVM generates
 // Define as optional pointer to handle when symbol doesn't exist
 var llvm_stackmaps_ptr: ?*StackMapHeader = null;
+var llvm_stackmaps_size: usize = 0;
 var symbol_lookup_attempted: bool = false;
 
 // Helper function to extract a pointer from a location
@@ -393,6 +394,27 @@ fn extractPointerFromLocation(allocator: std.mem.Allocator, location: *Location,
     return @ptrFromInt(pointer_value);
 }
 
+// Helper function to dump raw hex data from stackmap section
+fn dumpStackMapHex(allocator: std.mem.Allocator, data: [*]const u8, size: usize) void {
+    debug.log(allocator, "stackmap_hex", "Stackmap section size: {} bytes", .{size});
+    debug.log(allocator, "stackmap_hex", "Raw hex dump (first 256 bytes):", .{});
+
+    const max_dump = @min(size, 256); // Limit output to avoid spam
+    var i: usize = 0;
+    while (i < max_dump) {
+        const bytes_this_line = @min(16, max_dump - i);
+
+        // Just dump the raw bytes for each line
+        var j: usize = 0;
+        while (j < bytes_this_line) {
+            debug.log(allocator, "stackmap_hex", "byte[{}]: 0x{X}", .{ i + j, data[i + j] });
+            j += 1;
+        }
+
+        i += 16;
+    }
+}
+
 // Try to locate the LLVM stack map section at runtime
 fn tryFindStackMapSymbol() ?*StackMapHeader {
     // Get the main executable (index 0)
@@ -411,6 +433,9 @@ fn tryFindStackMapSymbol() ?*StackMapHeader {
     if (section_data == null or size == 0) {
         std.debug.panic("__llvm_stackmaps section not found in __LLVM_STACKMAPS segment", .{});
     }
+
+    // Store the size for hex dumping
+    llvm_stackmaps_size = @intCast(size);
 
     return @as(*StackMapHeader, @ptrCast(@alignCast(section_data)));
 }
@@ -571,6 +596,11 @@ fn processStackMapAtSafepoint(allocator: std.mem.Allocator, return_addr: usize, 
     for (0..target_function_index.?) |_| {
         const func_record = @as(*StackSizeRecord, @ptrCast(@alignCast(record_ptr)));
         records_to_skip += func_record.record_count;
+        record_ptr += @sizeOf(StackSizeRecord);
+    }
+
+    // Skip remaining functions to get to the records section
+    for (target_function_index.?..stack_map.num_functions) |_| {
         record_ptr += @sizeOf(StackSizeRecord);
     }
 
