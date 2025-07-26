@@ -32,3 +32,6 @@ playground/
 runtime/out
 .zig-cache
 zig-out
+
+# zeus binary
+zeus
