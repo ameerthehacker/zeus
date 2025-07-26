@@ -1,6 +1,14 @@
 # Zeus
 
-TypeScript like compiled language
+Zeus is a modern, garbage-collected programming language inspired by TypeScript, designed with a focus on simplicity and a JavaScript-like development experience. It combines the familiar syntax and semantics of TypeScript with automatic memory management, making it ideal for developers who want the productivity of JavaScript/TypeScript without manual memory management concerns.
+
+## Key Features
+
+- **TypeScript-inspired syntax** - Familiar language constructs for web developers
+- **Automatic garbage collection** - No manual memory management required
+- **JavaScript-like semantics** - Intuitive behavior and type system
+- **Simple and clean** - Minimal complexity, maximum productivity
+- **Static typing** - Catch errors at compile time while maintaining ease of use
 
 > [!WARNING]  
 > This project is in early development and not ready for production use. The language syntax, features, and implementation are subject to significant changes.
