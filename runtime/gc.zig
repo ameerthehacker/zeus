@@ -44,7 +44,7 @@ pub const GC = struct {
     }
 
     pub fn registerRoots(self: *GC, root_ptrs: []const *anyopaque) void {
-        debug.log(self.allocator, "gc_register_roots", "registering {} pointers", .{root_ptrs.len});
+        debug.log(self.allocator, "gc_register_roots", "registering {} roots", .{root_ptrs.len});
 
         // Add all pointers to our GC root set
         for (root_ptrs) |root_ptr| {
