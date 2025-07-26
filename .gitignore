@@ -35,3 +35,6 @@ zig-out
 
 # zeus binary
 zeus
+
+# e2e
+e2e/out

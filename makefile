@@ -1,12 +1,12 @@
 .PHONY: test test-go test-runtime build-runtime clean compile run always
 
 clean:
-	rm -rf playground/debug
+	rm -rf playground/debug e2e/out
 	cd runtime && zig build clean
 
 always:
 	rm -rf playground/debug
-	mkdir -p playground/debug playground/debug/out
+	mkdir -p playground/debug playground/debug/out e2e/out
 
 test-verbose:
 	go test ./test/... -v
