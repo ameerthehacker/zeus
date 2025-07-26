@@ -78,6 +78,7 @@ go run zeus.go build --file-type=asm main.zs
 - [ ] Union Type
 - [ ] Match Expression
 - [ ] Exception Handling
+- [ ] Language Server v1
 - [ ] HTTP Server v1
 - [ ] Standard Lib v1
 - [ ] Release build mode
