@@ -34,9 +34,20 @@ pub const GC = struct {
 
         // Add all pointers to our GC root set
         for (root_ptrs) |root_ptr| {
-            const casted_root_ptr = @as(*ZeusObj, @ptrFromInt(@intFromPtr(root_ptr)));
+            const ptr_addr = @intFromPtr(root_ptr);
+            
+            // Check if the pointer is properly aligned for ZeusObj
+            // ZeusObj contains a pointer, so it needs pointer alignment
+            const alignment_requirement = @alignOf(ZeusObj);
+            if (ptr_addr % alignment_requirement != 0) {
+                debug.log(self.allocator, "gc_register_roots", "skipping misaligned pointer 0x{X} (required alignment: {})", .{ ptr_addr, alignment_requirement });
+                continue;
+            }
+            
+            // Safely cast the aligned pointer
+            const casted_root_ptr = @as(*ZeusObj, @ptrFromInt(ptr_addr));
             self.gc_roots.append(casted_root_ptr) catch |err| {
-                debug.log(self.allocator, "gc_register_roots", "failed to add root 0x{X}: {}", .{ @intFromPtr(root_ptr), err });
+                debug.log(self.allocator, "gc_register_roots", "failed to add root 0x{X}: {}", .{ ptr_addr, err });
             };
         }
     }

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "Basic GC",
+    "exit": "11",
+    "entry": "basic.zs"
+  }
+]
