@@ -76,12 +76,25 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 	}
 }
 
+func (tc *TypeChecker) toFunctionType(fn zeus_value.Function) zeus_value.FunctionType {
+	knownParamTypes := make([]zeus_value.ValueType, len(fn.Params))
+	
+	for i, param := range fn.Params {
+		knownParamTypes[i] = tc.asKnownValueType(param.ValueType)
+	}
+
+	return zeus_value.FunctionType{
+		ParamTypes: knownParamTypes,
+		ReturnType: tc.asKnownValueType(fn.ReturnType),
+	}
+}
+
 func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.ValueType {
 	switch value := value.(type) {
 	case *zeus_value.Var:
 		return value.ValueType
 	case *zeus_value.Function:
-		return zeus_value.ToFunctionType(*value)
+		return tc.toFunctionType(*value)
 	case *zeus_value.Constant:
 		return value.ValueType
 	case *zeus_value.Object:
@@ -356,7 +369,7 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 		})
 	}
 
-	input.Value = tc.cmpValueWithImplicitCast(instr, input.Addr.ValueType, input.Value)
+	input.Value = tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(input.Addr.ValueType), input.Value)
 }
 
 func (tc *TypeChecker) tcReturn(instr *Instr) {
@@ -453,7 +466,7 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 		return
 	}
 
-	functionType := zeus_value.ToFunctionType(*function)
+	functionType := tc.toFunctionType(*function)
 
 	// Use the abstracted function call type checking
 	input.Args = tc.tcFunctionCall(instr, functionType, input.Args, input.Callee.GetSpan())
@@ -510,7 +523,7 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 			})
 		} else {
 			for i := range input.Args {
-				input.Args[i] = tc.cmpValueWithImplicitCast(instr, constructorMethod.Params[i].ValueType, input.Args[i])
+				input.Args[i] = tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(constructorMethod.Params[i].ValueType), input.Args[i])
 			}
 		}
 	}
@@ -551,7 +564,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
-				instr.Output.ValueType = zeus_value.ToFunctionType(*method.Method)
+				instr.Output.ValueType = tc.toFunctionType(*method.Method)
 			}
 		}
 
@@ -598,7 +611,7 @@ func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 
 	instr.Output.ValueType = functionType.ReturnType
 }
-
+ 
 func (tc *TypeChecker) tcDeclClassMethod(instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
 	tc.currentClass = input.Class

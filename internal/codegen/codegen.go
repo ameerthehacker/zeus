@@ -546,6 +546,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 
   objectHeaderElementTypes := []llvm.Type{
     llvm.PointerType(vtableStructType, 0), // vtable 
+		c.ctx.Int8Type(), // gc offsets count
     llvm.ArrayType(c.ctx.Int8Type(), gcOffsetsCount), // gc offsets
   }
 
@@ -581,12 +582,14 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
   // create the obj header global 
   llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
   gcOffsetsArray := []llvm.Value{}
-  for offset, property := range input.Class.Properties {
+	gcSizeOffset := uint64(0)
+  for _, property := range input.Class.Properties {
     if zeus_value.IsUserDefinedType(property.Property.ValueType) {
-      gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), uint64(offset), false))
-    }
+      gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), gcSizeOffset, false))
+		}
+		gcSizeOffset += c.targetDataLayout.TypeAllocSize(c.toLLVMType(property.Property.ValueType))
   }
-  llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
+  llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstInt(c.ctx.Int8Type(), uint64(len(gcOffsetsArray)), false), llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
   // initialize the llvm methods array
 	methodCount := 0
 	for _, method := range input.Class.Methods {
