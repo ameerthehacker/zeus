@@ -9,8 +9,6 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-
-
 func (c *CodegenModule) toLLVMIntType(intType zeus_value.IntType) llvm.Type {
 	switch intType.Size {
 	case zeus_value.I8:
@@ -76,4 +74,3 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 		panic(fmt.Sprintf("cannot convert constant to llvm constant: %s", value))
 	}
 }
-

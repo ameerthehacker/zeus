@@ -12,7 +12,7 @@ func GetClassMethodName(className string, methodName string) string {
 func GetPropertyIndex(class zeus_value.Class, propertyName string) int {
 	for index, property := range class.Properties {
 		if property.Property.Name == propertyName {
-			return index + 1 // skip the vtable struct
+			return index + 1 // skip the obj header struct
 		}
 	}
 	return -1

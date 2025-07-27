@@ -293,6 +293,15 @@ func IsFloatType(value ValueType) bool {
 	}
 }
 
+func IsPrimitiveType(value ValueType) bool {
+	switch value.(type) {
+	case IntType, FloatType, BoolType:
+		return true
+	default:
+		return false
+	}
+}
+
 // currently supports only int and float
 func GetBiggerIntType(a, b IntType) ValueType {
 	if a.Size >= b.Size {

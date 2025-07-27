@@ -663,6 +663,16 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	llvmStructObjHeaderField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, OBJ_HEADER_STRUCT_INDEX, fmt.Sprintf("%s_header_field", callee.Name))
 	llvmObjHeader := c.getLLVMObjHeaderPtr(callee.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
+	// store default values for primitive types
+	for propertyIndex, property := range callee.Properties {
+		if zeus_value.IsPrimitiveType(property.Property.ValueType) {
+			defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
+			// skip the obj header
+			llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex + 1, fmt.Sprintf("%s_property_%s_default_value", callee.Name, property.Property.Name))
+			c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
+		}
+	}
+
 	// Track the allocated object with the GC
 	if len(input.Args) > 0 {
 		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
@@ -765,6 +775,19 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 
 	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+}
+
+func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Value {
+	switch value := value.(type) {
+	case zeus_value.IntType:
+		return llvm.ConstInt(c.toLLVMIntType(value), 0, false)
+	case zeus_value.FloatType:
+		return llvm.ConstFloat(c.toLLVMFloatType(value), 0.0)
+	case zeus_value.BoolType:
+		return llvm.ConstInt(c.ctx.Int1Type(), 0, false)
+	default:
+		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
+	}
 }
 
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
