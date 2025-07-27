@@ -43,7 +43,7 @@ func NewTypeChecker(builder *IRBuilder, isEntryPoint bool) *TypeChecker {
 	// Initialize required passes
 	tc.passes = []TCPass{
 		NewToKnownTypesPass(),
-		NewIdentifierUsagePass(),
+		NewUnAssignedIdentAccessPass(),
 		NewTypeCheckingPass(),
 		NewUnusedWarningPass(),
 	}
@@ -250,23 +250,23 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 
 
 
-// IdentifierUsagePass checks variable initialization status
+// UnAssignedIdentAccessPass checks variable initialization status
 // and ensures variables are initialized before use
-type IdentifierUsagePass struct{}
+type UnAssignedIdentAccessPass struct{}
 
-func NewIdentifierUsagePass() *IdentifierUsagePass {
-	return &IdentifierUsagePass{}
+func NewUnAssignedIdentAccessPass() *UnAssignedIdentAccessPass {
+	return &UnAssignedIdentAccessPass{}
 }
 
-func (p *IdentifierUsagePass) GetName() string {
-	return "VariableInitializationPass"
+func (p *UnAssignedIdentAccessPass) GetName() string {
+	return "UnAssignedIdentAccessPass"
 }
 
-func (p *IdentifierUsagePass) Finalize(tc *TypeChecker) {
+func (p *UnAssignedIdentAccessPass) Finalize(tc *TypeChecker) {
 	// No finalization needed for this pass
 }
 
-func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
+func (p *UnAssignedIdentAccessPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	switch instr.Type {
 	case InstrTypeDeclVar:
 		p.handleVarDecl(instr)
@@ -278,7 +278,7 @@ func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 }
 
 // handleVarDecl processes variable declarations and sets IsInitialized if there's an initializer
-func (p *IdentifierUsagePass) handleVarDecl(instr *Instr) {
+func (p *UnAssignedIdentAccessPass) handleVarDecl(instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
 	
 	// If the variable has an initializer, mark it as initialized
@@ -288,7 +288,7 @@ func (p *IdentifierUsagePass) handleVarDecl(instr *Instr) {
 }
 
 // handleStore processes variable assignments and marks the target variable as initialized
-func (p *IdentifierUsagePass) handleStore(instr *Instr) {
+func (p *UnAssignedIdentAccessPass) handleStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
 	
 	// Mark the target variable as initialized
@@ -296,7 +296,7 @@ func (p *IdentifierUsagePass) handleStore(instr *Instr) {
 }
 
 // handleLoad processes variable usage and checks initialization status
-func (p *IdentifierUsagePass) handleLoad(tc *TypeChecker, instr *Instr) {
+func (p *UnAssignedIdentAccessPass) handleLoad(tc *TypeChecker, instr *Instr) {
 	input := AsLoadInstrInput(instr.Input)
 	
 	// Check if the variable is initialized before use
