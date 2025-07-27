@@ -986,6 +986,8 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleReturn(instr)
 	case InstrTypeCondJmp:
 		p.handleCondJmp(instr)
+	case InstrTypeNewObj:
+		p.handleNewObj(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.handleObjectPropertyAccess(tc, instr)
 	case InstrTypeExport:
@@ -1123,6 +1125,25 @@ func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
 	}
 }
 
+// handleNewObj processes new object expressions and marks the class as used
+func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
+	input := AsNewObjInstrInput(instr.Input)
+	
+	// Mark the class as used when an object is created from it
+	if class := zeus_value.AsClass(input.Callee); class != nil {
+		class.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
+			argFunc.IsUsed = true
+		}
+	}
+}
+
 // handleObjectPropertyAccess processes object property accesses and marks the object as used
 // Also marks class methods and properties as used when they are accessed
 func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
@@ -1169,10 +1190,15 @@ func (p *UnusedWarningPass) handleExport(instr *Instr) {
 	if function := zeus_value.AsFunction(input.Value); function != nil {
 		function.IsUsed = true
 	}
+	
+	// Mark exported classes as used
+	if class := zeus_value.AsClass(input.Value); class != nil {
+		class.IsUsed = true
+	}
 }
 
 func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
-	// Check for unused variables, functions, and class methods - push warnings
+	// Check for unused variables, functions, classes, and class members - push warnings
 	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
 		if variable := zeus_value.AsVar(value); variable != nil {
 			// Skip temporary variables as they shouldn't generate warnings
@@ -1194,36 +1220,46 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 				})
 			}
 		} else if class := zeus_value.AsClass(value); class != nil {
-			// Check all methods in this class
-			for _, classMethod := range class.Methods {
-				method := classMethod.Method
-				
-				// Skip constructor methods as they're implicitly used
-				if method.Name == token.CONSTRUCTOR_METHOD_NAME {
-					continue
+			// Check if the class is unused (no objects created from it)
+			if !class.IsUsed {
+				tc.pushError(&zeus_error.ZeusError{
+					Severity: zeus_error.ErrorSeverityWarning,
+					Message: fmt.Sprintf("class '%s' is declared but not used", class.Name),
+					Span:    class.Span,
+				})
+			} else {
+				// Only check class members if the class itself is used
+				// Check all methods in this class
+				for _, classMethod := range class.Methods {
+					method := classMethod.Method
+					
+					// Skip constructor methods as they're implicitly used
+					if method.Name == token.CONSTRUCTOR_METHOD_NAME {
+						continue
+					}
+					
+					// Check if the method is unused
+					if !method.IsUsed {
+						tc.pushError(&zeus_error.ZeusError{
+							Severity: zeus_error.ErrorSeverityWarning,
+							Message: fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
+							Span:    method.Span,
+						})
+					}
 				}
 				
-				// Check if the method is unused
-				if !method.IsUsed {
-					tc.pushError(&zeus_error.ZeusError{
-						Severity: zeus_error.ErrorSeverityWarning,
-						Message: fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
-						Span:    method.Span,
-					})
-				}
-			}
-			
-			// Check all properties in this class
-			for _, classProperty := range class.Properties {
-				property := classProperty.Property
-				
-				// Check if the property is unused
-				if !property.IsUsed {
-					tc.pushError(&zeus_error.ZeusError{
-						Severity: zeus_error.ErrorSeverityWarning,
-						Message: fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
-						Span:    property.Span,
-					})
+				// Check all properties in this class
+				for _, classProperty := range class.Properties {
+					property := classProperty.Property
+					
+					// Check if the property is unused
+					if !property.IsUsed {
+						tc.pushError(&zeus_error.ZeusError{
+							Severity: zeus_error.ErrorSeverityWarning,
+							Message: fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
+							Span:    property.Span,
+						})
+					}
 				}
 			}
 		}

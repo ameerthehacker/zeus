@@ -163,6 +163,7 @@ type Class struct {
 	Name string
 	Properties []*ClassProperty
 	Methods []*ClassMethod
+	IsUsed bool
 	Span *token.Span
 }
 
@@ -171,6 +172,7 @@ func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, 
 		Name: name,
 		Properties: properties,
 		Methods: methods,
+		IsUsed: false,
 		Span: span,
 	}
 }

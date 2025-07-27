@@ -335,19 +335,18 @@ func (b *IRBuilder) BuildClassMethodDecl(method *zeus_value.Function, body *Basi
 
 func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) string {
 	result := b.createTempVariable(span)
-	_class := *class
-	_class.Name = b.generateUniqueSymbolName(class.Name)
+	class.Name = b.generateUniqueSymbolName(class.Name)
 
 	b.pushInstr(&Instr{
 		Type: InstrTypeDeclClass,
 		Output: result,
-		Input: NewDeclClassInstrInput(&_class),
+		Input: NewDeclClassInstrInput(class),
 		Span: span,
 	})
 
-	b.symbolTable.DeclareSymbol(_class.Name, &_class)
+	b.symbolTable.DeclareSymbol(class.Name, class)
 
-	return _class.Name
+	return class.Name
 }
 
 func (b *IRBuilder) Walk(fnInstr func(instr *Instr), fnBlock func(block *BasicBlock)) {

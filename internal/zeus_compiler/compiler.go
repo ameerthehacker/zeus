@@ -202,6 +202,24 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 			panic(r)
 		}
 	}()
+
+	checkSourceFilesWarnings := func(sourceFiles []*SourceFile) {
+		for _, sourceFile := range sourceFiles {
+			if len(sourceFile.Errors) > 0 {
+				warningSeverityErrors := []*zeus_error.ZeusError{}
+				for _, err := range sourceFile.Errors {
+					if err.Severity == zeus_error.ErrorSeverityWarning {
+						warningSeverityErrors = append(warningSeverityErrors, err)
+					}
+				}
+
+				if len(warningSeverityErrors) > 0 {
+					logger.PrettyPrintError(entryFilePath, sourceFile.Source, warningSeverityErrors)
+				}
+			}
+		}
+	}
+
 	checkSourceFilesErrors := func(sourceFiles []*SourceFile) {
 		hasErrors := false
 
@@ -223,24 +241,9 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		}
 
 		if hasErrors {
+			// before exiting print warnings
+			checkSourceFilesWarnings(sourceFiles)
 			os.Exit(1)
-		}
-	}
-
-	checkSourceFilesWarnings := func(sourceFiles []*SourceFile) {
-		for _, sourceFile := range sourceFiles {
-			if len(sourceFile.Errors) > 0 {
-				warningSeverityErrors := []*zeus_error.ZeusError{}
-				for _, err := range sourceFile.Errors {
-					if err.Severity == zeus_error.ErrorSeverityWarning {
-						warningSeverityErrors = append(warningSeverityErrors, err)
-					}
-				}
-
-				if len(warningSeverityErrors) > 0 {
-					logger.PrettyPrintError(entryFilePath, sourceFile.Source, warningSeverityErrors)
-				}
-			}
 		}
 	}
 
