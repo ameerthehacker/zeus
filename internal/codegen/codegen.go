@@ -15,7 +15,7 @@ import (
 )
 
 type Codegen struct {
-	ctx llvm.Context
+	cxt llvm.Context
 }
 
 type ZeusClassLLVMStruct struct {
@@ -68,36 +68,36 @@ func NewCodegen() *Codegen {
 }
 
 func (c *Codegen) NewModule(name string,isEntryPoint bool, targetDataLayout llvm.TargetData) *CodegenModule {
-	module := c.ctx.NewModule(name)
-	builder := c.ctx.NewBuilder()
+	module := c.cxt.NewModule(name)
+	builder := c.cxt.NewBuilder()
 	globalLLVMFunctions := c.setupGlobalLLVMFunctions(module)
 
-	return &CodegenModule{module, builder, c.ctx, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct), targetDataLayout, globalLLVMFunctions}
+	return &CodegenModule{module, builder, c.cxt, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct), targetDataLayout, globalLLVMFunctions}
 }
 
 func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]GlobalLLVMFunction {
 	globalFunctions := make(map[string]GlobalLLVMFunction)
 	
 	// Memory allocation function
-	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.ctx.VoidType(), 1), []llvm.Type{c.ctx.Int32Type()}, false)
+	memAllocFunctionType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 1), []llvm.Type{c.cxt.Int32Type()}, false)
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
 
 	// GC safepoint slow path function (external declaration)
-	gcSafepointSlowPathType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
+	gcSafepointSlowPathType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
 	gcSafepointSlowPathFunction := llvm.AddFunction(module, "zeus_gc_poll", gcSafepointSlowPathType)
 	gcSafepointSlowPathFunction.SetLinkage(llvm.InternalLinkage)
 	globalFunctions["zeus_gc_poll"] = GlobalLLVMFunction{gcSafepointSlowPathFunction, gcSafepointSlowPathType}
 
 	// GC safepoint poll function (defined function)
-	gcSafepointPollType := llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false)
+	gcSafepointPollType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
 	gcSafepointPollFunction := llvm.AddFunction(module, "gc.safepoint_poll", gcSafepointPollType)
 	gcSafepointPollFunction.SetLinkage(llvm.InternalLinkage)
 	globalFunctions["gc.safepoint_poll"] = GlobalLLVMFunction{gcSafepointPollFunction, gcSafepointPollType}
 
 	// Create the body for gc.safepoint_poll
-	builder := c.ctx.NewBuilder()
-	entryBlock := c.ctx.AddBasicBlock(gcSafepointPollFunction, "entry")
+	builder := c.cxt.NewBuilder()
+	entryBlock := c.cxt.AddBasicBlock(gcSafepointPollFunction, "entry")
 	builder.SetInsertPointAtEnd(entryBlock)
 	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
 	builder.CreateRetVoid()
