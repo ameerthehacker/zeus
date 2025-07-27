@@ -8,26 +8,332 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
+// TCPass represents a pluggable pass that can be run on the IR
+// Passes receive individual instructions with automatic context management
+type TCPass interface {
+	// HandleInstruction processes a single instruction
+	// The TypeChecker automatically manages currentFunction, currentClass, and currentBlock
+	HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError
+	
+	// GetName returns the name of the pass for debugging/logging
+	GetName() string
+}
+
 type TypeChecker struct {
 	errors          []*zeus_error.ZeusError
 	currentFunction *zeus_value.Function
 	currentClass *zeus_value.Class
 	builder         *IRBuilder
 	currentBlock    *BasicBlock
+	passes          []TCPass
 }
 
 func NewTypeChecker(builder *IRBuilder) *TypeChecker {
-	return &TypeChecker{
+	tc := &TypeChecker{
 		builder: builder,
 	}
+	
+	// Initialize required passes
+	tc.passes = []TCPass{
+		NewToKnownTypesPass(),
+		NewTypeCheckingPass(),
+	}
+	
+	return tc
+}
+
+// AddPass adds a new pass to the type checker
+func (tc *TypeChecker) AddPass(pass TCPass) {
+	tc.passes = append(tc.passes, pass)
+}
+
+// TypeCheck runs all registered passes and returns accumulated errors
+func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
+	tc.errors = nil // Reset errors
+	
+	for _, pass := range tc.passes {
+		tc.runPass(pass)
+	}
+	
+	return tc.errors
+}
+
+// runPass executes a single pass with automatic context management
+func (tc *TypeChecker) runPass(pass TCPass) {
+	tc.builder.Walk(func(instr *Instr) {
+		// Automatically update context based on instruction type
+		tc.updateContext(instr)
+		
+		// Check if instruction is allowed in current context
+		if !tc.isInstructionAllowed(instr) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: "statement not supported outside of function",
+				Span:    instr.Span,
+			})
+			return
+		}
+		
+		// Let the pass handle the instruction
+		passErrors := pass.HandleInstruction(tc, instr)
+		tc.errors = append(tc.errors, passErrors...)
+	}, func(block *BasicBlock) {
+		tc.currentBlock = block
+	})
+}
+
+// updateContext automatically updates the current function and class context
+func (tc *TypeChecker) updateContext(instr *Instr) {
+	switch instr.Type {
+	case InstrTypeDeclFunc:
+		input := AsDeclFuncInstrInput(instr.Input)
+		tc.currentFunction = input.Function
+	case InstrTypeDeclClassMethod:
+		input := AsDeclClassMethodInstrInput(instr.Input)
+		tc.currentClass = input.Class
+		tc.currentFunction = input.Method
+	case InstrTypeDeclClass:
+		input := AsDeclClassInstrInput(instr.Input)
+		tc.currentClass = input.Class
+	}
+}
+
+// isInstructionAllowed checks if an instruction is allowed in the current context
+func (tc *TypeChecker) isInstructionAllowed(instr *Instr) bool {
+	isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type)
+	return isTopLevelInstr || tc.currentFunction != nil
+}
+
+// Common utility functions shared by all passes
+
+// getBuiltInValueType returns the built-in value type of a value
+func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.ValueType {
+	switch value := value.(type) {
+	case *zeus_value.Var:
+		return value.ValueType
+	case *zeus_value.Function:
+		return zeus_value.ToFunctionType(*value)
+	case *zeus_value.Constant:
+		return value.ValueType
+	case *zeus_value.Object:
+		return value.ValueType
+	case *zeus_value.Class:
+		return zeus_value.NewObjectType(*value)
+	default:
+		return zeus_value.UndefinedType{}
+	}
+}
+
+// getValueType returns the value type of a value
+func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
+	valueType := tc.getBuiltInValueType(value)
+
+	if valueType == nil {
+		return zeus_value.UndefinedType{}
+	}
+
+	return valueType
 }
 
 func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
 }
 
+// ToKnownTypesPass converts all UserDefinedType references to their actual known types
+type ToKnownTypesPass struct{}
+
+func NewToKnownTypesPass() *ToKnownTypesPass {
+	return &ToKnownTypesPass{}
+}
+
+func (p *ToKnownTypesPass) GetName() string {
+	return "ToKnownTypesPass"
+}
+
+func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError {
+	// Resolve output type if it exists and is a UserDefinedType
+	if instr.Output != nil && instr.Output.ValueType != nil {
+		instr.Output.ValueType = p.resolveValueType(tc, instr.Output.ValueType)
+	}
+	
+	switch instr.Type {
+	case InstrTypeDeclVar:
+		p.resolveVarDecl(tc, instr)
+	case InstrTypeDeclFunc:
+		p.resolveFuncDecl(tc, instr)
+	case InstrTypeDeclClass:
+		p.resolveClassDecl(tc, instr)
+	case InstrTypeDeclClassMethod:
+		p.resolveClassMethodDecl(tc, instr)
+	}
+	
+	return nil
+}
+
+// resolveValueType converts a UserDefinedType to its actual known type
+func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_value.ValueType) zeus_value.ValueType {
+	if zeus_value.IsUserDefinedType(valueType) {
+		userDefinedType := zeus_value.AsUserDefinedType(valueType)
+		variable, ok := tc.builder.symbolTable.GetSymbol(userDefinedType.Name)
+
+		if !ok {
+			// Return the original type if we can't resolve it
+			// The TypeCheckingPass will handle the error
+			return valueType
+		}
+
+		return tc.getBuiltInValueType(variable)
+	}
+
+	return valueType
+}
+
+func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclVarInstrInput(instr.Input)
+	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType)
+}
+
+func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclFuncInstrInput(instr.Input)
+	
+	// Resolve return type
+	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType)
+	
+	// Resolve parameter types
+	for i := range input.Function.Params {
+		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType)
+	}
+}
+
+func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclClassInstrInput(instr.Input)
+	
+	// Resolve property types
+	for i := range input.Class.Properties {
+		input.Class.Properties[i].Property.ValueType = p.resolveValueType(tc, input.Class.Properties[i].Property.ValueType)
+	}
+	
+	// Resolve method types
+	for i := range input.Class.Methods {
+		method := input.Class.Methods[i].Method
+		method.ReturnType = p.resolveValueType(tc, method.ReturnType)
+		
+		for j := range method.Params {
+			method.Params[j].ValueType = p.resolveValueType(tc, method.Params[j].ValueType)
+		}
+	}
+}
+
+func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclClassMethodInstrInput(instr.Input)
+	
+	// Resolve return type
+	input.Method.ReturnType = p.resolveValueType(tc, input.Method.ReturnType)
+	
+	// Resolve parameter types
+	for i := range input.Method.Params {
+		input.Method.Params[i].ValueType = p.resolveValueType(tc, input.Method.Params[i].ValueType)
+	}
+}
+
+
+
+// This pass does the actual type checking
+
+type TypeCheckingPass struct{}
+
+func NewTypeCheckingPass() *TypeCheckingPass {
+	return &TypeCheckingPass{}
+}
+
+func (p *TypeCheckingPass) GetName() string {
+	return "TypeCheckingPass"
+}
+
+func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError {
+	switch instr.Type {
+	// jmp requires no type checking
+	case InstrTypeJmp:
+	case InstrTypeDeclFunc:
+		p.tcFuncDecl(tc, instr)
+	case InstrTypeDeclVar:
+		p.tcDeclVar(tc, instr)
+	case InstrTypeAdd:
+		fallthrough
+	case InstrTypeSub:
+		fallthrough
+	case InstrTypeMul:
+		fallthrough
+	case InstrTypeDiv:
+		p.tcBinaryOp(tc, instr, zeus_value.GetBiggerType, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
+		})
+	case InstrTypeEqEq:
+		fallthrough
+	case InstrTypeNotEq:
+		fallthrough
+	case InstrTypeLessThan:
+		fallthrough
+	case InstrTypeGreaterThan:
+		fallthrough
+	case InstrTypeLessThanEq:
+		fallthrough
+	case InstrTypeGreaterThanEq:
+		p.tcBinaryOp(tc, instr, func(_, _ zeus_value.ValueType) zeus_value.ValueType {
+			return zeus_value.BoolType{}
+		}, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
+		})
+	case InstrTypeNot:
+		p.tcUnaryOp(tc, instr, func(_ zeus_value.ValueType) zeus_value.ValueType {
+			return zeus_value.BoolType{}
+		}, zeus_value.IsBoolType)
+	case InstrTypeNeg:
+		p.tcUnaryOp(tc, instr, func(operandType zeus_value.ValueType) zeus_value.ValueType {
+			switch operandType := operandType.(type) {
+			// negation on int makes it signed
+			case zeus_value.IntType:
+				return zeus_value.IntType{
+					Signed: true,
+					Size:   operandType.Size,
+				}
+			}
+			return operandType
+		}, zeus_value.IsNumberType)
+	case InstrTypeCondJmp:
+		p.tcCondJmp(tc, instr)
+	case InstrTypeLoad:
+		p.tcLoad(instr)
+	case InstrTypeStore:
+		p.tcStore(tc, instr)
+	case InstrTypeReturn:
+		p.tcReturn(tc, instr)
+	case InstrTypeCallFunc:
+		p.tcCallFunc(tc, instr)
+	case InstrTypeIndirectFuncCall:
+		p.tcIndirectFuncCall(tc, instr)
+	case InstrTypeExport:
+		p.tcExport(tc, instr)
+	case InstrTypeImport:
+		p.tcImport(tc, instr)
+	case InstrTypeDeclClass:
+		p.tcDeclClass(tc, instr)
+	case InstrTypeNewObj:
+		p.tcNewObj(tc, instr)
+	case InstrTypeObjectPropertyAccess:
+		p.tcObjectPropertyAccess(tc, instr)
+	case InstrTypeDeclClassMethod:
+		p.tcDeclClassMethod(tc, instr)
+	case InstrTypeCast:
+		// TODO: add type checking for cast
+	default:
+		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
+	}
+	
+	return nil // TypeCheckingPass uses tc.pushError internally
+}
+
 // validateFunctionReturns checks if a function returns in all code paths
-func (tc *TypeChecker) validateFunctionReturns(function *zeus_value.Function, functionBody *BasicBlock) {
+func (p *TypeCheckingPass) validateFunctionReturns(tc *TypeChecker, function *zeus_value.Function, functionBody *BasicBlock) {
 	returnsInAllBlocks := true
 	worklist := []*BasicBlock{functionBody}
 
@@ -56,13 +362,12 @@ func (tc *TypeChecker) validateFunctionReturns(function *zeus_value.Function, fu
 	}
 }
 
-func (tc *TypeChecker) tcFuncDecl(instr *Instr) {
+func (p *TypeCheckingPass) tcFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
-	tc.currentFunction = input.Function
-	tc.validateFunctionReturns(input.Function, input.Body)
+	p.validateFunctionReturns(tc, input.Function, input.Body)
 }
 
-func (tc *TypeChecker) tcDeclVar(instr *Instr) {
+func (p *TypeCheckingPass) tcDeclVar(tc *TypeChecker, instr *Instr) {
 	decl_var := AsDeclVarInstrInput(instr.Input)
 
 	if zeus_value.IsVoidType(decl_var.Variable.ValueType) {
@@ -71,73 +376,16 @@ func (tc *TypeChecker) tcDeclVar(instr *Instr) {
 			Span:    decl_var.Variable.Span,
 		})
 	} else if decl_var.Initializer != nil {
-		initializer := tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(decl_var.Variable.ValueType), decl_var.Initializer)
+		initializer := p.cmpValueWithImplicitCast(tc, instr, decl_var.Variable.ValueType, decl_var.Initializer)
 		decl_var.Initializer = initializer
 	}
 }
 
-func (tc *TypeChecker) toFunctionType(fn zeus_value.Function) zeus_value.FunctionType {
-	knownParamTypes := make([]zeus_value.ValueType, len(fn.Params))
-	
-	for i, param := range fn.Params {
-		knownParamTypes[i] = tc.asKnownValueType(param.ValueType)
-	}
-
-	return zeus_value.FunctionType{
-		ParamTypes: knownParamTypes,
-		ReturnType: tc.asKnownValueType(fn.ReturnType),
-	}
-}
-
-func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.ValueType {
-	switch value := value.(type) {
-	case *zeus_value.Var:
-		return value.ValueType
-	case *zeus_value.Function:
-		return tc.toFunctionType(*value)
-	case *zeus_value.Constant:
-		return value.ValueType
-	case *zeus_value.Object:
-		return value.ValueType
-	case *zeus_value.Class:
-		return zeus_value.NewObjectType(*value)
-	default:
-		panic(fmt.Sprintf("cannot get value type of value: %T", value))
-	}
-}
-
-func (tc *TypeChecker) asKnownValueType(valueType zeus_value.ValueType) zeus_value.ValueType {
-	if zeus_value.IsUserDefinedType(valueType) {
-		userDefinedType := zeus_value.AsUserDefinedType(valueType)
-		variable, ok := tc.builder.symbolTable.GetSymbol(userDefinedType.Name)
-
-		if !ok {
-			panic(fmt.Sprintf("symbol %s not found", userDefinedType.Name))
-		}
-
-		return tc.getValueType(variable)
-	}
-
-	return valueType
-}
-
-func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
-	valueType := tc.getBuiltInValueType(value)
-
-	valueType = tc.asKnownValueType(valueType)
-
-	if valueType == nil {
-		return zeus_value.UndefinedType{}
-	}
-
-	return valueType
-}
-
-func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
+func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
 	bType := tc.getValueType(b)
 
-	if !tc.cmpValueType(targetType, bType) {
-		castedB, ok := tc.tryImplicitCast(instr, b, targetType)
+	if !p.cmpValueType(tc, targetType, bType) {
+		castedB, ok := p.tryImplicitCast(tc, instr, b, targetType)
 
 		if ok {
 			return castedB
@@ -158,7 +406,7 @@ func (tc *TypeChecker) cmpValueWithImplicitCast(instr *Instr, targetType zeus_va
 	return b
 }
 
-func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
+func (p *TypeCheckingPass) cmpValueType(tc *TypeChecker, a, b zeus_value.ValueType) bool {
 	switch a := a.(type) {
 	case zeus_value.IntType:
 		b, ok := b.(zeus_value.IntType)
@@ -179,14 +427,14 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 			return false
 		}
 
-		isReturnTypeEqual := tc.cmpValueType(a.ReturnType, b.ReturnType)
+		isReturnTypeEqual := p.cmpValueType(tc, a.ReturnType, b.ReturnType)
 
 		if !isReturnTypeEqual {
 			return false
 		}
 
 		for i := range a.ParamTypes {
-			if !tc.cmpValueType(a.ParamTypes[i], b.ParamTypes[i]) {
+			if !p.cmpValueType(tc, a.ParamTypes[i], b.ParamTypes[i]) {
 				return false
 			}
 		}
@@ -205,11 +453,11 @@ func (tc *TypeChecker) cmpValueType(a, b zeus_value.ValueType) bool {
 // - int to float
 // - int to int of bigger size
 // - float to float of bigger size
-func (tc *TypeChecker) tryImplicitCast(instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
+func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
 
 	// if they both are same type, no need to cast
-	if tc.cmpValueType(valueType, targetType) {
+	if p.cmpValueType(tc, valueType, targetType) {
 		return value, true
 	}
 
@@ -256,7 +504,7 @@ func (tc *TypeChecker) tryImplicitCast(instr *Instr, value zeus_value.Value, tar
 }
 
 // converts left and right to the same type
-func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_value.Value) (zeus_value.Value, zeus_value.Value) {
+func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Instr, left, right zeus_value.Value) (zeus_value.Value, zeus_value.Value) {
 	leftValueType := tc.getValueType(left)
 	rightValueType := tc.getValueType(right)
 	castErrMsg := fmt.Sprintf("cannot do implicit cast to same type: %s and %s", leftValueType, rightValueType)
@@ -267,7 +515,7 @@ func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_v
 		switch rightValueType := rightValueType.(type) {
 		case zeus_value.IntType:
 			if leftValueType.Size > rightValueType.Size {
-				right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+				right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 				if !ok {
 					tc.pushError(&zeus_error.ZeusError{
 						Message: fmt.Sprintf("cannot cast %s to %s without an explicit cast", rightValueType, leftValueType),
@@ -275,7 +523,7 @@ func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_v
 					})
 				}
 			} else if rightValueType.Size > leftValueType.Size {
-				left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+				left, ok = p.tryImplicitCast(tc, instr, left, rightValueType)
 				if !ok {
 					tc.pushError(&zeus_error.ZeusError{
 						Message: fmt.Sprintf("cannot cast %s to %s without an explicit cast", leftValueType, rightValueType),
@@ -284,7 +532,7 @@ func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_v
 				}
 			}
 		case zeus_value.FloatType:
-			left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+			left, ok = p.tryImplicitCast(tc, instr, left, rightValueType)
 			zeus_error.Assert(ok, "failed to cast int to float")
 		default:
 			tc.pushError(&zeus_error.ZeusError{
@@ -296,14 +544,14 @@ func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_v
 		switch rightValueType := rightValueType.(type) {
 		case zeus_value.FloatType:
 			if leftValueType.Size > rightValueType.Size {
-				right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+				right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 				zeus_error.Assert(ok, "failed to cast smaller float to larger float")
 			} else if rightValueType.Size > leftValueType.Size {
-				left, ok = tc.tryImplicitCast(instr, left, rightValueType)
+				left, ok = p.tryImplicitCast(tc, instr, left, rightValueType)
 				zeus_error.Assert(ok, "failed to cast smaller float to larger float")
 			}
 		case zeus_value.IntType:
-			right, ok = tc.tryImplicitCast(instr, right, leftValueType)
+			right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 			zeus_error.Assert(ok, "failed to cast int to float")
 		default:
 			panic(castErrMsg)
@@ -313,7 +561,7 @@ func (tc *TypeChecker) doImplicitCastToSameType(instr *Instr, left, right zeus_v
 	return left, right
 }
 
-func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a, b zeus_value.ValueType) bool) {
+func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a, b zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a, b zeus_value.ValueType) bool) {
 	input := AsBinaryOpInstrInput(instr.Input)
 
 	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
@@ -322,7 +570,7 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b zeus_valu
 			Span:    instr.Span,
 		})
 	} else {
-		left, right := tc.doImplicitCastToSameType(instr, input.Left, input.Right)
+		left, right := p.doImplicitCastToSameType(tc, instr, input.Left, input.Right)
 		input.Left = left
 		input.Right = right
 	}
@@ -330,7 +578,7 @@ func (tc *TypeChecker) tcBinaryOp(instr *Instr, resultTypeFn func(a, b zeus_valu
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right))
 }
 
-func (tc *TypeChecker) tcUnaryOp(instr *Instr, resultTypeFn func(a zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a zeus_value.ValueType) bool) {
+func (p *TypeCheckingPass) tcUnaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a zeus_value.ValueType) bool) {
 	input := AsUnaryOpInstrInput(instr.Input)
 
 	if !cmpTypeFn(tc.getValueType(input.Value)) {
@@ -343,7 +591,7 @@ func (tc *TypeChecker) tcUnaryOp(instr *Instr, resultTypeFn func(a zeus_value.Va
 	instr.Output.ValueType = resultTypeFn(tc.getValueType(input.Value))
 }
 
-func (tc *TypeChecker) tcCondJmp(instr *Instr) {
+func (p *TypeCheckingPass) tcCondJmp(tc *TypeChecker, instr *Instr) {
 	input := AsCondJmpInstrInput(instr.Input)
 
 	if !zeus_value.IsBoolType(tc.getValueType(input.Condition)) {
@@ -354,12 +602,12 @@ func (tc *TypeChecker) tcCondJmp(instr *Instr) {
 	}
 }
 
-func (tc *TypeChecker) tcLoad(instr *Instr) {
+func (p *TypeCheckingPass) tcLoad(instr *Instr) {
 	input := AsLoadInstrInput(instr.Input)
 	instr.Output.ValueType = input.Addr.ValueType
 }
 
-func (tc *TypeChecker) tcStore(instr *Instr) {
+func (p *TypeCheckingPass) tcStore(tc *TypeChecker, instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
 
 	if !input.Addr.IsPtr {
@@ -369,10 +617,10 @@ func (tc *TypeChecker) tcStore(instr *Instr) {
 		})
 	}
 
-	input.Value = tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(input.Addr.ValueType), input.Value)
+	input.Value = p.cmpValueWithImplicitCast(tc, instr, input.Addr.ValueType, input.Value)
 }
 
-func (tc *TypeChecker) tcReturn(instr *Instr) {
+func (p *TypeCheckingPass) tcReturn(tc *TypeChecker, instr *Instr) {
 	input := AsReturnInstrInput(instr.Input)
 
 	if tc.currentFunction == nil {
@@ -384,7 +632,7 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 		return
 	}
 
-	returnType := tc.asKnownValueType(tc.currentFunction.ReturnType)
+	returnType := tc.currentFunction.ReturnType
 
 	if zeus_value.IsVoidType(returnType) && input.Value != nil {
 		tc.pushError(&zeus_error.ZeusError{
@@ -399,11 +647,11 @@ func (tc *TypeChecker) tcReturn(instr *Instr) {
 	} else if zeus_value.IsVoidType(returnType) && input.Value == nil {
 		return
 	} else {
-		input.Value = tc.cmpValueWithImplicitCast(instr, returnType, input.Value)
+		input.Value = p.cmpValueWithImplicitCast(tc, instr, returnType, input.Value)
 	}
 }
 
-func (tc *TypeChecker) tcExport(instr *Instr) {
+func (p *TypeCheckingPass) tcExport(tc *TypeChecker, instr *Instr) {
 	input := AsExportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
@@ -415,7 +663,7 @@ func (tc *TypeChecker) tcExport(instr *Instr) {
 	}
 }
 
-func (tc *TypeChecker) tcImport(instr *Instr) {
+func (p *TypeCheckingPass) tcImport(tc *TypeChecker, instr *Instr) {
 	input := AsImportInstrInput(instr.Input)
 	valueType := tc.getValueType(input.Value)
 
@@ -429,7 +677,7 @@ func (tc *TypeChecker) tcImport(instr *Instr) {
 
 // tcFunctionCall performs common type checking logic for function calls
 // It validates arguments and performs implicit casting based on function signature
-func (tc *TypeChecker) tcFunctionCall(instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
+func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
 	if len(args) != len(functionType.ParamTypes) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("expected %d arguments for function, but found %d", len(functionType.ParamTypes), len(args)),
@@ -440,7 +688,7 @@ func (tc *TypeChecker) tcFunctionCall(instr *Instr, functionType zeus_value.Func
 
 	// Perform implicit casting on arguments
 	for i := range args {
-		castedArg, ok := tc.tryImplicitCast(instr, args[i], tc.asKnownValueType(functionType.ParamTypes[i]))
+		castedArg, ok := p.tryImplicitCast(tc, instr, args[i], functionType.ParamTypes[i])
 		args[i] = castedArg
 		if !ok {
 			tc.pushError(&zeus_error.ZeusError{
@@ -453,7 +701,7 @@ func (tc *TypeChecker) tcFunctionCall(instr *Instr, functionType zeus_value.Func
 	return args
 }
 
-func (tc *TypeChecker) tcCallFunc(instr *Instr) {
+func (p *TypeCheckingPass) tcCallFunc(tc *TypeChecker, instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
 	function := zeus_value.AsFunction(input.Callee)
 
@@ -466,18 +714,18 @@ func (tc *TypeChecker) tcCallFunc(instr *Instr) {
 		return
 	}
 
-	functionType := tc.toFunctionType(*function)
+	functionType := zeus_value.ToFunctionType(*function)
 
 	// Use the abstracted function call type checking
-	input.Args = tc.tcFunctionCall(instr, functionType, input.Args, input.Callee.GetSpan())
+	input.Args = p.tcFunctionCall(tc, instr, functionType, input.Args, input.Callee.GetSpan())
 	instr.Input = NewCallFuncInstrInput(input.Callee, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType
 }
 
-func (tc *TypeChecker) tcDeclClass(instr *Instr) {}
+func (p *TypeCheckingPass) tcDeclClass(tc *TypeChecker, instr *Instr) {}
 
-func (tc *TypeChecker) tcNewObj(instr *Instr) {
+func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
 
 	if !zeus_value.IsClass(input.Callee) {
@@ -523,7 +771,7 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 			})
 		} else {
 			for i := range input.Args {
-				input.Args[i] = tc.cmpValueWithImplicitCast(instr, tc.asKnownValueType(constructorMethod.Params[i].ValueType), input.Args[i])
+				input.Args[i] = p.cmpValueWithImplicitCast(tc, instr, constructorMethod.Params[i].ValueType, input.Args[i])
 			}
 		}
 	}
@@ -531,7 +779,7 @@ func (tc *TypeChecker) tcNewObj(instr *Instr) {
 	instr.Output.ValueType = zeus_value.NewObjectType(*class)
 }
 
-func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
+func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
 	input := AsObjectPropertyAccessInstrInput(instr.Input)
 	output := instr.Output
 	objectType := tc.getValueType(input.Object)
@@ -564,7 +812,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
-				instr.Output.ValueType = tc.toFunctionType(*method.Method)
+				instr.Output.ValueType = zeus_value.ToFunctionType(*method.Method)
 			}
 		}
 
@@ -592,7 +840,7 @@ func (tc *TypeChecker) tcObjectPropertyAccess(instr *Instr) {
 	}
 }
 
-func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
+func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
 
 	methodType := tc.getValueType(input.Function)
@@ -606,111 +854,14 @@ func (tc *TypeChecker) tcIndirectFuncCall(instr *Instr) {
 		return
 	}
 
-	input.Args = tc.tcFunctionCall(instr, *functionType, input.Args, input.Function.GetSpan())
+	input.Args = p.tcFunctionCall(tc, instr, *functionType, input.Args, input.Function.GetSpan())
 	instr.Input = NewIndirectFuncCallInstrInput(input.Function, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType
 }
  
-func (tc *TypeChecker) tcDeclClassMethod(instr *Instr) {
+func (p *TypeCheckingPass) tcDeclClassMethod(tc *TypeChecker, instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
-	tc.currentClass = input.Class
-	tc.currentFunction = input.Method
-	tc.validateFunctionReturns(input.Method, input.Body)
+	p.validateFunctionReturns(tc, input.Method, input.Body)
 }
 
-func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
-	tc.builder.Walk(func(instr *Instr) {
-		isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type)
-		if !isTopLevelInstr && tc.currentFunction == nil {
-			tc.pushError(&zeus_error.ZeusError{
-				Message: "statement not supported outside of function",
-				Span:    instr.Span,
-			})
-			return
-		}
-
-		switch instr.Type {
-		// jmp requires no type checking
-		case InstrTypeJmp:
-		case InstrTypeDeclFunc:
-			tc.tcFuncDecl(instr)
-		case InstrTypeDeclVar:
-			tc.tcDeclVar(instr)
-		case InstrTypeAdd:
-			fallthrough
-		case InstrTypeSub:
-			fallthrough
-		case InstrTypeMul:
-			fallthrough
-		case InstrTypeDiv:
-			tc.tcBinaryOp(instr, zeus_value.GetBiggerType, func(a, b zeus_value.ValueType) bool {
-				return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
-			})
-		case InstrTypeEqEq:
-			fallthrough
-		case InstrTypeNotEq:
-			fallthrough
-		case InstrTypeLessThan:
-			fallthrough
-		case InstrTypeGreaterThan:
-			fallthrough
-		case InstrTypeLessThanEq:
-			fallthrough
-		case InstrTypeGreaterThanEq:
-			tc.tcBinaryOp(instr, func(_, _ zeus_value.ValueType) zeus_value.ValueType {
-				return zeus_value.BoolType{}
-			}, func(a, b zeus_value.ValueType) bool {
-				return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
-			})
-		case InstrTypeNot:
-			tc.tcUnaryOp(instr, func(_ zeus_value.ValueType) zeus_value.ValueType {
-				return zeus_value.BoolType{}
-			}, zeus_value.IsBoolType)
-		case InstrTypeNeg:
-			tc.tcUnaryOp(instr, func(operandType zeus_value.ValueType) zeus_value.ValueType {
-				switch operandType := operandType.(type) {
-				// negation on int makes it signed
-				case zeus_value.IntType:
-					return zeus_value.IntType{
-						Signed: true,
-						Size:   operandType.Size,
-					}
-				}
-				return operandType
-			}, zeus_value.IsNumberType)
-		case InstrTypeCondJmp:
-			tc.tcCondJmp(instr)
-		case InstrTypeLoad:
-			tc.tcLoad(instr)
-		case InstrTypeStore:
-			tc.tcStore(instr)
-		case InstrTypeReturn:
-			tc.tcReturn(instr)
-		case InstrTypeCallFunc:
-			tc.tcCallFunc(instr)
-		case InstrTypeIndirectFuncCall:
-			tc.tcIndirectFuncCall(instr)
-		case InstrTypeExport:
-			tc.tcExport(instr)
-		case InstrTypeImport:
-			tc.tcImport(instr)
-		case InstrTypeDeclClass:
-			tc.tcDeclClass(instr)
-		case InstrTypeNewObj:
-			tc.tcNewObj(instr)
-		case InstrTypeObjectPropertyAccess:
-			tc.tcObjectPropertyAccess(instr)
-		case InstrTypeDeclClassMethod:
-			tc.tcDeclClassMethod(instr)
-		case InstrTypeCast:
-			// TODO: add type checking for cast
-		default:
-			panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
-		}
-	}, func(block *BasicBlock) {
-		tc.currentBlock = block
-	})
-
-	return tc.errors
-}

@@ -539,7 +539,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
   gcOffsetsCount := 0
 
   for _, property := range class.Properties {
-    if zeus_value.IsUserDefinedType(property.Property.ValueType) {
+    if zeus_value.IsObjectType(property.Property.ValueType) {
       gcOffsetsCount += 1
     }
   }
@@ -623,7 +623,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 			currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
 		}
 		
-    if zeus_value.IsUserDefinedType(property.Property.ValueType) {
+    if zeus_value.IsObjectType(property.Property.ValueType) {
       gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), currentOffset, false))
 		}
 		
