@@ -100,6 +100,7 @@ type Function struct {
 	Name string
 	Params []*Var
 	ReturnType ValueType
+	IsUsed bool
 	Span *token.Span
 }
 
@@ -108,6 +109,7 @@ func NewFunction(name string, params []*Var, returnType ValueType, span *token.S
 		Name: name,
 		Params: params,
 		ReturnType: returnType,
+		IsUsed: false,
 		Span: span,
 	}
 }

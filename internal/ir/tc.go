@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -259,7 +260,7 @@ func (p *IdentifierUsagePass) GetName() string {
 }
 
 func (p *IdentifierUsagePass) Finalize(tc *TypeChecker) {
-	// Check for unused variables and push warnings
+	// Check for unused variables and functions, push warnings
 	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
 		if variable := zeus_value.AsVar(value); variable != nil {
 			// Skip temporary variables as they shouldn't generate warnings
@@ -268,6 +269,15 @@ func (p *IdentifierUsagePass) Finalize(tc *TypeChecker) {
 					Severity: zeus_error.ErrorSeverityWarning,
 					Message: fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
 					Span:    variable.Span,
+				})
+			}
+		} else if function := zeus_value.AsFunction(value); function != nil {
+			// Check for unused functions, ignore constructor method
+			if !function.IsUsed && !strings.HasSuffix(function.Name, "." + token.CONSTRUCTOR_METHOD_NAME) {
+				tc.pushError(&zeus_error.ZeusError{
+					Severity: zeus_error.ErrorSeverityWarning,
+					Message: fmt.Sprintf("function '%s' is declared but not used", function.Name),
+					Span:    function.Span,
 				})
 			}
 		}
@@ -296,12 +306,11 @@ func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleReturn(instr)
 	case InstrTypeCondJmp:
 		p.handleCondJmp(instr)
-	case InstrTypeNewObj:
-		p.handleNewObj(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.handleObjectPropertyAccess(instr)
+	case InstrTypeExport:
+		p.handleExport(instr)
 	}
-	
 }
 
 // handleVarDecl processes variable declarations and sets IsInitialized if there's an initializer
@@ -312,9 +321,11 @@ func (p *IdentifierUsagePass) handleVarDecl(instr *Instr) {
 	if input.Initializer != nil {
 		input.Variable.IsInitialized = true
 		
-		// If the initializer is a variable, mark it as used
+		// If the initializer is a variable or function, mark it as used
 		if initVar := zeus_value.AsVar(input.Initializer); initVar != nil {
 			initVar.IsUsed = true
+		} else if initFunc := zeus_value.AsFunction(input.Initializer); initFunc != nil {
+			initFunc.IsUsed = true
 		}
 	}
 }
@@ -326,9 +337,11 @@ func (p *IdentifierUsagePass) handleStore(instr *Instr) {
 	// Mark the target variable as initialized
 	input.Addr.IsInitialized = true
 	
-	// If the value being stored is a variable, mark it as used
+	// If the value being stored is a variable or function, mark it as used
 	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
 		valueVar.IsUsed = true
+	} else if valueFunc := zeus_value.AsFunction(input.Value); valueFunc != nil {
+		valueFunc.IsUsed = true
 	}
 }
 
@@ -355,11 +368,15 @@ func (p *IdentifierUsagePass) handleBinaryOp(instr *Instr) {
 	// Mark the left operand as used
 	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
 		leftVar.IsUsed = true
+	} else if leftFunc := zeus_value.AsFunction(input.Left); leftFunc != nil {
+		leftFunc.IsUsed = true
 	}
 	
 	// Mark the right operand as used
 	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
 		rightVar.IsUsed = true
+	} else if rightFunc := zeus_value.AsFunction(input.Right); rightFunc != nil {
+		rightFunc.IsUsed = true
 	}
 }
 
@@ -370,6 +387,8 @@ func (p *IdentifierUsagePass) handleUnaryOp(instr *Instr) {
 	// Mark the operand as used
 	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
 		operandVar.IsUsed = true
+	} else if operandFunc := zeus_value.AsFunction(input.Value); operandFunc != nil {
+		operandFunc.IsUsed = true
 	}
 }
 
@@ -377,15 +396,19 @@ func (p *IdentifierUsagePass) handleUnaryOp(instr *Instr) {
 func (p *IdentifierUsagePass) handleCallFunc(instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
 	
-	// Mark the callee as used
+	// Mark the callee as used (variable or function)
 	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
 		calleeVar.IsUsed = true
+	} else if calleeFunc := zeus_value.AsFunction(input.Callee); calleeFunc != nil {
+		calleeFunc.IsUsed = true
 	}
 	
 	// Mark arguments as used
 	for i := range input.Args {
 		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
 			argVar.IsUsed = true
+		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
+			argFunc.IsUsed = true
 		}
 	}
 }
@@ -394,15 +417,19 @@ func (p *IdentifierUsagePass) handleCallFunc(instr *Instr) {
 func (p *IdentifierUsagePass) handleIndirectFuncCall(instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
 	
-	// Mark the function as used
+	// Mark the function as used (variable or function)
 	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
 		funcVar.IsUsed = true
+	} else if function := zeus_value.AsFunction(input.Function); function != nil {
+		function.IsUsed = true
 	}
 	
 	// Mark arguments as used
 	for i := range input.Args {
 		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
 			argVar.IsUsed = true
+		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
+			argFunc.IsUsed = true
 		}
 	}
 }
@@ -414,6 +441,8 @@ func (p *IdentifierUsagePass) handleReturn(instr *Instr) {
 	// Mark the return value as used if it's not nil
 	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
 		returnValueVar.IsUsed = true
+	} else if returnValueFunc := zeus_value.AsFunction(input.Value); returnValueFunc != nil {
+		returnValueFunc.IsUsed = true
 	}
 }
 
@@ -424,24 +453,7 @@ func (p *IdentifierUsagePass) handleCondJmp(instr *Instr) {
 	// Mark the condition as used
 	if condVar := zeus_value.AsVar(input.Condition); condVar != nil {
 		condVar.IsUsed = true
-	}
-}
-
-// handleNewObj processes new object expressions and marks the callee and arguments as used
-func (p *IdentifierUsagePass) handleNewObj(instr *Instr) {
-	input := AsNewObjInstrInput(instr.Input)
-	
-	// Mark the callee as used
-	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
-		calleeVar.IsUsed = true
-	}
-	
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		}
-	}
+	} 
 }
 
 // handleObjectPropertyAccess processes object property accesses and marks the object as used
@@ -454,9 +466,17 @@ func (p *IdentifierUsagePass) handleObjectPropertyAccess(instr *Instr) {
 	}
 }
 
+// handleExport processes export statements and marks exported functions as used
+func (p *IdentifierUsagePass) handleExport(instr *Instr) {
+	input := AsExportInstrInput(instr.Input)
+	
+	// Mark exported functions as used
+	if function := zeus_value.AsFunction(input.Value); function != nil {
+		function.IsUsed = true
+	}
+}
 
 // This pass does the actual type checking
-
 type TypeCheckingPass struct{}
 
 func NewTypeCheckingPass() *TypeCheckingPass {
