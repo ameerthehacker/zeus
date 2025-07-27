@@ -8,5 +8,10 @@
         "name": "Can call a function from main",
         "exit": "10",
         "entry": "call.zs"
+    },
+    {
+        "name": "Optional return statement in void functions",
+        "exit": "0",
+        "entry": "void-return.zs"
     }
 ]

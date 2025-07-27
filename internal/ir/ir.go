@@ -133,11 +133,13 @@ func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
 	// jump to the merge block
 	g.irBuilder.BuildJmp(merge_block, nil)
 	
+	g.irBuilder.SetInsertionBlock(else_block)
 	// generate the else block
 	if stmt.ElseStmt != nil {
-		g.irBuilder.SetInsertionBlock(else_block)
 		stmt.ElseStmt.Accept(g)
 	}
+	// jump to the merge block
+	g.irBuilder.BuildJmp(merge_block, nil)
 
 	g.irBuilder.SetInsertionBlock(merge_block)
 }

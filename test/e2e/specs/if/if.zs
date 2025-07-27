@@ -5,5 +5,7 @@ function main(): i32 {
     return 2;
   } 
 
+  let x: i32 = 10;
+
   return 1;
 }
