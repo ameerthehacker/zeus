@@ -31,11 +31,13 @@ type TypeChecker struct {
 	builder         *IRBuilder
 	currentBlock    *BasicBlock
 	passes          []TCPass
+	IsEntryPoint    bool
 }
 
-func NewTypeChecker(builder *IRBuilder) *TypeChecker {
+func NewTypeChecker(builder *IRBuilder, isEntryPoint bool) *TypeChecker {
 	tc := &TypeChecker{
 		builder: builder,
+		IsEntryPoint: isEntryPoint,
 	}
 	
 	// Initialize required passes
@@ -43,6 +45,7 @@ func NewTypeChecker(builder *IRBuilder) *TypeChecker {
 		NewToKnownTypesPass(),
 		NewIdentifierUsagePass(),
 		NewTypeCheckingPass(),
+		NewUnusedWarningPass(),
 	}
 	
 	return tc
@@ -247,8 +250,8 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 
 
 
-// IdentifierUsagePass checks if variables are used after initialization
-// and updates the IsInitialized and IsUsed fields based on usage patterns
+// IdentifierUsagePass checks variable initialization status
+// and ensures variables are initialized before use
 type IdentifierUsagePass struct{}
 
 func NewIdentifierUsagePass() *IdentifierUsagePass {
@@ -260,28 +263,7 @@ func (p *IdentifierUsagePass) GetName() string {
 }
 
 func (p *IdentifierUsagePass) Finalize(tc *TypeChecker) {
-	// Check for unused variables and functions, push warnings
-	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
-		if variable := zeus_value.AsVar(value); variable != nil {
-			// Skip temporary variables as they shouldn't generate warnings
-			if !variable.IsTempVariable() && !variable.IsUsed {
-				tc.pushError(&zeus_error.ZeusError{
-					Severity: zeus_error.ErrorSeverityWarning,
-					Message: fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
-					Span:    variable.Span,
-				})
-			}
-		} else if function := zeus_value.AsFunction(value); function != nil {
-			// Check for unused functions, ignore constructor method
-			if !function.IsUsed && !strings.HasSuffix(function.Name, "." + token.CONSTRUCTOR_METHOD_NAME) {
-				tc.pushError(&zeus_error.ZeusError{
-					Severity: zeus_error.ErrorSeverityWarning,
-					Message: fmt.Sprintf("function '%s' is declared but not used", function.Name),
-					Span:    function.Span,
-				})
-			}
-		}
-	})
+	// No finalization needed for this pass
 }
 
 func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
@@ -292,24 +274,6 @@ func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleStore(instr)
 	case InstrTypeLoad:
 		p.handleLoad(tc, instr)
-	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
-		 InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
-		 InstrTypeLessThanEq, InstrTypeGreaterThanEq:
-		p.handleBinaryOp(instr)
-	case InstrTypeNot, InstrTypeNeg, InstrTypeCast:
-		p.handleUnaryOp(instr)
-	case InstrTypeCallFunc:
-		p.handleCallFunc(instr)
-	case InstrTypeIndirectFuncCall:
-		p.handleIndirectFuncCall(instr)
-	case InstrTypeReturn:
-		p.handleReturn(instr)
-	case InstrTypeCondJmp:
-		p.handleCondJmp(instr)
-	case InstrTypeObjectPropertyAccess:
-		p.handleObjectPropertyAccess(instr)
-	case InstrTypeExport:
-		p.handleExport(instr)
 	}
 }
 
@@ -320,13 +284,6 @@ func (p *IdentifierUsagePass) handleVarDecl(instr *Instr) {
 	// If the variable has an initializer, mark it as initialized
 	if input.Initializer != nil {
 		input.Variable.IsInitialized = true
-		
-		// If the initializer is a variable or function, mark it as used
-		if initVar := zeus_value.AsVar(input.Initializer); initVar != nil {
-			initVar.IsUsed = true
-		} else if initFunc := zeus_value.AsFunction(input.Initializer); initFunc != nil {
-			initFunc.IsUsed = true
-		}
 	}
 }
 
@@ -336,21 +293,11 @@ func (p *IdentifierUsagePass) handleStore(instr *Instr) {
 	
 	// Mark the target variable as initialized
 	input.Addr.IsInitialized = true
-	
-	// If the value being stored is a variable or function, mark it as used
-	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
-		valueVar.IsUsed = true
-	} else if valueFunc := zeus_value.AsFunction(input.Value); valueFunc != nil {
-		valueFunc.IsUsed = true
-	}
 }
 
 // handleLoad processes variable usage and checks initialization status
 func (p *IdentifierUsagePass) handleLoad(tc *TypeChecker, instr *Instr) {
 	input := AsLoadInstrInput(instr.Input)
-	
-	// Mark the variable as used
-	input.Addr.IsUsed = true
 	
 	// Check if the variable is initialized before use
 	if !input.Addr.IsInitialized && !input.Addr.IsTempVariable() {
@@ -361,126 +308,15 @@ func (p *IdentifierUsagePass) handleLoad(tc *TypeChecker, instr *Instr) {
 	}
 }
 
-// handleBinaryOp processes binary operations and marks operands as used
-func (p *IdentifierUsagePass) handleBinaryOp(instr *Instr) {
-	input := AsBinaryOpInstrInput(instr.Input)
-	
-	// Mark the left operand as used
-	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
-		leftVar.IsUsed = true
-	} else if leftFunc := zeus_value.AsFunction(input.Left); leftFunc != nil {
-		leftFunc.IsUsed = true
-	}
-	
-	// Mark the right operand as used
-	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
-		rightVar.IsUsed = true
-	} else if rightFunc := zeus_value.AsFunction(input.Right); rightFunc != nil {
-		rightFunc.IsUsed = true
-	}
-}
-
-// handleUnaryOp processes unary operations and marks the operand as used
-func (p *IdentifierUsagePass) handleUnaryOp(instr *Instr) {
-	input := AsUnaryOpInstrInput(instr.Input)
-	
-	// Mark the operand as used
-	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
-		operandVar.IsUsed = true
-	} else if operandFunc := zeus_value.AsFunction(input.Value); operandFunc != nil {
-		operandFunc.IsUsed = true
-	}
-}
-
-// handleCallFunc processes function calls and marks arguments as used
-func (p *IdentifierUsagePass) handleCallFunc(instr *Instr) {
-	input := AsCallFuncInstrInput(instr.Input)
-	
-	// Mark the callee as used (variable or function)
-	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
-		calleeVar.IsUsed = true
-	} else if calleeFunc := zeus_value.AsFunction(input.Callee); calleeFunc != nil {
-		calleeFunc.IsUsed = true
-	}
-	
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
-			argFunc.IsUsed = true
-		}
-	}
-}
-
-// handleIndirectFuncCall processes indirect function calls and marks the function and arguments as used
-func (p *IdentifierUsagePass) handleIndirectFuncCall(instr *Instr) {
-	input := AsIndirectFuncCallInstrInput(instr.Input)
-	
-	// Mark the function as used (variable or function)
-	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
-		funcVar.IsUsed = true
-	} else if function := zeus_value.AsFunction(input.Function); function != nil {
-		function.IsUsed = true
-	}
-	
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
-			argFunc.IsUsed = true
-		}
-	}
-}
-
-// handleReturn processes return statements and marks the return value as used
-func (p *IdentifierUsagePass) handleReturn(instr *Instr) {
-	input := AsReturnInstrInput(instr.Input)
-	
-	// Mark the return value as used if it's not nil
-	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
-		returnValueVar.IsUsed = true
-	} else if returnValueFunc := zeus_value.AsFunction(input.Value); returnValueFunc != nil {
-		returnValueFunc.IsUsed = true
-	}
-}
-
-// handleCondJmp processes conditional jumps and marks the condition as used
-func (p *IdentifierUsagePass) handleCondJmp(instr *Instr) {
-	input := AsCondJmpInstrInput(instr.Input)
-	
-	// Mark the condition as used
-	if condVar := zeus_value.AsVar(input.Condition); condVar != nil {
-		condVar.IsUsed = true
-	} 
-}
-
-// handleObjectPropertyAccess processes object property accesses and marks the object as used
-func (p *IdentifierUsagePass) handleObjectPropertyAccess(instr *Instr) {
-	input := AsObjectPropertyAccessInstrInput(instr.Input)
-	
-	// Mark the object as used
-	if objectVar := zeus_value.AsVar(input.Object); objectVar != nil {
-		objectVar.IsUsed = true
-	}
-}
-
-// handleExport processes export statements and marks exported functions as used
-func (p *IdentifierUsagePass) handleExport(instr *Instr) {
-	input := AsExportInstrInput(instr.Input)
-	
-	// Mark exported functions as used
-	if function := zeus_value.AsFunction(input.Value); function != nil {
-		function.IsUsed = true
-	}
-}
-
 // This pass does the actual type checking
-type TypeCheckingPass struct{}
+type TypeCheckingPass struct{
+	hasMainFunction bool
+}
 
 func NewTypeCheckingPass() *TypeCheckingPass {
-	return &TypeCheckingPass{}
+	return &TypeCheckingPass{
+		hasMainFunction: false,
+	}
 }
 
 func (p *TypeCheckingPass) GetName() string {
@@ -488,7 +324,12 @@ func (p *TypeCheckingPass) GetName() string {
 }
 
 func (p *TypeCheckingPass) Finalize(tc *TypeChecker) {
-	// No finalization needed for this pass
+	if !p.hasMainFunction && tc.IsEntryPoint {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "main function not found",
+			Span:   nil,
+		})
+	}
 }
 
 func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
@@ -604,6 +445,11 @@ func (p *TypeCheckingPass) validateFunctionReturns(tc *TypeChecker, function *ze
 
 func (p *TypeCheckingPass) tcFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
+
+	if input.Function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint {
+		p.hasMainFunction = true
+	}
+
 	p.validateFunctionReturns(tc, input.Function, input.Body)
 }
 
@@ -1105,3 +951,281 @@ func (p *TypeCheckingPass) tcDeclClassMethod(tc *TypeChecker, instr *Instr) {
 	p.validateFunctionReturns(tc, input.Method, input.Body)
 }
 
+
+// UnusedWarningPass generates warnings for unused identifiers
+// This pass should run last after all usage tracking is complete
+type UnusedWarningPass struct{}
+
+func NewUnusedWarningPass() *UnusedWarningPass {
+	return &UnusedWarningPass{}
+}
+
+func (p *UnusedWarningPass) GetName() string {
+	return "UnusedWarningPass"
+}
+
+func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
+	switch instr.Type {
+	case InstrTypeDeclVar:
+		p.handleVarDecl(instr)
+	case InstrTypeStore:
+		p.handleStore(instr)
+	case InstrTypeLoad:
+		p.handleLoad(instr)
+	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
+		 InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
+		 InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		p.handleBinaryOp(instr)
+	case InstrTypeNot, InstrTypeNeg:
+		p.handleUnaryOp(instr)
+	case InstrTypeCallFunc:
+		p.handleCallFunc(instr)
+	case InstrTypeIndirectFuncCall:
+		p.handleIndirectFuncCall(instr)
+	case InstrTypeReturn:
+		p.handleReturn(instr)
+	case InstrTypeCondJmp:
+		p.handleCondJmp(instr)
+	case InstrTypeObjectPropertyAccess:
+		p.handleObjectPropertyAccess(tc, instr)
+	case InstrTypeExport:
+		p.handleExport(instr)
+	}
+}
+
+// handleVarDecl processes variable declarations and marks initializers as used
+func (p *UnusedWarningPass) handleVarDecl(instr *Instr) {
+	input := AsDeclVarInstrInput(instr.Input)
+	
+	// If the variable has an initializer, mark it as used
+	if input.Initializer != nil {
+		// If the initializer is a variable or function, mark it as used
+		if initVar := zeus_value.AsVar(input.Initializer); initVar != nil {
+			initVar.IsUsed = true
+		} else if initFunc := zeus_value.AsFunction(input.Initializer); initFunc != nil {
+			initFunc.IsUsed = true
+		}
+	}
+}
+
+// handleStore processes variable assignments and marks values as used
+func (p *UnusedWarningPass) handleStore(instr *Instr) {
+	input := AsStoreInstrInput(instr.Input)
+	
+	// If the value being stored is a variable or function, mark it as used
+	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
+		valueVar.IsUsed = true
+	} else if valueFunc := zeus_value.AsFunction(input.Value); valueFunc != nil {
+		valueFunc.IsUsed = true
+	}
+}
+
+// handleLoad processes variable usage and marks variables as used
+func (p *UnusedWarningPass) handleLoad(instr *Instr) {
+	input := AsLoadInstrInput(instr.Input)
+	
+	// Mark the variable as used
+	input.Addr.IsUsed = true
+}
+
+// handleBinaryOp processes binary operations and marks operands as used
+func (p *UnusedWarningPass) handleBinaryOp(instr *Instr) {
+	input := AsBinaryOpInstrInput(instr.Input)
+	
+	// Mark the left operand as used
+	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
+		leftVar.IsUsed = true
+	} else if leftFunc := zeus_value.AsFunction(input.Left); leftFunc != nil {
+		leftFunc.IsUsed = true
+	}
+	
+	// Mark the right operand as used
+	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
+		rightVar.IsUsed = true
+	} else if rightFunc := zeus_value.AsFunction(input.Right); rightFunc != nil {
+		rightFunc.IsUsed = true
+	}
+}
+
+// handleUnaryOp processes unary operations and marks the operand as used
+func (p *UnusedWarningPass) handleUnaryOp(instr *Instr) {
+	input := AsUnaryOpInstrInput(instr.Input)
+	
+	// Mark the operand as used
+	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
+		operandVar.IsUsed = true
+	} else if operandFunc := zeus_value.AsFunction(input.Value); operandFunc != nil {
+		operandFunc.IsUsed = true
+	}
+}
+
+// handleCallFunc processes function calls and marks arguments as used
+func (p *UnusedWarningPass) handleCallFunc(instr *Instr) {
+	input := AsCallFuncInstrInput(instr.Input)
+	
+	// Mark the callee as used (variable or function)
+	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
+		calleeVar.IsUsed = true
+	} else if calleeFunc := zeus_value.AsFunction(input.Callee); calleeFunc != nil {
+		calleeFunc.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
+			argFunc.IsUsed = true
+		}
+	}
+}
+
+// handleIndirectFuncCall processes indirect function calls and marks the function and arguments as used
+func (p *UnusedWarningPass) handleIndirectFuncCall(instr *Instr) {
+	input := AsIndirectFuncCallInstrInput(instr.Input)
+	
+	// Mark the function as used (variable or function)
+	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
+		funcVar.IsUsed = true
+	} else if function := zeus_value.AsFunction(input.Function); function != nil {
+		function.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
+			argFunc.IsUsed = true
+		}
+	}
+}
+
+// handleReturn processes return statements and marks the return value as used
+func (p *UnusedWarningPass) handleReturn(instr *Instr) {
+	input := AsReturnInstrInput(instr.Input)
+	
+	// Mark the return value as used if it's not nil
+	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
+		returnValueVar.IsUsed = true
+	} else if returnValueFunc := zeus_value.AsFunction(input.Value); returnValueFunc != nil {
+		returnValueFunc.IsUsed = true
+	}
+}
+
+// handleCondJmp processes conditional jumps and marks the condition as used
+func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
+	input := AsCondJmpInstrInput(instr.Input)
+	
+	// Mark the condition as used
+	if condVar := zeus_value.AsVar(input.Condition); condVar != nil {
+		condVar.IsUsed = true
+	}
+}
+
+// handleObjectPropertyAccess processes object property accesses and marks the object as used
+// Also marks class methods and properties as used when they are accessed
+func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
+	input := AsObjectPropertyAccessInstrInput(instr.Input)
+	
+	// Mark the object as used
+	if objectVar := zeus_value.AsVar(input.Object); objectVar != nil {
+		objectVar.IsUsed = true
+	}
+	
+	// Mark class methods and properties as used when accessed
+	objectType := tc.getValueType(input.Object)
+	
+	// Check if it's an object type (class instance)
+	if zeus_value.IsObjectType(objectType) {
+		objectTypeStruct := zeus_value.AsObjectType(objectType)
+		class := objectTypeStruct.Class
+		
+		// Look for a method with the matching name
+		for _, classMethod := range class.Methods {
+			if classMethod.Method.Name == input.Property {
+				// Mark the method as used
+				classMethod.Method.IsUsed = true
+				return
+			}
+		}
+		
+		// Look for a property with the matching name
+		for _, classProperty := range class.Properties {
+			if classProperty.Property.Name == input.Property {
+				// Mark the property as used
+				classProperty.Property.IsUsed = true
+				return
+			}
+		}
+	}
+}
+
+// handleExport processes export statements and marks exported functions as used
+func (p *UnusedWarningPass) handleExport(instr *Instr) {
+	input := AsExportInstrInput(instr.Input)
+	
+	// Mark exported functions as used
+	if function := zeus_value.AsFunction(input.Value); function != nil {
+		function.IsUsed = true
+	}
+}
+
+func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
+	// Check for unused variables, functions, and class methods - push warnings
+	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
+		if variable := zeus_value.AsVar(value); variable != nil {
+			// Skip temporary variables as they shouldn't generate warnings
+			if !variable.IsTempVariable() && !variable.IsUsed {
+				tc.pushError(&zeus_error.ZeusError{
+					Severity: zeus_error.ErrorSeverityWarning,
+					Message: fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
+					Span:    variable.Span,
+				})
+			}
+		} else if function := zeus_value.AsFunction(value); function != nil {
+			isMainFunction := function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint
+			// Check for unused functions, ignore class methods
+			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isMainFunction {
+				tc.pushError(&zeus_error.ZeusError{
+					Severity: zeus_error.ErrorSeverityWarning,
+					Message: fmt.Sprintf("function '%s' is declared but not used", function.Name),
+					Span:    function.Span,
+				})
+			}
+		} else if class := zeus_value.AsClass(value); class != nil {
+			// Check all methods in this class
+			for _, classMethod := range class.Methods {
+				method := classMethod.Method
+				
+				// Skip constructor methods as they're implicitly used
+				if method.Name == token.CONSTRUCTOR_METHOD_NAME {
+					continue
+				}
+				
+				// Check if the method is unused
+				if !method.IsUsed {
+					tc.pushError(&zeus_error.ZeusError{
+						Severity: zeus_error.ErrorSeverityWarning,
+						Message: fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
+						Span:    method.Span,
+					})
+				}
+			}
+			
+			// Check all properties in this class
+			for _, classProperty := range class.Properties {
+				property := classProperty.Property
+				
+				// Check if the property is unused
+				if !property.IsUsed {
+					tc.pushError(&zeus_error.ZeusError{
+						Severity: zeus_error.ErrorSeverityWarning,
+						Message: fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
+						Span:    property.Span,
+					})
+				}
+			}
+		}
+	})
+}

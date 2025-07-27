@@ -217,9 +217,8 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 				
 				if len(errorSeverityErrors) > 0 {
 					hasErrors = true
+					logger.PrettyPrintError(entryFilePath, sourceFile.Source, errorSeverityErrors)
 				}
-
-				logger.PrettyPrintError(entryFilePath, sourceFile.Source, sourceFile.Errors)
 			}
 		}
 
@@ -227,6 +226,24 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 			os.Exit(1)
 		}
 	}
+
+	checkSourceFilesWarnings := func(sourceFiles []*SourceFile) {
+		for _, sourceFile := range sourceFiles {
+			if len(sourceFile.Errors) > 0 {
+				warningSeverityErrors := []*zeus_error.ZeusError{}
+				for _, err := range sourceFile.Errors {
+					if err.Severity == zeus_error.ErrorSeverityWarning {
+						warningSeverityErrors = append(warningSeverityErrors, err)
+					}
+				}
+
+				if len(warningSeverityErrors) > 0 {
+					logger.PrettyPrintError(entryFilePath, sourceFile.Source, warningSeverityErrors)
+				}
+			}
+		}
+	}
+
 	entryPointSourceFile, err := c.ReadSourceFile(entryFilePath)
 	entryPointSourceFile.IsEntryPoint = true
 
@@ -260,6 +277,8 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
 
+	checkSourceFilesWarnings(sourceFiles)
+
 	optimizationError := c.RunOptimizationPasses(sourceFiles)
 	if optimizationError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to run optimization passes: %s", optimizationError.Error()))
@@ -292,26 +311,10 @@ func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
 	return sourceFiles
 }
 
-func (c *Compiler) CheckMainFunction(sourceFile *SourceFile) {
-	hasMainFunction := false
-
-	sourceFile.IRBuilder.Walk(func(instr *ir.Instr) {
-		if instr.Type == ir.InstrTypeDeclFunc {
-			if ir.AsDeclFuncInstrInput(instr.Input).Function.Name == token.MAIN_FUNCTION_NAME {
-				hasMainFunction = true
-			}
-		}
-	}, func(block *ir.BasicBlock) {})
-
-	if !hasMainFunction {
-		sourceFile.Errors = append(sourceFile.Errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "main function not found", nil))
-	}
-}
-
 func (c *Compiler) TypeCheck(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
 		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
-		typeChecker := ir.NewTypeChecker(sourceFile.IRBuilder)
+		typeChecker := ir.NewTypeChecker(sourceFile.IRBuilder, sourceFile.IsEntryPoint)
 		errors := typeChecker.TypeCheck()
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
 	}
@@ -340,9 +343,6 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 		irModuleFilePathMap[sourceFile.Path] = irModule
 		errors := irModule.Generate(sourceFile.Program)
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
-		if sourceFile.IsEntryPoint {
-			c.CheckMainFunction(sourceFile)
-		}
 	}
 
 	return sourceFiles
