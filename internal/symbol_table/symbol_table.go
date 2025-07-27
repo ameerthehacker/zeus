@@ -90,3 +90,12 @@ func (s *SymbolTable[T]) GetSymbolInCurrentScope(name string) (T, bool) {
 	symbol, ok := s.current_scope.symbols[name]
 	return symbol, ok
 }
+
+// Walk iterates through all symbols in all scopes and calls the provided function for each symbol
+func (s *SymbolTable[T]) Walk(fn func(name string, symbol T)) {
+	for _, table := range s.tables {
+		for name, symbol := range table.symbols {
+			fn(name, symbol)
+		}
+	}
+}

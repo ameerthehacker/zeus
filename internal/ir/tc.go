@@ -13,7 +13,11 @@ import (
 type TCPass interface {
 	// HandleInstruction processes a single instruction
 	// The TypeChecker automatically manages currentFunction, currentClass, and currentBlock
-	HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError
+	HandleInstruction(tc *TypeChecker, instr *Instr)
+	
+	// Finalize is called after all instructions have been processed
+	// This allows passes to perform cleanup or final analysis
+	Finalize(tc *TypeChecker)
 	
 	// GetName returns the name of the pass for debugging/logging
 	GetName() string
@@ -36,6 +40,7 @@ func NewTypeChecker(builder *IRBuilder) *TypeChecker {
 	// Initialize required passes
 	tc.passes = []TCPass{
 		NewToKnownTypesPass(),
+		NewIdentifierUsagePass(),
 		NewTypeCheckingPass(),
 	}
 	
@@ -74,11 +79,13 @@ func (tc *TypeChecker) runPass(pass TCPass) {
 		}
 		
 		// Let the pass handle the instruction
-		passErrors := pass.HandleInstruction(tc, instr)
-		tc.errors = append(tc.errors, passErrors...)
+		pass.HandleInstruction(tc, instr)
 	}, func(block *BasicBlock) {
 		tc.currentBlock = block
 	})
+	
+	// Call finalize after processing all instructions
+	pass.Finalize(tc)
 }
 
 // updateContext automatically updates the current function and class context
@@ -149,7 +156,11 @@ func (p *ToKnownTypesPass) GetName() string {
 	return "ToKnownTypesPass"
 }
 
-func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError {
+func (p *ToKnownTypesPass) Finalize(tc *TypeChecker) {
+	// No finalization needed for this pass
+}
+
+func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	// Resolve output type if it exists and is a UserDefinedType
 	if instr.Output != nil && instr.Output.ValueType != nil {
 		instr.Output.ValueType = p.resolveValueType(tc, instr.Output.ValueType)
@@ -165,8 +176,6 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*z
 	case InstrTypeDeclClassMethod:
 		p.resolveClassMethodDecl(tc, instr)
 	}
-	
-	return nil
 }
 
 // resolveValueType converts a UserDefinedType to its actual known type
@@ -237,6 +246,215 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 
 
 
+// IdentifierUsagePass checks if variables are used after initialization
+// and updates the IsInitialized and IsUsed fields based on usage patterns
+type IdentifierUsagePass struct{}
+
+func NewIdentifierUsagePass() *IdentifierUsagePass {
+	return &IdentifierUsagePass{}
+}
+
+func (p *IdentifierUsagePass) GetName() string {
+	return "VariableInitializationPass"
+}
+
+func (p *IdentifierUsagePass) Finalize(tc *TypeChecker) {
+	// Check for unused variables and push warnings
+	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
+		if variable := zeus_value.AsVar(value); variable != nil {
+			// Skip temporary variables as they shouldn't generate warnings
+			if !variable.IsTempVariable() && !variable.IsUsed {
+				tc.pushError(&zeus_error.ZeusError{
+					Severity: zeus_error.ErrorSeverityWarning,
+					Message: fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
+					Span:    variable.Span,
+				})
+			}
+		}
+	})
+}
+
+func (p *IdentifierUsagePass) HandleInstruction(tc *TypeChecker, instr *Instr) {
+	switch instr.Type {
+	case InstrTypeDeclVar:
+		p.handleVarDecl(instr)
+	case InstrTypeStore:
+		p.handleStore(instr)
+	case InstrTypeLoad:
+		p.handleLoad(tc, instr)
+	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
+		 InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
+		 InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		p.handleBinaryOp(instr)
+	case InstrTypeNot, InstrTypeNeg, InstrTypeCast:
+		p.handleUnaryOp(instr)
+	case InstrTypeCallFunc:
+		p.handleCallFunc(instr)
+	case InstrTypeIndirectFuncCall:
+		p.handleIndirectFuncCall(instr)
+	case InstrTypeReturn:
+		p.handleReturn(instr)
+	case InstrTypeCondJmp:
+		p.handleCondJmp(instr)
+	case InstrTypeNewObj:
+		p.handleNewObj(instr)
+	case InstrTypeObjectPropertyAccess:
+		p.handleObjectPropertyAccess(instr)
+	}
+	
+}
+
+// handleVarDecl processes variable declarations and sets IsInitialized if there's an initializer
+func (p *IdentifierUsagePass) handleVarDecl(instr *Instr) {
+	input := AsDeclVarInstrInput(instr.Input)
+	
+	// If the variable has an initializer, mark it as initialized
+	if input.Initializer != nil {
+		input.Variable.IsInitialized = true
+		
+		// If the initializer is a variable, mark it as used
+		if initVar := zeus_value.AsVar(input.Initializer); initVar != nil {
+			initVar.IsUsed = true
+		}
+	}
+}
+
+// handleStore processes variable assignments and marks the target variable as initialized
+func (p *IdentifierUsagePass) handleStore(instr *Instr) {
+	input := AsStoreInstrInput(instr.Input)
+	
+	// Mark the target variable as initialized
+	input.Addr.IsInitialized = true
+	
+	// If the value being stored is a variable, mark it as used
+	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
+		valueVar.IsUsed = true
+	}
+}
+
+// handleLoad processes variable usage and checks initialization status
+func (p *IdentifierUsagePass) handleLoad(tc *TypeChecker, instr *Instr) {
+	input := AsLoadInstrInput(instr.Input)
+	
+	// Mark the variable as used
+	input.Addr.IsUsed = true
+	
+	// Check if the variable is initialized before use
+	if !input.Addr.IsInitialized && !input.Addr.IsTempVariable() {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("identifier '%s' used before being initialized", input.Addr.Name),
+			Span:    instr.Span,
+		})
+	}
+}
+
+// handleBinaryOp processes binary operations and marks operands as used
+func (p *IdentifierUsagePass) handleBinaryOp(instr *Instr) {
+	input := AsBinaryOpInstrInput(instr.Input)
+	
+	// Mark the left operand as used
+	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
+		leftVar.IsUsed = true
+	}
+	
+	// Mark the right operand as used
+	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
+		rightVar.IsUsed = true
+	}
+}
+
+// handleUnaryOp processes unary operations and marks the operand as used
+func (p *IdentifierUsagePass) handleUnaryOp(instr *Instr) {
+	input := AsUnaryOpInstrInput(instr.Input)
+	
+	// Mark the operand as used
+	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
+		operandVar.IsUsed = true
+	}
+}
+
+// handleCallFunc processes function calls and marks arguments as used
+func (p *IdentifierUsagePass) handleCallFunc(instr *Instr) {
+	input := AsCallFuncInstrInput(instr.Input)
+	
+	// Mark the callee as used
+	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
+		calleeVar.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		}
+	}
+}
+
+// handleIndirectFuncCall processes indirect function calls and marks the function and arguments as used
+func (p *IdentifierUsagePass) handleIndirectFuncCall(instr *Instr) {
+	input := AsIndirectFuncCallInstrInput(instr.Input)
+	
+	// Mark the function as used
+	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
+		funcVar.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		}
+	}
+}
+
+// handleReturn processes return statements and marks the return value as used
+func (p *IdentifierUsagePass) handleReturn(instr *Instr) {
+	input := AsReturnInstrInput(instr.Input)
+	
+	// Mark the return value as used if it's not nil
+	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
+		returnValueVar.IsUsed = true
+	}
+}
+
+// handleCondJmp processes conditional jumps and marks the condition as used
+func (p *IdentifierUsagePass) handleCondJmp(instr *Instr) {
+	input := AsCondJmpInstrInput(instr.Input)
+	
+	// Mark the condition as used
+	if condVar := zeus_value.AsVar(input.Condition); condVar != nil {
+		condVar.IsUsed = true
+	}
+}
+
+// handleNewObj processes new object expressions and marks the callee and arguments as used
+func (p *IdentifierUsagePass) handleNewObj(instr *Instr) {
+	input := AsNewObjInstrInput(instr.Input)
+	
+	// Mark the callee as used
+	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
+		calleeVar.IsUsed = true
+	}
+	
+	// Mark arguments as used
+	for i := range input.Args {
+		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
+			argVar.IsUsed = true
+		}
+	}
+}
+
+// handleObjectPropertyAccess processes object property accesses and marks the object as used
+func (p *IdentifierUsagePass) handleObjectPropertyAccess(instr *Instr) {
+	input := AsObjectPropertyAccessInstrInput(instr.Input)
+	
+	// Mark the object as used
+	if objectVar := zeus_value.AsVar(input.Object); objectVar != nil {
+		objectVar.IsUsed = true
+	}
+}
+
+
 // This pass does the actual type checking
 
 type TypeCheckingPass struct{}
@@ -249,7 +467,11 @@ func (p *TypeCheckingPass) GetName() string {
 	return "TypeCheckingPass"
 }
 
-func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*zeus_error.ZeusError {
+func (p *TypeCheckingPass) Finalize(tc *TypeChecker) {
+	// No finalization needed for this pass
+}
+
+func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	switch instr.Type {
 	// jmp requires no type checking
 	case InstrTypeJmp:
@@ -328,8 +550,6 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) []*z
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
-	
-	return nil // TypeCheckingPass uses tc.pushError internally
 }
 
 // validateFunctionReturns checks if a function returns in all code paths

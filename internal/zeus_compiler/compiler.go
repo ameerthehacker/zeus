@@ -207,7 +207,18 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 
 		for _, sourceFile := range sourceFiles {
 			if len(sourceFile.Errors) > 0 {
-				hasErrors = true
+				// Filter errors to only include severity Error
+				errorSeverityErrors := []*zeus_error.ZeusError{}
+				for _, err := range sourceFile.Errors {
+					if err.Severity == zeus_error.ErrorSeverityError {
+						errorSeverityErrors = append(errorSeverityErrors, err)
+					}
+				}
+				
+				if len(errorSeverityErrors) > 0 {
+					hasErrors = true
+				}
+
 				logger.PrettyPrintError(entryFilePath, sourceFile.Source, sourceFile.Errors)
 			}
 		}
