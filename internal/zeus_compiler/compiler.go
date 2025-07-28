@@ -247,13 +247,13 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	}
 
 	entryPointSourceFile, err := c.ReadSourceFile(entryFilePath)
-	entryPointSourceFile.IsEntryPoint = true
 
 	if err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, err.Error())
 		os.Exit(1)
 	}
-
+	
+	entryPointSourceFile.IsEntryPoint = true
 	// parse and collect dependencies
 	sourceFiles := c.CollectDependencies(entryPointSourceFile)
 
