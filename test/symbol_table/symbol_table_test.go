@@ -9,7 +9,7 @@ import (
 
 func TestSymbolTableDeclaration(t *testing.T) {
 	symbol_table := symbol_table.NewSymbolTable[bool]()
-	
+
 	t.Run("a should be available in global scope", func(t *testing.T) {
 		symbol_table.EnterScope()
 		symbol_table.DeclareSymbol("a", true)

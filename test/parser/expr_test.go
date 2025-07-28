@@ -104,7 +104,7 @@ func TestParseExpression(t *testing.T) {
 			name:  "function call has higher precedence than equality",
 			input: "name(1) == 2",
 			expected: &ast.BinaryExprNode{
-				Left:     &ast.FunctionCallExprNode{
+				Left: &ast.FunctionCallExprNode{
 					Callee: &ast.IdentifierExprNode{
 						Name: token.NewTokenWithValue(
 							token.TokenTypeIdentifier, "name", token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 4})),
@@ -114,7 +114,7 @@ func TestParseExpression(t *testing.T) {
 					},
 					Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 7}),
 				},
-				Right:    &ast.NumberExprNode{
+				Right: &ast.NumberExprNode{
 					Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 12}, token.Position{Line: 1, Column: 12})),
 				},
 				Operator: token.NewToken(token.TokenTypeEqualEqual, token.NewSpan(token.Position{Line: 1, Column: 8}, token.Position{Line: 1, Column: 9})),
@@ -125,7 +125,7 @@ func TestParseExpression(t *testing.T) {
 			name:  "parenthesized expression has the highest precedence",
 			input: "(1 + 2) * 3",
 			expected: &ast.BinaryExprNode{
-				Left:     &ast.GroupingExprNode{
+				Left: &ast.GroupingExprNode{
 					Expr: &ast.BinaryExprNode{
 						Left:     &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 2}))},
 						Right:    &ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 6}, token.Position{Line: 1, Column: 6}))},
@@ -152,7 +152,7 @@ func TestParseExpression(t *testing.T) {
 			},
 		},
 		{
-			name: "function declaration",
+			name:  "function declaration",
 			input: "function name(a: i8, b: i8): i8 { return a + b; }",
 			expected: &ast.FunctionDeclExprNode{
 				Name: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "name", token.NewSpan(token.Position{Line: 1, Column: 10}, token.Position{Line: 1, Column: 13}))},
@@ -161,16 +161,16 @@ func TestParseExpression(t *testing.T) {
 						Identifier: &ast.IdentifierExprNode{
 							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
 						},
-						DataType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 18}, token.Position{Line: 1, Column: 18})),
-						DeclType: ast.VarDeclTypeLet,
+						DataType:    token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 18}, token.Position{Line: 1, Column: 18})),
+						DeclType:    ast.VarDeclTypeLet,
 						Initializer: nil,
 					},
 					{
 						Identifier: &ast.IdentifierExprNode{
 							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
 						},
-						DataType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 26})),
-						DeclType: ast.VarDeclTypeLet,
+						DataType:    token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 26})),
+						DeclType:    ast.VarDeclTypeLet,
 						Initializer: nil,
 					},
 				},
@@ -179,84 +179,84 @@ func TestParseExpression(t *testing.T) {
 					Statements: []ast.StmtNode{
 						&ast.ReturnStmtNode{
 							Expr: &ast.BinaryExprNode{
-							Left: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 42}, token.Position{Line: 1, Column: 42}))},
-							Right: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 46}, token.Position{Line: 1, Column: 46}))},
-							Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 44}, token.Position{Line: 1, Column: 44})),
+								Left:     &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 42}, token.Position{Line: 1, Column: 42}))},
+								Right:    &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 46}, token.Position{Line: 1, Column: 46}))},
+								Operator: token.NewToken(token.TokenTypePlus, token.NewSpan(token.Position{Line: 1, Column: 44}, token.Position{Line: 1, Column: 44})),
+							},
+							Span: token.NewSpan(token.Position{Line: 1, Column: 35}, token.Position{Line: 1, Column: 46}),
 						},
-						Span: token.NewSpan(token.Position{Line: 1, Column: 35}, token.Position{Line: 1, Column: 46}),
-					},
 					},
 				},
 				Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 49}),
 			},
 		},
 		{
-			name: "function name missing",
-			input: "function",
+			name:     "function name missing",
+			input:    "function",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected identifier for function name", token.NewSpan(token.Position{Line: 1, Column: 9}, token.Position{Line: 1, Column: 9})),
 			},
 		},
 		{
-			name: "function open parenthesis missing",
-			input: "function name",
+			name:     "function open parenthesis missing",
+			input:    "function name",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected ( after function name", token.NewSpan(token.Position{Line: 1, Column: 14}, token.Position{Line: 1, Column: 14})),
 			},
 		},
 		{
-			name: "function closing parenthesis missing",
-			input: "function name(",
+			name:     "function closing parenthesis missing",
+			input:    "function name(",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected ) after function parameters", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
 			},
 		},
 		{
-			name: "function parameter missing : after identifier",
-			input: "function name(a)",
+			name:     "function parameter missing : after identifier",
+			input:    "function name(a)",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after identifier in function parameter, but found )", token.NewSpan(token.Position{Line: 1, Column: 16}, token.Position{Line: 1, Column: 16})),
 			},
 		},
 		{
-			name: "function parameter data type missing",
-			input: "function name(a:)",
+			name:     "function parameter data type missing",
+			input:    "function name(a:)",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected data type in function parameter, but found )", token.NewSpan(token.Position{Line: 1, Column: 17}, token.Position{Line: 1, Column: 17})),
 			},
 		},
 		{
-			name: "function return type missing :",
-			input: "function name(a: i8) {}",
+			name:     "function return type missing :",
+			input:    "function name(a: i8) {}",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected : after function parameters, but found {", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
 			},
 		},
 		{
-			name: "function return type missing",
-			input: "function name(a: i8): {}",
+			name:     "function return type missing",
+			input:    "function name(a: i8): {}",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected return type in function declaration, but found {", token.NewSpan(token.Position{Line: 1, Column: 23}, token.Position{Line: 1, Column: 23})),
 			},
 		},
 		{
-			name: "open brace missing in function body",
-			input: "function name(a: i8): i8",
+			name:     "open brace missing in function body",
+			input:    "function name(a: i8): i8",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected {", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
 			},
 		},
 		{
-			name: "closing brace missing in function body",
-			input: "function name(a: i8): i8 {",
+			name:     "closing brace missing in function body",
+			input:    "function name(a: i8): i8 {",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
 				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected }", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
@@ -336,7 +336,7 @@ func TestParseExpression(t *testing.T) {
 			}()
 
 			result := parser.ParseExpr()
-			
+
 			if test.expected != nil {
 				test_utils.CompareExprNodes(t, result, test.expected)
 			}

@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	FlagOutputPath     = "out"
-	FlagTargetDir      = "target-dir"
+	FlagOutputPath = "out"
+	FlagTargetDir  = "target-dir"
 )
 
 func buildCmd() *cobra.Command {

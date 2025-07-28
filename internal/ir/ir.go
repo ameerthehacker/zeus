@@ -13,23 +13,23 @@ import (
 )
 
 type IRModule struct {
-	irBuilder *IRBuilder
-	isLValueExpr bool
-	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
-	errors []*zeus_error.ZeusError
-	modulePath string
+	irBuilder       *IRBuilder
+	isLValueExpr    bool
+	symbolTable     *symbol_table.SymbolTable[zeus_value.Value]
+	errors          []*zeus_error.ZeusError
+	modulePath      string
 	exportedSymbols map[string]zeus_value.Value
-	getModule func(modulePath string) *IRModule
+	getModule       func(modulePath string) *IRModule
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
 	return &IRModule{
-		irBuilder: ir_builder,
-		isLValueExpr: false,
-		symbolTable: symbol_table.NewSymbolTable[zeus_value.Value](),
-		modulePath: modulePath,
+		irBuilder:       ir_builder,
+		isLValueExpr:    false,
+		symbolTable:     symbol_table.NewSymbolTable[zeus_value.Value](),
+		modulePath:      modulePath,
 		exportedSymbols: map[string]zeus_value.Value{},
-		getModule: getIRModule,
+		getModule:       getIRModule,
 	}
 }
 
@@ -67,7 +67,7 @@ func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
 	return false
 }
 
-func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) { 
+func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	g.symbolTable.EnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
@@ -97,7 +97,7 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			zeus_value.ToValueType(decl.DataType),
 			isConst,
 			initializer,
-			decl.GetSpan(),	
+			decl.GetSpan(),
 		))
 
 		g.symbolTable.DeclareSymbol(decl.Identifier.Name.Value, variable)
@@ -132,7 +132,7 @@ func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
 	stmt.ThenStmt.Accept(g)
 	// jump to the merge block
 	g.irBuilder.BuildJmp(merge_block, nil)
-	
+
 	g.irBuilder.SetInsertionBlock(else_block)
 	// generate the else block
 	if stmt.ElseStmt != nil {
@@ -145,7 +145,7 @@ func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
 }
 
 func (g *IRModule) VisitWhileStmt(stmt *ast.WhileStmtNode) {
-	
+
 	// create the required blocks
 	condition_block := g.irBuilder.BuildSuccessorBlock()
 	body_block := g.irBuilder.BuildSuccessorBlock()
@@ -172,7 +172,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
 	right := expr.Right.Accept(g)
-	
+
 	switch expr.Operator.Type {
 	case token.TokenTypePlus:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeAdd, expr.GetSpan())
@@ -219,7 +219,6 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		params = append(params, arg.Accept(g))
 	}
 
-
 	if zeus_value.IsFunction(callee) {
 		return g.irBuilder.BuildCallFunc(zeus_value.AsFunction(callee), params, expr.GetSpan())
 	} else if zeus_value.IsVar(callee) {
@@ -229,7 +228,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 
 	g.pushError(&zeus_error.ZeusError{
 		Message: fmt.Sprintf("%s is not callable", expr.Callee.PrettyString()),
-		Span: expr.GetSpan(),
+		Span:    expr.GetSpan(),
 	})
 
 	return nil
@@ -305,7 +304,6 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 	asClass := zeus_value.AsClass(variable)
 	asObject := zeus_value.AsObject(variable)
 
-
 	if asVar != nil {
 		if asVar.IsPtr {
 			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
@@ -339,7 +337,7 @@ func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 			expr.Value.Value,
 			zeus_value.IntType{
 				Signed: false,
-				Size: zeus_value.GetSignedIntSize(expr.Value.Value),
+				Size:   zeus_value.GetSignedIntSize(expr.Value.Value),
 			},
 			expr.Value.Span,
 		)
@@ -397,7 +395,7 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	default:
 		g.pushError(&zeus_error.ZeusError{
 			Message: "cannot export non-function expression",
-			Span: stmt.GetSpan(),
+			Span:    stmt.GetSpan(),
 		})
 	}
 
@@ -470,12 +468,12 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
 	property := expr.Property.Name.Value
-  asVar := zeus_value.AsVar(object)
+	asVar := zeus_value.AsVar(object)
 
 	// if the object is stored in a pointer variable then dereference it first
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
-	} 
+	}
 	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
 
 	if g.isLValueExpr {
@@ -484,7 +482,6 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 		return g.irBuilder.BuildLoad(zeus_value.AsVar(propertyPtr), expr.GetSpan())
 	}
 }
-
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	absoluteModulePath := module.ResolveFilePath(g.modulePath, stmt.Source.Value)

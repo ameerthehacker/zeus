@@ -33,20 +33,20 @@ type StmtNode interface {
 }
 
 type VarDeclNode struct {
-	Identifier *IdentifierExprNode
-	DataType *token.Token
-	DeclType VarDeclType
+	Identifier  *IdentifierExprNode
+	DataType    *token.Token
+	DeclType    VarDeclType
 	Initializer ExprNode
 }
 
 type VarDeclStmtNode struct {
 	Decls []VarDeclNode
-	Span *token.Span
+	Span  *token.Span
 }
 
 type BlockStmtNode struct {
 	Statements []StmtNode
-	Span *token.Span
+	Span       *token.Span
 }
 
 type ReturnStmtNode struct {
@@ -56,21 +56,21 @@ type ReturnStmtNode struct {
 
 type IfStmtNode struct {
 	Condition ExprNode
-	ThenStmt StmtNode
-	ElseStmt StmtNode
-	Span *token.Span
+	ThenStmt  StmtNode
+	ElseStmt  StmtNode
+	Span      *token.Span
 }
 
 type WhileStmtNode struct {
 	Condition ExprNode
-	Body StmtNode
-	Span *token.Span
+	Body      StmtNode
+	Span      *token.Span
 }
 
 type ImportStmtNode struct {
-	Source *token.Token
+	Source  *token.Token
 	Imports []*IdentifierExprNode
-	Span *token.Span
+	Span    *token.Span
 }
 
 type ExportStmtNode struct {
@@ -148,7 +148,7 @@ func (b *BlockStmtNode) String() string {
 func (b *BlockStmtNode) PrettyString() string {
 	statements := []string{}
 	for _, stmt := range b.Statements {
-		statements = append(statements, "\t" + stmt.PrettyString())
+		statements = append(statements, "\t"+stmt.PrettyString())
 	}
 	return fmt.Sprintf("{\n%s\n}", strings.Join(statements, "\n"))
 }

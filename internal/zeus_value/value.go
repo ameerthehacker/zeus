@@ -17,22 +17,22 @@ type Value interface {
 }
 
 type Constant struct {
-	Value string
+	Value     string
 	ValueType ValueType
-	Span *token.Span
+	Span      *token.Span
 }
 
 func NewConstant(value string, valueType ValueType, span *token.Span) *Constant {
 	return &Constant{
-		Value: value,
+		Value:     value,
 		ValueType: valueType,
-		Span: span,
+		Span:      span,
 	}
 }
 
 func (i Constant) GetSpan() *token.Span {
 	return i.Span
-}	
+}
 
 func (i Constant) String() string {
 	return fmt.Sprintf("%s %s", i.ValueType, i.Value)
@@ -40,15 +40,15 @@ func (i Constant) String() string {
 
 type Object struct {
 	ValueType ObjectType
-	Name string
-	Span *token.Span
+	Name      string
+	Span      *token.Span
 }
 
 func NewObject(name string, objectType ObjectType, span *token.Span) Object {
 	return Object{
-		Name: name,
+		Name:      name,
 		ValueType: objectType,
-		Span: span,
+		Span:      span,
 	}
 }
 
@@ -61,21 +61,21 @@ func (o Object) String() string {
 }
 
 type Var struct {
-	Name string
+	Name      string
 	ValueType ValueType
-	Cxt *Value
-	IsPtr bool
-	Span *token.Span
-	IsUsed bool
+	Cxt       *Value
+	IsPtr     bool
+	Span      *token.Span
+	IsUsed    bool
 }
 
 func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span) *Var {
 	return &Var{
-		Name: name,
+		Name:      name,
 		ValueType: valueType,
-		IsPtr: isPtr,
-		Span: span,
-		IsUsed: false,
+		IsPtr:     isPtr,
+		Span:      span,
+		IsUsed:    false,
 	}
 }
 
@@ -95,20 +95,20 @@ func (v Var) IsTempVariable() bool {
 }
 
 type Function struct {
-	Name string
-	Params []*Var
+	Name       string
+	Params     []*Var
 	ReturnType ValueType
-	IsUsed bool
-	Span *token.Span
+	IsUsed     bool
+	Span       *token.Span
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {
 	return &Function{
-		Name: name,
-		Params: params,
+		Name:       name,
+		Params:     params,
 		ReturnType: returnType,
-		IsUsed: false,
-		Span: span,
+		IsUsed:     false,
+		Span:       span,
 	}
 }
 
@@ -126,13 +126,13 @@ func (f Function) String() string {
 }
 
 type ClassProperty struct {
-	Property *Var
+	Property       *Var
 	AccessModifier *token.Token
 }
 
 func NewClassProperty(property *Var, accessModifier *token.Token) *ClassProperty {
 	return &ClassProperty{
-		Property: property,
+		Property:       property,
 		AccessModifier: accessModifier,
 	}
 }
@@ -142,13 +142,13 @@ func (p *ClassProperty) String() string {
 }
 
 type ClassMethod struct {
-	Method *Function
+	Method         *Function
 	AccessModifier *token.Token
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
 	return &ClassMethod{
-		Method: method,
+		Method:         method,
 		AccessModifier: accessModifier,
 	}
 }
@@ -158,20 +158,20 @@ func (m *ClassMethod) String() string {
 }
 
 type Class struct {
-	Name string
+	Name       string
 	Properties []*ClassProperty
-	Methods []*ClassMethod
-	IsUsed bool
-	Span *token.Span
+	Methods    []*ClassMethod
+	IsUsed     bool
+	Span       *token.Span
 }
 
 func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, span *token.Span) *Class {
 	return &Class{
-		Name: name,
+		Name:       name,
 		Properties: properties,
-		Methods: methods,
-		IsUsed: false,
-		Span: span,
+		Methods:    methods,
+		IsUsed:     false,
+		Span:       span,
 	}
 }
 

@@ -28,9 +28,9 @@ func (e ErrorSeverity) String() string {
 }
 
 type ZeusError struct {
-	Message string
+	Message  string
 	Severity ErrorSeverity
-	Span *token.Span
+	Span     *token.Span
 }
 
 func NewZeusError(severity ErrorSeverity, message string, span *token.Span) *ZeusError {

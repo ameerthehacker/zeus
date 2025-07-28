@@ -5,23 +5,23 @@ import (
 )
 
 type Table[T any] struct {
-	symbols map[string]T
-	parent *Table[T]
+	symbols           map[string]T
+	parent            *Table[T]
 	temp_symbol_count int
 }
 
 type SymbolTable[T any] struct {
-	tables []*Table[T]
-	current_scope *Table[T]
+	tables           []*Table[T]
+	current_scope    *Table[T]
 	next_scope_index int
-	readonly bool
+	readonly         bool
 }
 
 func NewSymbolTable[T any]() *SymbolTable[T] {
 	return &SymbolTable[T]{
-		tables: make([]*Table[T], 0),
+		tables:           make([]*Table[T], 0),
 		next_scope_index: 0,
-		readonly: false,
+		readonly:         false,
 	}
 }
 
@@ -32,8 +32,8 @@ func (s *SymbolTable[T]) EnterScope() {
 		s.current_scope = scope
 	} else {
 		new_scope := &Table[T]{
-			symbols: make(map[string]T),
-			parent:  s.current_scope,
+			symbols:           make(map[string]T),
+			parent:            s.current_scope,
 			temp_symbol_count: 0,
 		}
 		s.tables = append(s.tables, new_scope)
@@ -69,7 +69,7 @@ func (s *SymbolTable[T]) GetSymbol(name string) (T, bool) {
 		}
 		current_scope = current_scope.parent
 	}
-	
+
 	return zero, false
 }
 

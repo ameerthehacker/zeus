@@ -37,16 +37,16 @@ func GetModuleScopedName(modulePath string, name string) string {
 func ResolveFilePath(sourcePath string, importPath string) string {
 	var resolvedPath string = importPath
 
-	if (strings.HasPrefix(importPath, stdZeusModulePrefix)) {
+	if strings.HasPrefix(importPath, stdZeusModulePrefix) {
 		zeusHomePath, err := os.Getwd()
-		
+
 		if os.Getenv(zeusHomeEnvVar) != "" {
 			zeusHomePath = os.Getenv(zeusHomeEnvVar)
 		} else if err != nil {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
 			os.Exit(1)
 		}
-		
+
 		resolvedPath = filepath.Join(zeusHomePath, stdZeusModuleDir, strings.TrimPrefix(importPath, stdZeusModulePrefix))
 	} else {
 		resolvedPath = filepath.Join(filepath.Dir(sourcePath), importPath)

@@ -678,7 +678,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 		constructorMethodName = module.GetModuleScopedName(classModule.ModulePath, constructorMethodName)
 	}
 	constructorMethod := c.module.NamedFunction(constructorMethodName)
-  if !constructorMethod.IsNil() {
+	if !constructorMethod.IsNil() {
 		// create the param types
 		constructorParamTypes := []zeus_value.ValueType{}
 		for _, arg := range input.Args {

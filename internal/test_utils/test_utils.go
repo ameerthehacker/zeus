@@ -180,7 +180,6 @@ func CompareStmtNodes(t *testing.T, stmt ast.StmtNode, expected ast.StmtNode) {
 		logStmtNotEqualError(stmt, expected)
 	}
 
-
 	switch expectedStmt := expected.(type) {
 	case *ast.VarDeclStmtNode:
 		varDeclStmt, ok := stmt.(*ast.VarDeclStmtNode)

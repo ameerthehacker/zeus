@@ -16,8 +16,8 @@ type ExprNode interface {
 }
 
 type GroupingExprNode struct {
-	Expr   ExprNode
-	Span   *token.Span
+	Expr ExprNode
+	Span *token.Span
 }
 
 type BinaryExprNode struct {
@@ -36,7 +36,7 @@ type BooleanExprNode struct {
 
 type UnaryExprNode struct {
 	Operator *token.Token
-	Expr  ExprNode
+	Expr     ExprNode
 }
 
 type IdentifierExprNode struct {
@@ -50,46 +50,46 @@ type FunctionCallExprNode struct {
 }
 
 type FunctionDeclExprNode struct {
-	Name *IdentifierExprNode
-	Params []*VarDeclNode
-	Body *BlockStmtNode
+	Name       *IdentifierExprNode
+	Params     []*VarDeclNode
+	Body       *BlockStmtNode
 	ReturnType *token.Token
-	Span *token.Span
+	Span       *token.Span
 }
 
 type ClassProperty struct {
-	Name *IdentifierExprNode
-	ValueType *token.Token
+	Name           *IdentifierExprNode
+	ValueType      *token.Token
 	AccessModifier *token.Token
-	Span *token.Span
+	Span           *token.Span
 }
 
 type ClassMethod struct {
-	Name *IdentifierExprNode
-	Params []*VarDeclNode
-	Body *BlockStmtNode
-	ReturnType *token.Token
+	Name           *IdentifierExprNode
+	Params         []*VarDeclNode
+	Body           *BlockStmtNode
+	ReturnType     *token.Token
 	AccessModifier *token.Token
-	Span *token.Span
+	Span           *token.Span
 }
 
 type ClassDeclExprNode struct {
-	Name *IdentifierExprNode
+	Name       *IdentifierExprNode
 	Properties []*ClassProperty
-	Methods []*ClassMethod
-	Span *token.Span
+	Methods    []*ClassMethod
+	Span       *token.Span
 }
 
 type NewExprNode struct {
 	Callee ExprNode
-	Args []ExprNode
-	Span *token.Span
+	Args   []ExprNode
+	Span   *token.Span
 }
 
 type ObjectPropertyAccessExprNode struct {
-	Object ExprNode
+	Object   ExprNode
 	Property *IdentifierExprNode
-	Span *token.Span
+	Span     *token.Span
 }
 
 func exprNodesString(params []ExprNode, pretty bool) string {
@@ -115,7 +115,6 @@ func varDeclsString(params []*VarDeclNode, pretty bool) string {
 	}
 	return strings.Join(paramsStr, ", ")
 }
-
 
 func (g *GroupingExprNode) PrettyString() string {
 	return fmt.Sprintf("(%s)", g.Expr.PrettyString())

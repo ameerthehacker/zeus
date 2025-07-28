@@ -202,42 +202,42 @@ func (t TokenType) String() string {
 }
 
 var Keywords = map[string]TokenType{
-	TokenTypeLet.String(): TokenTypeLet,
-	TokenTypeConst.String(): TokenTypeConst,
-	TokenTypeFunction.String(): TokenTypeFunction,
-	TokenTypeReturn.String(): TokenTypeReturn,
-	TokenTypeIf.String(): TokenTypeIf,
-	TokenTypeElse.String(): TokenTypeElse,
-	TokenTypeWhile.String(): TokenTypeWhile,
-	TokenTypeTrue.String(): TokenTypeTrue,
-	TokenTypeFalse.String(): TokenTypeFalse,
-	TokenTypeImport.String(): TokenTypeImport,
-	TokenTypeExport.String(): TokenTypeExport,
-	TokenTypeFrom.String(): TokenTypeFrom,
-	TokenTypeClass.String(): TokenTypeClass,
-	TokenTypePrivate.String(): TokenTypePrivate,
-	TokenTypePublic.String(): TokenTypePublic,
+	TokenTypeLet.String():       TokenTypeLet,
+	TokenTypeConst.String():     TokenTypeConst,
+	TokenTypeFunction.String():  TokenTypeFunction,
+	TokenTypeReturn.String():    TokenTypeReturn,
+	TokenTypeIf.String():        TokenTypeIf,
+	TokenTypeElse.String():      TokenTypeElse,
+	TokenTypeWhile.String():     TokenTypeWhile,
+	TokenTypeTrue.String():      TokenTypeTrue,
+	TokenTypeFalse.String():     TokenTypeFalse,
+	TokenTypeImport.String():    TokenTypeImport,
+	TokenTypeExport.String():    TokenTypeExport,
+	TokenTypeFrom.String():      TokenTypeFrom,
+	TokenTypeClass.String():     TokenTypeClass,
+	TokenTypePrivate.String():   TokenTypePrivate,
+	TokenTypePublic.String():    TokenTypePublic,
 	TokenTypeProtected.String(): TokenTypeProtected,
-	TokenTypeNew.String(): TokenTypeNew,
+	TokenTypeNew.String():       TokenTypeNew,
 }
 
 var DataTypes = map[string]TokenType{
-	TokenTypeInt8.String(): TokenTypeInt8,
-	TokenTypeInt16.String(): TokenTypeInt16,
-	TokenTypeInt32.String(): TokenTypeInt32,
-	TokenTypeInt64.String(): TokenTypeInt64,
-	TokenTypeUInt8.String(): TokenTypeUInt8,
-	TokenTypeUInt16.String(): TokenTypeUInt16,
-	TokenTypeUInt32.String(): TokenTypeUInt32,
-	TokenTypeUInt64.String(): TokenTypeUInt64,
+	TokenTypeInt8.String():    TokenTypeInt8,
+	TokenTypeInt16.String():   TokenTypeInt16,
+	TokenTypeInt32.String():   TokenTypeInt32,
+	TokenTypeInt64.String():   TokenTypeInt64,
+	TokenTypeUInt8.String():   TokenTypeUInt8,
+	TokenTypeUInt16.String():  TokenTypeUInt16,
+	TokenTypeUInt32.String():  TokenTypeUInt32,
+	TokenTypeUInt64.String():  TokenTypeUInt64,
 	TokenTypeFloat32.String(): TokenTypeFloat32,
 	TokenTypeFloat64.String(): TokenTypeFloat64,
 	TokenTypeBoolean.String(): TokenTypeBoolean,
-	TokenTypeVoid.String(): TokenTypeVoid,
+	TokenTypeVoid.String():    TokenTypeVoid,
 }
 
 type Position struct {
-	Line int
+	Line   int
 	Column int
 }
 
@@ -255,7 +255,7 @@ func (p *Position) Equal(other *Position) bool {
 
 type Span struct {
 	Start Position
-	End Position
+	End   Position
 }
 
 func (s *Span) String() string {
@@ -267,9 +267,9 @@ func (s *Span) Equal(other *Span) bool {
 }
 
 type Token struct {
-	Type TokenType
+	Type  TokenType
 	Value string
-	Span *Span
+	Span  *Span
 }
 
 func NewTokenWithValue(tokenType TokenType, value string, span *Span) *Token {

@@ -173,7 +173,6 @@ func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
 
 		passes := []string{"mem2reg"}
 
-
 		if !noGc {
 			passes = append(passes, "place-safepoints", "rewrite-statepoints-for-gc")
 		}
@@ -232,7 +231,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 						errorSeverityErrors = append(errorSeverityErrors, err)
 					}
 				}
-				
+
 				if len(errorSeverityErrors) > 0 {
 					hasErrors = true
 					logger.PrettyPrintError(entryFilePath, sourceFile.Source, errorSeverityErrors)

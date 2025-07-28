@@ -37,7 +37,7 @@ func (i IntSize) String() string {
 
 type IntType struct {
 	Signed bool
-	Size IntSize
+	Size   IntSize
 }
 
 func (i IntType) String() string {
@@ -74,7 +74,6 @@ type UserDefinedType struct {
 	Name string
 }
 
-
 func (u UserDefinedType) String() string {
 	return u.Name
 }
@@ -83,13 +82,13 @@ func (f FloatType) String() string {
 	return fmt.Sprintf("f%s", f.Size)
 }
 
-type BoolType struct {}
+type BoolType struct{}
 
 func (b BoolType) String() string {
 	return "bool"
 }
 
-type VoidType struct {}
+type VoidType struct{}
 
 func (v VoidType) String() string {
 	return "void"
@@ -107,7 +106,7 @@ func NewFunctionType(returnType ValueType, paramTypes []ValueType) FunctionType 
 	}
 }
 
-type UndefinedType struct {}
+type UndefinedType struct{}
 
 func (u UndefinedType) String() string {
 	return "undefined"

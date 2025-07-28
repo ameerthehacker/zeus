@@ -6,7 +6,7 @@ import (
 
 func Execute() {
 	rootCmd := &cobra.Command{
-		Use: "zeus",
+		Use:   "zeus",
 		Short: "Zeus language compiler",
 	}
 	rootCmd.AddCommand(buildCmd())

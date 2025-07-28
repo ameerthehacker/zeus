@@ -15,11 +15,11 @@ type TCPass interface {
 	// HandleInstruction processes a single instruction
 	// The TypeChecker automatically manages currentFunction, currentClass, and currentBlock
 	HandleInstruction(tc *TypeChecker, instr *Instr)
-	
+
 	// Finalize is called after all instructions have been processed
 	// This allows passes to perform cleanup or final analysis
 	Finalize(tc *TypeChecker)
-	
+
 	// GetName returns the name of the pass for debugging/logging
 	GetName() string
 }
@@ -27,7 +27,7 @@ type TCPass interface {
 type TypeChecker struct {
 	errors          []*zeus_error.ZeusError
 	currentFunction *zeus_value.Function
-	currentClass *zeus_value.Class
+	currentClass    *zeus_value.Class
 	builder         *IRBuilder
 	currentBlock    *BasicBlock
 	passes          []TCPass
@@ -36,17 +36,17 @@ type TypeChecker struct {
 
 func NewTypeChecker(builder *IRBuilder, isEntryPoint bool) *TypeChecker {
 	tc := &TypeChecker{
-		builder: builder,
+		builder:      builder,
 		IsEntryPoint: isEntryPoint,
 	}
-	
+
 	// Initialize required passes
 	tc.passes = []TCPass{
 		NewToKnownTypesPass(),
 		NewTypeCheckingPass(),
 		NewUnusedWarningPass(),
 	}
-	
+
 	return tc
 }
 
@@ -58,11 +58,11 @@ func (tc *TypeChecker) AddPass(pass TCPass) {
 // TypeCheck runs all registered passes and returns accumulated errors
 func (tc *TypeChecker) TypeCheck() []*zeus_error.ZeusError {
 	tc.errors = nil // Reset errors
-	
+
 	for _, pass := range tc.passes {
 		tc.runPass(pass)
 	}
-	
+
 	return tc.errors
 }
 
@@ -71,7 +71,7 @@ func (tc *TypeChecker) runPass(pass TCPass) {
 	tc.builder.Walk(func(instr *Instr) {
 		// Automatically update context based on instruction type
 		tc.updateContext(instr)
-		
+
 		// Check if instruction is allowed in current context
 		if !tc.isInstructionAllowed(instr) {
 			tc.pushError(&zeus_error.ZeusError{
@@ -80,13 +80,13 @@ func (tc *TypeChecker) runPass(pass TCPass) {
 			})
 			return
 		}
-		
+
 		// Let the pass handle the instruction
 		pass.HandleInstruction(tc, instr)
 	}, func(block *BasicBlock) {
 		tc.currentBlock = block
 	})
-	
+
 	// Call finalize after processing all instructions
 	pass.Finalize(tc)
 }
@@ -168,7 +168,7 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	if instr.Output != nil && instr.Output.ValueType != nil {
 		instr.Output.ValueType = p.resolveValueType(tc, instr.Output.ValueType)
 	}
-	
+
 	switch instr.Type {
 	case InstrTypeDeclVar:
 		p.resolveVarDecl(tc, instr)
@@ -206,10 +206,10 @@ func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
 
 func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
-	
+
 	// Resolve return type
 	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType)
-	
+
 	// Resolve parameter types
 	for i := range input.Function.Params {
 		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType)
@@ -218,17 +218,17 @@ func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 
 func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclClassInstrInput(instr.Input)
-	
+
 	// Resolve property types
 	for i := range input.Class.Properties {
 		input.Class.Properties[i].Property.ValueType = p.resolveValueType(tc, input.Class.Properties[i].Property.ValueType)
 	}
-	
+
 	// Resolve method types
 	for i := range input.Class.Methods {
 		method := input.Class.Methods[i].Method
 		method.ReturnType = p.resolveValueType(tc, method.ReturnType)
-		
+
 		for j := range method.Params {
 			method.Params[j].ValueType = p.resolveValueType(tc, method.Params[j].ValueType)
 		}
@@ -237,10 +237,10 @@ func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
 
 func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
-	
+
 	// Resolve return type
 	input.Method.ReturnType = p.resolveValueType(tc, input.Method.ReturnType)
-	
+
 	// Resolve parameter types
 	for i := range input.Method.Params {
 		input.Method.Params[i].ValueType = p.resolveValueType(tc, input.Method.Params[i].ValueType)
@@ -248,7 +248,7 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 }
 
 // This pass does the actual type checking
-type TypeCheckingPass struct{
+type TypeCheckingPass struct {
 	hasMainFunction bool
 }
 
@@ -266,7 +266,7 @@ func (p *TypeCheckingPass) Finalize(tc *TypeChecker) {
 	if !p.hasMainFunction && tc.IsEntryPoint {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "main function not found",
-			Span:   nil,
+			Span:    nil,
 		})
 	}
 }
@@ -465,9 +465,9 @@ func (p *TypeCheckingPass) cmpValueType(tc *TypeChecker, a, b zeus_value.ValueTy
 		}
 
 		return true
-	
+
 	case zeus_value.ObjectType:
-	  bClassType, ok := b.(zeus_value.ObjectType)
+		bClassType, ok := b.(zeus_value.ObjectType)
 		return ok && a.Class.Name == bClassType.Class.Name
 	}
 
@@ -774,7 +774,6 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 			break
 		}
 	}
-	
 
 	if constructorMethod == nil && len(input.Args) > 0 {
 		tc.pushError(&zeus_error.ZeusError{
@@ -812,7 +811,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	if !zeus_value.IsObjectType(objectType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, objectType),
-			Span:   output.Span,
+			Span:    output.Span,
 		})
 	} else {
 		class := zeus_value.AsObjectType(objectType).Class
@@ -884,12 +883,11 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 
 	instr.Output.ValueType = functionType.ReturnType
 }
- 
+
 func (p *TypeCheckingPass) tcDeclClassMethod(tc *TypeChecker, instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
 	p.validateFunctionReturns(tc, input.Method, input.Body)
 }
-
 
 // UnusedWarningPass generates warnings for unused identifiers
 // This pass should run last after all usage tracking is complete
@@ -912,8 +910,8 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeLoad:
 		p.handleLoad(instr)
 	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
-		 InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
-		 InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
+		InstrTypeLessThanEq, InstrTypeGreaterThanEq:
 		p.handleBinaryOp(instr)
 	case InstrTypeNot, InstrTypeNeg:
 		p.handleUnaryOp(instr)
@@ -937,7 +935,7 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 // handleVarDecl processes variable declarations and marks initializers as used
 func (p *UnusedWarningPass) handleVarDecl(instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
-	
+
 	// If the variable has an initializer, mark it as used
 	if input.Initializer != nil {
 		// If the initializer is a variable or function, mark it as used
@@ -952,7 +950,7 @@ func (p *UnusedWarningPass) handleVarDecl(instr *Instr) {
 // handleStore processes variable assignments and marks values as used
 func (p *UnusedWarningPass) handleStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
-	
+
 	// If the value being stored is a variable or function, mark it as used
 	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
 		valueVar.IsUsed = true
@@ -964,7 +962,7 @@ func (p *UnusedWarningPass) handleStore(instr *Instr) {
 // handleLoad processes variable usage and marks variables as used
 func (p *UnusedWarningPass) handleLoad(instr *Instr) {
 	input := AsLoadInstrInput(instr.Input)
-	
+
 	// Mark the variable as used
 	input.Addr.IsUsed = true
 }
@@ -972,14 +970,14 @@ func (p *UnusedWarningPass) handleLoad(instr *Instr) {
 // handleBinaryOp processes binary operations and marks operands as used
 func (p *UnusedWarningPass) handleBinaryOp(instr *Instr) {
 	input := AsBinaryOpInstrInput(instr.Input)
-	
+
 	// Mark the left operand as used
 	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
 		leftVar.IsUsed = true
 	} else if leftFunc := zeus_value.AsFunction(input.Left); leftFunc != nil {
 		leftFunc.IsUsed = true
 	}
-	
+
 	// Mark the right operand as used
 	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
 		rightVar.IsUsed = true
@@ -991,7 +989,7 @@ func (p *UnusedWarningPass) handleBinaryOp(instr *Instr) {
 // handleUnaryOp processes unary operations and marks the operand as used
 func (p *UnusedWarningPass) handleUnaryOp(instr *Instr) {
 	input := AsUnaryOpInstrInput(instr.Input)
-	
+
 	// Mark the operand as used
 	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
 		operandVar.IsUsed = true
@@ -1003,14 +1001,14 @@ func (p *UnusedWarningPass) handleUnaryOp(instr *Instr) {
 // handleCallFunc processes function calls and marks arguments as used
 func (p *UnusedWarningPass) handleCallFunc(instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
-	
+
 	// Mark the callee as used (variable or function)
 	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
 		calleeVar.IsUsed = true
 	} else if calleeFunc := zeus_value.AsFunction(input.Callee); calleeFunc != nil {
 		calleeFunc.IsUsed = true
 	}
-	
+
 	// Mark arguments as used
 	for i := range input.Args {
 		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
@@ -1024,14 +1022,14 @@ func (p *UnusedWarningPass) handleCallFunc(instr *Instr) {
 // handleIndirectFuncCall processes indirect function calls and marks the function and arguments as used
 func (p *UnusedWarningPass) handleIndirectFuncCall(instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
-	
+
 	// Mark the function as used (variable or function)
 	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
 		funcVar.IsUsed = true
 	} else if function := zeus_value.AsFunction(input.Function); function != nil {
 		function.IsUsed = true
 	}
-	
+
 	// Mark arguments as used
 	for i := range input.Args {
 		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
@@ -1045,7 +1043,7 @@ func (p *UnusedWarningPass) handleIndirectFuncCall(instr *Instr) {
 // handleReturn processes return statements and marks the return value as used
 func (p *UnusedWarningPass) handleReturn(instr *Instr) {
 	input := AsReturnInstrInput(instr.Input)
-	
+
 	// Mark the return value as used if it's not nil
 	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
 		returnValueVar.IsUsed = true
@@ -1057,7 +1055,7 @@ func (p *UnusedWarningPass) handleReturn(instr *Instr) {
 // handleCondJmp processes conditional jumps and marks the condition as used
 func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
 	input := AsCondJmpInstrInput(instr.Input)
-	
+
 	// Mark the condition as used
 	if condVar := zeus_value.AsVar(input.Condition); condVar != nil {
 		condVar.IsUsed = true
@@ -1067,12 +1065,12 @@ func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
 // handleNewObj processes new object expressions and marks the class as used
 func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
-	
+
 	// Mark the class as used when an object is created from it
 	if class := zeus_value.AsClass(input.Callee); class != nil {
 		class.IsUsed = true
 	}
-	
+
 	// Mark arguments as used
 	for i := range input.Args {
 		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
@@ -1087,20 +1085,20 @@ func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
 // Also marks class methods and properties as used when they are accessed
 func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
 	input := AsObjectPropertyAccessInstrInput(instr.Input)
-	
+
 	// Mark the object as used
 	if objectVar := zeus_value.AsVar(input.Object); objectVar != nil {
 		objectVar.IsUsed = true
 	}
-	
+
 	// Mark class methods and properties as used when accessed
 	objectType := tc.getValueType(input.Object)
-	
+
 	// Check if it's an object type (class instance)
 	if zeus_value.IsObjectType(objectType) {
 		objectTypeStruct := zeus_value.AsObjectType(objectType)
 		class := objectTypeStruct.Class
-		
+
 		// Look for a method with the matching name
 		for _, classMethod := range class.Methods {
 			if classMethod.Method.Name == input.Property {
@@ -1109,7 +1107,7 @@ func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *I
 				return
 			}
 		}
-		
+
 		// Look for a property with the matching name
 		for _, classProperty := range class.Properties {
 			if classProperty.Property.Name == input.Property {
@@ -1124,12 +1122,12 @@ func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *I
 // handleExport processes export statements and marks exported functions as used
 func (p *UnusedWarningPass) handleExport(instr *Instr) {
 	input := AsExportInstrInput(instr.Input)
-	
+
 	// Mark exported functions as used
 	if function := zeus_value.AsFunction(input.Value); function != nil {
 		function.IsUsed = true
 	}
-	
+
 	// Mark exported classes as used
 	if class := zeus_value.AsClass(input.Value); class != nil {
 		class.IsUsed = true
@@ -1144,8 +1142,8 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			if !variable.IsTempVariable() && !variable.IsUsed {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
-					Message: fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
-					Span:    variable.Span,
+					Message:  fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
+					Span:     variable.Span,
 				})
 			}
 		} else if function := zeus_value.AsFunction(value); function != nil {
@@ -1154,8 +1152,8 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isMainFunction {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
-					Message: fmt.Sprintf("function '%s' is declared but not used", function.Name),
-					Span:    function.Span,
+					Message:  fmt.Sprintf("function '%s' is declared but not used", function.Name),
+					Span:     function.Span,
 				})
 			}
 		} else if class := zeus_value.AsClass(value); class != nil {
@@ -1163,40 +1161,40 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			if !class.IsUsed {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
-					Message: fmt.Sprintf("class '%s' is declared but not used", class.Name),
-					Span:    class.Span,
+					Message:  fmt.Sprintf("class '%s' is declared but not used", class.Name),
+					Span:     class.Span,
 				})
 			} else {
 				// Only check class members if the class itself is used
 				// Check all methods in this class
 				for _, classMethod := range class.Methods {
 					method := classMethod.Method
-					
+
 					// Skip constructor methods as they're implicitly used
 					if method.Name == token.CONSTRUCTOR_METHOD_NAME {
 						continue
 					}
-					
+
 					// Check if the method is unused
 					if !method.IsUsed {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
-							Message: fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
-							Span:    method.Span,
+							Message:  fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
+							Span:     method.Span,
 						})
 					}
 				}
-				
+
 				// Check all properties in this class
 				for _, classProperty := range class.Properties {
 					property := classProperty.Property
-					
+
 					// Check if the property is unused
 					if !property.IsUsed {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
-							Message: fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
-							Span:    property.Span,
+							Message:  fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
+							Span:     property.Span,
 						})
 					}
 				}

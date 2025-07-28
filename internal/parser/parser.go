@@ -20,7 +20,7 @@ type Parser struct {
 
 const (
 	UnaryOperatorPrecedence = 4
-	NewOperatorPrecedence = 5
+	NewOperatorPrecedence   = 5
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
@@ -114,22 +114,22 @@ func NewParser(tokens []*token.Token) *Parser {
 		functionName := parser.consumeIdentifier("for function name")
 		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName, false)
 		return &ast.FunctionDeclExprNode{
-			Name: name,
-			Params: params,
-			Body: body,
+			Name:       name,
+			Params:     params,
+			Body:       body,
 			ReturnType: returnType,
-			Span: &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End},
+			Span:       &token.Span{Start: functionKeyword.Span.Start, End: body.GetSpan().End},
 		}
 	}
 
 	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
 		className := parser.consumeIdentifier("class name")
 		parser.consumeToken(token.TokenTypeLeftBrace, "after class name")
-	
+
 		methods := []*ast.ClassMethod{}
 		properties := []*ast.ClassProperty{}
 
-		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {			
+		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
 			accessModifier := parser.consumeAccessModifier()
 			if parser.checkToken(token.TokenTypeIdentifier, "in class property or method declaration") && parser.lookahead(1, token.TokenTypeLeftParen) {
 				methodName, params, returnType, body := parser.parseFunctionSignatureAndBody(parser.consumeIdentifier("method name"), true)
@@ -138,12 +138,12 @@ func NewParser(tokens []*token.Token) *Parser {
 					spanStart = accessModifier.Span.Start
 				}
 				methods = append(methods, &ast.ClassMethod{
-					Name: methodName,
-					Params: params,
-					Body: body,
-					ReturnType: returnType,
+					Name:           methodName,
+					Params:         params,
+					Body:           body,
+					ReturnType:     returnType,
 					AccessModifier: accessModifier,
-					Span: &token.Span{Start: spanStart, End: body.GetSpan().End},
+					Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 				})
 			} else {
 				property := parser.parseVarDecl(false, ast.VarDeclTypeLet, "class property")
@@ -152,10 +152,10 @@ func NewParser(tokens []*token.Token) *Parser {
 					spanStart = accessModifier.Span.Start
 				}
 				properties = append(properties, &ast.ClassProperty{
-					Name: property.Identifier,
-					ValueType: property.DataType,
+					Name:           property.Identifier,
+					ValueType:      property.DataType,
 					AccessModifier: accessModifier,
-					Span: &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
+					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
 				parser.consumeSemicolon()
 			}
@@ -193,11 +193,11 @@ func NewParser(tokens []*token.Token) *Parser {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
 			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
 			args, closeParen := parser.parseArgumentList()
-			
+
 			return &ast.NewExprNode{
 				Callee: callee,
-				Args: args,
-				Span: &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
+				Args:   args,
+				Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
 			}
 		},
 		token.TokenTypeFunction: functionParselet,
@@ -232,11 +232,11 @@ func (p *Parser) peek() *token.Token {
 	return p.tokens[p.current]
 }
 
-func (p* Parser) checkToken(tokenType token.TokenType, extraInfo ...string) bool {
-	if (p.peek().Type == tokenType) {
+func (p *Parser) checkToken(tokenType token.TokenType, extraInfo ...string) bool {
+	if p.peek().Type == tokenType {
 		return true
 	}
-	
+
 	p.expectedButGotError(tokenType.String(), p.peek(), extraInfo...)
 
 	return false
@@ -413,7 +413,7 @@ func (p *Parser) parseWhileStmt() *ast.WhileStmtNode {
 	condition := p.parseExprOfPrecedence(0, false, "in while condition")
 	body := p.ParseStmt()
 	span := &token.Span{Start: whileKeyword.Span.Start, End: body.GetSpan().End}
-	
+
 	return &ast.WhileStmtNode{Condition: condition, Body: body, Span: span}
 }
 
@@ -592,7 +592,7 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 
 	switch p.peek().Type {
 	case token.TokenTypeLet:
-			fallthrough
+		fallthrough
 	case token.TokenTypeConst:
 		return p.parseVarDeclStmt()
 	case token.TokenTypeLeftBrace:

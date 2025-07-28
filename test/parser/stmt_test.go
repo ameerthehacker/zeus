@@ -26,11 +26,11 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 5},
 							End:   token.Position{Line: 1, Column: 5},
 						}}},
-						DataType:  &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
+						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 8},
 							End:   token.Position{Line: 1, Column: 9},
 						}},
-						DeclType:  ast.VarDeclTypeLet,
+						DeclType: ast.VarDeclTypeLet,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 13},
 							End:   token.Position{Line: 1, Column: 13},
@@ -41,11 +41,11 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 16},
 							End:   token.Position{Line: 1, Column: 16},
 						}}},
-						DataType:  &token.Token{Type: token.TokenTypeFloat32, Value: "f32", Span: &token.Span{
+						DataType: &token.Token{Type: token.TokenTypeFloat32, Value: "f32", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 19},
 							End:   token.Position{Line: 1, Column: 22},
 						}},
-						DeclType:  ast.VarDeclTypeLet,
+						DeclType: ast.VarDeclTypeLet,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1.5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 25},
 							End:   token.Position{Line: 1, Column: 27},
@@ -60,7 +60,7 @@ func TestParserStmt(t *testing.T) {
 			errors: []*zeus_error.ZeusError{},
 		},
 		{
-			input: "const x: i8 = 5;",
+			input:  "const x: i8 = 5;",
 			errors: []*zeus_error.ZeusError{},
 			expected: &ast.VarDeclStmtNode{
 				Decls: []ast.VarDeclNode{
@@ -69,11 +69,11 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 7},
 							End:   token.Position{Line: 1, Column: 7},
 						}}},
-						DataType:  &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
+						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 10},
 							End:   token.Position{Line: 1, Column: 11},
 						}},
-						DeclType:  ast.VarDeclTypeConst,
+						DeclType: ast.VarDeclTypeConst,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 15},
 							End:   token.Position{Line: 1, Column: 15},
@@ -87,7 +87,7 @@ func TestParserStmt(t *testing.T) {
 			},
 		},
 		{
-			input: "const x: i8;",
+			input:  "const x: i8;",
 			errors: []*zeus_error.ZeusError{},
 			expected: &ast.VarDeclStmtNode{
 				Decls: []ast.VarDeclNode{
@@ -96,11 +96,11 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 7},
 							End:   token.Position{Line: 1, Column: 7},
 						}}},
-						DataType:  &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
+						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 10},
 							End:   token.Position{Line: 1, Column: 11},
 						}},
-						DeclType:  ast.VarDeclTypeConst,
+						DeclType: ast.VarDeclTypeConst,
 					},
 				},
 				Span: &token.Span{
@@ -628,7 +628,7 @@ func TestParserStmt(t *testing.T) {
 						End:   token.Position{Line: 1, Column: 12},
 					}}},
 					Properties: []*ast.ClassProperty{},
-					Methods: []*ast.ClassMethod{},
+					Methods:    []*ast.ClassMethod{},
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 1},
 						End:   token.Position{Line: 1, Column: 16},

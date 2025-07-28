@@ -14,15 +14,15 @@ import (
 )
 
 type IRBuilder struct {
-	instrs      []*Instr
-	currentBlock *BasicBlock
-	insertionIndex int
+	instrs                  []*Instr
+	currentBlock            *BasicBlock
+	insertionIndex          int
 	blockIdInsetionIndexMap map[int]int
-	blocks []*BasicBlock
-	tempVarCount int
-	blocksCount int
-	symbolTable *symbol_table.SymbolTable[zeus_value.Value]
-	instrIdCount int
+	blocks                  []*BasicBlock
+	tempVarCount            int
+	blocksCount             int
+	symbolTable             *symbol_table.SymbolTable[zeus_value.Value]
+	instrIdCount            int
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -30,13 +30,13 @@ func NewIRBuilder() *IRBuilder {
 	symbol_table.EnterScope()
 
 	return &IRBuilder{
-		currentBlock: nil,
-		tempVarCount: 0,
-		blocksCount: 0,
-		insertionIndex: 0,
-		instrIdCount: 0,
+		currentBlock:            nil,
+		tempVarCount:            0,
+		blocksCount:             0,
+		insertionIndex:          0,
+		instrIdCount:            0,
 		blockIdInsetionIndexMap: make(map[int]int),
-		symbolTable: symbol_table,
+		symbolTable:             symbol_table,
 	}
 }
 
@@ -115,14 +115,14 @@ func (b *IRBuilder) SetInsertionBefore(instr *Instr) {
 	b.insertionIndex = instrIndex
 }
 
-func (b* IRBuilder) SetBlockInsertionAfter(block *BasicBlock, instr *Instr) {
+func (b *IRBuilder) SetBlockInsertionAfter(block *BasicBlock, instr *Instr) {
 	instrIndex := slices.Index(block.Instrs, instr)
 	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block instructions list", instr.String()))
 	b.SetInsertionBlock(block)
 	b.blockIdInsetionIndexMap[block.Id] = instrIndex + 1
 }
 
-func (b* IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
+func (b *IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
 	instrIndex := slices.Index(block.Instrs, instr)
 	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block instructions list", instr.String()))
 	b.SetInsertionBlock(block)
@@ -133,10 +133,10 @@ func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, sp
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: op,
+		Type:   op,
 		Output: result,
-		Input: NewBinaryOpInstrInput(left, right),
-		Span: span,
+		Input:  NewBinaryOpInstrInput(left, right),
+		Span:   span,
 	})
 
 	return result
@@ -144,9 +144,9 @@ func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, sp
 
 func (b *IRBuilder) BuildExport(modulePath string, value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeExport,
+		Type:  InstrTypeExport,
 		Input: NewExportInstrInput(modulePath, value),
-		Span: span,
+		Span:  span,
 	})
 }
 
@@ -155,10 +155,10 @@ func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value
 	result.Cxt = addr.Cxt
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeLoad,
+		Type:   InstrTypeLoad,
 		Output: result,
-		Input: NewLoadInstrInput(addr),
-		Span: span,
+		Input:  NewLoadInstrInput(addr),
+		Span:   span,
 	})
 
 	return result
@@ -172,9 +172,9 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 	b.symbolTable.DeclareSymbol(unique_name, variable)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeDeclVar,
+		Type:  InstrTypeDeclVar,
 		Input: NewDeclareVarInstrInput(variable, v.Initializer, v.IsConst),
-		Span: v.Span,
+		Span:  v.Span,
 	})
 
 	return variable
@@ -182,9 +182,9 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 
 func (b *IRBuilder) BuildStore(addr *zeus_value.Var, value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeStore,
+		Type:  InstrTypeStore,
 		Input: NewStoreInstrInput(addr, value),
-		Span: span,
+		Span:  span,
 	})
 }
 
@@ -192,10 +192,10 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeCast,
+		Type:   InstrTypeCast,
 		Output: result,
-		Input: NewCastInstrInput(value, castType),
-		Span: span,
+		Input:  NewCastInstrInput(value, castType),
+		Span:   span,
 	})
 	result.ValueType = castType
 
@@ -223,15 +223,15 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 
 	if class != nil {
 		b.pushInstr(&Instr{
-			Type: InstrTypeDeclClassMethod,
+			Type:  InstrTypeDeclClassMethod,
 			Input: NewDeclClassMethodInstrInput(fn, body, class),
-			Span: span,
+			Span:  span,
 		})
 	} else {
 		b.pushInstr(&Instr{
-			Type: InstrTypeDeclFunc,
+			Type:  InstrTypeDeclFunc,
 			Input: NewDeclFuncInstrInput(fn, body),
-			Span: span,
+			Span:  span,
 		})
 	}
 
@@ -242,17 +242,17 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 
 func (b *IRBuilder) BuildJmp(target *BasicBlock, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeJmp,
+		Type:  InstrTypeJmp,
 		Input: NewJmpInstrInput(target),
-		Span: span,
+		Span:  span,
 	})
 }
 
 func (b *IRBuilder) BuildCondJmp(true_target *BasicBlock, false_target *BasicBlock, condition zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeCondJmp,
+		Type:  InstrTypeCondJmp,
 		Input: NewCondJmpInstrInput(true_target, false_target, condition),
-		Span: span,
+		Span:  span,
 	})
 }
 
@@ -260,10 +260,10 @@ func (b *IRBuilder) BuildCallFunc(callee *zeus_value.Function, args []zeus_value
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeCallFunc,
+		Type:   InstrTypeCallFunc,
 		Output: result,
-		Input: NewCallFuncInstrInput(callee, args),
-		Span: span,
+		Input:  NewCallFuncInstrInput(callee, args),
+		Span:   span,
 	})
 
 	return result
@@ -273,9 +273,9 @@ func (b *IRBuilder) BuildIndirectFuncCall(callee zeus_value.Value, args []zeus_v
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeIndirectFuncCall,
+		Type:   InstrTypeIndirectFuncCall,
 		Output: result,
-		Input: NewIndirectFuncCallInstrInput(callee, args),
+		Input:  NewIndirectFuncCallInstrInput(callee, args),
 	})
 
 	return result
@@ -283,9 +283,9 @@ func (b *IRBuilder) BuildIndirectFuncCall(callee zeus_value.Value, args []zeus_v
 
 func (b *IRBuilder) BuildReturn(value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeReturn,
+		Type:  InstrTypeReturn,
 		Input: NewReturnInstrInput(value),
-		Span: span,
+		Span:  span,
 	})
 }
 
@@ -293,10 +293,10 @@ func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *tok
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: op,
+		Type:   op,
 		Output: result,
-		Input: NewUnaryOpInstrInput(value),
-		Span: span,
+		Input:  NewUnaryOpInstrInput(value),
+		Span:   span,
 	})
 
 	return result
@@ -304,9 +304,9 @@ func (b *IRBuilder) BuildUnaryOp(value zeus_value.Value, op InstrType, span *tok
 
 func (b *IRBuilder) BuildImport(modulePath string, name string, importedValue zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeImport,
+		Type:  InstrTypeImport,
 		Input: NewImportInstrInput(modulePath, importedValue),
-		Span: span,
+		Span:  span,
 	})
 
 	b.symbolTable.DeclareGlobalSymbol(name, importedValue)
@@ -316,10 +316,10 @@ func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value
 	result := b.createTempVariable(span)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeNewObj,
+		Type:   InstrTypeNewObj,
 		Output: result,
-		Input: NewNewObjInstrInput(callee, args),
-		Span: span,
+		Input:  NewNewObjInstrInput(callee, args),
+		Span:   span,
 	})
 
 	return result
@@ -327,9 +327,9 @@ func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value
 
 func (b *IRBuilder) BuildClassMethodDecl(method *zeus_value.Function, body *BasicBlock, class *zeus_value.Class, span *token.Span) {
 	b.pushInstr(&Instr{
-		Type: InstrTypeDeclClassMethod,
+		Type:  InstrTypeDeclClassMethod,
 		Input: NewDeclClassMethodInstrInput(method, body, class),
-		Span: span,
+		Span:  span,
 	})
 }
 
@@ -338,10 +338,10 @@ func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) st
 	class.Name = b.generateUniqueSymbolName(class.Name)
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeDeclClass,
+		Type:   InstrTypeDeclClass,
 		Output: result,
-		Input: NewDeclClassInstrInput(class),
-		Span: span,
+		Input:  NewDeclClassInstrInput(class),
+		Span:   span,
 	})
 
 	b.symbolTable.DeclareSymbol(class.Name, class)
@@ -402,7 +402,7 @@ func (b *IRBuilder) deleteBlock(block *BasicBlock) {
 	if blockIndex == -1 {
 		return
 	}
-	b.blocks = slices.Delete(b.blocks, blockIndex, blockIndex + 1)
+	b.blocks = slices.Delete(b.blocks, blockIndex, blockIndex+1)
 
 	// remove this block as successor in other blocks
 	for _, otherBlock := range b.blocks {
@@ -419,7 +419,7 @@ func (b *IRBuilder) deleteDeadCode(block *BasicBlock) {
 
 	// delete all instructions after the control flow instruction
 	if conctrolFlowInstrIndex != -1 {
-		block.Instrs = slices.Delete(block.Instrs, conctrolFlowInstrIndex + 1, len(block.Instrs))
+		block.Instrs = slices.Delete(block.Instrs, conctrolFlowInstrIndex+1, len(block.Instrs))
 	}
 }
 
@@ -441,7 +441,7 @@ func (b *IRBuilder) GetBranchingBlocks(block *BasicBlock) []*BasicBlock {
 func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 	optimizedBlocks := map[*BasicBlock]bool{}
 	var visitAndOptimize func(block *BasicBlock)
-	
+
 	// we delete the dead code in the block and then visit the branching blocks
 	visitAndOptimize = func(block *BasicBlock) {
 		_, isOptimized := optimizedBlocks[block]
@@ -477,9 +477,9 @@ func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property 
 	result.Cxt = &object
 
 	b.pushInstr(&Instr{
-		Type: InstrTypeObjectPropertyAccess,
+		Type:   InstrTypeObjectPropertyAccess,
 		Output: result,
-		Input: NewObjectPropertyAccessInstrInput(object, property),
+		Input:  NewObjectPropertyAccessInstrInput(object, property),
 	})
 
 	return result
@@ -521,6 +521,6 @@ func (b *IRBuilder) Print() {
 	fmt.Println(b.String())
 }
 
-func (b* IRBuilder) GetInstrs() []*Instr {
+func (b *IRBuilder) GetInstrs() []*Instr {
 	return b.instrs
 }

@@ -39,10 +39,10 @@ func PrettyPrintError(filePath string, source string, errors []*zeus_error.ZeusE
 
 	for _, err := range errors {
 		if err.Span != nil {
-			line, col := err.Span.Start.Line - 1, err.Span.Start.Column - 1
+			line, col := err.Span.Start.Line-1, err.Span.Start.Column-1
 			errorIndicator := "^"
 			if err.Span.End.Column > err.Span.Start.Column {
-				errorIndicator = strings.Repeat("~", err.Span.End.Column - err.Span.Start.Column + 1)
+				errorIndicator = strings.Repeat("~", err.Span.End.Column-err.Span.Start.Column+1)
 			}
 
 			LogZeusError(filePath, err)
