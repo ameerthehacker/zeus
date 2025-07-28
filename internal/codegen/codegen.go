@@ -218,10 +218,8 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 
 func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
-	case zeus_value.UserDefinedType:
-		return llvm.PointerType(c.getLLVMStructType(_type.Name), 1)
 	case zeus_value.FunctionType:
-		return llvm.PointerType(c.toLLVMFunctionType(_type), 1)
+		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
 	case zeus_value.ObjectType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
 	default:
