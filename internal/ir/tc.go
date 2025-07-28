@@ -43,7 +43,6 @@ func NewTypeChecker(builder *IRBuilder, isEntryPoint bool) *TypeChecker {
 	// Initialize required passes
 	tc.passes = []TCPass{
 		NewToKnownTypesPass(),
-		NewUnAssignedIdentAccessPass(),
 		NewTypeCheckingPass(),
 		NewUnusedWarningPass(),
 	}
@@ -245,66 +244,6 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 	// Resolve parameter types
 	for i := range input.Method.Params {
 		input.Method.Params[i].ValueType = p.resolveValueType(tc, input.Method.Params[i].ValueType)
-	}
-}
-
-
-
-// UnAssignedIdentAccessPass checks variable initialization status
-// and ensures variables are initialized before use
-type UnAssignedIdentAccessPass struct{}
-
-func NewUnAssignedIdentAccessPass() *UnAssignedIdentAccessPass {
-	return &UnAssignedIdentAccessPass{}
-}
-
-func (p *UnAssignedIdentAccessPass) GetName() string {
-	return "UnAssignedIdentAccessPass"
-}
-
-func (p *UnAssignedIdentAccessPass) Finalize(tc *TypeChecker) {
-	// No finalization needed for this pass
-}
-
-func (p *UnAssignedIdentAccessPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
-	switch instr.Type {
-	case InstrTypeDeclVar:
-		p.handleVarDecl(instr)
-	case InstrTypeStore:
-		p.handleStore(instr)
-	case InstrTypeLoad:
-		p.handleLoad(tc, instr)
-	}
-}
-
-// handleVarDecl processes variable declarations and sets IsInitialized if there's an initializer
-func (p *UnAssignedIdentAccessPass) handleVarDecl(instr *Instr) {
-	input := AsDeclVarInstrInput(instr.Input)
-	
-	// If the variable has an initializer, mark it as initialized
-	if input.Initializer != nil {
-		input.Variable.IsInitialized = true
-	}
-}
-
-// handleStore processes variable assignments and marks the target variable as initialized
-func (p *UnAssignedIdentAccessPass) handleStore(instr *Instr) {
-	input := AsStoreInstrInput(instr.Input)
-	
-	// Mark the target variable as initialized
-	input.Addr.IsInitialized = true
-}
-
-// handleLoad processes variable usage and checks initialization status
-func (p *UnAssignedIdentAccessPass) handleLoad(tc *TypeChecker, instr *Instr) {
-	input := AsLoadInstrInput(instr.Input)
-	
-	// Check if the variable is initialized before use
-	if !input.Addr.IsInitialized && !input.Addr.IsTempVariable() {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("identifier '%s' used before being initialized", input.Addr.Name),
-			Span:    instr.Span,
-		})
 	}
 }
 

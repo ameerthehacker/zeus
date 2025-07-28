@@ -66,7 +66,6 @@ type Var struct {
 	Cxt *Value
 	IsPtr bool
 	Span *token.Span
-	IsInitialized bool
 	IsUsed bool
 }
 
@@ -76,7 +75,6 @@ func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span) *Var
 		ValueType: valueType,
 		IsPtr: isPtr,
 		Span: span,
-		IsInitialized: false,
 		IsUsed: false,
 	}
 }
