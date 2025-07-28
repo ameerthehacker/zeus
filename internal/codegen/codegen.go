@@ -301,6 +301,9 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 
 	if input.Initializer != nil {
 		c.builder.CreateStore(c.toLLVMValue(input.Initializer), variable)
+		// for primitive types we need to store the default value
+	} else if zeus_value.IsPrimitiveType(input.Variable.ValueType) {
+		c.builder.CreateStore(c.getDefaultLLVMValue(input.Variable.ValueType), variable)
 	}
 
 	c.symbolTable.DeclareSymbol(input.Variable.Name, variable)
