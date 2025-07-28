@@ -20,7 +20,7 @@ test-go:
 	go test ./test/...
 
 test-e2e: build-runtime
-	go test ./test/e2e/... -v
+	go test ./test/e2e/... -v -count=1
 
 test-runtime:
 	cd runtime && zig build test
