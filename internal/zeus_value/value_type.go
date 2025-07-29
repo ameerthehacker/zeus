@@ -12,6 +12,18 @@ type ValueType interface {
 	GetSpan() *token.Span
 }
 
+type NullType struct {
+	Span *token.Span
+}
+
+func (n NullType) GetSpan() *token.Span {
+	return n.Span
+}
+
+func (n NullType) String() string {
+	return "null"
+}
+
 type IntSize int
 
 const (
@@ -246,6 +258,8 @@ func ToValueType(t *token.Token) ValueType {
 		return VoidType{Span: t.Span}
 	case token.TokenTypeIdentifier:
 		return UserDefinedType{Name: t.Value, Span: t.Span}
+	case token.TokenTypeNull:
+		return NullType{Span: t.Span}
 	default:
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}
@@ -279,6 +293,15 @@ func ToFunctionType(value Function) FunctionType {
 func IsUserDefinedType(value ValueType) bool {
 	switch value.(type) {
 	case UserDefinedType:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsNullType(value ValueType) bool {
+	switch value.(type) {
+	case NullType:
 		return true
 	default:
 		return false

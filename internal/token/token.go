@@ -61,7 +61,6 @@ const (
 	TokenTypePublic
 	TokenTypeProtected
 	TokenTypeNew // new keyword
-	TokenTypeNull
 	keyword_end
 	// data types
 	datatype_beg
@@ -81,6 +80,8 @@ const (
 	TokenTypeFloat64
 	// boolean type
 	TokenTypeBoolean
+	// null type
+	TokenTypeNull
 	datatype_end
 	// EOF
 	TokenTypeEOF
@@ -196,6 +197,8 @@ func (t TokenType) String() string {
 		return "protected"
 	case TokenTypeNew:
 		return "new"
+	case TokenTypeNull:
+		return "null"
 	case TokenTypeEOF:
 		return "EOF"
 	}
@@ -220,6 +223,7 @@ var Keywords = map[string]TokenType{
 	TokenTypePublic.String():    TokenTypePublic,
 	TokenTypeProtected.String(): TokenTypeProtected,
 	TokenTypeNew.String():       TokenTypeNew,
+	TokenTypeNull.String():      TokenTypeNull,
 }
 
 var DataTypes = map[string]TokenType{
@@ -235,6 +239,7 @@ var DataTypes = map[string]TokenType{
 	TokenTypeFloat64.String(): TokenTypeFloat64,
 	TokenTypeBoolean.String(): TokenTypeBoolean,
 	TokenTypeVoid.String():    TokenTypeVoid,
+	TokenTypeNull.String():    TokenTypeNull,
 }
 
 type Position struct {

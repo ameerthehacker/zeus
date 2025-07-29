@@ -166,7 +166,7 @@ func (p *ToKnownTypesPass) Finalize(tc *TypeChecker) {
 func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	// Resolve output type if it exists and is a UserDefinedType
 	if instr.Output != nil && instr.Output.ValueType != nil {
-		instr.Output.ValueType = p.resolveValueType(tc, instr.Output.ValueType)
+		instr.Output.ValueType = p.resolveValueType(tc, instr.Output.ValueType, true)
 	}
 
 	switch instr.Type {
@@ -182,7 +182,8 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 }
 
 // resolveValueType converts a UserDefinedType to its actual known type
-func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_value.ValueType) zeus_value.ValueType {
+func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_value.ValueType, isReturnType bool) zeus_value.ValueType {
+	undefinedType := zeus_value.UndefinedType{Span: valueType.GetSpan()}
 	if zeus_value.IsUserDefinedType(valueType) {
 		userDefinedType := zeus_value.AsUserDefinedType(valueType)
 		variable, ok := tc.builder.symbolTable.GetSymbol(userDefinedType.Name)
@@ -194,10 +195,22 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 				Message: fmt.Sprintf("unknown type '%s'", userDefinedType.Name),
 				Span:    valueType.GetSpan(),
 			})
-			return zeus_value.UndefinedType{Span: valueType.GetSpan()}
+			return undefinedType
 		}
 
 		return tc.getBuiltInValueType(variable)
+	} else if zeus_value.IsNullType(valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "cannot use null as a standalone type",
+			Span:    valueType.GetSpan(),
+		})
+		return undefinedType
+	} else if !isReturnType && zeus_value.IsVoidType(valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "void type can be used only as a return type",
+			Span:    valueType.GetSpan(),
+		})
+		return undefinedType
 	}
 
 	return valueType
@@ -205,18 +218,18 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 
 func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
-	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType)
+	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType, false)
 }
 
 func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
 
 	// Resolve return type
-	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType)
+	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType, true)
 
 	// Resolve parameter types
 	for i := range input.Function.Params {
-		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType)
+		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType, false)
 	}
 }
 
@@ -225,16 +238,16 @@ func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
 
 	// Resolve property types
 	for i := range input.Class.Properties {
-		input.Class.Properties[i].Property.ValueType = p.resolveValueType(tc, input.Class.Properties[i].Property.ValueType)
+		input.Class.Properties[i].Property.ValueType = p.resolveValueType(tc, input.Class.Properties[i].Property.ValueType, false)
 	}
 
 	// Resolve method types
 	for i := range input.Class.Methods {
 		method := input.Class.Methods[i].Method
-		method.ReturnType = p.resolveValueType(tc, method.ReturnType)
+		method.ReturnType = p.resolveValueType(tc, method.ReturnType, true)
 
 		for j := range method.Params {
-			method.Params[j].ValueType = p.resolveValueType(tc, method.Params[j].ValueType)
+			method.Params[j].ValueType = p.resolveValueType(tc, method.Params[j].ValueType, false)
 		}
 	}
 }
@@ -243,11 +256,11 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 	input := AsDeclClassMethodInstrInput(instr.Input)
 
 	// Resolve return type
-	input.Method.ReturnType = p.resolveValueType(tc, input.Method.ReturnType)
+	input.Method.ReturnType = p.resolveValueType(tc, input.Method.ReturnType, true)
 
 	// Resolve parameter types
 	for i := range input.Method.Params {
-		input.Method.Params[i].ValueType = p.resolveValueType(tc, input.Method.Params[i].ValueType)
+		input.Method.Params[i].ValueType = p.resolveValueType(tc, input.Method.Params[i].ValueType, false)
 	}
 }
 
