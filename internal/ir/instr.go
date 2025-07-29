@@ -460,12 +460,14 @@ func AsNewObjInstrInput(input InstrInput) *NewObjInstrInput {
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
+	IsLValue bool
 }
 
-func NewObjectPropertyAccessInstrInput(object zeus_value.Value, property string) *ObjectPropertyAccessInstrInput {
+func NewObjectPropertyAccessInstrInput(object zeus_value.Value, property string, isLValue bool) *ObjectPropertyAccessInstrInput {
 	return &ObjectPropertyAccessInstrInput{
 		Object:   object,
 		Property: property,
+		IsLValue: isLValue,
 	}
 }
 

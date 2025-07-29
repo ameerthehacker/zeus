@@ -471,7 +471,7 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 	}
 }
 
-func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property string, span *token.Span) zeus_value.Value {
+func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property string, isLValue bool, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 	result.IsPtr = true
 	result.Cxt = &object
@@ -479,7 +479,7 @@ func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property 
 	b.pushInstr(&Instr{
 		Type:   InstrTypeObjectPropertyAccess,
 		Output: result,
-		Input:  NewObjectPropertyAccessInstrInput(object, property),
+		Input:  NewObjectPropertyAccessInstrInput(object, property, isLValue),
 	})
 
 	return result

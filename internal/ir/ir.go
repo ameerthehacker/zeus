@@ -474,7 +474,7 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
 	}
-	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, expr.GetSpan())
+	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, g.isLValueExpr, expr.GetSpan())
 
 	if g.isLValueExpr {
 		return propertyPtr
