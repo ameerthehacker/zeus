@@ -34,7 +34,7 @@ type StmtNode interface {
 
 type VarDeclNode struct {
 	Identifier  *IdentifierExprNode
-	DataType    *token.Token
+	ValueType   *ValueTypeNode
 	DeclType    VarDeclType
 	Initializer ExprNode
 }
@@ -111,23 +111,23 @@ func (e *ExprStmtNode) Accept(visitor StmtVisitor) {
 
 func (v *VarDeclNode) String() string {
 	if v.Initializer != nil {
-		return fmt.Sprintf("{ type: VarDeclNode, Identifier: %s, DeclType: %s, Initializer: %s, DataType: %s, Span: %s }", v.Identifier.String(), v.DeclType, v.Initializer.String(), v.DataType.String(), v.Identifier.GetSpan())
+		return fmt.Sprintf("{ type: VarDeclNode, Identifier: %s, DeclType: %s, Initializer: %s, DataType: %s, Span: %s }", v.Identifier.String(), v.DeclType, v.Initializer.String(), v.ValueType.ValueType, v.Identifier.GetSpan())
 	}
 
-	return fmt.Sprintf("{ type: VarDeclNode, Identifier: %s, DeclType: %s, DataType: %s, Span: %s }", v.Identifier.String(), v.DeclType, v.DataType.String(), v.Identifier.GetSpan())
+	return fmt.Sprintf("{ type: VarDeclNode, Identifier: %s, DeclType: %s, DataType: %s, Span: %s }", v.Identifier.String(), v.DeclType, v.ValueType.ValueType, v.Identifier.GetSpan())
 }
 
 func (v *VarDeclNode) PrettyString() string {
 	if v.Initializer != nil {
-		return fmt.Sprintf("%s %s: %s = %s", v.DeclType, v.Identifier.PrettyString(), v.DataType.Type, v.Initializer.PrettyString())
+		return fmt.Sprintf("%s %s: %s = %s", v.DeclType, v.Identifier.PrettyString(), v.ValueType.ValueType, v.Initializer.PrettyString())
 	}
 
-	return fmt.Sprintf("%s %s: %s", v.DeclType, v.Identifier.PrettyString(), v.DataType.Type)
+	return fmt.Sprintf("%s %s: %s", v.DeclType, v.Identifier.PrettyString(), v.ValueType.ValueType)
 }
 
 func (v *VarDeclNode) GetSpan() *token.Span {
 	startPosition := v.Identifier.GetSpan().Start
-	endPosition := v.DataType.Span.End
+	endPosition := v.ValueType.Span.End
 
 	if v.Initializer != nil {
 		endPosition = v.Initializer.GetSpan().End

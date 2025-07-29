@@ -9,6 +9,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/test_utils"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 func TestParserStmt(t *testing.T) {
@@ -26,10 +27,13 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 5},
 							End:   token.Position{Line: 1, Column: 5},
 						}}},
-						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
-							Start: token.Position{Line: 1, Column: 8},
-							End:   token.Position{Line: 1, Column: 9},
-						}},
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 8},
+								End:   token.Position{Line: 1, Column: 9},
+							},
+						},
 						DeclType: ast.VarDeclTypeLet,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 13},
@@ -41,10 +45,13 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 16},
 							End:   token.Position{Line: 1, Column: 16},
 						}}},
-						DataType: &token.Token{Type: token.TokenTypeFloat32, Value: "f32", Span: &token.Span{
-							Start: token.Position{Line: 1, Column: 19},
-							End:   token.Position{Line: 1, Column: 22},
-						}},
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.FloatType{Size: zeus_value.F32},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 19},
+								End:   token.Position{Line: 1, Column: 22},
+							},
+						},
 						DeclType: ast.VarDeclTypeLet,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1.5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 25},
@@ -69,10 +76,13 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 7},
 							End:   token.Position{Line: 1, Column: 7},
 						}}},
-						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
-							Start: token.Position{Line: 1, Column: 10},
-							End:   token.Position{Line: 1, Column: 11},
-						}},
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 10},
+								End:   token.Position{Line: 1, Column: 11},
+							},
+						},
 						DeclType: ast.VarDeclTypeConst,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "5", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 15},
@@ -96,10 +106,13 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 7},
 							End:   token.Position{Line: 1, Column: 7},
 						}}},
-						DataType: &token.Token{Type: token.TokenTypeInt8, Value: "i8", Span: &token.Span{
-							Start: token.Position{Line: 1, Column: 10},
-							End:   token.Position{Line: 1, Column: 11},
-						}},
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+							Span: &token.Span{
+								Start: token.Position{Line: 1, Column: 10},
+								End:   token.Position{Line: 1, Column: 11},
+							},
+						},
 						DeclType: ast.VarDeclTypeConst,
 					},
 				},
@@ -432,10 +445,13 @@ func TestParserStmt(t *testing.T) {
 								Start: token.Position{Line: 1, Column: 21},
 								End:   token.Position{Line: 1, Column: 21},
 							}}},
-							DataType: &token.Token{Type: token.TokenTypeInt32, Value: "i32", Span: &token.Span{
-								Start: token.Position{Line: 1, Column: 24},
-								End:   token.Position{Line: 1, Column: 26},
-							}},
+							ValueType: &ast.ValueTypeNode{
+								ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I32},
+								Span: &token.Span{
+									Start: token.Position{Line: 1, Column: 24},
+									End:   token.Position{Line: 1, Column: 26},
+								},
+							},
 							DeclType: ast.VarDeclTypeLet,
 						},
 						{
@@ -443,17 +459,23 @@ func TestParserStmt(t *testing.T) {
 								Start: token.Position{Line: 1, Column: 29},
 								End:   token.Position{Line: 1, Column: 29},
 							}}},
-							DataType: &token.Token{Type: token.TokenTypeInt32, Value: "i32", Span: &token.Span{
-								Start: token.Position{Line: 1, Column: 32},
-								End:   token.Position{Line: 1, Column: 34},
-							}},
+							ValueType: &ast.ValueTypeNode{
+								ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I32},
+								Span: &token.Span{
+									Start: token.Position{Line: 1, Column: 32},
+									End:   token.Position{Line: 1, Column: 34},
+								},
+							},
 							DeclType: ast.VarDeclTypeLet,
 						},
 					},
-					ReturnType: &token.Token{Type: token.TokenTypeInt32, Value: "i32", Span: &token.Span{
-						Start: token.Position{Line: 1, Column: 38},
-						End:   token.Position{Line: 1, Column: 40},
-					}},
+					ReturnType: &ast.ValueTypeNode{
+						ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I32},
+						Span: &token.Span{
+							Start: token.Position{Line: 1, Column: 38},
+							End:   token.Position{Line: 1, Column: 40},
+						},
+					},
 					Body: &ast.BlockStmtNode{
 						Statements: []ast.StmtNode{
 							&ast.ReturnStmtNode{
@@ -508,10 +530,13 @@ func TestParserStmt(t *testing.T) {
 								Start: token.Position{Line: 1, Column: 22},
 								End:   token.Position{Line: 1, Column: 22},
 							}}},
-							ValueType: &token.Token{Type: token.TokenTypeInt32, Value: "i32", Span: &token.Span{
-								Start: token.Position{Line: 1, Column: 25},
-								End:   token.Position{Line: 1, Column: 27},
-							}},
+							ValueType: &ast.ValueTypeNode{
+								ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I32},
+								Span: &token.Span{
+									Start: token.Position{Line: 1, Column: 25},
+									End:   token.Position{Line: 1, Column: 27},
+								},
+							},
 							Span: &token.Span{
 								Start: token.Position{Line: 1, Column: 22},
 								End:   token.Position{Line: 1, Column: 22},
@@ -522,10 +547,13 @@ func TestParserStmt(t *testing.T) {
 								Start: token.Position{Line: 1, Column: 30},
 								End:   token.Position{Line: 1, Column: 30},
 							}}},
-							ValueType: &token.Token{Type: token.TokenTypeInt32, Value: "i32", Span: &token.Span{
-								Start: token.Position{Line: 1, Column: 33},
-								End:   token.Position{Line: 1, Column: 35},
-							}},
+							ValueType: &ast.ValueTypeNode{
+								ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I32},
+								Span: &token.Span{
+									Start: token.Position{Line: 1, Column: 33},
+									End:   token.Position{Line: 1, Column: 35},
+								},
+							},
 							Span: &token.Span{
 								Start: token.Position{Line: 1, Column: 30},
 								End:   token.Position{Line: 1, Column: 30},
@@ -600,10 +628,13 @@ func TestParserStmt(t *testing.T) {
 						End:   token.Position{Line: 1, Column: 15},
 					}}},
 					Params: []*ast.VarDeclNode{},
-					ReturnType: &token.Token{Type: token.TokenTypeVoid, Value: "void", Span: &token.Span{
-						Start: token.Position{Line: 1, Column: 20},
-						End:   token.Position{Line: 1, Column: 23},
-					}},
+					ReturnType: &ast.ValueTypeNode{
+						ValueType: zeus_value.VoidType{},
+						Span: &token.Span{
+							Start: token.Position{Line: 1, Column: 20},
+							End:   token.Position{Line: 1, Column: 23},
+						},
+					},
 					Body: &ast.BlockStmtNode{
 						Statements: []ast.StmtNode{},
 						Span: &token.Span{

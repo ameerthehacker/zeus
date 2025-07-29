@@ -10,6 +10,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/test_utils"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 type testCase struct {
@@ -161,7 +162,10 @@ func TestParseExpression(t *testing.T) {
 						Identifier: &ast.IdentifierExprNode{
 							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(token.Position{Line: 1, Column: 15}, token.Position{Line: 1, Column: 15})),
 						},
-						DataType:    token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 18}, token.Position{Line: 1, Column: 18})),
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+							Span:      token.NewSpan(token.Position{Line: 1, Column: 18}, token.Position{Line: 1, Column: 18}),
+						},
 						DeclType:    ast.VarDeclTypeLet,
 						Initializer: nil,
 					},
@@ -169,12 +173,18 @@ func TestParseExpression(t *testing.T) {
 						Identifier: &ast.IdentifierExprNode{
 							Name: token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(token.Position{Line: 1, Column: 22}, token.Position{Line: 1, Column: 22})),
 						},
-						DataType:    token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 26})),
+						ValueType: &ast.ValueTypeNode{
+							ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+							Span:      token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 26}),
+						},
 						DeclType:    ast.VarDeclTypeLet,
 						Initializer: nil,
 					},
 				},
-				ReturnType: token.NewToken(token.TokenTypeInt8, token.NewSpan(token.Position{Line: 1, Column: 30}, token.Position{Line: 1, Column: 30})),
+				ReturnType: &ast.ValueTypeNode{
+					ValueType: zeus_value.IntType{Signed: true, Size: zeus_value.I8},
+					Span:      token.NewSpan(token.Position{Line: 1, Column: 30}, token.Position{Line: 1, Column: 30}),
+				},
 				Body: &ast.BlockStmtNode{
 					Statements: []ast.StmtNode{
 						&ast.ReturnStmtNode{

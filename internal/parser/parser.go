@@ -7,6 +7,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 type Parser struct {
@@ -53,7 +54,7 @@ func getPrecedence(token *token.Token) int {
 	return precedence
 }
 
-func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *token.Token, *ast.BlockStmtNode) {
+func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode, *ast.BlockStmtNode) {
 	fnType := "function"
 	if isClassMethod {
 		fnType = "method"
@@ -61,7 +62,7 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
-	dataType := &token.Token{Type: token.TokenTypeVoid, Span: token.NewSpan(functionName.Name.Span.Start, functionName.Name.Span.Start)}
+	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: functionName.GetSpan()}
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
 		param := p.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
@@ -153,7 +154,7 @@ func NewParser(tokens []*token.Token) *Parser {
 				}
 				properties = append(properties, &ast.ClassProperty{
 					Name:           property.Identifier,
-					ValueType:      property.DataType,
+					ValueType:      property.ValueType,
 					AccessModifier: accessModifier,
 					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
@@ -296,14 +297,14 @@ func (p *Parser) consumeSemicolon(extraInfo ...string) {
 	p.consumeToken(token.TokenTypeSemicolon, extraInfo...)
 }
 
-func (p *Parser) consumeDataType(dataType string, cxt string) *token.Token {
+func (p *Parser) consumeDataType(dataType string, cxt string) *ast.ValueTypeNode {
 	nextToken := p.peek()
 	if nextToken.IsDataType() || nextToken.Type == token.TokenTypeIdentifier {
 		p.consume()
 	} else {
 		p.expectedButGotError(dataType, nextToken, fmt.Sprintf("in %s", cxt))
 	}
-	return nextToken
+	return &ast.ValueTypeNode{ValueType: zeus_value.ToValueType(nextToken), Span: nextToken.Span}
 }
 
 func (p *Parser) pushError(err *zeus_error.ZeusError) {
@@ -463,7 +464,7 @@ func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, c
 		initializer = p.ParseExpr("for variable initializer")
 	}
 
-	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, DataType: dataType}
+	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, ValueType: dataType}
 }
 
 func (p *Parser) parseArgumentList() ([]ast.ExprNode, *token.Token) {

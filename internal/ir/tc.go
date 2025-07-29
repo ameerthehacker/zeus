@@ -413,7 +413,7 @@ func (p *TypeCheckingPass) tcDeclVar(tc *TypeChecker, instr *Instr) {
 func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
 	bType := tc.getValueType(b)
 
-	if !p.cmpValueType(tc, targetType, bType) {
+	if !zeus_value.CmpValueType(targetType, bType) {
 		castedB, ok := p.tryImplicitCast(tc, instr, b, targetType)
 
 		if ok {
@@ -435,48 +435,7 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 	return b
 }
 
-func (p *TypeCheckingPass) cmpValueType(tc *TypeChecker, a, b zeus_value.ValueType) bool {
-	switch a := a.(type) {
-	case zeus_value.IntType:
-		b, ok := b.(zeus_value.IntType)
 
-		return ok && a.Signed == b.Signed && a.Size == b.Size
-	case zeus_value.FloatType:
-		bFloat, okFloat := b.(zeus_value.FloatType)
-		return okFloat && a.Size == bFloat.Size
-	case zeus_value.BoolType:
-		_, ok := b.(zeus_value.BoolType)
-		if !ok {
-			return false
-		}
-		return true
-	case zeus_value.FunctionType:
-		b, ok := b.(zeus_value.FunctionType)
-		if !ok || len(a.ParamTypes) != len(b.ParamTypes) {
-			return false
-		}
-
-		isReturnTypeEqual := p.cmpValueType(tc, a.ReturnType, b.ReturnType)
-
-		if !isReturnTypeEqual {
-			return false
-		}
-
-		for i := range a.ParamTypes {
-			if !p.cmpValueType(tc, a.ParamTypes[i], b.ParamTypes[i]) {
-				return false
-			}
-		}
-
-		return true
-
-	case zeus_value.ObjectType:
-		bClassType, ok := b.(zeus_value.ObjectType)
-		return ok && a.Class.Name == bClassType.Class.Name
-	}
-
-	return false
-}
 
 // Performs the following implicit casts:
 // - int to float
@@ -486,7 +445,7 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	valueType := tc.getValueType(value)
 
 	// if they both are same type, no need to cast
-	if p.cmpValueType(tc, valueType, targetType) {
+	if zeus_value.CmpValueType(valueType, targetType) {
 		return value, true
 	}
 

@@ -94,7 +94,7 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
 			decl.Identifier.Name.Value,
-			zeus_value.ToValueType(decl.DataType),
+			decl.ValueType.ValueType,
 			isConst,
 			initializer,
 			decl.GetSpan(),
@@ -240,7 +240,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	for _, param := range fnParams {
 		params = append(params, NewVarDecl(
 			param.Identifier.Name.Value,
-			zeus_value.ToValueType(param.DataType),
+			param.ValueType.ValueType,
 			true,
 			nil,
 			param.Identifier.Name.Span,
@@ -279,7 +279,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 }
 
 func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
-	return g.emitFunction(expr.Name.Name.Value, expr.Params, zeus_value.ToValueType(expr.ReturnType), expr.Body, nil, expr.Name.Name.Span)
+	return g.emitFunction(expr.Name.Name.Value, expr.Params, expr.ReturnType.ValueType, expr.Body, nil, expr.Name.Name.Span)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -413,9 +413,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		if g.isSymbolDeclared(property.Name.Name.Value, property.Name.GetSpan()) {
 			continue
 		}
-		g.symbolTable.DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, zeus_value.ToValueType(property.ValueType), false, property.Name.GetSpan()))
+		g.symbolTable.DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()))
 
-		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, zeus_value.ToValueType(property.ValueType), false, property.Name.GetSpan()), property.AccessModifier))
+		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()), property.AccessModifier))
 	}
 
 	methods := []*zeus_value.ClassMethod{}
@@ -425,7 +425,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		}
 
 		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
-			if method.ReturnType.Type != token.TokenTypeVoid {
+			if !zeus_value.IsVoidType(method.ReturnType.ValueType) {
 				g.pushError(&zeus_error.ZeusError{
 					Message: "constructor return type must be void",
 					Span:    method.ReturnType.Span,
@@ -435,13 +435,13 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		}
 		params := []*zeus_value.Var{}
 		for _, param := range method.Params {
-			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, zeus_value.ToValueType(param.DataType), false, param.Identifier.Name.Span))
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
 		}
 
 		function := zeus_value.NewFunction(
 			method.Name.Name.Value,
 			params,
-			zeus_value.ToValueType(method.ReturnType),
+			method.ReturnType.ValueType,
 			method.Span,
 		)
 		methods = append(methods, zeus_value.NewClassMethod(
@@ -457,7 +457,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 	for _, method := range expr.Methods {
 		// emit global class methods
-		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, zeus_value.ToValueType(method.ReturnType), method.Body, class, method.Name.Name.Span)
+		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
 	}
 	g.symbolTable.ExitScope()
 

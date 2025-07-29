@@ -340,3 +340,49 @@ func GetBiggerType(a, b ValueType) ValueType {
 		return b
 	}
 }
+
+func CmpValueType(a, b ValueType) bool {
+	switch a := a.(type) {
+	case IntType:
+		b, ok := b.(IntType)
+
+		return ok && a.Signed == b.Signed && a.Size == b.Size
+	case FloatType:
+		bFloat, okFloat := b.(FloatType)
+		return okFloat && a.Size == bFloat.Size
+	case BoolType:
+		_, ok := b.(BoolType)
+		if !ok {
+			return false
+		}
+		return true
+	case VoidType:
+		_, ok := b.(VoidType)
+		return ok
+	case FunctionType:
+		b, ok := b.(FunctionType)
+		if !ok || len(a.ParamTypes) != len(b.ParamTypes) {
+			return false
+		}
+
+		isReturnTypeEqual := CmpValueType(a.ReturnType, b.ReturnType)
+
+		if !isReturnTypeEqual {
+			return false
+		}
+
+		for i := range a.ParamTypes {
+			if !CmpValueType(a.ParamTypes[i], b.ParamTypes[i]) {
+				return false
+			}
+		}
+
+		return true
+
+	case ObjectType:
+		bClassType, ok := b.(ObjectType)
+		return ok && a.Class.Name == bClassType.Class.Name
+	}
+
+	return false
+}

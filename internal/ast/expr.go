@@ -8,6 +8,11 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
+type ValueTypeNode struct {
+	ValueType zeus_value.ValueType
+	Span      *token.Span
+}
+
 type ExprNode interface {
 	GetSpan() *token.Span
 	Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value
@@ -53,13 +58,13 @@ type FunctionDeclExprNode struct {
 	Name       *IdentifierExprNode
 	Params     []*VarDeclNode
 	Body       *BlockStmtNode
-	ReturnType *token.Token
+	ReturnType *ValueTypeNode
 	Span       *token.Span
 }
 
 type ClassProperty struct {
 	Name           *IdentifierExprNode
-	ValueType      *token.Token
+	ValueType      *ValueTypeNode
 	AccessModifier *token.Token
 	Span           *token.Span
 }
@@ -68,7 +73,7 @@ type ClassMethod struct {
 	Name           *IdentifierExprNode
 	Params         []*VarDeclNode
 	Body           *BlockStmtNode
-	ReturnType     *token.Token
+	ReturnType     *ValueTypeNode
 	AccessModifier *token.Token
 	Span           *token.Span
 }
@@ -221,14 +226,14 @@ func (f *FunctionDeclExprNode) GetSpan() *token.Span {
 }
 
 func (f *FunctionDeclExprNode) PrettyString() string {
-	head := fmt.Sprintf("function %s(%s): %s", f.Name.PrettyString(), varDeclsString(f.Params, true), f.ReturnType.Type)
+	head := fmt.Sprintf("function %s(%s): %s", f.Name.PrettyString(), varDeclsString(f.Params, true), f.ReturnType.ValueType)
 	body := f.Body.PrettyString()
 
 	return fmt.Sprintf("%s\n%s\n", head, body)
 }
 
 func (f *FunctionDeclExprNode) String() string {
-	return fmt.Sprintf("{ type: FunctionDeclExprNode, Name: %s, Params: [%s], ReturnType: %s, Body: %s, Span: %s }", f.Name.String(), varDeclsString(f.Params, false), f.ReturnType.Type, f.Body.String(), f.GetSpan())
+	return fmt.Sprintf("{ type: FunctionDeclExprNode, Name: %s, Params: [%s], ReturnType: %s, Body: %s, Span: %s }", f.Name.String(), varDeclsString(f.Params, false), f.ReturnType.ValueType, f.Body.String(), f.GetSpan())
 }
 
 func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
@@ -278,7 +283,7 @@ func (c *ClassDeclExprNode) String() string {
 func (c *ClassDeclExprNode) PrettyString() string {
 	properties := []string{}
 	for _, property := range c.Properties {
-		properties = append(properties, fmt.Sprintf("%s: %s", property.Name.PrettyString(), property.ValueType.Type))
+		properties = append(properties, fmt.Sprintf("%s: %s", property.Name.PrettyString(), property.ValueType.ValueType))
 	}
 	methods := []string{}
 	for _, method := range c.Methods {

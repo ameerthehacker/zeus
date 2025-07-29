@@ -6,6 +6,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 func CompareZeusErrors(t *testing.T, errors, expected []*zeus_error.ZeusError) {
@@ -107,8 +108,8 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 			t.Errorf("expected %d parameters, got %d", len(bNode.Params), len(aNode.Params))
 			return
 		}
-		if aNode.ReturnType.Type != bNode.ReturnType.Type {
-			t.Errorf("expected return type %s, got %s", bNode.ReturnType.Type, aNode.ReturnType.Type)
+		if !zeus_value.CmpValueType(aNode.ReturnType.ValueType, bNode.ReturnType.ValueType) {
+			t.Errorf("expected return type %s, got %s", bNode.ReturnType.ValueType, aNode.ReturnType.ValueType)
 			return
 		}
 		for i := range aNode.Params {
@@ -137,8 +138,8 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 		}
 		for i := range aNode.Properties {
 			CompareExprNodes(t, aNode.Properties[i].Name, bNode.Properties[i].Name)
-			if aNode.Properties[i].ValueType.Type != bNode.Properties[i].ValueType.Type {
-				t.Errorf("expected property type %s, got %s", bNode.Properties[i].ValueType.Type, aNode.Properties[i].ValueType.Type)
+			if !zeus_value.CmpValueType(aNode.Properties[i].ValueType.ValueType, bNode.Properties[i].ValueType.ValueType) {
+				t.Errorf("expected property type %s, got %s", bNode.Properties[i].ValueType.ValueType, aNode.Properties[i].ValueType.ValueType)
 			}
 		}
 		if len(aNode.Methods) != len(bNode.Methods) {
@@ -163,6 +164,9 @@ func CompareVarDecl(t *testing.T, decl ast.VarDeclNode, expected ast.VarDeclNode
 	CompareExprNodes(t, decl.Identifier, expected.Identifier)
 	if decl.DeclType != expected.DeclType {
 		t.Errorf("expected %s declaration type, got %s", expected.DeclType, decl.DeclType)
+	}
+	if !zeus_value.CmpValueType(decl.ValueType.ValueType, expected.ValueType.ValueType) {
+		t.Errorf("expected value type %s, got %s", expected.ValueType.ValueType, decl.ValueType.ValueType)
 	}
 	CompareExprNodes(t, decl.Initializer, expected.Initializer)
 }
