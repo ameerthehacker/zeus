@@ -60,7 +60,8 @@ const (
 	TokenTypePrivate
 	TokenTypePublic
 	TokenTypeProtected
-	TokenTypeNew
+	TokenTypeNew // new keyword
+	TokenTypeNull
 	keyword_end
 	// data types
 	datatype_beg

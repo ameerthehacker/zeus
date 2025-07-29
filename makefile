@@ -2,6 +2,7 @@
 
 clean:
 	rm -rf playground/debug
+	rm -rf zeus-vscode/vsix
 	cd runtime && zig build clean
 
 always:
@@ -27,6 +28,10 @@ test-runtime:
 
 build-runtime:
 	cd runtime && zig build
+
+build-zeus-vscode:
+	mkdir -p zeus-vscode/vsix
+	cd zeus-vscode && npm run package &&npm run vsix 
 
 build-runtime-release: always
 	cd runtime && zig build --release=small

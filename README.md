@@ -76,6 +76,7 @@ go run zeus.go build --file-type=asm main.zs
 - [x] Scalar types
 - [x] Class
 - [x] GC v1
+- [] Nullable Type
 - [ ] Inheritance
 - [ ] Interfaces
 - [ ] Variable Type Inference
@@ -83,8 +84,6 @@ go run zeus.go build --file-type=asm main.zs
 - [ ] Closure
 - [ ] String Type
 - [ ] Arrays
-- [ ] Union Type
-- [ ] Match Expression
 - [ ] Exception Handling
 - [ ] Language Server v1
 - [ ] HTTP Server v1

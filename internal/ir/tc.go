@@ -188,9 +188,13 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 		variable, ok := tc.builder.symbolTable.GetSymbol(userDefinedType.Name)
 
 		if !ok {
-			// Return the original type if we can't resolve it
+			// Return undefined type if we can't resolve it
 			// The TypeCheckingPass will handle the error
-			return valueType
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot resolve type '%s'", userDefinedType.Name),
+				Span:    nil,
+			})
+			return zeus_value.UndefinedType{}
 		}
 
 		return tc.getBuiltInValueType(variable)
