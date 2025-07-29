@@ -9,6 +9,7 @@ import (
 
 type ValueType interface {
 	String() string
+	GetSpan() *token.Span
 }
 
 type IntSize int
@@ -38,6 +39,11 @@ func (i IntSize) String() string {
 type IntType struct {
 	Signed bool
 	Size   IntSize
+	Span   *token.Span
+}
+
+func (i IntType) GetSpan() *token.Span {
+	return i.Span
 }
 
 func (i IntType) String() string {
@@ -68,10 +74,20 @@ func (f FloatSize) String() string {
 
 type FloatType struct {
 	Size FloatSize
+	Span *token.Span
+}
+
+func (f FloatType) GetSpan() *token.Span {
+	return f.Span
 }
 
 type UserDefinedType struct {
 	Name string
+	Span *token.Span
+}
+
+func (u UserDefinedType) GetSpan() *token.Span {
+	return u.Span
 }
 
 func (u UserDefinedType) String() string {
@@ -82,13 +98,25 @@ func (f FloatType) String() string {
 	return fmt.Sprintf("f%s", f.Size)
 }
 
-type BoolType struct{}
+type BoolType struct {
+	Span *token.Span
+}
+
+func (b BoolType) GetSpan() *token.Span {
+	return b.Span
+}
 
 func (b BoolType) String() string {
 	return "bool"
 }
 
-type VoidType struct{}
+type VoidType struct {
+	Span *token.Span
+}
+
+func (v VoidType) GetSpan() *token.Span {
+	return v.Span
+}
 
 func (v VoidType) String() string {
 	return "void"
@@ -97,6 +125,11 @@ func (v VoidType) String() string {
 type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
+	Span       *token.Span
+}
+
+func (f FunctionType) GetSpan() *token.Span {
+	return f.Span
 }
 
 func NewFunctionType(returnType ValueType, paramTypes []ValueType) FunctionType {
@@ -106,7 +139,13 @@ func NewFunctionType(returnType ValueType, paramTypes []ValueType) FunctionType 
 	}
 }
 
-type UndefinedType struct{}
+type UndefinedType struct {
+	Span *token.Span
+}
+
+func (u UndefinedType) GetSpan() *token.Span {
+	return u.Span
+}
 
 func (u UndefinedType) String() string {
 	return "undefined"
@@ -122,6 +161,10 @@ func (f FunctionType) String() string {
 
 type ObjectType struct {
 	Class Class
+}
+
+func (o ObjectType) GetSpan() *token.Span {
+	return o.Class.Span
 }
 
 func (o ObjectType) String() string {
@@ -150,6 +193,10 @@ type ClassType struct {
 	Class Class
 }
 
+func (c ClassType) GetSpan() *token.Span {
+	return c.Class.Span
+}
+
 func (c ClassType) String() string {
 	return c.Class.Name
 }
@@ -174,31 +221,31 @@ func IsClassType(value ValueType) bool {
 func ToValueType(t *token.Token) ValueType {
 	switch t.Type {
 	case token.TokenTypeInt8:
-		return IntType{Signed: true, Size: I8}
+		return IntType{Signed: true, Size: I8, Span: t.Span}
 	case token.TokenTypeInt16:
-		return IntType{Signed: true, Size: I16}
+		return IntType{Signed: true, Size: I16, Span: t.Span}
 	case token.TokenTypeInt32:
-		return IntType{Signed: true, Size: I32}
+		return IntType{Signed: true, Size: I32, Span: t.Span}
 	case token.TokenTypeInt64:
-		return IntType{Signed: true, Size: I64}
+		return IntType{Signed: true, Size: I64, Span: t.Span}
 	case token.TokenTypeUInt8:
-		return IntType{Signed: false, Size: I8}
+		return IntType{Signed: false, Size: I8, Span: t.Span}
 	case token.TokenTypeUInt16:
-		return IntType{Signed: false, Size: I16}
+		return IntType{Signed: false, Size: I16, Span: t.Span}
 	case token.TokenTypeUInt32:
-		return IntType{Signed: false, Size: I32}
+		return IntType{Signed: false, Size: I32, Span: t.Span}
 	case token.TokenTypeUInt64:
-		return IntType{Signed: false, Size: I64}
+		return IntType{Signed: false, Size: I64, Span: t.Span}
 	case token.TokenTypeFloat32:
-		return FloatType{Size: F32}
+		return FloatType{Size: F32, Span: t.Span}
 	case token.TokenTypeFloat64:
-		return FloatType{Size: F64}
+		return FloatType{Size: F64, Span: t.Span}
 	case token.TokenTypeBoolean:
-		return BoolType{}
+		return BoolType{Span: t.Span}
 	case token.TokenTypeVoid:
-		return VoidType{}
+		return VoidType{Span: t.Span}
 	case token.TokenTypeIdentifier:
-		return UserDefinedType{Name: t.Value}
+		return UserDefinedType{Name: t.Value, Span: t.Span}
 	default:
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}

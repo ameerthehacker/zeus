@@ -191,10 +191,10 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 			// Return undefined type if we can't resolve it
 			// The TypeCheckingPass will handle the error
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("cannot resolve type '%s'", userDefinedType.Name),
-				Span:    nil,
+				Message: fmt.Sprintf("unknown type '%s'", userDefinedType.Name),
+				Span:    valueType.GetSpan(),
 			})
-			return zeus_value.UndefinedType{}
+			return zeus_value.UndefinedType{Span: valueType.GetSpan()}
 		}
 
 		return tc.getBuiltInValueType(variable)
