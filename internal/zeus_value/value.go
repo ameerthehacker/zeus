@@ -292,8 +292,6 @@ func GetSignedIntSize(number string) IntSize {
 		return I16
 	case value >= -2147483648 && value <= 2147483647:
 		return I32
-	case value >= -9223372036854775808 && value <= 9223372036854775807:
-		return I64
 	default:
 		return I64
 	}
