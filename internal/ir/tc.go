@@ -129,7 +129,7 @@ func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.Va
 	case *zeus_value.Class:
 		return zeus_value.NewObjectType(*value)
 	default:
-		return zeus_value.UndefinedType{}
+		return zeus_value.UndefinedType{Span: value.GetSpan()}
 	}
 }
 
@@ -138,7 +138,7 @@ func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType
 	valueType := tc.getBuiltInValueType(value)
 
 	if valueType == nil {
-		return zeus_value.UndefinedType{}
+		return zeus_value.UndefinedType{Span: value.GetSpan()}
 	}
 
 	return valueType
@@ -416,10 +416,10 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 			return castedB
 		} else {
 			if bType == nil {
-				bType = zeus_value.UndefinedType{}
+				bType = zeus_value.UndefinedType{Span: b.GetSpan()}
 			}
 			if targetType == nil {
-				targetType = zeus_value.UndefinedType{}
+				targetType = zeus_value.UndefinedType{Span: b.GetSpan()}
 			}
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType.String(), targetType.String()),
