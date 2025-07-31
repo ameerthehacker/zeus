@@ -20,7 +20,7 @@ func (c *CodegenModule) toLLVMIntType(intType zeus_value.IntType) llvm.Type {
 	case zeus_value.I64:
 		return c.ctx.Int64Type()
 	default:
-		panic(fmt.Sprintf("cannot convert int type to llvm type: %s", intType))
+		panic(fmt.Sprintf("cannot convert int type to llvm type: %T", intType))
 	}
 }
 
@@ -31,7 +31,7 @@ func (c *CodegenModule) toLLVMFloatType(floatType zeus_value.FloatType) llvm.Typ
 	case zeus_value.F64:
 		return c.ctx.DoubleType()
 	default:
-		panic(fmt.Sprintf("cannot convert float type to llvm type: %s", floatType))
+		panic(fmt.Sprintf("cannot convert float type to llvm type: %T", floatType))
 	}
 }
 
@@ -71,6 +71,6 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 			return llvm.ConstInt(c.toLLVMBuiltInType(value.ValueType), 0, false)
 		}
 	default:
-		panic(fmt.Sprintf("cannot convert constant to llvm constant: %s", value))
+		panic(fmt.Sprintf("cannot convert constant to llvm constant: %T", value))
 	}
 }
