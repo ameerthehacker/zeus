@@ -70,6 +70,8 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 		} else {
 			return llvm.ConstInt(c.toLLVMBuiltInType(value.ValueType), 0, false)
 		}
+	case zeus_value.NullType:
+		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
 	default:
 		panic(fmt.Sprintf("cannot convert constant to llvm constant: %T", value))
 	}

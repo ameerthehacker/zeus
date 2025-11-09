@@ -499,6 +499,11 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
 		}
+	case zeus_value.NullType:
+		switch targetType.(type) {
+		case zeus_value.ObjectType:
+			return value, true
+		}
 	}
 
 	return value, false

@@ -344,6 +344,14 @@ func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 	}
 }
 
+func (g *IRModule) VisitNull(expr *ast.NullExprNode) zeus_value.Value {
+	return zeus_value.NewConstant(
+		"null",
+		zeus_value.NullType{},
+		expr.GetSpan(),
+	)
+}
+
 func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	value := expr.Expr.Accept(g)
 

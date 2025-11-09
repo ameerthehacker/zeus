@@ -175,6 +175,9 @@ func NewParser(tokens []*token.Token) *Parser {
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
+		}, 
+		token.TokenTypeNull: func(parser *Parser, token *token.Token) ast.ExprNode {
+			return &ast.NullExprNode{Span: token.Span}
 		},
 		token.TokenTypeTrue: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.BooleanExprNode{Value: token}
