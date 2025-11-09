@@ -45,6 +45,8 @@ func (c *CodegenModule) toLLVMBuiltInType(_type zeus_value.ValueType) llvm.Type 
 		return c.ctx.Int1Type()
 	case zeus_value.VoidType:
 		return c.ctx.VoidType()
+	case zeus_value.OpaqueType:
+		return llvm.PointerType(c.ctx.VoidType(), 1) 
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %T", _type))
 	}

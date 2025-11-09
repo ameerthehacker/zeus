@@ -134,6 +134,23 @@ func (v VoidType) String() string {
 	return "void"
 }
 
+// opaque type is internal to the compiler and not exposed to the user
+type OpaqueType struct {
+	Span *token.Span
+}
+
+func (o OpaqueType) GetSpan() *token.Span {
+	return o.Span 
+}
+
+func (o OpaqueType) String() string {
+	return "opaque"
+}
+
+func NewOpaqueType(span *token.Span) OpaqueType {
+	return OpaqueType{Span: span}
+}
+
 type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
@@ -188,17 +205,37 @@ func NewObjectType(class Class) ObjectType {
 }
 
 func AsObjectType(value ValueType) *ObjectType {
-
 	switch value := value.(type) {
 	case ObjectType:
 		return &value
+	case ArrayType:
+		class := GetArrayPrimordialClassDefinition(value)
+		return &ObjectType{Class: *class}
 	default:
 		return nil
 	}
 }
 
 func IsObjectType(value ValueType) bool {
-	return AsObjectType(value) != nil
+	return AsObjectType(value) != nil || AsArrayType(value) != nil
+}
+
+func IsOpaqueType(value ValueType) bool {
+	switch value.(type) {
+	case OpaqueType:
+		return true
+	default:
+		return false
+	}
+}
+
+func AsArrayType(value ValueType) *ArrayType {
+	switch value := value.(type) {
+	case ArrayType:
+		return &value
+	default:
+		return nil
+	}
 }
 
 type ClassType struct {
@@ -228,6 +265,19 @@ func AsClassType(value ValueType) *ClassType {
 
 func IsClassType(value ValueType) bool {
 	return AsClassType(value) != nil
+}
+
+type ArrayType struct {
+	ElementType ValueType
+	Span *token.Span
+}
+
+func (a ArrayType) GetSpan() *token.Span {
+	return a.Span
+}
+
+func (a ArrayType) String() string {
+	return fmt.Sprintf("%s[]", a.ElementType)
 }
 
 func ToValueType(t *token.Token) ValueType {

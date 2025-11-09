@@ -365,6 +365,14 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
+func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.Value {
+	if expr.Array != nil {
+		return zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.ToValueType(expr.Type), Span: expr.GetSpan()})
+	} else {
+		return nil
+	}
+}
+
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	if expr.Value.Type == token.TokenTypeTrue {
 		return zeus_value.NewConstant(
@@ -383,8 +391,30 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
-	for _, arg := range expr.Args {
-		args = append(args, arg.Accept(g))
+
+	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.Array != nil {
+		var arrayCapacityExpr zeus_value.Value
+		arrayCapacityExpr = zeus_value.NewConstant(
+			"0",
+			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
+			asTypeExpression.GetSpan(),
+		)
+		arrayLen := asTypeExpression.Array.ArrayLen
+
+		if arrayLen != nil {
+			arrayCapacityExpr = arrayLen.Accept(g)
+		}
+
+		args = append(args, arrayCapacityExpr)
+		args = append(args, zeus_value.NewConstant(
+			"8",
+			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
+			asTypeExpression.GetSpan(),
+		))
+	} else {
+		for _, arg := range expr.Args {
+			args = append(args, arg.Accept(g))
+		}
 	}
 
 	return g.irBuilder.BuildNewObj(callee, args, expr.GetSpan())
@@ -459,7 +489,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		g.symbolTable.DeclareSymbol(method.Name.Name.Value, function)
 	}
 
-	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
+	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", expr.GetSpan())
 	irClassName := g.irBuilder.BuildClassDecl(class, expr.GetSpan())
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 

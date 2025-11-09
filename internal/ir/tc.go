@@ -448,8 +448,6 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 	return b
 }
 
-
-
 // Performs the following implicit casts:
 // - int to float
 // - int to int of bigger size
@@ -497,6 +495,22 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 		case zeus_value.FloatType:
 			if targetType.Size > valueType.Size {
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
+			}
+		}
+	case zeus_value.ArrayType:
+		switch targetType := targetType.(type) {
+		case zeus_value.ObjectType:
+			// if the class name is stringifies version of value type, then it is a valid cast
+			if targetType.Class.Name == valueType.String() {
+				return value, true
+			}
+		}
+	case zeus_value.ObjectType:
+		switch targetType := targetType.(type) {
+		case zeus_value.ArrayType:
+			// if the class name is stringifies version of value type, then it is a valid cast
+			if valueType.Class.Name == targetType.String() {
+				return value, true
 			}
 		}
 	case zeus_value.NullType:
@@ -787,15 +801,10 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
 	input := AsObjectPropertyAccessInstrInput(instr.Input)
 	output := instr.Output
-	objectType := tc.getValueType(input.Object)
+	valueType := tc.getValueType(input.Object)
 
-	if !zeus_value.IsObjectType(objectType) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, objectType),
-			Span:    output.Span,
-		})
-	} else {
-		class := zeus_value.AsObjectType(objectType).Class
+	if zeus_value.IsObjectType(valueType) {
+		class := zeus_value.AsObjectType(valueType).Class
 		properties := class.Properties
 		methods := class.Methods
 		isFound := false
@@ -842,6 +851,11 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 				})
 			}
 		}
+	} else {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, valueType),
+			Span:    output.Span,
+		})
 	}
 }
 

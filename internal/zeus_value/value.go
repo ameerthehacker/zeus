@@ -162,15 +162,17 @@ type Class struct {
 	Properties []*ClassProperty
 	Methods    []*ClassMethod
 	IsUsed     bool
+	PrimordialName string
 	Span       *token.Span
 }
 
-func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, span *token.Span) *Class {
+func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, span *token.Span) *Class {
 	return &Class{
 		Name:       name,
 		Properties: properties,
 		Methods:    methods,
 		IsUsed:     false,
+		PrimordialName: primordialName,
 		Span:       span,
 	}
 }

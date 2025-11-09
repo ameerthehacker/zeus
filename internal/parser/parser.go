@@ -172,10 +172,20 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.ObjectPropertyAccessExprNode{Object: left, Property: property, Span: &token.Span{Start: dot.Span.Start, End: property.GetSpan().End}}
 	}
 
+	typeExpressionParseLet := func(parser *Parser, typeToken *token.Token) ast.ExprNode {
+		var arrayMetadata *ast.ArrayMetadata
+		if parser.peek().Type == token.TokenTypeLeftBracket {
+			parser.consumeToken(token.TokenTypeLeftBracket)
+			arrayMetadata = &ast.ArrayMetadata{ArrayLen: parser.parseExprOfPrecedence(0, true)}
+			parser.consumeToken(token.TokenTypeRightBracket)
+		}
+		return &ast.TypeExpressionNode{Type: typeToken, Array: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
-		}, 
+		},
 		token.TokenTypeNull: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NullExprNode{Span: token.Span}
 		},
@@ -195,18 +205,37 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
-			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
-			args, closeParen := parser.parseArgumentList()
+			if ast.AsTypeExpression(callee) != nil {
+				return &ast.NewExprNode{
+					Callee: callee,
+					Args:   []ast.ExprNode{},
+					Span:   &token.Span{Start: newKeyword.Span.Start, End: callee.GetSpan().End},
+				}
+			} else {
+				parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
+				args, closeParen := parser.parseArgumentList()
 
-			return &ast.NewExprNode{
-				Callee: callee,
-				Args:   args,
-				Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
+				return &ast.NewExprNode{
+					Callee: callee,
+					Args:   args,
+					Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
+				}
 			}
 		},
 		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus:    unaryOperatorParseLet,
 		token.TokenTypeClass:    classParselet,
+		token.TokenTypeUInt8:    typeExpressionParseLet,
+		token.TokenTypeUInt16:   typeExpressionParseLet,
+		token.TokenTypeUInt32:   typeExpressionParseLet,
+		token.TokenTypeUInt64:   typeExpressionParseLet,
+		token.TokenTypeInt8:     typeExpressionParseLet,
+		token.TokenTypeInt16:    typeExpressionParseLet,
+		token.TokenTypeInt32:    typeExpressionParseLet,
+		token.TokenTypeInt64:    typeExpressionParseLet,
+		token.TokenTypeFloat32:  typeExpressionParseLet,
+		token.TokenTypeFloat64:  typeExpressionParseLet,
+		token.TokenTypeBoolean:  typeExpressionParseLet,
 	}
 
 	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
@@ -307,6 +336,13 @@ func (p *Parser) consumeDataType(dataType string, cxt string) *ast.ValueTypeNode
 	} else {
 		p.expectedButGotError(dataType, nextToken, fmt.Sprintf("in %s", cxt))
 	}
+	// check if the data type is an array
+	if p.peek().Type == token.TokenTypeLeftBracket {
+		p.consume()
+		p.consumeToken(token.TokenTypeRightBracket, "in array definition")
+		return &ast.ValueTypeNode{ValueType: zeus_value.ArrayType{ElementType: zeus_value.ToValueType(nextToken)}, Span: nextToken.Span}
+	}
+
 	return &ast.ValueTypeNode{ValueType: zeus_value.ToValueType(nextToken), Span: nextToken.Span}
 }
 

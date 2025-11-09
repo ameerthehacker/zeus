@@ -21,3 +21,11 @@ pub const ZeusObjectHeader = struct {
 pub const ZeusObj = struct {
     obj_header: *ZeusObjectHeader,
 };
+
+pub const ZeusArrayObj = struct {
+    obj_header: *ZeusObjectHeader,
+    capacity: u32,
+    length: u32,
+    element_size: u32,
+    data: ?*anyopaque,
+};

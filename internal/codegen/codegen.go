@@ -46,6 +46,8 @@ func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, ll
 }
 
 const MemAllocFunctionName = "zeus_gc_alloc"
+const MallocFunctionName = "malloc"
+const FreeFunctionName = "free"
 
 type CodegenModule struct {
 	module                 llvm.Module
@@ -71,7 +73,6 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 	module := c.cxt.NewModule(name)
 	builder := c.cxt.NewBuilder()
 	globalLLVMFunctions := c.setupGlobalLLVMFunctions(module)
-
 	return &CodegenModule{module, builder, c.cxt, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct), targetDataLayout, globalLLVMFunctions}
 }
 
@@ -102,6 +103,18 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
 	builder.CreateRetVoid()
 	builder.Dispose()
+
+	// Malloc function (external)
+	mallocType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{c.cxt.Int64Type()}, false)
+	mallocFunction := llvm.AddFunction(module, MallocFunctionName, mallocType)
+	mallocFunction.SetLinkage(llvm.ExternalLinkage)
+	globalFunctions[MallocFunctionName] = GlobalLLVMFunction{mallocFunction, mallocType}
+
+	// Free function (external)
+	freeType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0)}, false)
+	freeFunction := llvm.AddFunction(module, FreeFunctionName, freeType)
+	freeFunction.SetLinkage(llvm.ExternalLinkage)
+	globalFunctions[FreeFunctionName] = GlobalLLVMFunction{freeFunction, freeType}
 
 	return globalFunctions
 }
@@ -134,6 +147,116 @@ func (c *CodegenModule) getSizeOfClass(class zeus_value.Class) uint64 {
 func (c *CodegenModule) isImportedClass(name string) bool {
 	_, ok := c.importedClasses[name]
 	return ok
+}
+
+func (c *CodegenModule) getPrimordialRuntimeFunctionName(methodName string, primordialName string) string {
+	return fmt.Sprintf("%s_%s_%s", "zeus", primordialName, methodName)
+}
+
+func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function, primordialName string) (llvm.Value, llvm.Type) {
+	functionName := c.getPrimordialRuntimeFunctionName(method.Name, primordialName)
+
+	// Check if function already exists in global functions
+	if globalFunc, exists := c.globalLLVMFunctions[functionName]; exists {
+		return globalFunc.Function, globalFunc.FunctionType
+	}
+
+	// Create function signature: (this_ptr, return_buffer_ptr, ...param_ptrs) -> void
+	paramTypes := []llvm.Type{
+		llvm.PointerType(c.ctx.VoidType(), 0), // this pointer
+		llvm.PointerType(c.ctx.VoidType(), 0), // return buffer pointer
+	}
+
+	// Add pointer type for each method parameter
+	for range method.Params {
+		paramTypes = append(paramTypes, llvm.PointerType(c.ctx.VoidType(), 0))
+	}
+
+	// Function returns void
+	functionType := llvm.FunctionType(c.ctx.VoidType(), paramTypes, false)
+	function := llvm.AddFunction(c.module, functionName, functionType)
+	function.SetLinkage(llvm.ExternalLinkage)
+
+	// Store in global functions map
+	c.globalLLVMFunctions[functionName] = GlobalLLVMFunction{function, functionType}
+
+	return function, functionType
+}
+
+func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
+	if c.zeusClassLLVMStructMap[class.Name] == nil {
+		currentInsertionBlock := c.builder.GetInsertBlock()
+		c.genClass(class)
+
+		for _, method := range class.Methods {
+			// update the method name to include the class name prefix
+			scopedClassMethod := zeus_value.NewClassMethod(
+				zeus_value.NewFunction(
+					util.GetClassMethodName(class.Name, method.Method.Name),
+					method.Method.Params,
+					method.Method.ReturnType,
+					method.Method.Span,
+				),
+				method.AccessModifier,
+			)
+			classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
+			basicBlock := llvm.AddBasicBlock(classFunction, "entry")
+			c.builder.SetInsertPointAtEnd(basicBlock)
+
+			// Get the runtime function
+			runtimeFunction, runtimeFuncType := c.genPrimordialRuntimeFunction(*method.Method, class.PrimordialName)
+
+			// Get the 'this' parameter (last parameter of the function)
+			params := classFunction.Params()
+			thisPtr := params[len(params)-1]
+
+			// Prepare arguments for runtime call: [this_ptr, return_buffer, ...param_ptrs]
+			var runtimeArgs []llvm.Value
+			var returnBuffer llvm.Value
+
+			// Only allocate return buffer if return type is not void
+			if !zeus_value.IsVoidType(method.Method.ReturnType) {
+				// Allocate return buffer memory using malloc
+				returnTypeSize := c.getSizeOf(method.Method.ReturnType)
+				mallocSize := llvm.ConstInt(c.ctx.Int64Type(), returnTypeSize, false)
+				returnBuffer = c.callGlobalLLVMFunction(MallocFunctionName, mallocSize)
+				runtimeArgs = []llvm.Value{thisPtr, returnBuffer}
+			} else {
+				// For void returns, pass null pointer as return buffer
+				nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+				runtimeArgs = []llvm.Value{thisPtr, nullPtr}
+			}
+
+			// Allocate stack memory for each method parameter and store values
+			for i, param := range method.Method.Params {
+				paramType := c.toLLVMType(param.ValueType)
+				paramAlloca := c.builder.CreateAlloca(paramType, param.Name+"_alloca")
+				c.builder.CreateStore(params[i], paramAlloca)
+				runtimeArgs = append(runtimeArgs, paramAlloca)
+			}
+
+			// Call the runtime function
+			c.builder.CreateCall(runtimeFuncType, runtimeFunction, runtimeArgs, "")
+
+			// Handle return value
+			if !zeus_value.IsVoidType(method.Method.ReturnType) {
+				// Dereference the return buffer to get the actual return value
+				returnType := c.toLLVMType(method.Method.ReturnType)
+				typedReturnBuffer := c.builder.CreateBitCast(returnBuffer, llvm.PointerType(returnType, 0), "typed_return_buffer")
+				returnValue := c.builder.CreateLoad(returnType, typedReturnBuffer, "return_value")
+
+				// Free the allocated return buffer memory
+				c.callGlobalLLVMFunction(FreeFunctionName, returnBuffer)
+
+				// Return the dereferenced value
+				c.builder.CreateRet(returnValue)
+			} else {
+				// Return void (no memory to free)
+				c.builder.CreateRetVoid()
+			}
+		}
+		c.builder.SetInsertPointAtEnd(currentInsertionBlock)
+	}
 }
 
 func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
@@ -222,6 +345,8 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
 	case zeus_value.ObjectType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
+	case zeus_value.ArrayType:
+		return llvm.PointerType(c.getLLVMStructType(_type.String()), 1)
 	default:
 		return c.toLLVMBuiltInType(_type)
 	}
@@ -233,6 +358,8 @@ func (c *CodegenModule) toLLVMStructType(_type zeus_value.ValueType) llvm.Type {
 		return c.getLLVMStructType(_type.Name)
 	case zeus_value.ObjectType:
 		return c.getLLVMStructType(_type.Class.Name)
+	case zeus_value.ArrayType:
+		return c.getLLVMStructType(_type.String())
 	default:
 		panic(fmt.Sprintf("unable to convert zeus value %T to llvm struct type", _type))
 	}
@@ -460,6 +587,33 @@ func (c *CodegenModule) genExport(input ir.ExportInstrInput) {
 	}
 }
 
+func (c *CodegenModule) genImportedClass(class zeus_value.Class, modulePath string) {
+	// if the class is already imported, don't generate it again
+	if _, ok := c.importedClasses[class.Name]; ok {
+		return
+	}
+	llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(class)
+	moduleScopedName := module.GetModuleScopedName(modulePath, structName)
+	// declare the external obj header global
+	llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(moduleScopedName))
+	zeusClassLLVMStruct := NewZeusClassLLVMStruct(class, llvmStructType, vtableStructType, make([]llvm.Value, 0), objectHeaderStructType)
+	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
+	// track the struct info for the imported class
+	c.importedClasses[class.Name] = NewZeusClassModule(modulePath, class)
+	// declare the external constructor method
+	for _, method := range class.Methods {
+		constructorMethodName := util.GetClassMethodName(class.Name, token.CONSTRUCTOR_METHOD_NAME)
+		scopedConstructorName := module.GetModuleScopedName(modulePath, constructorMethodName)
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			constructorMethod := method.Method
+			constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
+			// Set GC strategy for imported constructor methods
+			constructorFunc.SetGC("statepoint-example")
+			break
+		}
+	}
+}
+
 func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	importedValue := input.Value
 
@@ -470,26 +624,7 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 		importedFunc.SetGC("statepoint-example")
 		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
 	case *zeus_value.Class:
-		llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(*importedValue)
-		moduleScopedName := module.GetModuleScopedName(input.ModulePath, structName)
-		// declare the external obj header global
-		llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(moduleScopedName))
-		zeusClassLLVMStruct := NewZeusClassLLVMStruct(*importedValue, llvmStructType, vtableStructType, make([]llvm.Value, 0), objectHeaderStructType)
-		c.zeusClassLLVMStructMap[importedValue.Name] = zeusClassLLVMStruct
-		// track the struct info for the imported class
-		c.importedClasses[importedValue.Name] = NewZeusClassModule(input.ModulePath, *importedValue)
-		// declare the external constructor method
-		for _, method := range importedValue.Methods {
-			constructorMethodName := util.GetClassMethodName(importedValue.Name, token.CONSTRUCTOR_METHOD_NAME)
-			scopedConstructorName := module.GetModuleScopedName(input.ModulePath, constructorMethodName)
-			if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
-				constructorMethod := method.Method
-				constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
-				// Set GC strategy for imported constructor methods
-				constructorFunc.SetGC("statepoint-example")
-				break
-			}
-		}
+		c.genImportedClass(*importedValue, input.ModulePath)
 	default:
 		panic(fmt.Sprintf("cannot codegen for imported value %s", importedValue))
 	}
@@ -538,7 +673,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	gcOffsetsCount := 0
 
 	for _, property := range class.Properties {
-		if zeus_value.IsObjectType(property.Property.ValueType) {
+		if zeus_value.IsObjectType(property.Property.ValueType) || (zeus_value.IsOpaqueType(property.Property.ValueType) && property.Property.IsPtr) {
 			gcOffsetsCount += 1
 		}
 	}
@@ -573,8 +708,9 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	return llvmStructType, vtableStructType, objectHeaderStructType, class.Name
 }
 
-func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
-	llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(*input.Class)
+// genClass generates LLVM code for a Zeus class including struct types, vtable, and object header
+func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
+	llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(class)
 	// create the vtable global
 	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(structName))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
@@ -611,7 +747,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	// rounds up to the next multiple of the required alignment.
 	//
 	currentOffset := c.targetDataLayout.TypeAllocSize(llvm.PointerType(objectHeaderStructType, 1)) // Start after object header pointer
-	for _, property := range input.Class.Properties {
+	for _, property := range class.Properties {
 		propertyType := c.toLLVMType(property.Property.ValueType)
 		// Get required alignment for this type (e.g., 8 bytes for i64, 4 bytes for i32)
 		typeAlign := uint64(c.targetDataLayout.ABITypeAlignment(propertyType))
@@ -622,7 +758,7 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 			currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
 		}
 
-		if zeus_value.IsObjectType(property.Property.ValueType) {
+		if zeus_value.IsObjectType(property.Property.ValueType) || (zeus_value.IsOpaqueType(property.Property.ValueType) && property.Property.IsPtr) {
 			gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), currentOffset, false))
 		}
 
@@ -632,15 +768,14 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstInt(c.ctx.Int8Type(), uint64(len(gcOffsetsArray)), false), llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
 	// initialize the llvm methods array
 	methodCount := 0
-	for _, method := range input.Class.Methods {
+	for _, method := range class.Methods {
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		methodCount += 1
 	}
 	llvmVTableMethods := make([]llvm.Value, methodCount)
-	zeusClassLLVMStruct := NewZeusClassLLVMStruct(*input.Class, llvmStructType, vtableStructType, llvmVTableMethods, objectHeaderStructType)
-	c.zeusClassLLVMStructMap[input.Class.Name] = zeusClassLLVMStruct
+	zeusClassLLVMStruct := NewZeusClassLLVMStruct(class, llvmStructType, vtableStructType, llvmVTableMethods, objectHeaderStructType)
 
 	// create the vtable global
 	// initialize the vtable methods to null
@@ -648,17 +783,39 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	for llvmVTableMethodIndex := range llvmVTableMethods {
 		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false), 0))
 	}
+
+	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
+
+	return zeusClassLLVMStruct
+}
+
+func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_value.Var) {
+	zeusClassLLVMStruct := c.genClass(*input.Class)
 	// track the struct info
 	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
 }
 
+func (c *CodegenModule) getSizeOf(valueType zeus_value.ValueType) uint64 {
+	switch valueType := valueType.(type) {
+	case zeus_value.ObjectType:
+		return c.getSizeOfClass(valueType.Class)
+	default:
+		// For scalar types, use LLVM to determine size
+		llvmType := c.toLLVMType(valueType)
+		return c.targetDataLayout.TypeAllocSize(llvmType)
+	}
+}
+
 func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.Var) {
 	callee, ok := input.Callee.(*zeus_value.Class)
+	if callee.PrimordialName != "" {
+		c.genPrimordialClass(*callee)
+	}
 	if !ok {
 		panic(fmt.Sprintf("trying to create new object of non class type %s", input.Callee))
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
-	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.ctx.Int32Type(), c.getSizeOfClass(*callee), false))
+	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.ctx.Int32Type(), c.getSizeOfClass(*callee), false), llvm.ConstInt(c.ctx.Int32Type(), 16, false))
 	llvmStructObjHeaderField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, OBJ_HEADER_STRUCT_INDEX, fmt.Sprintf("%s_header_field", callee.Name))
 	llvmObjHeader := c.getLLVMObjHeaderPtr(callee.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
@@ -670,29 +827,69 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
 	}
 
-	constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
-	// imported constructor name has module resolution in name
-	if c.isImportedClass(callee.Name) {
-		classModule := c.importedClasses[callee.Name]
-		constructorMethodName = module.GetModuleScopedName(classModule.ModulePath, constructorMethodName)
+	var constructorMethodName string
+	var constructorMethod llvm.Value
+
+	// Handle primordial classes differently
+	if callee.PrimordialName != "" {
+		constructorMethodName = c.getPrimordialRuntimeFunctionName(token.CONSTRUCTOR_METHOD_NAME, callee.PrimordialName)
+		if globalFunc, exists := c.globalLLVMFunctions[constructorMethodName]; exists {
+			constructorMethod = globalFunc.Function
+		} else {
+			constructorMethod = llvm.Value{} // nil value
+		}
+	} else {
+		constructorMethodName = fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
+		// imported constructor name has module resolution in name
+		if c.isImportedClass(callee.Name) {
+			classModule := c.importedClasses[callee.Name]
+			constructorMethodName = module.GetModuleScopedName(classModule.ModulePath, constructorMethodName)
+		}
+		constructorMethod = c.module.NamedFunction(constructorMethodName)
 	}
-	constructorMethod := c.module.NamedFunction(constructorMethodName)
 	if !constructorMethod.IsNil() {
-		// create the param types
-		constructorParamTypes := []zeus_value.ValueType{}
-		for _, arg := range input.Args {
-			constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
+		if callee.PrimordialName != "" {
+			// Handle primordial constructor call with runtime function signature
+			// Signature: (this_ptr, return_buffer_ptr, ...param_ptrs) -> void
+
+			// Get the runtime function type
+			if globalFunc, exists := c.globalLLVMFunctions[constructorMethodName]; exists {
+				runtimeArgs := []llvm.Value{llvmStruct} // this_ptr
+
+				// Add null return buffer for void constructor
+				nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+				runtimeArgs = append(runtimeArgs, nullPtr)
+
+				// Add parameter pointers
+				for _, arg := range input.Args {
+					// Allocate stack memory for parameter and store value
+					argType := c.toLLVMType(zeus_value.GetValueType(arg))
+					argAlloca := c.builder.CreateAlloca(argType, "arg_alloca")
+					c.builder.CreateStore(c.toLLVMValue(arg), argAlloca)
+					runtimeArgs = append(runtimeArgs, argAlloca)
+				}
+
+				// Call the runtime function
+				c.builder.CreateCall(globalFunc.FunctionType, constructorMethod, runtimeArgs, constructorMethodName)
+			}
+		} else {
+			// Handle regular class constructor call
+			// create the param types
+			constructorParamTypes := []zeus_value.ValueType{}
+			for _, arg := range input.Args {
+				constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
+			}
+			constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
+			constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
+			// create the param values
+			constructorMethodParams := []llvm.Value{}
+			for _, arg := range input.Args {
+				constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
+			}
+			constructorMethodParams = append(constructorMethodParams, llvmStruct)
+			// call the constructor method
+			c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
 		}
-		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
-		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
-		// create the param values
-		constructorMethodParams := []llvm.Value{}
-		for _, arg := range input.Args {
-			constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
-		}
-		constructorMethodParams = append(constructorMethodParams, llvmStruct)
-		// call the constructor method
-		c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
 	} else {
 		// constructor not mandatory when there is no args
 		zeus_error.Assert(len(input.Args) == 0, fmt.Sprintf("constructor method %s not found", constructorMethodName))
@@ -714,20 +911,25 @@ func (c *CodegenModule) appendThisParamToFunction(method zeus_value.Function, cl
 	return method
 }
 
-func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
-	methodWithThisParam := c.appendThisParamToFunction(*input.Method, *input.Class)
-	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(input.Class.Name, token.CONSTRUCTOR_METHOD_NAME)
+// genClassMethod generates LLVM code for a class method given the method body and class
+func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_value.Class) llvm.Value {
+	methodWithThisParam := c.appendThisParamToFunction(method, class)
+	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(class.Name, token.CONSTRUCTOR_METHOD_NAME)
 	function := c.genFunc(methodWithThisParam)
 
 	if !isConstructor {
 		// update the vtable global initializer
-		structInfo := c.zeusClassLLVMStructMap[input.Class.Name]
+		structInfo := c.zeusClassLLVMStructMap[class.Name]
 		structInfo.LLVMVTableMethods[structInfo.CurrentVTableMethodIndex] = function
 		structInfo.CurrentVTableMethodIndex += 1
-		c.getLLVMVTablePtr(input.Class.Name).SetInitializer(llvm.ConstStruct(structInfo.LLVMVTableMethods, true))
+		c.getLLVMVTablePtr(class.Name).SetInitializer(llvm.ConstStruct(structInfo.LLVMVTableMethods, true))
 	}
 
 	return function
+}
+
+func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
+	return c.genClassMethod(*input.Method, *input.Class)
 }
 
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
@@ -784,6 +986,8 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 	case zeus_value.BoolType:
 		return llvm.ConstInt(c.ctx.Int1Type(), 0, false)
 	case zeus_value.ObjectType:
+		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+	case zeus_value.OpaqueType:
 		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
 	default:
 		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
