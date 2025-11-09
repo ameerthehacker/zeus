@@ -664,12 +664,10 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
 	// store default values for primitive types
 	for propertyIndex, property := range callee.Properties {
-		if zeus_value.IsPrimitiveType(property.Property.ValueType) {
-			defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
-			// skip the obj header
-			llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", callee.Name, property.Property.Name))
-			c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
-		}
+		defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
+		// skip the obj header
+		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", callee.Name, property.Property.Name))
+		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
 	}
 
 	constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
@@ -785,6 +783,8 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 		return llvm.ConstFloat(c.toLLVMFloatType(value), 0.0)
 	case zeus_value.BoolType:
 		return llvm.ConstInt(c.ctx.Int1Type(), 0, false)
+	case zeus_value.ObjectType:
+		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
 	default:
 		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
 	}
