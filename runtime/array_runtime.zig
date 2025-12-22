@@ -4,6 +4,7 @@
 const std = @import("std");
 const abi = @import("abi.zig");
 const debug = @import("debug.zig");
+const runtime_util = @import("runtime_util.zig");
 
 // Forward declaration - will be resolved at link time
 extern fn zeus_gc_alloc(size: u32) ?*anyopaque;
@@ -81,64 +82,52 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
     }
 }
 
-// Pop: zeus_array_pop(this_ptr, return_buffer, [no params])
-export fn zeus_array_pop(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque) callconv(.C) void {
+// Pop: zeus_array_pop(this_ptr, return_buffer_ptr_ptr, [no params])
+export fn zeus_array_pop(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque) callconv(.C) void {
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
+    const element_size = @as(u32, @intCast(array_ptr.element_size));
 
     if (array_ptr.length == 0 or array_ptr.data == null) {
         // Return zero/default value for empty array
-        if (return_buffer_ptr != null) {
-            const return_bytes = @as([*]u8, @ptrCast(@alignCast(return_buffer_ptr.?)));
-            const element_size = @as(usize, @intCast(array_ptr.element_size));
-            // Zero out the return buffer
-            @memset(return_bytes[0..element_size], 0);
-        }
+        _ = runtime_util.allocateZeroedReturnBuffer(return_buffer_ptr_ptr, element_size);
         debug.log(allocator, "array_pop", "attempted to pop from empty array", .{});
         return;
     }
 
     // Get the last element
     const data_bytes = @as([*]u8, @ptrCast(@alignCast(array_ptr.data.?)));
-    const element_size = @as(usize, @intCast(array_ptr.element_size));
     const last_offset = @as(usize, @intCast((array_ptr.length - 1) * array_ptr.element_size));
 
     // Decrease length
     array_ptr.length -= 1;
 
-    // Return the popped value - copy element_size bytes to return buffer
-    if (return_buffer_ptr != null) {
-        const return_bytes = @as([*]u8, @ptrCast(@alignCast(return_buffer_ptr.?)));
-        @memcpy(return_bytes[0..element_size], data_bytes[last_offset .. last_offset + element_size]);
+    // Allocate return buffer and copy the popped value
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, element_size)) |result_bytes| {
+        @memcpy(result_bytes, data_bytes[last_offset .. last_offset + element_size]);
     }
 }
 
-// Get: zeus_array_get(this_ptr, return_buffer, index_ptr)
-export fn zeus_array_get(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, index_ptr: *anyopaque) callconv(.C) void {
+// Get: zeus_array_get(this_ptr, return_buffer_ptr_ptr, index_ptr)
+export fn zeus_array_get(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, index_ptr: *anyopaque) callconv(.C) void {
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
     const index_val_ptr = @as(*i32, @ptrCast(@alignCast(index_ptr)));
     const index = index_val_ptr.*;
+    const element_size = @as(u32, @intCast(array_ptr.element_size));
 
     // Bounds checking
     if (index < 0 or index >= array_ptr.length or array_ptr.data == null) {
         // Return zero/default value for out of bounds
-        if (return_buffer_ptr != null) {
-            const return_bytes = @as([*]u8, @ptrCast(@alignCast(return_buffer_ptr.?)));
-            const element_size = @as(usize, @intCast(array_ptr.element_size));
-            // Zero out the return buffer
-            @memset(return_bytes[0..element_size], 0);
-        }
+        _ = runtime_util.allocateZeroedReturnBuffer(return_buffer_ptr_ptr, element_size);
         debug.log(allocator, "array_get", "index {} out of bounds for length {}", .{ index, array_ptr.length });
         return;
     }
 
     // Get the element at the correct offset
     const data_bytes = @as([*]u8, @ptrCast(@alignCast(array_ptr.data.?)));
-    const element_size = @as(usize, @intCast(array_ptr.element_size));
     const element_offset = @as(usize, @intCast(index)) * element_size;
 
-    // Return the element - copy element_size bytes to return buffer
-    if (return_buffer_ptr != null) {
-        const return_bytes = @as([*]u8, @ptrCast(@alignCast(return_buffer_ptr.?)));
-        @memcpy(return_bytes[0..element_size], data_bytes[element_offset .. element_offset + element_size]);
+    // Allocate return buffer and copy the element value
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, element_size)) |result_bytes| {
+        @memcpy(result_bytes, data_bytes[element_offset .. element_offset + element_size]);
     }
 }

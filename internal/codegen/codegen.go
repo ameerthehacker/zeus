@@ -46,8 +46,6 @@ func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, ll
 }
 
 const MemAllocFunctionName = "zeus_gc_alloc"
-const MallocFunctionName = "malloc"
-const FreeFunctionName = "free"
 
 type CodegenModule struct {
 	module                 llvm.Module
@@ -103,18 +101,6 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
 	builder.CreateRetVoid()
 	builder.Dispose()
-
-	// Malloc function (external)
-	mallocType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{c.cxt.Int64Type()}, false)
-	mallocFunction := llvm.AddFunction(module, MallocFunctionName, mallocType)
-	mallocFunction.SetLinkage(llvm.ExternalLinkage)
-	globalFunctions[MallocFunctionName] = GlobalLLVMFunction{mallocFunction, mallocType}
-
-	// Free function (external)
-	freeType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0)}, false)
-	freeFunction := llvm.AddFunction(module, FreeFunctionName, freeType)
-	freeFunction.SetLinkage(llvm.ExternalLinkage)
-	globalFunctions[FreeFunctionName] = GlobalLLVMFunction{freeFunction, freeType}
 
 	return globalFunctions
 }
@@ -210,22 +196,22 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 			params := classFunction.Params()
 			thisPtr := params[len(params)-1]
 
-			// Prepare arguments for runtime call: [this_ptr, return_buffer, ...param_ptrs]
-			var runtimeArgs []llvm.Value
-			var returnBuffer llvm.Value
+		// Prepare arguments for runtime call: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs]
+		var runtimeArgs []llvm.Value
+		var returnBufferPtrPtr llvm.Value
 
-			// Only allocate return buffer if return type is not void
-			if !zeus_value.IsVoidType(method.Method.ReturnType) {
-				// Allocate return buffer memory using malloc
-				returnTypeSize := c.getSizeOf(method.Method.ReturnType)
-				mallocSize := llvm.ConstInt(c.ctx.Int64Type(), returnTypeSize, false)
-				returnBuffer = c.callGlobalLLVMFunction(MallocFunctionName, mallocSize)
-				runtimeArgs = []llvm.Value{thisPtr, returnBuffer}
-			} else {
-				// For void returns, pass null pointer as return buffer
-				nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
-				runtimeArgs = []llvm.Value{thisPtr, nullPtr}
-			}
+		// Only allocate return buffer pointer if return type is not void
+		if !zeus_value.IsVoidType(method.Method.ReturnType) {
+			// Allocate a pointer on the stack to hold the address of the result
+			// The runtime will allocate memory and store the pointer to it here
+			voidPtrType := llvm.PointerType(c.ctx.VoidType(), 0)
+			returnBufferPtrPtr = c.builder.CreateAlloca(voidPtrType, "return_buffer_ptr_ptr")
+			runtimeArgs = []llvm.Value{thisPtr, returnBufferPtrPtr}
+		} else {
+			// For void returns, pass null pointer as return buffer
+			nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+			runtimeArgs = []llvm.Value{thisPtr, nullPtr}
+		}
 
 			// Allocate stack memory for each method parameter and store values
 			for i, param := range method.Method.Params {
@@ -238,22 +224,23 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 			// Call the runtime function
 			c.builder.CreateCall(runtimeFuncType, runtimeFunction, runtimeArgs, "")
 
-			// Handle return value
-			if !zeus_value.IsVoidType(method.Method.ReturnType) {
-				// Dereference the return buffer to get the actual return value
-				returnType := c.toLLVMType(method.Method.ReturnType)
-				typedReturnBuffer := c.builder.CreateBitCast(returnBuffer, llvm.PointerType(returnType, 0), "typed_return_buffer")
-				returnValue := c.builder.CreateLoad(returnType, typedReturnBuffer, "return_value")
+		// Handle return value
+		if !zeus_value.IsVoidType(method.Method.ReturnType) {
+			// Double indirection: load the pointer from the alloca'd location
+			voidPtrType := llvm.PointerType(c.ctx.VoidType(), 0)
+			returnBufferPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "return_buffer_ptr")
+			
+			// Cast to the correct type and load the actual value
+			returnType := c.toLLVMType(method.Method.ReturnType)
+			typedReturnBuffer := c.builder.CreateBitCast(returnBufferPtr, llvm.PointerType(returnType, 0), "typed_return_buffer")
+			returnValue := c.builder.CreateLoad(returnType, typedReturnBuffer, "return_value")
 
-				// Free the allocated return buffer memory
-				c.callGlobalLLVMFunction(FreeFunctionName, returnBuffer)
-
-				// Return the dereferenced value
-				c.builder.CreateRet(returnValue)
-			} else {
-				// Return void (no memory to free)
-				c.builder.CreateRetVoid()
-			}
+			// Return the dereferenced value
+			c.builder.CreateRet(returnValue)
+		} else {
+			// Return void
+			c.builder.CreateRetVoid()
+		}
 		}
 		c.builder.SetInsertPointAtEnd(currentInsertionBlock)
 	}
@@ -793,17 +780,6 @@ func (c *CodegenModule) genDeclClass(input ir.DeclClassInstrInput, output zeus_v
 	zeusClassLLVMStruct := c.genClass(*input.Class)
 	// track the struct info
 	c.zeusClassLLVMStructMap[output.Name] = zeusClassLLVMStruct
-}
-
-func (c *CodegenModule) getSizeOf(valueType zeus_value.ValueType) uint64 {
-	switch valueType := valueType.(type) {
-	case zeus_value.ObjectType:
-		return c.getSizeOfClass(valueType.Class)
-	default:
-		// For scalar types, use LLVM to determine size
-		llvmType := c.toLLVMType(valueType)
-		return c.targetDataLayout.TypeAllocSize(llvmType)
-	}
 }
 
 func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.Var) {
