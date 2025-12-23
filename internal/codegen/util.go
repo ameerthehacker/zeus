@@ -19,3 +19,7 @@ func GetObjectHeaderStructName(className string) string {
 func GetObjectHeaderStructPtrName(className string) string {
 	return className + ".headerPtr"
 }
+
+func GetObjectTypeInfoStructPtrName(className string) string {
+	return className + ".objectTypeInfoPtr"
+}

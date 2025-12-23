@@ -12,22 +12,25 @@ extern fn zeus_gc_alloc(size: u32) ?*anyopaque;
 var array_gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = array_gpa.allocator();
 
+fn getElementSize(array_ptr: *abi.ZeusArrayObj) u32 {
+    const type_info = array_ptr.obj_header.getObjectTypeInfo();
+    return runtime_util.getZeusTypeSize(@enumFromInt(type_info.array_element_type));
+}
+
 // Constructor: zeus_array_constructor(this_ptr, return_buffer)
-export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, initial_capacity_ptr: *anyopaque, element_size_ptr: *anyopaque) callconv(.C) void {
+export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, initial_capacity_ptr: *anyopaque) callconv(.C) void {
     _ = return_buffer_ptr; // void return, not used
 
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
     const _initial_capacity_ptr = @as(*u32, @ptrCast(@alignCast(initial_capacity_ptr)));
-    const _element_size_ptr = @as(*u32, @ptrCast(@alignCast(element_size_ptr)));
     const initial_capacity = _initial_capacity_ptr.*;
-    const element_size = _element_size_ptr.*;
 
     array_ptr.capacity = initial_capacity;
     array_ptr.length = 0;
-    array_ptr.element_size = element_size;
+    const element_size = getElementSize(array_ptr);
 
     // Allocate initial data array (capacity * 1 byte for u8 elements)
-    const data_size = @as(u32, @intCast(array_ptr.capacity * array_ptr.element_size));
+    const data_size = @as(u32, @intCast(array_ptr.capacity * element_size));
 
     if (data_size != 0) {
         array_ptr.data = zeus_gc_alloc(data_size);
@@ -39,12 +42,13 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
     _ = return_buffer_ptr; // void return, not used
 
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
+    const element_size = getElementSize(array_ptr);
 
     // Check if we need to resize
     if (array_ptr.length >= array_ptr.capacity) {
         // Double the capacity
         const new_capacity = array_ptr.capacity * 2;
-        const new_data_size = @as(u32, @intCast(new_capacity * array_ptr.element_size));
+        const new_data_size = @as(u32, @intCast(new_capacity * element_size));
         const new_data = zeus_gc_alloc(new_data_size);
 
         if (new_data == null) {
@@ -56,7 +60,7 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
         if (array_ptr.data != null and array_ptr.length > 0) {
             const old_data_bytes = @as([*]u8, @ptrCast(array_ptr.data.?));
             const new_data_bytes = @as([*]u8, @ptrCast(new_data.?));
-            const copy_size = @as(usize, @intCast(array_ptr.length * array_ptr.element_size));
+            const copy_size = @as(usize, @intCast(array_ptr.length * element_size));
             @memcpy(new_data_bytes[0..copy_size], old_data_bytes[0..copy_size]);
         }
 
@@ -72,9 +76,7 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
         const value_bytes = @as([*]u8, @ptrCast(@alignCast(value_ptr)));
 
         // Calculate offset for the new element
-        const offset = @as(usize, @intCast(array_ptr.length * array_ptr.element_size));
-        const element_size = @as(usize, @intCast(array_ptr.element_size));
-
+        const offset = @as(usize, @intCast(array_ptr.length * element_size));
         // Copy element_size bytes from value_ptr to the correct position
         @memcpy(data_bytes[offset .. offset + element_size], value_bytes[0..element_size]);
 
@@ -85,7 +87,7 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
 // Pop: zeus_array_pop(this_ptr, return_buffer_ptr_ptr, [no params])
 export fn zeus_array_pop(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque) callconv(.C) void {
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
-    const element_size = @as(u32, @intCast(array_ptr.element_size));
+    const element_size = getElementSize(array_ptr);
 
     if (array_ptr.length == 0 or array_ptr.data == null) {
         // Return zero/default value for empty array
@@ -96,7 +98,7 @@ export fn zeus_array_pop(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaqu
 
     // Get the last element
     const data_bytes = @as([*]u8, @ptrCast(@alignCast(array_ptr.data.?)));
-    const last_offset = @as(usize, @intCast((array_ptr.length - 1) * array_ptr.element_size));
+    const last_offset = @as(usize, @intCast((array_ptr.length - 1) * element_size));
 
     // Decrease length
     array_ptr.length -= 1;
@@ -112,7 +114,7 @@ export fn zeus_array_get(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaqu
     const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(this_ptr)));
     const index_val_ptr = @as(*i32, @ptrCast(@alignCast(index_ptr)));
     const index = index_val_ptr.*;
-    const element_size = @as(u32, @intCast(array_ptr.element_size));
+    const element_size = getElementSize(array_ptr);
 
     // Bounds checking
     if (index < 0 or index >= array_ptr.length or array_ptr.data == null) {

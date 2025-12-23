@@ -10,6 +10,8 @@ import (
 )
 
 const TEMP_VARIABLE_PREFIX = "%"
+// first 1000 ids are reserved for primordial classes
+var classIdCounter = 100
 
 type Value interface {
 	String() string
@@ -158,21 +160,26 @@ func (m *ClassMethod) String() string {
 }
 
 type Class struct {
+	Id         int
 	Name       string
 	Properties []*ClassProperty
 	Methods    []*ClassMethod
 	IsUsed     bool
 	PrimordialName string
+	ArrayElementType ValueType
 	Span       *token.Span
 }
 
-func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, span *token.Span) *Class {
+func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
+	classIdCounter += 1
 	return &Class{
+		Id:         classIdCounter,
 		Name:       name,
 		Properties: properties,
 		Methods:    methods,
 		IsUsed:     false,
 		PrimordialName: primordialName,
+		ArrayElementType: arrayElementType,
 		Span:       span,
 	}
 }

@@ -46,11 +46,12 @@ func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, ll
 }
 
 const MemAllocFunctionName = "zeus_gc_alloc"
+const ZeusObjectTypeInfoStructName = "ZeusObjectTypeInfo"
 
 type CodegenModule struct {
 	module                 llvm.Module
 	builder                llvm.Builder
-	ctx                    llvm.Context
+	cxt                    llvm.Context
 	symbolTable            *symbol_table.SymbolTable[llvm.Value]
 	basicBlocks            map[int]llvm.BasicBlock
 	isEntryPoint           bool
@@ -59,6 +60,7 @@ type CodegenModule struct {
 	zeusClassLLVMStructMap map[string]*ZeusClassLLVMStruct
 	targetDataLayout       llvm.TargetData
 	globalLLVMFunctions    map[string]GlobalLLVMFunction
+	zeusObjectTypeInfoType llvm.Type
 }
 
 func NewCodegen() *Codegen {
@@ -71,7 +73,20 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 	module := c.cxt.NewModule(name)
 	builder := c.cxt.NewBuilder()
 	globalLLVMFunctions := c.setupGlobalLLVMFunctions(module)
-	return &CodegenModule{module, builder, c.cxt, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct), targetDataLayout, globalLLVMFunctions}
+
+	zeusObjectInfoStructType := c.cxt.StructCreateNamed(ZeusObjectTypeInfoStructName)
+	zeusObjectInfoStructType.StructSetBody([]llvm.Type{
+		// type id
+		c.cxt.Int8Type(),
+		// type
+		c.cxt.Int8Type(),
+		// array element type
+		c.cxt.Int8Type(),
+		// parent type info pointer
+		llvm.PointerType(zeusObjectInfoStructType, 0),
+	}, false)
+
+	return &CodegenModule{module, builder, c.cxt, symbol_table.NewSymbolTable[llvm.Value](), make(map[int]llvm.BasicBlock), isEntryPoint, make(map[string]ZeusClassModule), make(map[string]ZeusClassModule), make(map[string]*ZeusClassLLVMStruct), targetDataLayout, globalLLVMFunctions, zeusObjectInfoStructType}
 }
 
 func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]GlobalLLVMFunction {
@@ -149,17 +164,17 @@ func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function,
 
 	// Create function signature: (this_ptr, return_buffer_ptr, ...param_ptrs) -> void
 	paramTypes := []llvm.Type{
-		llvm.PointerType(c.ctx.VoidType(), 0), // this pointer
-		llvm.PointerType(c.ctx.VoidType(), 0), // return buffer pointer
+		llvm.PointerType(c.cxt.VoidType(), 0), // this pointer
+		llvm.PointerType(c.cxt.VoidType(), 0), // return buffer pointer
 	}
 
 	// Add pointer type for each method parameter
 	for range method.Params {
-		paramTypes = append(paramTypes, llvm.PointerType(c.ctx.VoidType(), 0))
+		paramTypes = append(paramTypes, llvm.PointerType(c.cxt.VoidType(), 0))
 	}
 
 	// Function returns void
-	functionType := llvm.FunctionType(c.ctx.VoidType(), paramTypes, false)
+	functionType := llvm.FunctionType(c.cxt.VoidType(), paramTypes, false)
 	function := llvm.AddFunction(c.module, functionName, functionType)
 	function.SetLinkage(llvm.ExternalLinkage)
 
@@ -196,22 +211,22 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 			params := classFunction.Params()
 			thisPtr := params[len(params)-1]
 
-		// Prepare arguments for runtime call: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs]
-		var runtimeArgs []llvm.Value
-		var returnBufferPtrPtr llvm.Value
+			// Prepare arguments for runtime call: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs]
+			var runtimeArgs []llvm.Value
+			var returnBufferPtrPtr llvm.Value
 
-		// Only allocate return buffer pointer if return type is not void
-		if !zeus_value.IsVoidType(method.Method.ReturnType) {
-			// Allocate a pointer on the stack to hold the address of the result
-			// The runtime will allocate memory and store the pointer to it here
-			voidPtrType := llvm.PointerType(c.ctx.VoidType(), 0)
-			returnBufferPtrPtr = c.builder.CreateAlloca(voidPtrType, "return_buffer_ptr_ptr")
-			runtimeArgs = []llvm.Value{thisPtr, returnBufferPtrPtr}
-		} else {
-			// For void returns, pass null pointer as return buffer
-			nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
-			runtimeArgs = []llvm.Value{thisPtr, nullPtr}
-		}
+			// Only allocate return buffer pointer if return type is not void
+			if !zeus_value.IsVoidType(method.Method.ReturnType) {
+				// Allocate a pointer on the stack to hold the address of the result
+				// The runtime will allocate memory and store the pointer to it here
+				voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+				returnBufferPtrPtr = c.builder.CreateAlloca(voidPtrType, "return_buffer_ptr_ptr")
+				runtimeArgs = []llvm.Value{thisPtr, returnBufferPtrPtr}
+			} else {
+				// For void returns, pass null pointer as return buffer
+				nullPtr := llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+				runtimeArgs = []llvm.Value{thisPtr, nullPtr}
+			}
 
 			// Allocate stack memory for each method parameter and store values
 			for i, param := range method.Method.Params {
@@ -226,16 +241,19 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 
 		// Handle return value
 		if !zeus_value.IsVoidType(method.Method.ReturnType) {
-			// Double indirection: load the pointer from the alloca'd location
-			voidPtrType := llvm.PointerType(c.ctx.VoidType(), 0)
-			returnBufferPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "return_buffer_ptr")
+			// Load the return wrapper pointer from the alloca'd location
+			voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+			returnWrapperPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "return_wrapper_ptr")
 			
-			// Cast to the correct type and load the actual value
+			// Define the result field type
 			returnType := c.toLLVMType(method.Method.ReturnType)
-			typedReturnBuffer := c.builder.CreateBitCast(returnBufferPtr, llvm.PointerType(returnType, 0), "typed_return_buffer")
-			returnValue := c.builder.CreateLoad(returnType, typedReturnBuffer, "return_value")
-
-			// Return the dereferenced value
+			
+			// Deserialize memory into a Zeus object with the result field
+			zeusObjPtr, zeusObjType := c.deserializeZeusObj(returnWrapperPtr, []llvm.Type{returnType}, "return_wrapper")
+			
+			// Extract the result field (index 1, since header is at index 0)
+			resultFieldPtr := c.builder.CreateStructGEP(zeusObjType, zeusObjPtr, 1, "result_field_ptr")
+			returnValue := c.builder.CreateLoad(returnType, resultFieldPtr, "return_value")
 			c.builder.CreateRet(returnValue)
 		} else {
 			// Return void
@@ -252,6 +270,35 @@ func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
 		panic(fmt.Sprintf("llvm struct type %s not found", name))
 	}
 	return zeusClassLLVMStruct.LLVMStruct
+}
+
+// deserializeZeusObj interprets raw memory as a Zeus object following the Zeus ABI.
+// This function automatically prepends the Zeus object header pointer as the first field,
+// then appends the provided data fields. The consumer can access any field from the
+// resulting struct.
+//
+// Zeus ABI struct layout: [*ZeusObjectHeader, ...dataFields]
+//
+// Parameters:
+//   - memPtr: A pointer to the memory location to deserialize
+//   - dataFields: LLVM types for the data fields (header is automatically prepended)
+//   - name: A name prefix for the generated LLVM values
+//
+// Returns:
+//   - A typed pointer to the Zeus object and the object type itself
+func (c *CodegenModule) deserializeZeusObj(memPtr llvm.Value, dataFields []llvm.Type, name string) (llvm.Value, llvm.Type) {
+	// Build the Zeus object struct: [*ZeusObjectHeader, ...dataFields]
+	headerPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+	structFields := make([]llvm.Type, 0, len(dataFields)+1)
+	structFields = append(structFields, headerPtrType) // Field 0: header pointer
+	structFields = append(structFields, dataFields...) // Fields 1+: data fields
+	
+	zeusObjType := c.cxt.StructType(structFields, false)
+	
+	// Cast the opaque pointer to the Zeus object type pointer
+	typedPtr := c.builder.CreateBitCast(memPtr, llvm.PointerType(zeusObjType, 0), name+"_ptr")
+	
+	return typedPtr, zeusObjType
 }
 
 func (c *CodegenModule) getLLVMVTablePtr(name string) llvm.Value {
@@ -356,7 +403,7 @@ func (c *CodegenModule) getOrCreateBasicBlock(id int, parent llvm.Value) llvm.Ba
 	if basicBlock, ok := c.basicBlocks[id]; ok {
 		return basicBlock
 	}
-	basicBlock := c.ctx.AddBasicBlock(parent, strconv.Itoa(id))
+	basicBlock := c.cxt.AddBasicBlock(parent, strconv.Itoa(id))
 	c.basicBlocks[id] = basicBlock
 	return basicBlock
 }
@@ -652,7 +699,7 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Type, llvm.Type, llvm.Type, string) {
 	// create the vtable struct
 	vtableStructName := GetVTableStructName(class.Name)
-	vtableStructType := c.ctx.StructCreateNamed(vtableStructName)
+	vtableStructType := c.cxt.StructCreateNamed(vtableStructName)
 
 	// create object header struct
 	objectHeaderStructName := GetObjectHeaderStructName(class.Name)
@@ -666,12 +713,13 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	}
 
 	objectHeaderElementTypes := []llvm.Type{
-		llvm.PointerType(vtableStructType, 0),            // vtable
-		c.ctx.Int8Type(),                                 // gc offsets count
-		llvm.ArrayType(c.ctx.Int8Type(), gcOffsetsCount), // gc offsets
+		llvm.PointerType(vtableStructType, 0),               // vtable
+		llvm.PointerType(c.zeusObjectTypeInfoType, 0),      // object type info
+		c.cxt.Int8Type(),                                  // gc offsets count
+		llvm.ArrayType(c.cxt.Int8Type(), gcOffsetsCount), // gc offsets
 	}
 
-	objectHeaderStructType := c.ctx.StructCreateNamed(objectHeaderStructName)
+	objectHeaderStructType := c.cxt.StructCreateNamed(objectHeaderStructName)
 	objectHeaderStructType.StructSetBody(objectHeaderElementTypes, false)
 
 	// create the class struct with the vtable struct as the first element
@@ -679,7 +727,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	for _, property := range class.Properties {
 		classElementTypes = append(classElementTypes, c.toLLVMType(property.Property.ValueType))
 	}
-	llvmStructType := c.ctx.StructCreateNamed(class.Name)
+	llvmStructType := c.cxt.StructCreateNamed(class.Name)
 	llvmStructType.StructSetBody(classElementTypes, false)
 
 	vtableElementTypes := []llvm.Type{}
@@ -701,58 +749,44 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// create the vtable global
 	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(structName))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
+	// create the object type info global
+	llvmObjectTypeInfo := llvm.AddGlobal(c.module, c.zeusObjectTypeInfoType, GetObjectTypeInfoStructPtrName(structName))
+	zeusRuntimeObjectType := ZeusRuntimeObjectTypeObject
+	zeusRuntimeArrayElementType := ZeusRuntimeTypeNull
+
+	// if it is an array, set the array element type
+	if class.ArrayElementType != nil {
+		zeusRuntimeObjectType = ZeusRuntimeObjectTypeArray
+		zeusRuntimeArrayElementType = toZeusRuntimeType(class.ArrayElementType)
+	}
+
+	llvmObjectTypeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
+		llvm.ConstInt(c.cxt.Int8Type(), uint64(class.Id), false),
+		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeObjectType), false),
+		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeArrayElementType), false),
+		llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0)),
+	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
 	gcOffsetsArray := []llvm.Value{}
 
-	// Calculate proper field offsets manually with alignment
-	//
-	// Memory layout alignment ensures fields are placed at addresses that are multiples
-	// of their natural alignment requirements. This prevents performance penalties and
-	// potential crashes on some architectures.
-	//
-	// Example layout for a class with fields: i8, i64, i32, ptr
-	//
-	// Without alignment:     With proper alignment:
-	// ┌─────────────────┐   ┌─────────────────┐
-	// │ header ptr  (8) │   │ header ptr  (8) │  offset: 0
-	// ├─────────────────┤   ├─────────────────┤
-	// │ i8 field    (1) │   │ i8 field    (1) │  offset: 8
-	// ├─────────────────┤   ├─────────────────┤
-	// │ i64 field   (8) │   │ padding     (7) │  offset: 9-15 (padding for i64 alignment)
-	// ├─────────────────┤   ├─────────────────┤
-	// │ i32 field   (4) │   │ i64 field   (8) │  offset: 16 (aligned to 8-byte boundary)
-	// ├─────────────────┤   ├─────────────────┤
-	// │ ptr field   (8) │   │ i32 field   (4) │  offset: 24 (aligned to 4-byte boundary)
-	// └─────────────────┘   ├─────────────────┤
-	//                       │ padding     (4) │  offset: 28-31 (padding for ptr alignment)
-	//                       ├─────────────────┤
-	//                       │ ptr field   (8) │  offset: 32 (aligned to 8-byte boundary)
-	//                       └─────────────────┘
-	//
-	// The algorithm: currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
-	// rounds up to the next multiple of the required alignment.
-	//
-	currentOffset := c.targetDataLayout.TypeAllocSize(llvm.PointerType(objectHeaderStructType, 1)) // Start after object header pointer
-	for _, property := range class.Properties {
-		propertyType := c.toLLVMType(property.Property.ValueType)
-		// Get required alignment for this type (e.g., 8 bytes for i64, 4 bytes for i32)
-		typeAlign := uint64(c.targetDataLayout.ABITypeAlignment(propertyType))
-		// Round up current offset to proper alignment boundary
-		// Formula: ((offset + align - 1) / align) * align
-		// Example: offset=9, align=8 → ((9+8-1)/8)*8 = (16/8)*8 = 2*8 = 16
-		if currentOffset%typeAlign != 0 {
-			currentOffset = ((currentOffset + typeAlign - 1) / typeAlign) * typeAlign
-		}
-
+	// Calculate GC offsets using LLVM's actual struct layout
+	// We use ElementOffset to get the exact byte offset LLVM calculated for each field
+	// This accounts for all padding and alignment that LLVM adds to the struct
+	for propertyIndex, property := range class.Properties {
 		if zeus_value.IsObjectType(property.Property.ValueType) || (zeus_value.IsOpaqueType(property.Property.ValueType) && property.Property.IsPtr) {
-			gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.ctx.Int8Type(), currentOffset, false))
+			// propertyIndex + 1 because index 0 in the struct is the obj_header pointer
+			actualOffset := c.targetDataLayout.ElementOffset(llvmStructType, propertyIndex+1)
+			gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.cxt.Int8Type(), actualOffset, false))
 		}
-
-		// Move to next field position
-		currentOffset += c.targetDataLayout.TypeAllocSize(propertyType)
 	}
-	llvmObjectHeader.SetInitializer(llvm.ConstStruct([]llvm.Value{llvmVTable, llvm.ConstInt(c.ctx.Int8Type(), uint64(len(gcOffsetsArray)), false), llvm.ConstArray(c.ctx.Int8Type(), gcOffsetsArray)}, false))
+	llvmObjectHeader.SetInitializer(llvm.ConstStruct(
+		[]llvm.Value{
+			llvmVTable,
+			llvmObjectTypeInfo,
+			llvm.ConstInt(c.cxt.Int8Type(), uint64(len(gcOffsetsArray)), false),
+			llvm.ConstArray(c.cxt.Int8Type(), gcOffsetsArray)},
+		false))
 	// initialize the llvm methods array
 	methodCount := 0
 	for _, method := range class.Methods {
@@ -768,7 +802,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// initialize the vtable methods to null
 	// this is done here because the vtable methods are not known until we encounter the DECL_CLASS_METHOD instructions
 	for llvmVTableMethodIndex := range llvmVTableMethods {
-		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(c.ctx.VoidType(), []llvm.Type{}, false), 0))
+		llvmVTableMethods[llvmVTableMethodIndex] = llvm.ConstNull(llvm.PointerType(llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false), 0))
 	}
 
 	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
@@ -791,7 +825,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 		panic(fmt.Sprintf("trying to create new object of non class type %s", input.Callee))
 	}
 	llvmStructType := c.getLLVMStructType(callee.Name)
-	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.ctx.Int32Type(), c.getSizeOfClass(*callee), false), llvm.ConstInt(c.ctx.Int32Type(), 16, false))
+	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.cxt.Int32Type(), c.getSizeOfClass(*callee), false), llvm.ConstInt(c.cxt.Int32Type(), 16, false))
 	llvmStructObjHeaderField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, OBJ_HEADER_STRUCT_INDEX, fmt.Sprintf("%s_header_field", callee.Name))
 	llvmObjHeader := c.getLLVMObjHeaderPtr(callee.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
@@ -833,7 +867,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 				runtimeArgs := []llvm.Value{llvmStruct} // this_ptr
 
 				// Add null return buffer for void constructor
-				nullPtr := llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+				nullPtr := llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 				runtimeArgs = append(runtimeArgs, nullPtr)
 
 				// Add parameter pointers
@@ -960,11 +994,11 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 	case zeus_value.FloatType:
 		return llvm.ConstFloat(c.toLLVMFloatType(value), 0.0)
 	case zeus_value.BoolType:
-		return llvm.ConstInt(c.ctx.Int1Type(), 0, false)
+		return llvm.ConstInt(c.cxt.Int1Type(), 0, false)
 	case zeus_value.ObjectType:
-		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	case zeus_value.OpaqueType:
-		return llvm.ConstNull(llvm.PointerType(c.ctx.VoidType(), 0))
+		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	default:
 		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
 	}

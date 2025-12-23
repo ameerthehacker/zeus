@@ -406,11 +406,6 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 		}
 
 		args = append(args, arrayCapacityExpr)
-		args = append(args, zeus_value.NewConstant(
-			"8",
-			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
-			asTypeExpression.GetSpan(),
-		))
 	} else {
 		for _, arg := range expr.Args {
 			args = append(args, arg.Accept(g))
@@ -489,7 +484,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		g.symbolTable.DeclareSymbol(method.Name.Name.Value, function)
 	}
 
-	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", expr.GetSpan())
+	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
 	irClassName := g.irBuilder.BuildClassDecl(class, expr.GetSpan())
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 
