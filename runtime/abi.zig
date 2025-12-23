@@ -14,10 +14,10 @@ pub const ZeusObjectTypeInfo = extern struct {
     // unique id given to every class in the program
     // primordial classes with have a known fixed id
     object_type_id: u8,
-    object_type: u8,
+    object_type: ZeusObjectType,
     // if the object is an array, this is the type of the elements in the array
     // if it is not an array then this will have _null type
-    array_element_type: u8,
+    array_element_type: ZeusType,
     parent_type_info: ?*anyopaque,
 
     pub fn getParentTypeInfo(self: *const ZeusObjectTypeInfo) *ZeusObjectTypeInfo {

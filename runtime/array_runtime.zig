@@ -6,15 +6,33 @@ const abi = @import("abi.zig");
 const debug = @import("debug.zig");
 const runtime_util = @import("runtime_util.zig");
 
-// Forward declaration - will be resolved at link time
-extern fn zeus_gc_alloc(size: u32) ?*anyopaque;
-
 var array_gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = array_gpa.allocator();
 
 fn getElementSize(array_ptr: *abi.ZeusArrayObj) u32 {
     const type_info = array_ptr.obj_header.getObjectTypeInfo();
-    return runtime_util.getZeusTypeSize(@enumFromInt(type_info.array_element_type));
+    return runtime_util.getZeusTypeSize(type_info.array_element_type);
+}
+
+/// Cleanup function called by GC when an array object is being freed
+/// Frees the array's data buffer using the array allocator
+pub fn zeus_array_cleanup(array_obj_ptr: *anyopaque) callconv(.C) void {
+    const array_ptr = @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(array_obj_ptr)));
+
+    if (array_ptr.data != null and array_ptr.capacity > 0) {
+        const element_size = getElementSize(array_ptr);
+        const data_size = @as(usize, @intCast(array_ptr.capacity * element_size));
+
+        // Reconstruct the slice to free it properly
+        const data_bytes = @as([*]u8, @ptrCast(array_ptr.data.?))[0..data_size];
+        allocator.free(data_bytes);
+
+        debug.log(allocator, "array_cleanup", "freed array data buffer of {} bytes", .{data_size});
+
+        array_ptr.data = null;
+        array_ptr.length = 0;
+        array_ptr.capacity = 0;
+    }
 }
 
 // Constructor: zeus_array_constructor(this_ptr, return_buffer)
@@ -32,8 +50,10 @@ export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyo
     // Allocate initial data array (capacity * 1 byte for u8 elements)
     const data_size = @as(u32, @intCast(array_ptr.capacity * element_size));
 
-    if (data_size != 0) {
-        array_ptr.data = zeus_gc_alloc(data_size);
+    array_ptr.data = runtime_util.allocateRawBytes(allocator, data_size);
+    if (data_size != 0 and array_ptr.data == null) {
+        debug.log(allocator, "array_constructor", "failed to allocate memory for array data", .{});
+        return;
     }
 }
 
@@ -49,7 +69,7 @@ export fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
         // Double the capacity
         const new_capacity = array_ptr.capacity * 2;
         const new_data_size = @as(u32, @intCast(new_capacity * element_size));
-        const new_data = zeus_gc_alloc(new_data_size);
+        const new_data = runtime_util.allocateRawBytes(allocator, new_data_size);
 
         if (new_data == null) {
             debug.log(allocator, "array_push", "failed to allocate memory for resize", .{});

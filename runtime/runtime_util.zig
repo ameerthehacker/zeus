@@ -7,6 +7,25 @@ const abi = @import("abi.zig");
 // Forward declaration - will be resolved at link time
 extern fn zeus_gc_alloc(size: u32) ?*anyopaque;
 
+// Default object type info for generic Zeus objects
+// This is used for wrapper objects that don't belong to a specific class
+var default_object_type_info: abi.ZeusObjectTypeInfo = abi.ZeusObjectTypeInfo{
+    .object_type_id = 0,
+    .object_type = abi.ZeusObjectType.object,
+    .array_element_type = abi.ZeusType._null,
+    .parent_type_info = null,
+};
+
+// Dummy vtable for default object header
+var default_vtable: u8 = 0;
+
+// Default object header for generic Zeus objects
+var default_object_header: abi.ZeusObjectHeader = abi.ZeusObjectHeader{
+    .vtable = @ptrCast(&default_vtable),
+    .object_type_info = @ptrCast(&default_object_type_info),
+    .gc_offsets_count = 0,
+};
+
 /// Allocates memory for a return value following Zeus object ABI
 /// Creates a wrapper object with a header and one field containing the result
 /// Returns a byte slice pointing to the result field for the caller to write
@@ -32,9 +51,11 @@ pub fn allocateReturnBuffer(return_buffer_ptr_ptr: ?*anyopaque, size: u32) ?[]u8
         return null;
     }
 
-    // Zero out the header pointer (first field)
     const obj_bytes = @as([*]u8, @ptrCast(@alignCast(wrapper_obj.?)));
-    @memset(obj_bytes[0..header_ptr_size], 0);
+
+    // Set the header pointer to point to our default object header
+    const zeus_obj = @as(*abi.ZeusObj, @ptrCast(@alignCast(wrapper_obj.?)));
+    zeus_obj.obj_header = &default_object_header;
 
     // Store the pointer to the wrapper object in the ptr-ptr location
     const ptr_ptr = @as(*?*anyopaque, @ptrCast(@alignCast(return_buffer_ptr_ptr.?)));
@@ -68,15 +89,41 @@ pub fn allocateZeroedReturnBuffer(return_buffer_ptr_ptr: ?*anyopaque, size: u32)
         return false;
     }
 
-    // Zero out the entire object
     const obj_bytes = @as([*]u8, @ptrCast(@alignCast(wrapper_obj.?)));
-    @memset(obj_bytes[0..total_size], 0);
+
+    // Set the header pointer to point to our default object header
+    const zeus_obj = @as(*abi.ZeusObj, @ptrCast(@alignCast(wrapper_obj.?)));
+    zeus_obj.obj_header = &default_object_header;
+
+    // Zero out the result field (after the header pointer)
+    @memset(obj_bytes[header_ptr_size..total_size], 0);
 
     // Store the pointer to the wrapper object in the ptr-ptr location
     const ptr_ptr = @as(*?*anyopaque, @ptrCast(@alignCast(return_buffer_ptr_ptr.?)));
     ptr_ptr.* = wrapper_obj;
 
     return true;
+}
+
+/// Allocates raw bytes using the provided allocator (not GC-tracked)
+/// Use this for allocating data buffers that should not be tracked by the garbage collector
+///
+/// Parameters:
+/// - allocator: The allocator to use for the allocation
+/// - size: Size in bytes to allocate
+///
+/// Returns:
+/// - A pointer to the allocated memory, or null if allocation failed
+pub fn allocateRawBytes(allocator: std.mem.Allocator, size: u32) ?*anyopaque {
+    if (size == 0) {
+        return null;
+    }
+
+    const bytes = allocator.alloc(u8, size) catch {
+        return null;
+    };
+
+    return @ptrCast(bytes.ptr);
 }
 
 pub fn getZeusTypeSize(zeus_type: abi.ZeusType) u32 {

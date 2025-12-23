@@ -1,6 +1,7 @@
 const std = @import("std");
 const debug = @import("debug.zig");
 const abi = @import("abi.zig");
+const array_runtime = @import("array_runtime.zig");
 
 // Import types from ABI module
 const ZeusObjectHeader = abi.ZeusObjectHeader;
@@ -107,6 +108,12 @@ pub const GC = struct {
             if (!obj.marked) {
                 // Object is not reachable and not protected, free it
                 debug.log(self.allocator, "gc_sweep", "freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
+
+                // Cleanup array data if this is an array object
+                // Array data is managed by array_runtime's own allocator
+                if (obj.ptr.obj_header.getObjectTypeInfo().object_type == abi.ZeusObjectType.array) {
+                    array_runtime.zeus_array_cleanup(obj.ptr);
+                }
 
                 // Create a slice from the pointer and size to free it properly
                 const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];

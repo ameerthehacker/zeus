@@ -707,7 +707,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	gcOffsetsCount := 0
 
 	for _, property := range class.Properties {
-		if zeus_value.IsObjectType(property.Property.ValueType) || (zeus_value.IsOpaqueType(property.Property.ValueType) && property.Property.IsPtr) {
+		if zeus_value.IsObjectType(property.Property.ValueType) {
 			gcOffsetsCount += 1
 		}
 	}
@@ -774,7 +774,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// We use ElementOffset to get the exact byte offset LLVM calculated for each field
 	// This accounts for all padding and alignment that LLVM adds to the struct
 	for propertyIndex, property := range class.Properties {
-		if zeus_value.IsObjectType(property.Property.ValueType) || (zeus_value.IsOpaqueType(property.Property.ValueType) && property.Property.IsPtr) {
+		if zeus_value.IsObjectType(property.Property.ValueType) {
 			// propertyIndex + 1 because index 0 in the struct is the obj_header pointer
 			actualOffset := c.targetDataLayout.ElementOffset(llvmStructType, propertyIndex+1)
 			gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.cxt.Int8Type(), actualOffset, false))
