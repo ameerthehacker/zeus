@@ -1,7 +1,12 @@
 [
-  {
-      "name": "Basic array",
-      "exit": "2",
-      "entry": "basic.zs"
-  }
+    {
+        "name": "Basic array",
+        "exit": "2",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "Object array",
+        "exit": "9",
+        "entry": "object.zs"
+    }
 ]
