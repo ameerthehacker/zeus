@@ -6,7 +6,7 @@
     },
     {
         "name": "Object array",
-        "exit": "9",
+        "exit": "11",
         "entry": "object.zs"
     }
 ]
