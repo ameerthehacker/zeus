@@ -41,6 +41,64 @@ inline fn getElementOffset(index: u32, element_size: u32) usize {
     return @as(usize, @intCast(index)) * element_size;
 }
 
+/// Write default value for a Zeus type at the given memory location
+fn writeDefaultValue(dest: [*]u8, zeus_type: abi.ZeusType, element_size: u32) void {
+    switch (zeus_type) {
+        ._i8 => {
+            const ptr = @as(*i8, @ptrCast(@alignCast(dest)));
+            ptr.* = 0;
+        },
+        ._i16 => {
+            const ptr = @as(*i16, @ptrCast(@alignCast(dest)));
+            ptr.* = 0;
+        },
+        ._i32 => {
+            const ptr = @as(*i32, @ptrCast(@alignCast(dest)));
+            ptr.* = 0;
+        },
+        ._i64 => {
+            const ptr = @as(*i64, @ptrCast(@alignCast(dest)));
+            ptr.* = 0;
+        },
+        ._f32 => {
+            const ptr = @as(*f32, @ptrCast(@alignCast(dest)));
+            ptr.* = 0.0;
+        },
+        ._f64 => {
+            const ptr = @as(*f64, @ptrCast(@alignCast(dest)));
+            ptr.* = 0.0;
+        },
+        ._bool => {
+            const ptr = @as(*bool, @ptrCast(@alignCast(dest)));
+            ptr.* = false;
+        },
+        .object => {
+            const ptr = @as(*?*anyopaque, @ptrCast(@alignCast(dest)));
+            ptr.* = null;
+        },
+        ._null => {
+            // For null type, just zero out the memory
+            @memset(dest[0..element_size], 0);
+        },
+    }
+}
+
+/// Initialize a range of elements with default values
+fn initializeWithDefaults(array_ptr: *abi.ZeusArrayObj, start_index: u32, end_index: u32) void {
+    if (start_index >= end_index) return;
+    if (getDataBytes(array_ptr)) |data_bytes| {
+        const element_size = getElementSize(array_ptr);
+        const type_info = array_ptr.obj_header.getObjectTypeInfo();
+        const element_type = type_info.array_element_type;
+
+        var i = start_index;
+        while (i < end_index) : (i += 1) {
+            const offset = getElementOffset(i, element_size);
+            writeDefaultValue(data_bytes + offset, element_type, element_size);
+        }
+    }
+}
+
 /// Allocate a new data buffer with the specified capacity
 fn allocateDataBuffer(capacity: u32, element_size: u32) ?*anyopaque {
     if (capacity == 0 or element_size == 0) {
@@ -66,7 +124,7 @@ fn freeDataBuffer(array_ptr: *abi.ZeusArrayObj) void {
     }
 }
 
-/// Resize array to new capacity, copying existing data
+/// Resize array to new capacity, copying existing data and initializing new slots with defaults
 fn resizeArray(array_ptr: *abi.ZeusArrayObj, new_capacity: u32) bool {
     const element_size = getElementSize(array_ptr);
     const new_data = allocateDataBuffer(new_capacity, element_size);
@@ -75,6 +133,8 @@ fn resizeArray(array_ptr: *abi.ZeusArrayObj, new_capacity: u32) bool {
         debug.log(allocator, "array_resize", "failed to allocate memory for resize", .{});
         return false;
     }
+
+    const old_length = array_ptr.length;
 
     // Copy existing data to new buffer
     if (array_ptr.data != null and array_ptr.length > 0) {
@@ -94,7 +154,10 @@ fn resizeArray(array_ptr: *abi.ZeusArrayObj, new_capacity: u32) bool {
     array_ptr.data = new_data;
     array_ptr.capacity = new_capacity;
 
-    debug.log(allocator, "array_resize", "resized array to capacity={}", .{new_capacity});
+    // Initialize new capacity slots with default values
+    initializeWithDefaults(array_ptr, old_length, new_capacity);
+
+    debug.log(allocator, "array_resize", "resized array to capacity={}, initialized slots {}..{}", .{ new_capacity, old_length, new_capacity });
     return true;
 }
 
@@ -127,6 +190,9 @@ export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyo
     if (initial_capacity > 0 and array_ptr.data == null) {
         debug.log(allocator, "array_constructor", "failed to allocate memory for array data", .{});
         array_ptr.capacity = 0;
+    } else if (initial_capacity > 0) {
+        // Initialize all capacity with default values
+        initializeWithDefaults(array_ptr, 0, initial_capacity);
     }
 }
 
@@ -211,5 +277,53 @@ export fn zeus_array_get(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaqu
     } else {
         _ = runtime_util.allocateZeroedReturnBuffer(return_buffer_ptr_ptr, element_size);
         debug.log(allocator, "array_get", "array data is null", .{});
+    }
+}
+
+/// Set: zeus_array_set(this_ptr, return_buffer_ptr, index_ptr, value_ptr)
+/// Sets value at the specified index, resizing array if necessary
+export fn zeus_array_set(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, index_ptr: *anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return, not used
+
+    const array_ptr = castToArrayObj(this_ptr);
+    const index_val_ptr = @as(*i32, @ptrCast(@alignCast(index_ptr)));
+    const index = index_val_ptr.*;
+    const element_size = getElementSize(array_ptr);
+
+    // Validate index is non-negative
+    if (index < 0) {
+        debug.log(allocator, "array_set", "negative index {} not allowed", .{index});
+        return;
+    }
+
+    const target_index = @as(u32, @intCast(index));
+
+    // Check if we need to resize to accommodate this index
+    if (target_index >= array_ptr.capacity) {
+        // Calculate new capacity: ensure it's at least index + 1, but use growth factor for efficiency
+        var new_capacity = if (array_ptr.capacity == 0) ARRAY_MIN_CAPACITY else array_ptr.capacity;
+
+        while (new_capacity <= target_index) {
+            new_capacity *= ARRAY_GROWTH_FACTOR;
+        }
+
+        if (!resizeArray(array_ptr, new_capacity)) {
+            debug.log(allocator, "array_set", "failed to resize for index {}", .{target_index});
+            return; // Resize failed, error already logged
+        }
+    }
+
+    // Set the value at the specified index
+    if (getDataBytes(array_ptr)) |data_bytes| {
+        const value_bytes = @as([*]u8, @ptrCast(@alignCast(value_ptr)));
+        const offset = getElementOffset(target_index, element_size);
+        @memcpy(data_bytes[offset .. offset + element_size], value_bytes[0..element_size]);
+
+        // Update length if we're setting beyond current length
+        if (target_index >= array_ptr.length) {
+            array_ptr.length = target_index + 1;
+        }
+
+        debug.log(allocator, "array_set", "set value at index {}, new length={}", .{ target_index, array_ptr.length });
     }
 }

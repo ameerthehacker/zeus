@@ -174,6 +174,8 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.resolveVarDecl(tc, instr)
 	case InstrTypeDeclFunc:
 		p.resolveFuncDecl(tc, instr)
+	case InstrTypeNewObj:
+		p.resolvePrimordialNewObj(tc, instr)
 	case InstrTypeDeclClass:
 		p.resolveClassDecl(tc, instr)
 	case InstrTypeDeclClassMethod:
@@ -199,6 +201,10 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 		}
 
 		return tc.getBuiltInValueType(variable)
+	} else if zeus_value.IsArrayType(valueType) {
+		arrayType := zeus_value.AsArrayType(valueType)
+		arrayType.ElementType = p.resolveValueType(tc, arrayType.ElementType, false)
+		return *arrayType
 	} else if zeus_value.IsNullType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot use null as a standalone type",
@@ -221,6 +227,19 @@ func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
 	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType, false)
 }
 
+// whenever new object of a primordial class is created, we need to resolve the class here
+func (p *ToKnownTypesPass) resolvePrimordialNewObj(tc *TypeChecker, instr *Instr) {
+	input := AsNewObjInstrInput(instr.Input)
+
+	if zeus_value.IsClass(input.Callee) {
+		class := zeus_value.AsClass(input.Callee)
+		// primordial classes don't have class declarations so we need to resolve them here
+		if class.PrimordialName != "" {
+			input.Callee = p.resolveClass(tc, class)
+		} 
+	}
+}
+
 func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
 
@@ -233,23 +252,33 @@ func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 	}
 }
 
-func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
-	input := AsDeclClassInstrInput(instr.Input)
-
+func (p* ToKnownTypesPass) resolveClass(tc *TypeChecker, class *zeus_value.Class) *zeus_value.Class {
 	// Resolve property types
-	for i := range input.Class.Properties {
-		input.Class.Properties[i].Property.ValueType = p.resolveValueType(tc, input.Class.Properties[i].Property.ValueType, false)
+	for i := range class.Properties {
+		class.Properties[i].Property.ValueType = p.resolveValueType(tc, class.Properties[i].Property.ValueType, false)
+	}
+
+	if class.ArrayElementType != nil {
+		class.ArrayElementType = p.resolveValueType(tc, class.ArrayElementType, false)
 	}
 
 	// Resolve method types
-	for i := range input.Class.Methods {
-		method := input.Class.Methods[i].Method
+	for i := range class.Methods {
+		method := class.Methods[i].Method
 		method.ReturnType = p.resolveValueType(tc, method.ReturnType, true)
 
 		for j := range method.Params {
 			method.Params[j].ValueType = p.resolveValueType(tc, method.Params[j].ValueType, false)
 		}
 	}
+
+	return class
+}
+
+func (p *ToKnownTypesPass) resolveClassDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclClassInstrInput(instr.Input)
+
+	p.resolveClass(tc, input.Class)
 }
 
 func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr) {

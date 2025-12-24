@@ -229,6 +229,15 @@ func IsOpaqueType(value ValueType) bool {
 	}
 }
 
+func IsArrayType(value ValueType) bool {
+	switch value.(type) {
+	case ArrayType:
+		return true
+	default:
+		return false
+	}
+}
+
 func AsArrayType(value ValueType) *ArrayType {
 	switch value := value.(type) {
 	case ArrayType:

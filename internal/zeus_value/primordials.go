@@ -21,11 +21,16 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	pushMethod := NewFunction("push", []*Var{NewVar("value", arrayType.ElementType, false, arrayType.GetSpan())}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
 	popMethod := NewFunction("pop", []*Var{}, arrayType.ElementType, arrayType.GetSpan())
 	getMethod := NewFunction("get", []*Var{NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan())}, arrayType.ElementType, arrayType.GetSpan())
+	setMethod := NewFunction("set", []*Var{
+		NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()),
+		NewVar("value", arrayType.ElementType, false, arrayType.GetSpan()),
+	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
 	methods := []*ClassMethod{
 		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
 		NewClassMethod(pushMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
 		NewClassMethod(popMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
 		NewClassMethod(getMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
+		NewClassMethod(setMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
 	}
 	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, arrayType.GetSpan())
 }

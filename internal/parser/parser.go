@@ -173,12 +173,7 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	typeExpressionParseLet := func(parser *Parser, typeToken *token.Token) ast.ExprNode {
-		var arrayMetadata *ast.ArrayMetadata
-		if parser.peek().Type == token.TokenTypeLeftBracket {
-			parser.consumeToken(token.TokenTypeLeftBracket)
-			arrayMetadata = &ast.ArrayMetadata{ArrayLen: parser.parseExprOfPrecedence(0, true)}
-			parser.consumeToken(token.TokenTypeRightBracket)
-		}
+		arrayMetadata := parser.consumeArrayMetadata()
 		return &ast.TypeExpressionNode{Type: typeToken, Array: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
 	}
 
@@ -195,8 +190,14 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeFalse: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.BooleanExprNode{Value: token}
 		},
-		token.TokenTypeIdentifier: func(parser *Parser, token *token.Token) ast.ExprNode {
-			return &ast.IdentifierExprNode{Name: token}
+		token.TokenTypeIdentifier: func(parser *Parser, typeToken *token.Token) ast.ExprNode {
+			arrayMetadata := parser.consumeArrayMetadata()
+
+			if arrayMetadata != nil {
+				return &ast.TypeExpressionNode{Type: typeToken, Array: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
+			}
+
+			return &ast.IdentifierExprNode{Name: typeToken}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
 			expr := parser.parseExprOfPrecedence(0, false)
@@ -299,6 +300,16 @@ func (p *Parser) consume() *token.Token {
 	token := p.tokens[p.current]
 	p.current++
 	return token
+}
+
+func (p *Parser) consumeArrayMetadata() *ast.ArrayMetadata {
+	var arrayMetadata *ast.ArrayMetadata
+	if p.peek().Type == token.TokenTypeLeftBracket {
+		p.consumeToken(token.TokenTypeLeftBracket)
+		arrayMetadata = &ast.ArrayMetadata{ArrayLen: p.parseExprOfPrecedence(0, true)}
+		p.consumeToken(token.TokenTypeRightBracket)
+	}
+	return arrayMetadata
 }
 
 func (p *Parser) consumeToken(expectedTokenType token.TokenType, extraInfo ...string) *token.Token {
