@@ -208,16 +208,13 @@ func AsObjectType(value ValueType) *ObjectType {
 	switch value := value.(type) {
 	case ObjectType:
 		return &value
-	case ArrayType:
-		class := GetArrayPrimordialClassDefinition(value)
-		return &ObjectType{Class: *class}
 	default:
 		return nil
 	}
 }
 
 func IsObjectType(value ValueType) bool {
-	return AsObjectType(value) != nil || AsArrayType(value) != nil
+	return AsObjectType(value) != nil 
 }
 
 func IsOpaqueType(value ValueType) bool {

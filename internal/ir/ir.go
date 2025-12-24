@@ -365,9 +365,34 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
+// buildClass builds the IR for a class declaration and registers it in the symbol table
+// For user-defined classes, pass methodASTs to emit method bodies
+// For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
+func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMethod) string {
+	irClassName := g.irBuilder.BuildClassDecl(class, class.GetSpan())
+	g.symbolTable.DeclareSymbol(class.Name, class)
+
+	// Emit method bodies if AST nodes are provided (user-defined classes)
+	for _, method := range methodASTs {
+		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
+	}
+
+	return irClassName
+}
+
 func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.Value {
-	if expr.Array != nil {
-		return zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.ToValueType(expr.Type), Span: expr.GetSpan()})
+	if expr.ArrayDims != nil {
+		// the inner most data is of type expr.Type
+		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.ToValueType(expr.Type), Span: expr.GetSpan()})
+		g.buildClass(arrayClass, nil)
+		// exclude the last dimantion as we have created the inner most array class
+		for i:= len(expr.ArrayDims.CapacityExprs) - 2; i >= 0; i-- {
+			// nest the array class inside array class
+			arrayClass = zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.NewObjectType(*arrayClass), Span: expr.GetSpan()})
+			g.buildClass(arrayClass, nil)
+		}
+
+		return arrayClass
 	} else {
 		return nil
 	}
@@ -392,17 +417,20 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
 
-	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.Array != nil {
+	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.ArrayDims != nil {
 		var arrayCapacityExpr zeus_value.Value
 		arrayCapacityExpr = zeus_value.NewConstant(
 			"0",
 			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
 			asTypeExpression.GetSpan(),
 		)
-		arrayLen := asTypeExpression.Array.ArrayLen
+		// we only initiate the first dimension of the array
+		// the zeus runtime will instantiate the nested arrays
+		// whenever it sees that the array has sub arrays
+		capacity := asTypeExpression.ArrayDims.CapacityExprs[0]
 
-		if arrayLen != nil {
-			arrayCapacityExpr = arrayLen.Accept(g)
+		if capacity != nil {
+			arrayCapacityExpr = capacity.Accept(g)
 		}
 
 		args = append(args, arrayCapacityExpr)
@@ -485,15 +513,10 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
-	irClassName := g.irBuilder.BuildClassDecl(class, expr.GetSpan())
-	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
-
-	for _, method := range expr.Methods {
-		// emit global class methods
-		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
-	}
+	g.buildClass(class, expr.Methods)
 	g.symbolTable.ExitScope()
 
+	// Re-declare the class in the outer scope after exiting the class members scope
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 	return class
 }

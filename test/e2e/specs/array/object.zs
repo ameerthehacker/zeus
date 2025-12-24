@@ -7,7 +7,7 @@ class Point {
     this.y = y;
   }
 
-  sum(): i32 {
+  public sum(): i32 {
     return this.x + this.y;
   }
 }

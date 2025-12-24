@@ -148,6 +148,28 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
 }
 
+// getClassFromType extracts a class from either an ObjectType or ArrayType
+// For ObjectType, it returns the class directly
+// For ArrayType, it looks up the array class in the symbol table
+func (tc *TypeChecker) getClassFromType(objectType zeus_value.ValueType) *zeus_value.Class {
+	_objectType := zeus_value.AsObjectType(objectType)
+	arrayType := zeus_value.AsArrayType(objectType)
+
+	if _objectType != nil {
+		return &_objectType.Class
+	} else if arrayType != nil {
+		arrayTypeClassName := arrayType.String()
+		class, ok := tc.builder.symbolTable.GetSymbol(arrayTypeClassName)
+		zeus_error.Assert(ok, fmt.Sprintf("array element type %s not found in symbol table", arrayTypeClassName))
+		classValue, ok := class.(*zeus_value.Class)
+		zeus_error.Assert(ok, fmt.Sprintf("array element type %s is not a class", arrayTypeClassName))
+		
+		return classValue
+	}
+
+	return nil
+}
+
 // ToKnownTypesPass converts all UserDefinedType references to their actual known types
 type ToKnownTypesPass struct{}
 
@@ -174,8 +196,6 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.resolveVarDecl(tc, instr)
 	case InstrTypeDeclFunc:
 		p.resolveFuncDecl(tc, instr)
-	case InstrTypeNewObj:
-		p.resolvePrimordialNewObj(tc, instr)
 	case InstrTypeDeclClass:
 		p.resolveClassDecl(tc, instr)
 	case InstrTypeDeclClassMethod:
@@ -202,9 +222,11 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 
 		return tc.getBuiltInValueType(variable)
 	} else if zeus_value.IsArrayType(valueType) {
+		// we convert all the array types to objects
 		arrayType := zeus_value.AsArrayType(valueType)
 		arrayType.ElementType = p.resolveValueType(tc, arrayType.ElementType, false)
-		return *arrayType
+		class := tc.getClassFromType(*arrayType)
+		return zeus_value.NewObjectType(*class)
 	} else if zeus_value.IsNullType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot use null as a standalone type",
@@ -225,19 +247,6 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
 	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType, false)
-}
-
-// whenever new object of a primordial class is created, we need to resolve the class here
-func (p *ToKnownTypesPass) resolvePrimordialNewObj(tc *TypeChecker, instr *Instr) {
-	input := AsNewObjInstrInput(instr.Input)
-
-	if zeus_value.IsClass(input.Callee) {
-		class := zeus_value.AsClass(input.Callee)
-		// primordial classes don't have class declarations so we need to resolve them here
-		if class.PrimordialName != "" {
-			input.Callee = p.resolveClass(tc, class)
-		} 
-	}
 }
 
 func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
@@ -833,7 +842,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	valueType := tc.getValueType(input.Object)
 
 	if zeus_value.IsObjectType(valueType) {
-		class := zeus_value.AsObjectType(valueType).Class
+		class := tc.getClassFromType(valueType)
 		properties := class.Properties
 		methods := class.Methods
 		isFound := false
@@ -1120,9 +1129,7 @@ func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *I
 
 	// Check if it's an object type (class instance)
 	if zeus_value.IsObjectType(objectType) {
-		objectTypeStruct := zeus_value.AsObjectType(objectType)
-		class := objectTypeStruct.Class
-
+		class := zeus_value.AsObjectType(objectType).Class
 		// Look for a method with the matching name
 		for _, classMethod := range class.Methods {
 			if classMethod.Method.Name == input.Property {
@@ -1182,7 +1189,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			}
 		} else if class := zeus_value.AsClass(value); class != nil {
 			// Check if the class is unused (no objects created from it)
-			if !class.IsUsed {
+			if !class.IsUsed && class.PrimordialName == "" {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
 					Message:  fmt.Sprintf("class '%s' is declared but not used", class.Name),
@@ -1200,7 +1207,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					}
 
 					// Check if the method is unused
-					if !method.IsUsed {
+					if !method.IsUsed && class.PrimordialName == "" {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
 							Message:  fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
@@ -1214,7 +1221,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					property := classProperty.Property
 
 					// Check if the property is unused
-					if !property.IsUsed {
+					if !property.IsUsed && class.PrimordialName == "" {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
 							Message:  fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),

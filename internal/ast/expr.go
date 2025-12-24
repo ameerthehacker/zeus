@@ -226,13 +226,13 @@ func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
-type ArrayMetadata struct {
-	ArrayLen ExprNode
+type ArrayDims struct {
+	CapacityExprs []ExprNode
 }
 
 type TypeExpressionNode struct {
 	Type *token.Token
-	Array* ArrayMetadata
+	ArrayDims* ArrayDims
 	Span *token.Span
 }
 
@@ -241,27 +241,27 @@ func (t *TypeExpressionNode) GetSpan() *token.Span {
 }
 
 func (t *TypeExpressionNode) PrettyString() string {
-	if t.Array != nil && t.Array.ArrayLen != nil {
-		arrayLen := "0"
+	if t.ArrayDims != nil && t.ArrayDims.CapacityExprs != nil {
+		capacities := []string{}
 
-		if t.Array.ArrayLen != nil {
-			arrayLen = t.Array.ArrayLen.PrettyString()
+		for _, capacityExpr := range t.ArrayDims.CapacityExprs {
+			capacities = append(capacities, fmt.Sprintf("[%s]", capacityExpr.PrettyString()))
 		}
 
-		return fmt.Sprintf("%s[%s]", t.Type.Value, arrayLen)
+		return fmt.Sprintf("%s%s", t.Type.Value, strings.Join(capacities, ""))
 	}
 	return t.Type.Value
 }
 
 func (t *TypeExpressionNode) String() string {
-	if t.Array != nil && t.Array.ArrayLen != nil {
-		arrayLen := "0"
+	if t.ArrayDims != nil && t.ArrayDims.CapacityExprs != nil {
+		capacities := []string{}
 
-		if t.Array.ArrayLen != nil {
-			arrayLen = t.Array.ArrayLen.String()
+		for _, capacityExpr := range t.ArrayDims.CapacityExprs {
+			capacities = append(capacities, fmt.Sprintf("[%s]", capacityExpr.String()))
 		}
 
-		return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, ArrayLen: %s, Span: %s }", t.Type.Value, arrayLen, t.GetSpan())
+		return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Dimensions: %s, Span: %s }", t.Type.Value, strings.Join(capacities, ""), t.GetSpan())
 	}
 	return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Span: %s }", t.Type.Value, t.GetSpan())
 }
