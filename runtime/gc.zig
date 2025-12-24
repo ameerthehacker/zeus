@@ -91,6 +91,21 @@ pub const GC = struct {
                         debug.log(self.allocator, "gc_mark", "marking nested object at 0x{X} (offset={})", .{ @intFromPtr(nested_obj), offset });
                         self.markObject(nested_obj);
                     }
+
+                    const object_type_info = obj.ptr.obj_header.getObjectTypeInfo();
+
+                    if (object_type_info.object_type == abi.ZeusObjectType.array and object_type_info.array_element_type == abi.ZeusType.object) {
+                        const array_obj = @as(*abi.ZeusArrayObj, @ptrCast(obj.ptr));
+                        if (array_obj.data) |data| {
+                            const elements = @as([*]?*ZeusObj, @ptrCast(@alignCast(data)));
+                            for (elements[0..array_obj.length], 0..) |element, index| {
+                                if (element) |elem| {
+                                    debug.log(self.allocator, "gc_mark", "marking array 0x{X}[{}]=0x{X}", .{ @intFromPtr(array_obj), index, @intFromPtr(elem) });
+                                    self.markObject(elem);
+                                }
+                            }
+                        }
+                    }
                 }
                 break;
             }
