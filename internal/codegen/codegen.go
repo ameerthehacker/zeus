@@ -199,6 +199,12 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 			method.AccessModifier,
 		)
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
+		
+		// Mark primordial wrappers as alwaysinline to eliminate them from binary
+		// These are just thin wrappers around runtime functions, so inlining is beneficial
+		alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
+		classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
+		
 		basicBlock := llvm.AddBasicBlock(classFunction, "entry")
 		c.builder.SetInsertPointAtEnd(basicBlock)
 

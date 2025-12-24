@@ -283,7 +283,11 @@ func (a ArrayType) GetSpan() *token.Span {
 }
 
 func (a ArrayType) String() string {
-	return fmt.Sprintf("%s[]", a.ElementType)
+	arraySuffix := "[]"
+	if IsObjectType(a.ElementType) || IsUserDefinedType(a.ElementType) {
+		return fmt.Sprintf("%s%s", a.ElementType.String(), arraySuffix)
+	}
+	return fmt.Sprintf("%s%s", a.ElementType.String(), arraySuffix)
 }
 
 func ToValueType(t *token.Token) ValueType {
