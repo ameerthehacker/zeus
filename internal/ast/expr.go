@@ -226,37 +226,48 @@ func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
-type ArrayMeta struct {
-	Dims int
-	CapacityExpr ExprNode
+type IndexingMeta struct {
+	IndexingExprs []ExprNode
 }
 
-type TypeExpressionNode struct {
-	Type *token.Token
-	ArrayMetadata* ArrayMeta
+func (i *IndexingMeta) String() string {
+	indexingExprsStr := []string{}
+	for _, indexingExpr := range i.IndexingExprs {
+		indexingExprsStr = append(indexingExprsStr, fmt.Sprintf("[%s]", indexingExpr.String()))
+	}
+	return strings.Join(indexingExprsStr, "")
+}
+
+type IndexingExprNode struct {
+	Array ExprNode
+	IndexingMeta IndexingMeta
 	Span *token.Span
 }
 
-func (t *TypeExpressionNode) GetSpan() *token.Span {
+func (t *IndexingExprNode) GetSpan() *token.Span {
 	return t.Span
 }
 
-func (t *TypeExpressionNode) PrettyString() string {
-	if t.ArrayMetadata != nil && t.ArrayMetadata.CapacityExpr != nil {
-		return fmt.Sprintf("%s%s", t.Type.Value, fmt.Sprintf("[%s]", t.ArrayMetadata.CapacityExpr.PrettyString()))
+func (t *IndexingExprNode) PrettyString() string {
+	if t.IndexingMeta.IndexingExprs != nil {
+		indexingExprsStr := []string{}
+		for _, indexingExpr := range t.IndexingMeta.IndexingExprs {
+			indexingExprsStr = append(indexingExprsStr, fmt.Sprintf("[%s]", indexingExpr.PrettyString()))
+		}
+		return fmt.Sprintf("%s%s", t.Array.PrettyString(), strings.Join(indexingExprsStr, ""))
 	}
-	return t.Type.Value
+	return t.Array.PrettyString()
 }
 
-func (t *TypeExpressionNode) String() string {
-	if t.ArrayMetadata != nil && t.ArrayMetadata.CapacityExpr != nil {
-		return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Capacity: %s, Span: %s }", t.Type.Value, fmt.Sprintf("[%s]", t.ArrayMetadata.CapacityExpr.String()), t.GetSpan())
+func (t *IndexingExprNode) String() string {
+	if t.IndexingMeta.IndexingExprs != nil {
+		return fmt.Sprintf("{ type: IndexingExprNode, Array: %s, IndexingMeta: %s, Span: %s }", t.Array.String(), t.IndexingMeta.String(), t.GetSpan())
 	}
-	return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Span: %s }", t.Type.Value, t.GetSpan())
+	return fmt.Sprintf("{ type: IndexingExprNode, Array: %s, Span: %s }", t.Array.String(), t.GetSpan())
 }
 
-func (t *TypeExpressionNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
-	return visitor.VisitTypeExpression(t)
+func (t *IndexingExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitIndexingExpression(t)
 }
 
 // ClassDeclExprNode and its methods
@@ -395,9 +406,9 @@ func classMethodsString(methods []*ClassMethod) string {
 	return strings.Join(methodsStr, ", ")
 }
 
-func AsTypeExpression(expr ExprNode) *TypeExpressionNode {
+func AsTypeExpression(expr ExprNode) *IndexingExprNode {
 	switch expr := expr.(type) {
-	case *TypeExpressionNode:
+	case *IndexingExprNode:
 		return expr
 	default:
 		return nil
@@ -407,7 +418,7 @@ func AsTypeExpression(expr ExprNode) *TypeExpressionNode {
 // ExprVisitor interface
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
-	VisitTypeExpression(node *TypeExpressionNode) T
+	VisitIndexingExpression(node *IndexingExprNode) T
 	VisitNumber(node *NumberExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
 	VisitIdentifier(node *IdentifierExprNode) T

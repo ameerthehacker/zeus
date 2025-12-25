@@ -392,25 +392,25 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	return irClassName
 }
 
-func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.Value {
-	if expr.ArrayMetadata != nil {
+func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
 		// Start with the innermost element type (e.g., u8 for u8[][][])
 		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(
 			zeus_value.ArrayType{
-				ElementType: zeus_value.ToValueType(expr.Type),
+				ElementType: expr.Array.Accept(g),
 				Span:        expr.GetSpan(),
 			},
 		)
 
+		dims := len(expr.IndexingMeta.IndexingExprs)
 		// Build nested classes from innermost to outermost
 		// For u8[][][]: builds u8[], then u8[][], then u8[][][]
-		for i := 0; i < expr.ArrayMetadata.Dims; i++ {
+		for i := 0; i < dims; i++ {
 			if _, ok := g.symbolTable.GetSymbol(arrayClass.Name); !ok {
 				g.buildClass(arrayClass, nil)
 			}
 
 			// Create the next nesting level (except on the last iteration)
-			if i < expr.ArrayMetadata.Dims - 1 {
+			if i < dims - 1 {
 				arrayClass = zeus_value.GetArrayPrimordialClassDefinition(
 					zeus_value.ArrayType{
 						ElementType: zeus_value.NewObjectType(*arrayClass),
@@ -421,9 +421,6 @@ func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.
 		}
 
 		return arrayClass
-	} else {
-		return nil
-	}
 }
 
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
@@ -445,16 +442,23 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
 
-	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.ArrayMetadata != nil {
+	if asIndexingExpr, ok := expr.Callee.(*ast.IndexingExprNode); ok {
 		var arrayCapacityExpr zeus_value.Value = zeus_value.NewConstant(
 			"0",
-			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
-			asTypeExpression.GetSpan(),
+			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asIndexingExpr.GetSpan()},
+			asIndexingExpr.GetSpan(),
 		)
 		
-		if asTypeExpression.ArrayMetadata.CapacityExpr != nil {
-			arrayCapacityExpr = asTypeExpression.ArrayMetadata.CapacityExpr.Accept(g)
+		if asIndexingExpr.IndexingMeta.IndexingExprs[0] != nil {
+			arrayCapacityExpr = asIndexingExpr.IndexingMeta.IndexingExprs[0].Accept(g)
 		}
+
+		for i := 1; i < len(asIndexingExpr.IndexingMeta.IndexingExprs); i++ {
+			if asIndexingExpr.IndexingMeta.IndexingExprs[i] != nil {
+				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "capacity allocation is only supported for the first dimension", asIndexingExpr.IndexingMeta.IndexingExprs[i].GetSpan()))
+			}
+		}
+
 		args = append(args, arrayCapacityExpr)
 	} else {
 		for _, arg := range expr.Args {

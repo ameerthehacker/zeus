@@ -359,10 +359,8 @@ echo $?  # Print exit code
 - [ ] Log Functions
 - [ ] Inheritance
 - [ ] Interfaces
-- [ ] Variable Type Inference
-- [ ] Function Type Inference
 - [ ] Closure
-- [ ] String Type
+- [ ] Variable Type Inference
 - [ ] Exception Handling
 - [ ] Language Server v2 (Completions, Go to Definition, Hover)
 - [ ] HTTP Server v1
@@ -374,3 +372,4 @@ echo $?  # Print exit code
 
 ### Beta V2
 - [ ] Nullable Type
+- [ ] Function Type Inference

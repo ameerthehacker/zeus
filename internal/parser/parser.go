@@ -26,6 +26,7 @@ const (
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypeDot:              6,
+	token.TokenTypeLeftBracket:      6,
 	token.TokenTypeLeftParen:        5,
 	token.TokenTypeStar:             4,
 	token.TokenTypeSlash:            4,
@@ -172,11 +173,6 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.ObjectPropertyAccessExprNode{Object: left, Property: property, Span: &token.Span{Start: dot.Span.Start, End: property.GetSpan().End}}
 	}
 
-	typeExpressionParseLet := func(parser *Parser, typeToken *token.Token) ast.ExprNode {
-		arrayMetadata := parser.consumeArrayMetadata()
-		return &ast.TypeExpressionNode{Type: typeToken, ArrayMetadata: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
-	}
-
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -191,12 +187,6 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.BooleanExprNode{Value: token}
 		},
 		token.TokenTypeIdentifier: func(parser *Parser, typeToken *token.Token) ast.ExprNode {
-			arrayMetadata := parser.consumeArrayMetadata()
-
-			if arrayMetadata != nil {
-				return &ast.TypeExpressionNode{Type: typeToken, ArrayMetadata: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
-			}
-
 			return &ast.IdentifierExprNode{Name: typeToken}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
@@ -226,17 +216,11 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus:    unaryOperatorParseLet,
 		token.TokenTypeClass:    classParselet,
-		token.TokenTypeUInt8:    typeExpressionParseLet,
-		token.TokenTypeUInt16:   typeExpressionParseLet,
-		token.TokenTypeUInt32:   typeExpressionParseLet,
-		token.TokenTypeUInt64:   typeExpressionParseLet,
-		token.TokenTypeInt8:     typeExpressionParseLet,
-		token.TokenTypeInt16:    typeExpressionParseLet,
-		token.TokenTypeInt32:    typeExpressionParseLet,
-		token.TokenTypeInt64:    typeExpressionParseLet,
-		token.TokenTypeFloat32:  typeExpressionParseLet,
-		token.TokenTypeFloat64:  typeExpressionParseLet,
-		token.TokenTypeBoolean:  typeExpressionParseLet,
+	}
+
+	indexingExpressionParseLet := func(parser *Parser, left ast.ExprNode, openBracket *token.Token) ast.ExprNode {
+		indexingMetadata := parser.consumeIndexingMetadata()
+		return &ast.IndexingExprNode{Array: left, IndexingMeta: *indexingMetadata, Span: &token.Span{Start: openBracket.Span.Start, End: parser.peek().Span.End}}
 	}
 
 	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
@@ -253,6 +237,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeEqual:            binaryOperatorParseLet,
 		token.TokenTypeLeftParen:        functionCallParseLet,
 		token.TokenTypeDot:              objectPropertyAccessParseLet,
+		token.TokenTypeLeftBracket:      indexingExpressionParseLet,
 	}
 
 	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
@@ -302,27 +287,25 @@ func (p *Parser) consume() *token.Token {
 	return token
 }
 
-func (p *Parser) consumeArrayMetadata() *ast.ArrayMeta {
-	arrayMetadata := &ast.ArrayMeta{
-		Dims: 0,
-		CapacityExpr: nil,
+func (p *Parser) consumeIndexingMetadata() *ast.IndexingMeta {
+	arrayMetadata := &ast.IndexingMeta{
+		IndexingExprs: []ast.ExprNode{},
 	}
+	
+	// Parse the first index expression (the '[' has already been consumed by the infix parselet)
+	indexExpr := p.parseExprOfPrecedence(0, false)
+	arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
+	p.consumeToken(token.TokenTypeRightBracket)
+	
+	// Handle multi-dimensional array indexing (e.g., arr[0][1])
 	for p.peek().Type == token.TokenTypeLeftBracket {
 		p.consumeToken(token.TokenTypeLeftBracket)
-		capacityExpr := p.parseExprOfPrecedence(0, true)
-		arrayMetadata.CapacityExpr = capacityExpr
-		if capacityExpr != nil  && arrayMetadata.Dims > 0 {
-			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "capacity allocation is only supported for the first dimension", capacityExpr.GetSpan()))
-		}
+		indexExpr := p.parseExprOfPrecedence(0, false)
+		arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
 		p.consumeToken(token.TokenTypeRightBracket)
-		arrayMetadata.Dims++
 	}
 
-	if arrayMetadata.Dims > 0 {
-		return arrayMetadata
-	}
-
-	return nil
+	return arrayMetadata
 }
 
 func (p *Parser) consumeToken(expectedTokenType token.TokenType, extraInfo ...string) *token.Token {
