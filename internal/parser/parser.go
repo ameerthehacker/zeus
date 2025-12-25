@@ -302,8 +302,8 @@ func (p *Parser) consume() *token.Token {
 	return token
 }
 
-func (p *Parser) consumeArrayMetadata() *ast.ArrayCapacity {
-	arrayMetadata := &ast.ArrayCapacity{
+func (p *Parser) consumeArrayMetadata() *ast.ArrayMeta {
+	arrayMetadata := &ast.ArrayMeta{
 		Dims: 0,
 		CapacityExpr: nil,
 	}

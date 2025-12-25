@@ -226,14 +226,14 @@ func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
-type ArrayCapacity struct {
+type ArrayMeta struct {
 	Dims int
 	CapacityExpr ExprNode
 }
 
 type TypeExpressionNode struct {
 	Type *token.Token
-	ArrayMetadata* ArrayCapacity
+	ArrayMetadata* ArrayMeta
 	Span *token.Span
 }
 
