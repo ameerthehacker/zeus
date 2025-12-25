@@ -393,8 +393,6 @@ func (c *CodegenModule) toLLVMStructType(_type zeus_value.ValueType) llvm.Type {
 		return c.getLLVMStructType(_type.Name)
 	case zeus_value.ObjectType:
 		return c.getLLVMStructType(_type.Class.Name)
-	case zeus_value.ArrayType:
-		return c.getLLVMStructType(_type.String())
 	default:
 		panic(fmt.Sprintf("unable to convert zeus value %T to llvm struct type", _type))
 	}
