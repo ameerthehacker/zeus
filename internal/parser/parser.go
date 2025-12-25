@@ -174,7 +174,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	typeExpressionParseLet := func(parser *Parser, typeToken *token.Token) ast.ExprNode {
 		arrayMetadata := parser.consumeArrayMetadata()
-		return &ast.TypeExpressionNode{Type: typeToken, ArrayDims: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
+		return &ast.TypeExpressionNode{Type: typeToken, ArrayMetadata: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
 	}
 
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
@@ -194,7 +194,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			arrayMetadata := parser.consumeArrayMetadata()
 
 			if arrayMetadata != nil {
-				return &ast.TypeExpressionNode{Type: typeToken, ArrayDims: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
+				return &ast.TypeExpressionNode{Type: typeToken, ArrayMetadata: arrayMetadata, Span: &token.Span{Start: typeToken.Span.Start, End: parser.peek().Span.End}}
 			}
 
 			return &ast.IdentifierExprNode{Name: typeToken}
@@ -302,18 +302,27 @@ func (p *Parser) consume() *token.Token {
 	return token
 }
 
-func (p *Parser) consumeArrayMetadata() *ast.ArrayDims {
-	var arrayMetadata *ast.ArrayDims
+func (p *Parser) consumeArrayMetadata() *ast.ArrayCapacity {
+	arrayMetadata := &ast.ArrayCapacity{
+		Dims: 0,
+		CapacityExpr: nil,
+	}
 	for p.peek().Type == token.TokenTypeLeftBracket {
 		p.consumeToken(token.TokenTypeLeftBracket)
 		capacityExpr := p.parseExprOfPrecedence(0, true)
-		if arrayMetadata == nil {
-			arrayMetadata = &ast.ArrayDims{CapacityExprs: []ast.ExprNode{}}
+		arrayMetadata.CapacityExpr = capacityExpr
+		if capacityExpr != nil  && arrayMetadata.Dims > 0 {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "capacity allocation is only supported for the first dimension", capacityExpr.GetSpan()))
 		}
-		arrayMetadata.CapacityExprs = append(arrayMetadata.CapacityExprs, capacityExpr)
 		p.consumeToken(token.TokenTypeRightBracket)
+		arrayMetadata.Dims++
 	}
-	return arrayMetadata
+
+	if arrayMetadata.Dims > 0 {
+		return arrayMetadata
+	}
+
+	return nil
 }
 
 func (p *Parser) consumeToken(expectedTokenType token.TokenType, extraInfo ...string) *token.Token {

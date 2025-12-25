@@ -8,5 +8,15 @@
         "name": "Object array",
         "exit": "11",
         "entry": "object.zs"
+    },
+    {
+        "name": "2D array",
+        "exit": "12",
+        "entry": "2d.zs"
+    },
+    {
+        "name": "3D array",
+        "exit": "20",
+        "entry": "3d.zs"
     }
 ]

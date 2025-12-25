@@ -381,15 +381,31 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.Value {
-	if expr.ArrayDims != nil {
-		// the inner most data is of type expr.Type
-		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.ToValueType(expr.Type), Span: expr.GetSpan()})
-		g.buildClass(arrayClass, nil)
-		// exclude the last dimantion as we have created the inner most array class
-		for i:= len(expr.ArrayDims.CapacityExprs) - 2; i >= 0; i-- {
-			// nest the array class inside array class
-			arrayClass = zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{ElementType: zeus_value.NewObjectType(*arrayClass), Span: expr.GetSpan()})
-			g.buildClass(arrayClass, nil)
+	if expr.ArrayMetadata != nil {
+		// Start with the innermost element type (e.g., u8 for u8[][][])
+		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(
+			zeus_value.ArrayType{
+				ElementType: zeus_value.ToValueType(expr.Type),
+				Span:        expr.GetSpan(),
+			},
+		)
+
+		// Build nested classes from innermost to outermost
+		// For u8[][][]: builds u8[], then u8[][], then u8[][][]
+		for i := 0; i < expr.ArrayMetadata.Dims; i++ {
+			if _, ok := g.symbolTable.GetSymbol(arrayClass.Name); !ok {
+				g.buildClass(arrayClass, nil)
+			}
+
+			// Create the next nesting level (except on the last iteration)
+			if i < expr.ArrayMetadata.Dims - 1 {
+				arrayClass = zeus_value.GetArrayPrimordialClassDefinition(
+					zeus_value.ArrayType{
+						ElementType: zeus_value.NewObjectType(*arrayClass),
+						Span:        expr.GetSpan(),
+					},
+				)
+			}
 		}
 
 		return arrayClass
@@ -417,22 +433,16 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
 
-	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.ArrayDims != nil {
-		var arrayCapacityExpr zeus_value.Value
-		arrayCapacityExpr = zeus_value.NewConstant(
+	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.ArrayMetadata != nil {
+		var arrayCapacityExpr zeus_value.Value = zeus_value.NewConstant(
 			"0",
 			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
 			asTypeExpression.GetSpan(),
 		)
-		// we only initiate the first dimension of the array
-		// the zeus runtime will instantiate the nested arrays
-		// whenever it sees that the array has sub arrays
-		capacity := asTypeExpression.ArrayDims.CapacityExprs[0]
-
-		if capacity != nil {
-			arrayCapacityExpr = capacity.Accept(g)
+		
+		if asTypeExpression.ArrayMetadata.CapacityExpr != nil {
+			arrayCapacityExpr = asTypeExpression.ArrayMetadata.CapacityExpr.Accept(g)
 		}
-
 		args = append(args, arrayCapacityExpr)
 	} else {
 		for _, arg := range expr.Args {
