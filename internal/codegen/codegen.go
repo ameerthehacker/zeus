@@ -199,12 +199,12 @@ func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
 			method.AccessModifier,
 		)
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
-		
+
 		// Mark primordial wrappers as alwaysinline to eliminate them from binary
 		// These are just thin wrappers around runtime functions, so inlining is beneficial
 		alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
 		classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
-		
+
 		basicBlock := llvm.AddBasicBlock(classFunction, "entry")
 		c.builder.SetInsertPointAtEnd(basicBlock)
 
@@ -850,48 +850,21 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	}
 	constructorMethod := c.module.NamedFunction(constructorMethodName)
 	if !constructorMethod.IsNil() {
-		if callee.PrimordialName != "" {
-			// Handle primordial constructor call with runtime function signature
-			// Signature: (this_ptr, return_buffer_ptr, ...param_ptrs) -> void
-
-			// Get the runtime function type
-			if globalFunc, exists := c.globalLLVMFunctions[constructorMethodName]; exists {
-				runtimeArgs := []llvm.Value{llvmStruct} // this_ptr
-
-				// Add null return buffer for void constructor
-				nullPtr := llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
-				runtimeArgs = append(runtimeArgs, nullPtr)
-
-				// Add parameter pointers
-				for _, arg := range input.Args {
-					// Allocate stack memory for parameter and store value
-					argType := c.toLLVMType(zeus_value.GetValueType(arg))
-					argAlloca := c.builder.CreateAlloca(argType, "arg_alloca")
-					c.builder.CreateStore(c.toLLVMValue(arg), argAlloca)
-					runtimeArgs = append(runtimeArgs, argAlloca)
-				}
-
-				// Call the runtime function
-				c.builder.CreateCall(globalFunc.FunctionType, constructorMethod, runtimeArgs, constructorMethodName)
-			}
-		} else {
-			// Handle regular class constructor call
-			// create the param types
-			constructorParamTypes := []zeus_value.ValueType{}
-			for _, arg := range input.Args {
-				constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
-			}
-			constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
-			constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
-			// create the param values
-			constructorMethodParams := []llvm.Value{}
-			for _, arg := range input.Args {
-				constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
-			}
-			constructorMethodParams = append(constructorMethodParams, llvmStruct)
-			// call the constructor method
-			c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
+		constructorParamTypes := []zeus_value.ValueType{}
+		for _, arg := range input.Args {
+			constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
 		}
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
+		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
+		// create the param values
+		constructorMethodParams := []llvm.Value{}
+		for _, arg := range input.Args {
+			constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
+		}
+		constructorMethodParams = append(constructorMethodParams, llvmStruct)
+		// call the constructor method
+		c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
+
 	} else {
 		// constructor not mandatory when there is no args
 		zeus_error.Assert(len(input.Args) == 0, fmt.Sprintf("constructor method %s not found", constructorMethodName))
