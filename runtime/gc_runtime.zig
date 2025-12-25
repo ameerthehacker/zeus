@@ -43,8 +43,7 @@ export fn zeus_gc_poll() void {
     debug.log(allocator, "gc_poll", "===GC POLL END===", .{});
 }
 
-export fn zeus_gc_alloc(size: u32) ?*anyopaque {
+pub export fn zeus_gc_alloc(size: u32) ?*anyopaque {
     // Use the GC instance to allocate and track the object
     return gc_instance.alloc(size);
 }
-

@@ -3,9 +3,7 @@
 
 const std = @import("std");
 const abi = @import("abi.zig");
-
-// Forward declaration - will be resolved at link time
-extern fn zeus_gc_alloc(size: u32) ?*anyopaque;
+const gc_runtime = @import("gc_runtime.zig");
 
 // Default object type info for generic Zeus objects
 // This is used for wrapper objects that don't belong to a specific class
@@ -46,7 +44,7 @@ pub fn allocateReturnBuffer(return_buffer_ptr_ptr: ?*anyopaque, size: u32) ?[]u8
     const total_size = header_ptr_size + size;
 
     // Allocate memory for the wrapper object using GC allocator
-    const wrapper_obj = zeus_gc_alloc(total_size);
+    const wrapper_obj = gc_runtime.zeus_gc_alloc(total_size);
     if (wrapper_obj == null) {
         return null;
     }
@@ -84,7 +82,7 @@ pub fn allocateZeroedReturnBuffer(return_buffer_ptr_ptr: ?*anyopaque, size: u32)
     const total_size = header_ptr_size + size;
 
     // Allocate memory for the wrapper object using GC allocator
-    const wrapper_obj = zeus_gc_alloc(total_size);
+    const wrapper_obj = gc_runtime.zeus_gc_alloc(total_size);
     if (wrapper_obj == null) {
         return false;
     }
