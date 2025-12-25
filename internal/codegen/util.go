@@ -2,7 +2,6 @@ package codegen
 
 const VTABLE_STRUCT_INDEX = 0
 const OBJ_HEADER_STRUCT_INDEX = 0
-const ZEUS_PRIMORDIALS_MODULE_PATH = "@zeus/primordials"
 
 func GetVTableStructName(className string) string {
 	return className + ".vTable"
