@@ -67,7 +67,7 @@ go run zeus.go build --file-type=asm main.zs
 
 ## Roadmap
 
-### Beta
+### Beta V1
 - [x] Tokenizer
 - [x] Parser
 - [x] Zeus IR
@@ -76,14 +76,16 @@ go run zeus.go build --file-type=asm main.zs
 - [x] Scalar types
 - [x] Class
 - [x] GC v1
-- [] Nullable Type
+- [x] Arrays
+- [ ] Strings
+- [ ] Var Args
+- [ ] Log Functions
 - [ ] Inheritance
 - [ ] Interfaces
 - [ ] Variable Type Inference
 - [ ] Function Type Inference
 - [ ] Closure
 - [ ] String Type
-- [ ] Arrays
 - [ ] Exception Handling
 - [ ] Language Server v1
 - [ ] HTTP Server v1
@@ -92,3 +94,6 @@ go run zeus.go build --file-type=asm main.zs
 - [ ] Linux Support
 - [ ] Package for Mac and Linux
 - [ ] Docs site
+
+### Beta V2
+- [ ] Nullable Type
