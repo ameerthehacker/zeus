@@ -226,6 +226,39 @@ func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 	return visitor.VisitFunctionDeclExpr(f)
 }
 
+type ArrayMeta struct {
+	Dims int
+	CapacityExpr ExprNode
+}
+
+type TypeExpressionNode struct {
+	Type *token.Token
+	ArrayMetadata* ArrayMeta
+	Span *token.Span
+}
+
+func (t *TypeExpressionNode) GetSpan() *token.Span {
+	return t.Span
+}
+
+func (t *TypeExpressionNode) PrettyString() string {
+	if t.ArrayMetadata != nil && t.ArrayMetadata.CapacityExpr != nil {
+		return fmt.Sprintf("%s%s", t.Type.Value, fmt.Sprintf("[%s]", t.ArrayMetadata.CapacityExpr.PrettyString()))
+	}
+	return t.Type.Value
+}
+
+func (t *TypeExpressionNode) String() string {
+	if t.ArrayMetadata != nil && t.ArrayMetadata.CapacityExpr != nil {
+		return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Capacity: %s, Span: %s }", t.Type.Value, fmt.Sprintf("[%s]", t.ArrayMetadata.CapacityExpr.String()), t.GetSpan())
+	}
+	return fmt.Sprintf("{ type: TypeExpressionNode, Type: %s, Span: %s }", t.Type.Value, t.GetSpan())
+}
+
+func (t *TypeExpressionNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitTypeExpression(t)
+}
+
 // ClassDeclExprNode and its methods
 type ClassDeclExprNode struct {
 	Name       *IdentifierExprNode
@@ -362,9 +395,19 @@ func classMethodsString(methods []*ClassMethod) string {
 	return strings.Join(methodsStr, ", ")
 }
 
+func AsTypeExpression(expr ExprNode) *TypeExpressionNode {
+	switch expr := expr.(type) {
+	case *TypeExpressionNode:
+		return expr
+	default:
+		return nil
+	}
+}
+
 // ExprVisitor interface
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
+	VisitTypeExpression(node *TypeExpressionNode) T
 	VisitNumber(node *NumberExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
 	VisitIdentifier(node *IdentifierExprNode) T

@@ -365,6 +365,55 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
+// buildClass builds the IR for a class declaration and registers it in the symbol table
+// For user-defined classes, pass methodASTs to emit method bodies
+// For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
+func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMethod) string {
+	irClassName := g.irBuilder.BuildClassDecl(class, class.GetSpan())
+	g.symbolTable.DeclareSymbol(class.Name, class)
+
+	// Emit method bodies if AST nodes are provided (user-defined classes)
+	for _, method := range methodASTs {
+		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
+	}
+
+	return irClassName
+}
+
+func (g *IRModule) VisitTypeExpression(expr *ast.TypeExpressionNode) zeus_value.Value {
+	if expr.ArrayMetadata != nil {
+		// Start with the innermost element type (e.g., u8 for u8[][][])
+		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(
+			zeus_value.ArrayType{
+				ElementType: zeus_value.ToValueType(expr.Type),
+				Span:        expr.GetSpan(),
+			},
+		)
+
+		// Build nested classes from innermost to outermost
+		// For u8[][][]: builds u8[], then u8[][], then u8[][][]
+		for i := 0; i < expr.ArrayMetadata.Dims; i++ {
+			if _, ok := g.symbolTable.GetSymbol(arrayClass.Name); !ok {
+				g.buildClass(arrayClass, nil)
+			}
+
+			// Create the next nesting level (except on the last iteration)
+			if i < expr.ArrayMetadata.Dims - 1 {
+				arrayClass = zeus_value.GetArrayPrimordialClassDefinition(
+					zeus_value.ArrayType{
+						ElementType: zeus_value.NewObjectType(*arrayClass),
+						Span:        expr.GetSpan(),
+					},
+				)
+			}
+		}
+
+		return arrayClass
+	} else {
+		return nil
+	}
+}
+
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 	if expr.Value.Type == token.TokenTypeTrue {
 		return zeus_value.NewConstant(
@@ -383,8 +432,22 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
-	for _, arg := range expr.Args {
-		args = append(args, arg.Accept(g))
+
+	if asTypeExpression, ok := expr.Callee.(*ast.TypeExpressionNode); ok && asTypeExpression.ArrayMetadata != nil {
+		var arrayCapacityExpr zeus_value.Value = zeus_value.NewConstant(
+			"0",
+			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asTypeExpression.GetSpan()},
+			asTypeExpression.GetSpan(),
+		)
+		
+		if asTypeExpression.ArrayMetadata.CapacityExpr != nil {
+			arrayCapacityExpr = asTypeExpression.ArrayMetadata.CapacityExpr.Accept(g)
+		}
+		args = append(args, arrayCapacityExpr)
+	} else {
+		for _, arg := range expr.Args {
+			args = append(args, arg.Accept(g))
+		}
 	}
 
 	return g.irBuilder.BuildNewObj(callee, args, expr.GetSpan())
@@ -459,16 +522,11 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		g.symbolTable.DeclareSymbol(method.Name.Name.Value, function)
 	}
 
-	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, expr.GetSpan())
-	irClassName := g.irBuilder.BuildClassDecl(class, expr.GetSpan())
-	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
-
-	for _, method := range expr.Methods {
-		// emit global class methods
-		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
-	}
+	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
+	g.buildClass(class, expr.Methods)
 	g.symbolTable.ExitScope()
 
+	// Re-declare the class in the outer scope after exiting the class members scope
 	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
 	return class
 }

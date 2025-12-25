@@ -1,6 +1,7 @@
 const std = @import("std");
 const debug = @import("debug.zig");
 const abi = @import("abi.zig");
+const array_runtime = @import("array_runtime.zig");
 
 // Import types from ABI module
 const ZeusObjectHeader = abi.ZeusObjectHeader;
@@ -90,6 +91,21 @@ pub const GC = struct {
                         debug.log(self.allocator, "gc_mark", "marking nested object at 0x{X} (offset={})", .{ @intFromPtr(nested_obj), offset });
                         self.markObject(nested_obj);
                     }
+
+                    const object_type_info = obj.ptr.obj_header.getObjectTypeInfo();
+
+                    if (object_type_info.object_type == abi.ZeusObjectType.array and object_type_info.array_element_type == abi.ZeusType.object) {
+                        const array_obj = @as(*abi.ZeusArrayObj, @ptrCast(obj.ptr));
+                        if (array_obj.data) |data| {
+                            const elements = @as([*]?*ZeusObj, @ptrCast(@alignCast(data)));
+                            for (elements[0..array_obj.length], 0..) |element, index| {
+                                if (element) |elem| {
+                                    debug.log(self.allocator, "gc_mark", "marking array 0x{X}[{}]=0x{X}", .{ @intFromPtr(array_obj), index, @intFromPtr(elem) });
+                                    self.markObject(elem);
+                                }
+                            }
+                        }
+                    }
                 }
                 break;
             }
@@ -107,6 +123,12 @@ pub const GC = struct {
             if (!obj.marked) {
                 // Object is not reachable and not protected, free it
                 debug.log(self.allocator, "gc_sweep", "freeing object at 0x{X} (size={})", .{ @intFromPtr(obj.ptr), obj.size });
+
+                // Cleanup array data if this is an array object
+                // Array data is managed by array_runtime's own allocator
+                if (obj.ptr.obj_header.getObjectTypeInfo().object_type == abi.ZeusObjectType.array) {
+                    array_runtime.zeus_array_cleanup(obj.ptr);
+                }
 
                 // Create a slice from the pointer and size to free it properly
                 const bytes = @as([*]u8, @ptrCast(obj.ptr))[0..obj.size];

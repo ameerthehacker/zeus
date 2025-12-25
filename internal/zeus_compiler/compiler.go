@@ -469,6 +469,7 @@ func GetRuntimeDir() string {
 
 // getCurrentMacOSVersion gets the current macOS version from sw_vers
 func getCurrentMacOSVersion() string {
+	// Try to get the marketing version first (macOS 15.x instead of kernel version 26.x)
 	cmd := exec.Command("sw_vers", "-productVersion")
 	output, err := cmd.Output()
 	if err != nil {
@@ -476,12 +477,33 @@ func getCurrentMacOSVersion() string {
 		return "11.0"
 	}
 	version := strings.TrimSpace(string(output))
-	// Return just major.minor (e.g., "15.0" from "15.0.1")
+	
+	// Handle kernel version vs marketing version mapping
+	// macOS 15.x reports kernel version 26.x, so we need to map it back
 	parts := strings.Split(version, ".")
-	if len(parts) >= 2 {
-		return parts[0] + "." + parts[1]
+	if len(parts) >= 1 {
+		majorVersion := parts[0]
+		// Map kernel versions to macOS marketing versions
+		switch majorVersion {
+		case "26":
+			return "15.0" // macOS Sequoia 15.x
+		case "25":
+			return "14.0" // macOS Sonoma 14.x
+		case "24":
+			return "13.0" // macOS Ventura 13.x
+		case "23":
+			return "12.0" // macOS Monterey 12.x
+		case "22":
+			return "11.0" // macOS Big Sur 11.x
+		default:
+			// For versions 15 and below, assume it's already the marketing version
+			if len(parts) >= 2 {
+				return parts[0] + "." + parts[1]
+			}
+			return version
+		}
 	}
-	return version
+	return "11.0"
 }
 
 func LinkObjFiles(objDir string, outputPath string) error {
@@ -504,7 +526,31 @@ func LinkObjFiles(objDir string, outputPath string) error {
 		if runtime.GOOS == "darwin" {
 			linker = "clang"
 			currentVersion := getCurrentMacOSVersion()
+			
+			// Get the correct SDK path
+			sdkPathCmd := exec.Command("xcrun", "--show-sdk-path")
+			sdkPathOutput, err := sdkPathCmd.Output()
+			if err == nil {
+				sdkPath := strings.TrimSpace(string(sdkPathOutput))
+				linkerArgs = append(linkerArgs, "-isysroot", sdkPath)
+			} else {
+				// Fallback: try to find SDK manually
+				fallbackSDKPath := "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk"
+				if _, err := os.Stat(fallbackSDKPath); err == nil {
+					linkerArgs = append(linkerArgs, "-isysroot", fallbackSDKPath)
+				} else {
+					// If both xcrun and fallback fail, try CommandLineTools path
+					cmdToolsSDKPath := "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+					if _, err := os.Stat(cmdToolsSDKPath); err == nil {
+						linkerArgs = append(linkerArgs, "-isysroot", cmdToolsSDKPath)
+					}
+					// If all fail, continue without explicit sysroot (may still work with system defaults)
+				}
+			}
+			
+			// Add macOS version and system libraries
 			linkerArgs = append(linkerArgs, fmt.Sprintf("-mmacosx-version-min=%s", currentVersion))
+			linkerArgs = append(linkerArgs, "-lSystem")
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
 		linkerArgs = append(linkerArgs, "-o", outputPath)
