@@ -382,8 +382,6 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
 	case zeus_value.ObjectType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
-	case zeus_value.ArrayType:
-		return llvm.PointerType(c.getLLVMStructType(_type.String()), 1)
 	default:
 		return c.toLLVMBuiltInType(_type)
 	}
