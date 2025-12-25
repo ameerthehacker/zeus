@@ -10,7 +10,7 @@ import (
 )
 
 const TEMP_VARIABLE_PREFIX = "%"
-// first 1000 ids are reserved for primordial classes
+// first 100 ids are reserved for primordial classes
 var classIdCounter = 100
 
 type Value interface {

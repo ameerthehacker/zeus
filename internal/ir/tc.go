@@ -148,26 +148,17 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
 }
 
-// getClassFromType extracts a class from either an ObjectType or ArrayType
+// getClassFromArrayType extracts a class from either an ObjectType or ArrayType
 // For ObjectType, it returns the class directly
 // For ArrayType, it looks up the array class in the symbol table
-func (tc *TypeChecker) getClassFromType(objectType zeus_value.ValueType) *zeus_value.Class {
-	_objectType := zeus_value.AsObjectType(objectType)
-	arrayType := zeus_value.AsArrayType(objectType)
-
-	if _objectType != nil {
-		return &_objectType.Class
-	} else if arrayType != nil {
-		arrayTypeClassName := arrayType.String()
-		class, ok := tc.builder.symbolTable.GetSymbol(arrayTypeClassName)
-		zeus_error.Assert(ok, fmt.Sprintf("array element type %s not found in symbol table", arrayTypeClassName))
-		classValue, ok := class.(*zeus_value.Class)
-		zeus_error.Assert(ok, fmt.Sprintf("array element type %s is not a class", arrayTypeClassName))
-		
-		return classValue
-	}
-
-	return nil
+func (tc *TypeChecker) getClassFromArrayType(arrayType zeus_value.ArrayType) *zeus_value.Class {
+	arrayTypeClassName := arrayType.String()
+	class, ok := tc.builder.symbolTable.GetSymbol(arrayTypeClassName)
+	zeus_error.Assert(ok, fmt.Sprintf("array element type %s not found in symbol table", arrayTypeClassName))
+	classValue, ok := class.(*zeus_value.Class)
+	zeus_error.Assert(ok, fmt.Sprintf("array element type %s is not a class", arrayTypeClassName))
+	
+	return classValue
 }
 
 // ToKnownTypesPass converts all UserDefinedType references to their actual known types
@@ -225,7 +216,7 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 		// we convert all the array types to objects
 		arrayType := zeus_value.AsArrayType(valueType)
 		arrayType.ElementType = p.resolveValueType(tc, arrayType.ElementType, false)
-		class := tc.getClassFromType(*arrayType)
+		class := tc.getClassFromArrayType(*arrayType)
 		return zeus_value.NewObjectType(*class)
 	} else if zeus_value.IsNullType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
@@ -842,7 +833,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	valueType := tc.getValueType(input.Object)
 
 	if zeus_value.IsObjectType(valueType) {
-		class := tc.getClassFromType(valueType)
+		class := zeus_value.AsObjectType(valueType).Class
 		properties := class.Properties
 		methods := class.Methods
 		isFound := false
