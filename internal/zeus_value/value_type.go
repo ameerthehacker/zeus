@@ -278,6 +278,10 @@ type ArrayType struct {
 	Span *token.Span
 }
 
+func NewArrayType(elementType ValueType, span *token.Span) ArrayType {
+	return ArrayType{ElementType: elementType, Span: span}
+}
+
 func (a ArrayType) GetSpan() *token.Span {
 	return a.Span
 }
