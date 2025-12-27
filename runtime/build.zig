@@ -25,7 +25,14 @@ pub fn build(b: *std.Build) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native.
-    const target = b.standardTargetOptions(.{});
+    var target_query = b.standardTargetOptionsQueryOnly(.{});
+    
+    // Set minimum macOS deployment target to avoid linker warnings
+    if (target_query.os_tag == null or target_query.os_tag.? == .macos) {
+        target_query.os_version_min = .{ .semver = .{ .major = 12, .minor = 0, .patch = 0 } };
+    }
+    
+    const target = b.resolveTargetQuery(target_query);
 
     // Standard optimization options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
