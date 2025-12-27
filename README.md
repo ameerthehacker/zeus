@@ -13,6 +13,89 @@ Zeus is a modern, garbage-collected programming language inspired by TypeScript,
 > [!WARNING]  
 > This project is in early development and not ready for production use. The language syntax, features, and implementation are subject to significant changes.
 
+## Getting Started
+
+### Prerequisites
+
+Before building Zeus, you'll need to install the following tools on macOS:
+
+#### 1. Xcode Command Line Tools
+Required for the C/C++ compiler (clang) and linker:
+```sh
+xcode-select --install
+```
+
+#### 2. Homebrew
+If you don't have Homebrew installed:
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+#### 3. Go (1.23 or later)
+Required for building the Zeus compiler:
+```sh
+brew install go
+```
+
+Verify installation:
+```sh
+go version  # Should show 1.23 or later
+```
+
+#### 4. Zig (0.14 or later)
+Required for building the Zeus runtime:
+```sh
+brew install zig
+```
+
+Verify installation:
+```sh
+zig version  # Should show 0.14 or later
+```
+
+#### 5. LLVM
+The Zeus compiler uses LLVM bindings (installed via Go modules automatically):
+```sh
+# LLVM will be installed as a dependency when you build Zeus
+# No manual installation needed for LLVM
+```
+
+### Building Zeus
+
+1. **Clone the repository**:
+   ```sh
+   git clone https://github.com/ameerthehacker/zeus.git
+   cd zeus
+   ```
+
+2. **Install Go dependencies**:
+   ```sh
+   go mod download
+   ```
+
+3. **Build the runtime**:
+   ```sh
+   make build-runtime
+   ```
+
+4. **Verify installation**:
+   ```sh
+   # Run the test suite
+   make test
+   
+   # Try compiling an example
+   make run file=main
+   ```
+
+### Quick Start
+
+Once everything is set up, try running the example in `playground/main.zs`:
+```sh
+make run file=main
+```
+
+You should see the program execute successfully!
+
 ## Language
 
 Below is an example
