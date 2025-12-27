@@ -27,6 +27,13 @@ test-runtime:
 	cd runtime && zig build test
 
 build-runtime:
+	@if [ "$(release)" = "true" ]; then \
+		cd runtime && zig build -Doptimize=ReleaseSmall; \
+	else \
+		cd runtime && zig build; \
+	fi
+
+build-runtime-debug:
 	cd runtime && zig build
 
 build-zeus-vscode:
@@ -34,7 +41,7 @@ build-zeus-vscode:
 	cd zeus-vscode && npm run package &&npm run vsix 
 
 build-runtime-release: always
-	cd runtime && zig build --release=small
+	cd runtime && zig build -Doptimize=ReleaseSmall
 
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
@@ -42,6 +49,10 @@ compile: always build-runtime
 	else \
 		go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi
+
+compile-release: always
+	cd runtime && zig build -Doptimize=ReleaseSmall
+	go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
 
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
