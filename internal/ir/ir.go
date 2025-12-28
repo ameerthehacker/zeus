@@ -393,34 +393,13 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
-		// Start with the innermost element type (e.g., u8 for u8[][][])
-		arrayClass := zeus_value.GetArrayPrimordialClassDefinition(
-			zeus_value.ArrayType{
-				ElementType: expr.Array.Accept(g),
-				Span:        expr.GetSpan(),
-			},
-		)
+	array := expr.Array.Accept(g)
+	indices := []zeus_value.Value{}
+	for _, index := range expr.IndexingMeta.IndexingExprs {
+		indices = append(indices, index.Accept(g))
+	}
 
-		dims := len(expr.IndexingMeta.IndexingExprs)
-		// Build nested classes from innermost to outermost
-		// For u8[][][]: builds u8[], then u8[][], then u8[][][]
-		for i := 0; i < dims; i++ {
-			if _, ok := g.symbolTable.GetSymbol(arrayClass.Name); !ok {
-				g.buildClass(arrayClass, nil)
-			}
-
-			// Create the next nesting level (except on the last iteration)
-			if i < dims - 1 {
-				arrayClass = zeus_value.GetArrayPrimordialClassDefinition(
-					zeus_value.ArrayType{
-						ElementType: zeus_value.NewObjectType(*arrayClass),
-						Span:        expr.GetSpan(),
-					},
-				)
-			}
-		}
-
-		return arrayClass
+	return g.irBuilder.BuildGetIndex(array, indices, expr.GetSpan())
 }
 
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
@@ -442,28 +421,8 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee.Accept(g)
 	args := []zeus_value.Value{}
 
-	if asIndexingExpr, ok := expr.Callee.(*ast.IndexingExprNode); ok {
-		var arrayCapacityExpr zeus_value.Value = zeus_value.NewConstant(
-			"0",
-			zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: asIndexingExpr.GetSpan()},
-			asIndexingExpr.GetSpan(),
-		)
-		
-		if asIndexingExpr.IndexingMeta.IndexingExprs[0] != nil {
-			arrayCapacityExpr = asIndexingExpr.IndexingMeta.IndexingExprs[0].Accept(g)
-		}
-
-		for i := 1; i < len(asIndexingExpr.IndexingMeta.IndexingExprs); i++ {
-			if asIndexingExpr.IndexingMeta.IndexingExprs[i] != nil {
-				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "capacity allocation is only supported for the first dimension", asIndexingExpr.IndexingMeta.IndexingExprs[i].GetSpan()))
-			}
-		}
-
-		args = append(args, arrayCapacityExpr)
-	} else {
-		for _, arg := range expr.Args {
-			args = append(args, arg.Accept(g))
-		}
+	for _, arg := range expr.Args {
+		args = append(args, arg.Accept(g))
 	}
 
 	return g.irBuilder.BuildNewObj(callee, args, expr.GetSpan())
@@ -582,4 +541,9 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 		g.irBuilder.BuildImport(absoluteModulePath, _import.Name.Value, importedValue, _import.Name.Span)
 		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
 	}
+}
+
+func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
+	// nothing to do here
+	return nil
 }

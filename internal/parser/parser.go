@@ -173,6 +173,10 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.ObjectPropertyAccessExprNode{Object: left, Property: property, Span: &token.Span{Start: dot.Span.Start, End: property.GetSpan().End}}
 	}
 
+	valueTypeParseLet := func(parser *Parser, token *token.Token) ast.ExprNode {
+		return &ast.ValueTypeNode{ValueType: zeus_value.ToValueType(token), Span: token.Span}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -216,6 +220,13 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeFunction: functionParselet,
 		token.TokenTypeMinus:    unaryOperatorParseLet,
 		token.TokenTypeClass:    classParselet,
+		token.TokenTypeUInt8:    valueTypeParseLet,
+		token.TokenTypeUInt16:   valueTypeParseLet,
+		token.TokenTypeUInt32:   valueTypeParseLet,
+		token.TokenTypeUInt64:   valueTypeParseLet,
+		token.TokenTypeFloat32:  valueTypeParseLet,
+		token.TokenTypeFloat64:  valueTypeParseLet,
+		token.TokenTypeBoolean:  valueTypeParseLet,
 	}
 
 	indexingExpressionParseLet := func(parser *Parser, left ast.ExprNode, openBracket *token.Token) ast.ExprNode {

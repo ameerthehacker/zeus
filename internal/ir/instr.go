@@ -546,6 +546,37 @@ func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
 	return nil
 }
 
+type GetIndexInstrInput struct {
+	Array   zeus_value.Value
+	Indices   []zeus_value.Value
+}
+
+func (i GetIndexInstrInput) String() string {
+	indices := []string{}
+	for _, index := range i.Indices {
+		indices = append(indices, fmt.Sprintf("[%s]", index.String()))
+	}
+	return fmt.Sprintf("%s%s", i.Array.String(), strings.Join(indices, ""))
+}
+
+func NewGetIndexInstrInput(array zeus_value.Value, indices []zeus_value.Value) *GetIndexInstrInput {
+	return &GetIndexInstrInput{
+		Array:   array,
+		Indices: indices,
+	}
+}
+
+func AsGetIndexInstrInput(input InstrInput) *GetIndexInstrInput {
+	switch input := input.(type) {
+	case *GetIndexInstrInput:
+		return input
+	default:
+		panicInvalidInputType("GetIndexInstrInput", input)
+	}
+
+	return nil
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -586,6 +617,8 @@ const (
 	InstrTypeNewObj
 	// object property access
 	InstrTypeObjectPropertyAccess
+	// indexing
+	InstrTypeGetIndex
 )
 
 func (i InstrType) String() string {
@@ -646,6 +679,8 @@ func (i InstrType) String() string {
 		return "OBJECT_PROPERTY_ACCESS"
 	case InstrTypeDeclClassMethod:
 		return "DECLARE_CLASS_METHOD"
+	case InstrTypeGetIndex:
+		return "GET_INDEX"
 	default:
 		panic("unknown instruction type")
 	}

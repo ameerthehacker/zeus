@@ -13,6 +13,22 @@ type ValueTypeNode struct {
 	Span      *token.Span
 }
 
+func (v *ValueTypeNode) GetSpan() *token.Span {
+	return v.Span
+}
+
+func (v *ValueTypeNode) PrettyString() string {
+	return v.ValueType.String()
+}
+
+func (v *ValueTypeNode) String() string {
+	return fmt.Sprintf("{ type: ValueTypeNode, ValueType: %s, Span: %s }", v.ValueType.String(), v.GetSpan())
+}
+
+func (v *ValueTypeNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitValueType(v)
+}
+
 type ExprNode interface {
 	GetSpan() *token.Span
 	Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value
@@ -430,4 +446,5 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitNewExpr(node *NewExprNode) T
 	VisitObjectPropertyAccessExpr(node *ObjectPropertyAccessExprNode) T
 	VisitNull(node *NullExprNode) T
+	VisitValueType(node *ValueTypeNode) T
 }
