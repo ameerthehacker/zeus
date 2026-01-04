@@ -347,6 +347,7 @@ echo $?  # Print exit code
 - [x] Class
 - [x] GC v1
 - [x] Arrays
+- [x] Language Server v1 (Diagnostics, Syntax Highlighting)
 - [ ] Strings
 - [ ] Var Args
 - [ ] Log Functions
@@ -357,7 +358,6 @@ echo $?  # Print exit code
 - [ ] Closure
 - [ ] String Type
 - [ ] Exception Handling
-- [x] Language Server v1 (Diagnostics, Syntax Highlighting)
 - [ ] Language Server v2 (Completions, Go to Definition, Hover)
 - [ ] HTTP Server v1
 - [ ] Standard Lib v1
