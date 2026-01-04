@@ -130,6 +130,56 @@ function main(): i32 {
 }
 ```
 
+## IDE Support
+
+### Language Server Protocol (LSP)
+
+Zeus includes a built-in Language Server Protocol implementation that provides IDE features such as:
+
+- **Autocompletion** - Keyword and context-aware suggestions
+- **Hover Information** - Type information and documentation
+- **Go to Definition** - Navigate to symbol definitions
+- **Document Symbols** - Outline view of your code
+
+#### Using with VSCode
+
+1. **Make sure `zeus` is in your PATH**:
+   ```sh
+   # Build zeus
+   go build -o zeus .
+   
+   # Add to PATH (choose one method):
+   # Option 1: Copy to a directory already in PATH
+   sudo cp zeus /usr/local/bin/
+   
+   # Option 2: Add current directory to PATH (temporary)
+   export PATH=$PATH:$(pwd)
+   ```
+
+2. **Install the Zeus VSCode extension** (development mode):
+   ```sh
+   cd zeus-vscode
+   npm install
+   npm run compile
+   ```
+
+3. **Run the extension**:
+   - Open `zeus-vscode/` in VSCode
+   - Press F5 to launch the Extension Development Host
+   - Open any `.zs` file to activate the language server
+
+The extension looks for the `zeus` command in your PATH and automatically starts the LSP server.
+
+#### Standalone LSP Server
+
+You can also run the LSP server standalone for integration with other editors:
+
+```sh
+./zeus lsp
+```
+
+For more details, see [docs/LSP.md](docs/LSP.md).
+
 ## Usage
 
 ### Building Zeus Programs
@@ -223,7 +273,7 @@ echo $?  # Print exit code
 - [ ] Closure
 - [ ] String Type
 - [ ] Exception Handling
-- [ ] Language Server v1
+- [x] Language Server v1
 - [ ] HTTP Server v1
 - [ ] Standard Lib v1
 - [ ] Release build mode

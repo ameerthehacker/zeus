@@ -10,5 +10,6 @@ func Execute() {
 		Short: "Zeus language compiler",
 	}
 	rootCmd.AddCommand(buildCmd())
+	rootCmd.AddCommand(lspCmd())
 	rootCmd.Execute()
 }
