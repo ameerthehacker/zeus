@@ -16,6 +16,9 @@
     "publisher": "ameerthehacker",
     "license": "MIT",
     "main": "./dist/extension.js",
+    "activationEvents": [
+        "onLanguage:zeus"
+    ],
     "contributes": {
         "languages": [
             {
