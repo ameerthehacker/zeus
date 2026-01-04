@@ -153,15 +153,21 @@ Zeus includes a built-in Language Server Protocol implementation that provides r
   - Unused variable/function warnings
 - **Syntax Highlighting** - Full syntax highlighting for `.zs` files
 - **Smart Error Positioning** - Precise error underlining with detailed messages
+- **Code Completion** - Intelligent autocompletion suggestions
+  - Zeus keywords (`let`, `const`, `function`, `class`, `if`, `while`, etc.)
+  - Type keywords (`i32`, `f64`, `boolean`, `void`, etc.)
+  - Variables in scope
+  - Functions with parameter signatures
+  - Classes
 
 #### 🚧 Planned Features (Coming Soon)
 
-- **Autocompletion** - Keyword and context-aware suggestions
-- **Hover Information** - Type information and documentation
+- **Hover Information** - Type information and documentation on hover
 - **Go to Definition** - Navigate to symbol definitions
 - **Document Symbols** - Outline view of your code
 - **Rename Symbol** - Rename across files
 - **Format Document** - Automatic code formatting
+- **Signature Help** - Parameter hints while typing function calls
 
 #### Using with VS Code
 
@@ -347,7 +353,7 @@ echo $?  # Print exit code
 - [x] Class
 - [x] GC v1
 - [x] Arrays
-- [x] Language Server v1 (Diagnostics, Syntax Highlighting)
+- [x] Language Server v1 (Diagnostics, Syntax Highlighting, Completions)
 - [ ] Strings
 - [ ] Var Args
 - [ ] Log Functions

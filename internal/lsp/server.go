@@ -14,18 +14,26 @@ import (
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/logger"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"go.lsp.dev/protocol"
 )
 
+type DocumentInfo struct {
+	Content  string
+	IRModule *ir.IRModule
+	Errors   []*zeus_error.ZeusError
+}
+
 type Server struct {
 	client    protocol.Client
-	documents map[string]string // URI -> content
+	documents map[string]*DocumentInfo // URI -> DocumentInfo
 }
 
 func NewServer() *Server {
 	return &Server{
-		documents: make(map[string]string),
+		documents: make(map[string]*DocumentInfo),
 	}
 }
 
@@ -157,9 +165,7 @@ func (s *Server) handleMessage(msg []byte) error {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "Document opened: %s\n", params.TextDocument.URI)
-		// Store document content
-		s.documents[string(params.TextDocument.URI)] = params.TextDocument.Text
-		// Validate and send diagnostics
+		// Validate and send diagnostics (this will store document info)
 		return s.validateDocument(params.TextDocument.URI, params.TextDocument.Text)
 	case "textDocument/didChange":
 		var params protocol.DidChangeTextDocumentParams
@@ -181,8 +187,7 @@ func (s *Server) handleMessage(msg []byte) error {
 			if err := json.Unmarshal(changeData, &changeEvent); err != nil {
 				return err
 			}
-			s.documents[string(params.TextDocument.URI)] = changeEvent.Text
-			// Validate and send diagnostics
+			// Validate and send diagnostics (this will store document info)
 			return s.validateDocument(params.TextDocument.URI, changeEvent.Text)
 		}
 		return nil
@@ -211,17 +216,12 @@ func (s *Server) handleMessage(msg []byte) error {
 			},
 		}
 	case "textDocument/completion":
-		result = &protocol.CompletionList{
-			IsIncomplete: false,
-			Items: []protocol.CompletionItem{
-				{Label: "let", Kind: protocol.CompletionItemKindKeyword, Detail: "Variable declaration"},
-				{Label: "fn", Kind: protocol.CompletionItemKindKeyword, Detail: "Function declaration"},
-				{Label: "class", Kind: protocol.CompletionItemKindKeyword, Detail: "Class declaration"},
-				{Label: "if", Kind: protocol.CompletionItemKindKeyword, Detail: "If statement"},
-				{Label: "while", Kind: protocol.CompletionItemKindKeyword, Detail: "While loop"},
-				{Label: "return", Kind: protocol.CompletionItemKindKeyword, Detail: "Return statement"},
-			},
+		var params protocol.CompletionParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
 		}
+		completions := s.getCompletions(params.TextDocument.URI, params.Position)
+		result = completions
 	case "textDocument/definition":
 		result = []protocol.Location{}
 	case "textDocument/documentSymbol":
@@ -285,8 +285,9 @@ func (s *Server) writeMessage(data []byte) error {
 	return nil
 }
 
-// parseDocument parses a document and returns any errors (lexer, parser, and type checker)
-func (s *Server) parseDocument(content string) []*zeus_error.ZeusError {
+// parseDocument parses a document and returns the IR module and any errors
+// Returns partial results even when there are errors to support IDE features
+func (s *Server) parseDocument(content string) (*ir.IRModule, []*zeus_error.ZeusError) {
 	allErrors := []*zeus_error.ZeusError{}
 
 	// Lexer phase
@@ -295,8 +296,12 @@ func (s *Server) parseDocument(content string) []*zeus_error.ZeusError {
 
 	if len(lexerErrors) > 0 {
 		allErrors = append(allErrors, lexerErrors...)
-		// If lexer fails, we can't continue
-		return allErrors
+		// Continue even with lexer errors - we may have partial tokens
+	}
+
+	// If we have no tokens at all, we can't proceed
+	if len(tokens) == 0 {
+		return nil, allErrors
 	}
 
 	// Parser phase
@@ -305,8 +310,12 @@ func (s *Server) parseDocument(content string) []*zeus_error.ZeusError {
 
 	if len(parserErrors) > 0 {
 		allErrors = append(allErrors, parserErrors...)
-		// If parser fails, we can't continue to type checking
-		return allErrors
+		// Continue with partial AST - parser returns partial results
+	}
+
+	// If we have no program AST, we can't proceed
+	if program == nil {
+		return nil, allErrors
 	}
 
 	// IR Generation phase
@@ -323,14 +332,17 @@ func (s *Server) parseDocument(content string) []*zeus_error.ZeusError {
 	}
 
 	// Type checking phase
-	typeChecker := ir.NewTypeChecker(irBuilder, false)
-	typeErrors := typeChecker.TypeCheck()
+	// Only run type checking if we have a valid IR builder
+	if irBuilder != nil {
+		typeChecker := ir.NewTypeChecker(irBuilder, false)
+		typeErrors := typeChecker.TypeCheck()
 
-	if len(typeErrors) > 0 {
-		allErrors = append(allErrors, typeErrors...)
+		if len(typeErrors) > 0 {
+			allErrors = append(allErrors, typeErrors...)
+		}
 	}
 
-	return allErrors
+	return irModule, allErrors
 }
 
 // convertToLSPDiagnostics converts Zeus errors to LSP diagnostics
@@ -404,9 +416,203 @@ func (s *Server) sendDiagnostics(uri protocol.DocumentURI, diagnostics []protoco
 	return s.writeMessage(data)
 }
 
+// getKeywordDescription returns a human-readable description for a keyword
+func getKeywordDescription(keyword string) string {
+	descriptions := map[string]string{
+		"let":       "Variable declaration",
+		"const":     "Constant declaration",
+		"function":  "Function declaration",
+		"return":    "Return statement",
+		"if":        "If statement",
+		"else":      "Else statement",
+		"while":     "While loop",
+		"true":      "Boolean true",
+		"false":     "Boolean false",
+		"import":    "Import statement",
+		"export":    "Export statement",
+		"from":      "Import from",
+		"class":     "Class declaration",
+		"private":   "Private access modifier",
+		"public":    "Public access modifier",
+		"protected": "Protected access modifier",
+		"new":       "Object instantiation",
+		"null":      "Null value",
+	}
+	
+	if desc, ok := descriptions[keyword]; ok {
+		return desc
+	}
+	return fmt.Sprintf("Keyword: %s", keyword)
+}
+
+// getDataTypeDescription returns a human-readable description for a data type
+func getDataTypeDescription(typeName string) string {
+	descriptions := map[string]string{
+		"void":    "Void type",
+		"i8":      "8-bit signed integer",
+		"i16":     "16-bit signed integer",
+		"i32":     "32-bit signed integer",
+		"i64":     "64-bit signed integer",
+		"u8":      "8-bit unsigned integer",
+		"u16":     "16-bit unsigned integer",
+		"u32":     "32-bit unsigned integer",
+		"u64":     "64-bit unsigned integer",
+		"f32":     "32-bit floating point",
+		"f64":     "64-bit floating point",
+		"boolean": "Boolean type",
+		"null":    "Null type",
+	}
+	
+	if desc, ok := descriptions[typeName]; ok {
+		return desc
+	}
+	return fmt.Sprintf("Type: %s", typeName)
+}
+
+// getCompletions returns completion items for the given document at a specific position
+func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Position) *protocol.CompletionList {
+	items := []protocol.CompletionItem{}
+	
+	// Add Zeus keywords from the token package
+	for keyword := range token.Keywords {
+		items = append(items, protocol.CompletionItem{
+			Label:  keyword,
+			Kind:   protocol.CompletionItemKindKeyword,
+			Detail: getKeywordDescription(keyword),
+		})
+	}
+	
+	// Add type keywords from the token package
+	for dataType := range token.DataTypes {
+		items = append(items, protocol.CompletionItem{
+			Label:  dataType,
+			Kind:   protocol.CompletionItemKindKeyword,
+			Detail: getDataTypeDescription(dataType),
+		})
+	}
+	
+	// Get document-specific completions from symbol table
+	docInfo, ok := s.documents[string(uri)]
+	if ok && docInfo.IRModule != nil {
+		symbolItems := s.getSymbolCompletions(docInfo.IRModule, position)
+		items = append(items, symbolItems...)
+	}
+	
+	return &protocol.CompletionList{
+		IsIncomplete: false,
+		Items:        items,
+	}
+}
+
+// getSymbolCompletions extracts completion items from the IR module's symbol table
+// Only includes symbols declared before the given position
+func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition protocol.Position) []protocol.CompletionItem {
+	items := []protocol.CompletionItem{}
+	seen := make(map[string]bool)
+	
+	// Get all symbols from the IR module
+	symbols := irModule.GetAllSymbols()
+	
+	// Convert cursor position to 1-based for comparison with Zeus spans
+	cursorLine := int(cursorPosition.Line) + 1
+	cursorColumn := int(cursorPosition.Character) + 1
+	
+	for name, value := range symbols {
+		// Skip if we've already seen this symbol (duplicates in different scopes)
+		if seen[name] {
+			continue
+		}
+		
+		// Skip temporary variables (they start with '%')
+		if asVar := zeus_value.AsVar(value); asVar != nil && asVar.IsTempVariable() {
+			continue
+		}
+		
+		// Check if the symbol is declared before the cursor position
+		var symbolSpan *token.Span
+		if asVar := zeus_value.AsVar(value); asVar != nil {
+			symbolSpan = asVar.Span
+		} else if asFunc := zeus_value.AsFunction(value); asFunc != nil {
+			symbolSpan = asFunc.Span
+		} else if asClass := zeus_value.AsClass(value); asClass != nil {
+			symbolSpan = asClass.Span
+		}
+		
+		// Skip symbols declared after the cursor
+		if symbolSpan != nil {
+			// If the symbol starts after the cursor line, skip it
+			if symbolSpan.Start.Line > cursorLine {
+				continue
+			}
+			// If on the same line, check column position
+			if symbolSpan.Start.Line == cursorLine && symbolSpan.Start.Column > cursorColumn {
+				continue
+			}
+		}
+		
+		seen[name] = true
+		
+		// Determine the completion item kind and detail based on the symbol type
+		var kind protocol.CompletionItemKind
+		var detail string
+		var documentation string
+		
+		if asVar := zeus_value.AsVar(value); asVar != nil {
+			kind = protocol.CompletionItemKindVariable
+			if asVar.ValueType != nil {
+				detail = asVar.ValueType.String()
+				documentation = fmt.Sprintf("Variable of type %s", asVar.ValueType.String())
+			} else {
+				detail = "variable"
+			}
+		} else if asFunc := zeus_value.AsFunction(value); asFunc != nil {
+			kind = protocol.CompletionItemKindFunction
+			// Build function signature
+			params := []string{}
+			for _, param := range asFunc.Params {
+				if param.ValueType != nil {
+					params = append(params, fmt.Sprintf("%s: %s", param.Name, param.ValueType.String()))
+				} else {
+					params = append(params, param.Name)
+				}
+			}
+			returnType := "void"
+			if asFunc.ReturnType != nil {
+				returnType = asFunc.ReturnType.String()
+			}
+			detail = fmt.Sprintf("(%s): %s", strings.Join(params, ", "), returnType)
+			documentation = fmt.Sprintf("Function %s", detail)
+		} else if asClass := zeus_value.AsClass(value); asClass != nil {
+			kind = protocol.CompletionItemKindClass
+			detail = "class"
+			documentation = fmt.Sprintf("Class %s", asClass.Name)
+		} else {
+			// Unknown symbol type, skip it
+			continue
+		}
+		
+		items = append(items, protocol.CompletionItem{
+			Label:         name,
+			Kind:          kind,
+			Detail:        detail,
+			Documentation: documentation,
+		})
+	}
+	
+	return items
+}
+
 // validateDocument parses a document and sends diagnostics
 func (s *Server) validateDocument(uri protocol.DocumentURI, content string) error {
-	errors := s.parseDocument(content)
+	irModule, errors := s.parseDocument(content)
+	
+	// Store the document info
+	s.documents[string(uri)] = &DocumentInfo{
+		Content:  content,
+		IRModule: irModule,
+		Errors:   errors,
+	}
+	
 	diagnostics := s.convertToLSPDiagnostics(errors)
 	
 	// Log diagnostics for debugging

@@ -47,6 +47,18 @@ func (g *IRModule) GetExportedSymbol(symbolName string) (zeus_value.Value, bool)
 	return value, true
 }
 
+// GetAllSymbols returns all symbols from the symbol table for code completion
+func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
+	symbols := make(map[string]zeus_value.Value)
+	
+	// Use the builder's symbol table to get all symbols
+	g.irBuilder.symbolTable.Walk(func(name string, value zeus_value.Value) {
+		symbols[name] = value
+	})
+	
+	return symbols
+}
+
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	g.symbolTable.EnterScope()
 	for _, stmt := range program.Statements {
