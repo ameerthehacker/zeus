@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime clean compile run always
+.PHONY: test test-go test-runtime build-runtime clean compile run always build lsp
 
 clean:
 	rm -rf playground/debug
@@ -62,3 +62,9 @@ run: always build-runtime
 		$(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 		./playground/debug/$(file); \
 	fi
+
+build:
+	go build -o zeus zeus.go
+
+lsp: build
+	./zeus lsp --stdio

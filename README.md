@@ -7,8 +7,9 @@ Zeus is a modern, garbage-collected programming language inspired by TypeScript,
 - **TypeScript-inspired syntax** - Familiar language constructs for web developers
 - **Automatic garbage collection** - No manual memory management required
 - **JavaScript-like semantics** - Intuitive behavior and type system
-- **Simple and clean** - Minimal complexity, maximum productivity
 - **Static typing** - Catch errors at compile time while maintaining ease of use
+- **IDE support** - Built-in Language Server with real-time diagnostics and VS Code extension
+- **Simple and clean** - Minimal complexity, maximum productivity
 
 > [!WARNING]  
 > This project is in early development and not ready for production use. The language syntax, features, and implementation are subject to significant changes.
@@ -78,7 +79,12 @@ The Zeus compiler uses LLVM bindings (installed via Go modules automatically):
    make build-runtime
    ```
 
-4. **Verify installation**:
+4. **Build the Zeus compiler** (optional, for using the `zeus` command):
+   ```sh
+   make build
+   ```
+
+5. **Verify installation**:
    ```sh
    # Run the test suite
    make test
@@ -95,6 +101,8 @@ make run file=main
 ```
 
 You should see the program execute successfully!
+
+**For the best development experience**, set up the VS Code extension to get real-time error checking and diagnostics. See the [IDE Support](#ide-support) section below.
 
 ## Language
 
@@ -134,53 +142,129 @@ function main(): i32 {
 
 ### Language Server Protocol (LSP)
 
-Zeus includes a built-in Language Server Protocol implementation that provides IDE features such as:
+Zeus includes a built-in Language Server Protocol implementation that provides real-time IDE features:
+
+#### ✨ Available Features
+
+- **Real-time Diagnostics** - Instant error and warning feedback as you type
+  - Lexer errors (syntax errors)
+  - Parser errors (structural issues)
+  - Type errors (type mismatches, incompatible assignments)
+  - Unused variable/function warnings
+- **Syntax Highlighting** - Full syntax highlighting for `.zs` files
+- **Smart Error Positioning** - Precise error underlining with detailed messages
+
+#### 🚧 Planned Features (Coming Soon)
 
 - **Autocompletion** - Keyword and context-aware suggestions
 - **Hover Information** - Type information and documentation
 - **Go to Definition** - Navigate to symbol definitions
 - **Document Symbols** - Outline view of your code
+- **Rename Symbol** - Rename across files
+- **Format Document** - Automatic code formatting
 
-#### Using with VSCode
+#### Using with VS Code
 
-1. **Make sure `zeus` is in your PATH**:
+1. **Build the Zeus compiler**:
    ```sh
-   # Build zeus
-   go build -o zeus .
+   # Build zeus executable
+   make build
    
-   # Add to PATH (choose one method):
-   # Option 1: Copy to a directory already in PATH
-   sudo cp zeus /usr/local/bin/
-   
-   # Option 2: Add current directory to PATH (temporary)
-   export PATH=$PATH:$(pwd)
+   # Or manually:
+   go build -o zeus zeus.go
    ```
 
-2. **Install the Zeus VSCode extension** (development mode):
+2. **Install the Zeus VS Code extension** (development mode):
    ```sh
    cd zeus-vscode
    npm install
    npm run compile
    ```
 
-3. **Run the extension**:
-   - Open `zeus-vscode/` in VSCode
-   - Press F5 to launch the Extension Development Host
+3. **Configure the extension** (choose one option):
+
+   **Option A: Add Zeus to PATH** (recommended)
+   ```sh
+   # Add to your ~/.zshrc or ~/.bashrc
+   export PATH="$HOME/Projects/zeus:$PATH"
+   
+   # Then launch VS Code from terminal
+   cd /path/to/your/project
+   code .
+   ```
+
+   **Option B: Configure executable path in VS Code**
+   
+   Open VS Code Settings (`Cmd+,` on macOS, `Ctrl+,` on Windows/Linux) and search for "zeus", then set:
+   ```json
+   {
+     "zeus.executablePath": "/path/to/zeus/zeus"
+   }
+   ```
+   
+   Or add to your workspace `.vscode/settings.json`:
+   ```json
+   {
+     "zeus.executablePath": "${workspaceFolder}/zeus"
+   }
+   ```
+
+4. **Run the extension**:
+   - Press F5 in the `zeus-vscode/` folder to launch Extension Development Host
+   - Or install the extension: `cd zeus-vscode && npm run vsix`
    - Open any `.zs` file to activate the language server
 
-The extension looks for the `zeus` command in your PATH and automatically starts the LSP server.
+The extension automatically detects the Zeus executable in the following order:
+1. Custom path from `zeus.executablePath` setting
+2. `./zeus` in workspace root
+3. `zeus` from system PATH
 
 #### Standalone LSP Server
 
 You can also run the LSP server standalone for integration with other editors:
 
 ```sh
-./zeus lsp
+# Build the zeus binary
+make build
+
+# Start the LSP server (communicates via stdio)
+make lsp
+
+# Or run directly:
+./zeus lsp --stdio
 ```
 
-For more details, see [docs/LSP.md](docs/LSP.md).
+The LSP server provides the Language Server Protocol interface over standard input/output, making it compatible with any editor that supports LSP.
 
 ## Usage
+
+### Quick Reference: Makefile Commands
+
+```sh
+# Build commands
+make build                    # Build the zeus compiler binary
+make build-runtime           # Build the Zeus runtime
+make build-zeus-vscode       # Package the VS Code extension
+
+# Development commands
+make run file=<name>         # Compile and run a playground file
+make compile file=<name>     # Compile a playground file (no run)
+make lsp                     # Start the Language Server
+
+# Testing commands
+make test                    # Run all tests (Go + runtime)
+make test-go                 # Run Go tests only
+make test-runtime            # Run runtime tests only
+make test-e2e                # Run end-to-end tests
+
+# Cleanup
+make clean                   # Clean build artifacts
+```
+
+**Build flags** (for `run` and `compile`):
+- `debug=true` - Enable debug output and Zeus IR
+- `nogc=true` - Disable garbage collection
+- `release=true` - Use optimized runtime build
 
 ### Building Zeus Programs
 
@@ -273,7 +357,8 @@ echo $?  # Print exit code
 - [ ] Closure
 - [ ] String Type
 - [ ] Exception Handling
-- [x] Language Server v1
+- [x] Language Server v1 (Diagnostics, Syntax Highlighting)
+- [ ] Language Server v2 (Completions, Go to Definition, Hover)
 - [ ] HTTP Server v1
 - [ ] Standard Lib v1
 - [ ] Release build mode
