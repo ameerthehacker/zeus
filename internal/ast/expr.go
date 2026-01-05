@@ -422,7 +422,7 @@ func classMethodsString(methods []*ClassMethod) string {
 	return strings.Join(methodsStr, ", ")
 }
 
-func AsTypeExpression(expr ExprNode) *IndexingExprNode {
+func AsIndexingExpr(expr ExprNode) *IndexingExprNode {
 	switch expr := expr.(type) {
 	case *IndexingExprNode:
 		return expr

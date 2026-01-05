@@ -334,7 +334,7 @@ func (s *Server) parseDocument(content string) (*ir.IRModule, []*zeus_error.Zeus
 	// Type checking phase
 	// Only run type checking if we have a valid IR builder
 	if irBuilder != nil {
-		typeChecker := ir.NewTypeChecker(irBuilder, false)
+		typeChecker := ir.NewTypeChecker(irBuilder, true)
 		typeErrors := typeChecker.TypeCheck()
 
 		if len(typeErrors) > 0 {

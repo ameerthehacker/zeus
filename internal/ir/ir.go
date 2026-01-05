@@ -377,6 +377,40 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
+// getOrCreateArrayClass recursively creates and registers array primordial classes
+// For nested arrays like Point[][], it ensures Point[] is registered before Point[][]
+func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_value.Class {
+	arrayClassName := arrayType.String()
+	
+	// Check if the array class already exists in the symbol table
+	if existingClass, ok := g.symbolTable.GetSymbol(arrayClassName); ok {
+		// Class already exists, reuse it
+		return existingClass.(*zeus_value.Class)
+	}
+	
+	// If the element type is also an array, recursively ensure it's registered first
+	// For example, for Point[][], we need to ensure Point[] is registered before Point[][]
+	if elementArrayType, ok := arrayType.ElementType.(zeus_value.ArrayType); ok {
+		g.getOrCreateArrayClass(elementArrayType)
+	}
+	
+	// Create new array primordial class
+	arrayClass := zeus_value.GetArrayPrimordialClassDefinition(arrayType)
+	// Register with canonical name (don't generate unique names for primordial classes)
+	g.symbolTable.DeclareSymbol(arrayClassName, arrayClass)
+	
+	// Emit DECL_CLASS instruction so codegen can generate the LLVM struct
+	result := g.irBuilder.createTempVariable(arrayClass.GetSpan())
+	g.irBuilder.pushInstr(&Instr{
+		Type:   InstrTypeDeclClass,
+		Output: result,
+		Input:  NewDeclClassInstrInput(arrayClass),
+		Span:   arrayClass.GetSpan(),
+	})
+	
+	return arrayClass
+}
+
 // buildClass builds the IR for a class declaration and registers it in the symbol table
 // For user-defined classes, pass methodASTs to emit method bodies
 // For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
@@ -418,14 +452,71 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 }
 
 func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
-	callee := expr.Callee.Accept(g)
+	callee := expr.Callee
+	
+	// Check if callee is an IndexingExprNode (array creation)
+	if indexingExpr := ast.AsIndexingExpr(callee); indexingExpr != nil {
+		// Array creation: new u8[10][][] or new Point[10][]
+		
+		// 1. Extract the base element type from the indexing expression
+		var baseElementType zeus_value.ValueType
+		
+		// Handle primitive types (e.g., u8, i32, f32)
+		if valueTypeNode, ok := indexingExpr.Array.(*ast.ValueTypeNode); ok {
+			baseElementType = valueTypeNode.ValueType
+		} else if identifierNode, ok := indexingExpr.Array.(*ast.IdentifierExprNode); ok {
+			// Handle user-defined types (e.g., Point, MyClass)
+			baseElementType = zeus_value.UserDefinedType{
+				Name: identifierNode.Name.Value,
+				Span: identifierNode.Name.Span,
+			}
+		} else {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "array base type must be a type name", indexingExpr.Array.GetSpan()))
+			return nil
+		}
+		
+		// 2. Build nested array type based on number of dimensions
+		// e.g., u8 with 2 dimensions -> u8[][]
+		numDimensions := len(indexingExpr.IndexingMeta.IndexingExprs)
+		arrayType := baseElementType
+		for i := 0; i < numDimensions; i++ {
+			arrayType = zeus_value.NewArrayType(arrayType, indexingExpr.GetSpan())
+		}
+		
+		// 3. Validate: only the first dimension can have a capacity expression
+		// Capacity for first dimension is optional, but dimensions 2+ cannot have capacity
+		for i := 1; i < numDimensions; i++ {
+			if indexingExpr.IndexingMeta.IndexingExprs[i] != nil {
+				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "only the first dimension can specify capacity in array creation", indexingExpr.IndexingMeta.IndexingExprs[i].GetSpan()))
+			}
+		}
+		
+		// 4. Get or create the array primordial class for this type
+		arrayTypeValue := arrayType.(zeus_value.ArrayType)
+		arrayClass := g.getOrCreateArrayClass(arrayTypeValue)
+		
+		// 5. Evaluate capacity expression (only first dimension, if provided)
+		var capacity zeus_value.Value
+		if indexingExpr.IndexingMeta.IndexingExprs[0] != nil {
+			capacity = indexingExpr.IndexingMeta.IndexingExprs[0].Accept(g)
+		} else {
+			// No capacity provided, pass 0 as default (runtime will use default capacity)
+			capacity = zeus_value.NewConstant("0", zeus_value.IntType{Size: zeus_value.I32, Span: indexingExpr.GetSpan()}, indexingExpr.GetSpan())
+		}
+		args := []zeus_value.Value{capacity}
+		
+		// 6. Pass to BuildNewObj - it's just a class with constructor args!
+		return g.irBuilder.BuildNewObj(arrayClass, args, expr.GetSpan())
+	}
+	
+	// Class instantiation: new MyClass(args)
+	calleeValue := callee.Accept(g)
 	args := []zeus_value.Value{}
-
 	for _, arg := range expr.Args {
 		args = append(args, arg.Accept(g))
 	}
-
-	return g.irBuilder.BuildNewObj(callee, args, expr.GetSpan())
+	
+	return g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
 }
 
 func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
@@ -544,6 +635,6 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 }
 
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
-	// nothing to do here
+	zeus_error.Assert(false, "value type should not be emitted in the IR");
 	return nil
 }

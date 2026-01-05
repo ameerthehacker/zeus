@@ -200,7 +200,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
-			if ast.AsTypeExpression(callee) != nil {
+			if ast.AsIndexingExpr(callee) != nil {
 				return &ast.NewExprNode{
 					Callee: callee,
 					Args:   []ast.ExprNode{},
@@ -304,14 +304,15 @@ func (p *Parser) consumeIndexingMetadata() *ast.IndexingMeta {
 	}
 	
 	// Parse the first index expression (the '[' has already been consumed by the infix parselet)
-	indexExpr := p.parseExprOfPrecedence(0, false)
+	// Allow optional expression for empty brackets in type expressions (e.g., new u8[10][])
+	indexExpr := p.parseExprOfPrecedence(0, true)
 	arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
 	p.consumeToken(token.TokenTypeRightBracket)
 	
-	// Handle multi-dimensional array indexing (e.g., arr[0][1])
+	// Handle multi-dimensional array indexing (e.g., arr[0][1] or u8[][])
 	for p.peek().Type == token.TokenTypeLeftBracket {
 		p.consumeToken(token.TokenTypeLeftBracket)
-		indexExpr := p.parseExprOfPrecedence(0, false)
+		indexExpr := p.parseExprOfPrecedence(0, true) // optional for type expressions
 		arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
 		p.consumeToken(token.TokenTypeRightBracket)
 	}

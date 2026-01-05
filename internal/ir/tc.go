@@ -150,15 +150,38 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 
 // getClassFromArrayType extracts a class from either an ObjectType or ArrayType
 // For ObjectType, it returns the class directly
-// For ArrayType, it looks up the array class in the symbol table
+// For ArrayType, it looks up or creates the array primordial class
 func (tc *TypeChecker) getClassFromArrayType(arrayType zeus_value.ArrayType) *zeus_value.Class {
 	arrayTypeClassName := arrayType.String()
-	class, ok := tc.builder.symbolTable.GetSymbol(arrayTypeClassName)
-	zeus_error.Assert(ok, fmt.Sprintf("array element type %s not found in symbol table", arrayTypeClassName))
-	classValue, ok := class.(*zeus_value.Class)
-	zeus_error.Assert(ok, fmt.Sprintf("array element type %s is not a class", arrayTypeClassName))
 	
-	return classValue
+	// Try to get existing class from symbol table
+	if class, ok := tc.builder.symbolTable.GetSymbol(arrayTypeClassName); ok {
+		classValue, ok := class.(*zeus_value.Class)
+		zeus_error.Assert(ok, fmt.Sprintf("array element type %s is not a class", arrayTypeClassName))
+		return classValue
+	}
+	
+	// If the element type is also an array, recursively ensure it's registered first
+	// For example, for Point[][], we need to ensure Point[] is registered before Point[][]
+	if elementArrayType, ok := arrayType.ElementType.(zeus_value.ArrayType); ok {
+		tc.getClassFromArrayType(elementArrayType)
+	}
+	
+	// Class doesn't exist, create and register the array primordial class
+	arrayClass := zeus_value.GetArrayPrimordialClassDefinition(arrayType)
+	// Register with canonical name (don't generate unique names for primordial classes)
+	tc.builder.symbolTable.DeclareSymbol(arrayTypeClassName, arrayClass)
+	
+	// Emit DECL_CLASS instruction so codegen can generate the LLVM struct
+	result := tc.builder.createTempVariable(arrayType.GetSpan())
+	tc.builder.pushInstr(&Instr{
+		Type:   InstrTypeDeclClass,
+		Output: result,
+		Input:  NewDeclClassInstrInput(arrayClass),
+		Span:   arrayType.GetSpan(),
+	})
+	
+	return arrayClass
 }
 
 // ToKnownTypesPass converts all UserDefinedType references to their actual known types
@@ -393,6 +416,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
 		// TODO: add type checking for cast
+	case InstrTypeGetIndex:
+		p.tcGetIndex(tc, instr)
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
@@ -886,6 +911,97 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			Span:    output.Span,
 		})
 	}
+}
+
+func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
+	input := AsGetIndexInstrInput(instr.Input)
+	arrayValueType := tc.getValueType(input.Array)
+	
+	// Check if the value is actually an array type (or ObjectType wrapping an array)
+	var arrayType *zeus_value.ArrayType
+	
+	if zeus_value.IsObjectType(arrayValueType) {
+		// Arrays are converted to ObjectType in the type checker
+		// Need to get back to the original ArrayType
+		objectType := zeus_value.AsObjectType(arrayValueType)
+		class := objectType.Class
+		
+		// Check if this is an array primordial class
+		if class.ArrayElementType != nil {
+			// This is an array class, reconstruct the array type
+			// Count dimensions by checking how many levels of array nesting
+			elementType := class.ArrayElementType
+			dimensions := 1
+			
+			// If the element type is also an array class, count those dimensions too
+			for {
+				if zeus_value.IsObjectType(elementType) {
+					elemClass := zeus_value.AsObjectType(elementType).Class
+					if elemClass.ArrayElementType != nil {
+						dimensions++
+						elementType = elemClass.ArrayElementType
+					} else {
+						break
+					}
+				} else {
+					break
+				}
+			}
+			
+			// Reconstruct the ArrayType for validation
+			reconstructedArrayType := elementType
+			for i := 0; i < dimensions; i++ {
+				reconstructedArrayType = zeus_value.NewArrayType(reconstructedArrayType, arrayValueType.GetSpan())
+			}
+			arrayTypeValue := reconstructedArrayType.(zeus_value.ArrayType)
+			arrayType = &arrayTypeValue
+		}
+	}
+	
+	if arrayType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot index non-array type '%s'", arrayValueType),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	
+	// Count array dimensions
+	dimensions := 0
+	currentType := zeus_value.ValueType(*arrayType)
+	for {
+		if at, ok := currentType.(zeus_value.ArrayType); ok {
+			dimensions++
+			currentType = at.ElementType
+		} else {
+			break
+		}
+	}
+	
+	// Validate number of indices matches array dimensions
+	numIndices := len(input.Indices)
+	if numIndices != dimensions {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("array has %d dimension(s) but %d index/indices provided", dimensions, numIndices),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	
+	// Validate all indices are integer types
+	for _, index := range input.Indices {
+		indexType := tc.getValueType(index)
+		if !zeus_value.IsIntType(indexType) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("array index must be an integer type, got '%s'", indexType),
+				Span:    index.GetSpan(),
+			})
+		}
+	}
+	
+	// Set output type to the final element type after all indexing
+	finalElementType := currentType
+	instr.Output.ValueType = finalElementType
 }
 
 func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {

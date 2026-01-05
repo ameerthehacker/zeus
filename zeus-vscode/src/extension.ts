@@ -19,7 +19,7 @@ function getZeusExecutable(): string {
     return "zeus";
 }
 
-export function activate(context: vscode.ExtensionContext) {
+async function startLanguageServer(): Promise<void> {
     const zeusExecutable = getZeusExecutable();
 
     const serverOptions: ServerOptions = {
@@ -55,7 +55,33 @@ export function activate(context: vscode.ExtensionContext) {
         clientOptions
     );
 
-    client.start();
+    await client.start();
+}
+
+async function stopLanguageServer(): Promise<void> {
+    if (client) {
+        await client.stop();
+        client = undefined;
+    }
+}
+
+async function restartLanguageServer(): Promise<void> {
+    await stopLanguageServer();
+    await startLanguageServer();
+    vscode.window.showInformationMessage("Zeus Language Server restarted");
+}
+
+export function activate(context: vscode.ExtensionContext) {
+    // Start the language server
+    startLanguageServer();
+
+    // Register restart command
+    const restartCommand = vscode.commands.registerCommand(
+        "zeus.restartLanguageServer",
+        restartLanguageServer
+    );
+
+    context.subscriptions.push(restartCommand);
 
     context.subscriptions.push({
         dispose: () => {
