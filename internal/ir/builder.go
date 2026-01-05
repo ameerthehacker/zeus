@@ -202,18 +202,6 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	return result
 }
 
-func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.Value, span *token.Span) zeus_value.Value {
-	result := b.createTempVariable(span)
-
-	b.pushInstr(&Instr{
-		Type:   InstrTypeGetIndex,
-		Output: result,
-		Input:  NewGetIndexInstrInput(array, indices),
-	})
-
-	return result
-}
-
 func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, class *zeus_value.Class, span *token.Span) *zeus_value.Function {
 	b.symbolTable.EnterScope()
 	params := []*zeus_value.Var{}
