@@ -184,7 +184,7 @@ func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function,
 	return function, functionType
 }
 
-func (c *CodegenModule) genPrimordialClass(class zeus_value.Class) {
+func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
 	currentInsertionBlock := c.builder.GetInsertBlock()
 
 	for _, method := range class.Methods {
@@ -839,9 +839,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 
 	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
 
-	// if it is a primordial class, generate the primordial class first
+	// if it is a primordial class, generate the primordial class
 	if class.PrimordialName != "" {
-		c.genPrimordialClass(class)
+		c.genPrimordialClassMethods(class)
 	}
 
 	return zeusClassLLVMStruct
