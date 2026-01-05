@@ -38,5 +38,10 @@
         "name": "2D array assignment",
         "exit": "12",
         "entry": "assignment-2d.zs"
+    },
+    {
+        "name": "1D array sum",
+        "exit": "11",
+        "entry": "1d-sum.zs"
     }
 ]

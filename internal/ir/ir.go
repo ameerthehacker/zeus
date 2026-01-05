@@ -211,7 +211,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
 			// Generate: arrayObject.set(index, value)
 			// Get the .set() method from the array object
-			setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(arrayRef.ArrayObject, "set", false, expr.GetSpan())
+			setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET, false, expr.GetSpan())
 			setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
 			
 			// Call array.set(index, value)
@@ -469,7 +469,7 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 			}
 			
 			// Get the .get() method from the current array
-			getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, "get", false, expr.GetSpan())
+			getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, zeus_value.ARRAY_METHOD_GET, false, expr.GetSpan())
 			getMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(getMethodPtr), expr.GetSpan())
 			
 			// Call array.get(index)
@@ -502,7 +502,7 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 		}
 		
 		// Get the .get() method from the current array
-		getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, "get", false, expr.GetSpan())
+		getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, zeus_value.ARRAY_METHOD_GET, false, expr.GetSpan())
 		getMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(getMethodPtr), expr.GetSpan())
 		
 		// Call array.get(index)

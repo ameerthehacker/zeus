@@ -6,6 +6,14 @@ import (
 
 const ZEUS_PRIMORDIAL_ARRAY = "array"
 
+// Array method names
+const (
+	ARRAY_METHOD_PUSH = "push"
+	ARRAY_METHOD_POP  = "pop"
+	ARRAY_METHOD_GET  = "get"
+	ARRAY_METHOD_SET  = "set"
+)
+
 func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	// capacity of the array
 	capacityProperty := NewClassProperty(NewVar("capacity", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()), &token.Token{Type: token.TokenTypePrivate, Span: arrayType.GetSpan()})
@@ -18,10 +26,10 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
 		NewVar("capacity", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()),
 	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	pushMethod := NewFunction("push", []*Var{NewVar("value", arrayType.ElementType, false, arrayType.GetSpan())}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	popMethod := NewFunction("pop", []*Var{}, arrayType.ElementType, arrayType.GetSpan())
-	getMethod := NewFunction("get", []*Var{NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan())}, arrayType.ElementType, arrayType.GetSpan())
-	setMethod := NewFunction("set", []*Var{
+	pushMethod := NewFunction(ARRAY_METHOD_PUSH, []*Var{NewVar("value", arrayType.ElementType, false, arrayType.GetSpan())}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
+	popMethod := NewFunction(ARRAY_METHOD_POP, []*Var{}, arrayType.ElementType, arrayType.GetSpan())
+	getMethod := NewFunction(ARRAY_METHOD_GET, []*Var{NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan())}, arrayType.ElementType, arrayType.GetSpan())
+	setMethod := NewFunction(ARRAY_METHOD_SET, []*Var{
 		NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()),
 		NewVar("value", arrayType.ElementType, false, arrayType.GetSpan()),
 	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
