@@ -427,13 +427,29 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
-	array := expr.Array.Accept(g)
-	indices := []zeus_value.Value{}
-	for _, index := range expr.IndexingMeta.IndexingExprs {
-		indices = append(indices, index.Accept(g))
+	// Start with the base array
+	currentValue := expr.Array.Accept(g)
+	
+	// For each index, generate: temp = current.get(index)
+	// This transforms array[0][1] into: temp = array.get(0); result = temp.get(1)
+	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
+		index := indexExpr.Accept(g)
+		
+		// Cast index to i32 if needed (array.get() expects i32)
+		indexType := zeus_value.GetValueType(index)
+		if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
+			index = g.irBuilder.BuildCast(index, zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+		}
+		
+		// Get the .get() method from the current array
+		getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, "get", false, expr.GetSpan())
+		getMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(getMethodPtr), expr.GetSpan())
+		
+		// Call array.get(index)
+		currentValue = g.irBuilder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{index}, expr.GetSpan())
 	}
-
-	return g.irBuilder.BuildGetIndex(array, indices, expr.GetSpan())
+	
+	return currentValue
 }
 
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {

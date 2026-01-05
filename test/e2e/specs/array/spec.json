@@ -18,5 +18,15 @@
         "name": "3D array",
         "exit": "20",
         "entry": "3d.zs"
+    },
+    {
+        "name": "1D array indexing",
+        "exit": "60",
+        "entry": "indexing-1d.zs"
+    },
+    {
+        "name": "2D array indexing",
+        "exit": "12",
+        "entry": "indexing-2d.zs"
     }
 ]

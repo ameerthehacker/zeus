@@ -416,8 +416,6 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
 		// TODO: add type checking for cast
-	case InstrTypeGetIndex:
-		p.tcGetIndex(tc, instr)
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
