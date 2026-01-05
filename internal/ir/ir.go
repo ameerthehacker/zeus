@@ -207,6 +207,21 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypeGreaterThanEqual:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
 	case token.TokenTypeEqual:
+		// Check if this is an array element assignment (array[0][1] = expr)
+		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
+			// Generate: arrayObject.set(index, value)
+			// Get the .set() method from the array object
+			setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(arrayRef.ArrayObject, "set", false, expr.GetSpan())
+			setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
+			
+			// Call array.set(index, value)
+			g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{arrayRef.Index, right}, expr.GetSpan())
+			
+			// Return the value that was set
+			return right
+		}
+		
+		// Regular variable assignment
 		addr := zeus_value.AsVar(left)
 		if addr == nil {
 			panic(fmt.Sprintf("invalid lvalue: %s", left))
@@ -427,10 +442,55 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
+	// Save and clear isLValueExpr flag temporarily to properly load the base array
+	// Otherwise, if array is a variable, VisitIdentifier would return it without loading
+	wasLValueExpr := g.isLValueExpr
+	g.isLValueExpr = false
+	
 	// Start with the base array
 	currentValue := expr.Array.Accept(g)
 	
-	// For each index, generate: temp = current.get(index)
+	// Restore the flag
+	g.isLValueExpr = wasLValueExpr
+	
+	// When this is an lvalue (left side of assignment), we need to handle it differently
+	// For array[0][1] = expr, we need to generate:
+	// temp1 = array.get(0); temp1.set(1, expr)
+	if g.isLValueExpr {
+		// Process all indices except the last one with .get()
+		for i := 0; i < len(expr.IndexingMeta.IndexingExprs)-1; i++ {
+			indexExpr := expr.IndexingMeta.IndexingExprs[i]
+			index := indexExpr.Accept(g)
+			
+			// Cast index to i32 if needed (array.get() expects i32)
+			indexType := zeus_value.GetValueType(index)
+			if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
+				index = g.irBuilder.BuildCast(index, zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+			}
+			
+			// Get the .get() method from the current array
+			getMethodPtr := g.irBuilder.BuildObjectPropertyAccess(currentValue, "get", false, expr.GetSpan())
+			getMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(getMethodPtr), expr.GetSpan())
+			
+			// Call array.get(index)
+			currentValue = g.irBuilder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{index}, expr.GetSpan())
+		}
+		
+		// Process the last index - evaluate it but don't call .get() yet
+		lastIndex := expr.IndexingMeta.IndexingExprs[len(expr.IndexingMeta.IndexingExprs)-1].Accept(g)
+		
+		// Cast index to i32 if needed
+		indexType := zeus_value.GetValueType(lastIndex)
+		if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
+			lastIndex = g.irBuilder.BuildCast(lastIndex, zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+		}
+		
+		// Return an ArrayElementRef that contains the object and the last index
+		// This will be used by VisitBinaryExpr to generate the .set() call
+		return zeus_value.NewArrayElementRef(currentValue, lastIndex, expr.GetSpan())
+	}
+	
+	// For reading (rvalue), process all indices with .get()
 	// This transforms array[0][1] into: temp = array.get(0); result = temp.get(1)
 	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
 		index := indexExpr.Accept(g)

@@ -221,6 +221,16 @@ func GetValueType(value Value) ValueType {
 			ReturnType: value.ReturnType,
 			ParamTypes: param_types,
 		}
+	case *ArrayElementRef:
+		// For array element refs, get the type of the array object and extract element type
+		arrayType := GetValueType(value.ArrayObject)
+		if objType, ok := arrayType.(ObjectType); ok {
+			if arrayClassType, ok := objType.Class.ArrayElementType.(ArrayType); ok {
+				return arrayClassType.ElementType
+			}
+			return objType.Class.ArrayElementType
+		}
+		panic(fmt.Sprintf("ArrayElementRef has non-array object type: %T", arrayType))
 	default:
 		panic(fmt.Sprintf("unable to identify type for value: %T", value))
 	}
@@ -308,4 +318,38 @@ func GetSignedIntSize(number string) IntSize {
 
 func IsFloat(number string) bool {
 	return strings.Contains(number, ".")
+}
+
+// ArrayElementRef represents a reference to an array element for assignment
+// It stores the array object (after navigating all but the last index) and the last index
+// This is used when handling array[0][1] = expr to generate temp1.set(lastIndex, expr)
+type ArrayElementRef struct {
+	ArrayObject Value      // The array object (could be the result of array.get(0) for multi-dimensional)
+	Index       Value      // The last index
+	Span        *token.Span
+}
+
+func NewArrayElementRef(arrayObject Value, index Value, span *token.Span) *ArrayElementRef {
+	return &ArrayElementRef{
+		ArrayObject: arrayObject,
+		Index:       index,
+		Span:        span,
+	}
+}
+
+func (a ArrayElementRef) GetSpan() *token.Span {
+	return a.Span
+}
+
+func (a ArrayElementRef) String() string {
+	return fmt.Sprintf("ArrayElementRef(%s[%s])", a.ArrayObject, a.Index)
+}
+
+func AsArrayElementRef(value Value) *ArrayElementRef {
+	switch value := value.(type) {
+	case *ArrayElementRef:
+		return value
+	default:
+		return nil
+	}
 }

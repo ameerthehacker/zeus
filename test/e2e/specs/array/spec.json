@@ -28,5 +28,15 @@
         "name": "2D array indexing",
         "exit": "12",
         "entry": "indexing-2d.zs"
+    },
+    {
+        "name": "1D array assignment",
+        "exit": "60",
+        "entry": "assignment-1d.zs"
+    },
+    {
+        "name": "2D array assignment",
+        "exit": "12",
+        "entry": "assignment-2d.zs"
     }
 ]
