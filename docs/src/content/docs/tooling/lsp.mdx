@@ -88,11 +88,7 @@ function main(): i32 {
 For other editors, run the server directly:
 
 ```bash
-# Build Zeus first
-make build
-
-# Start the LSP server
-./zeus lsp --stdio
+zeus lsp --stdio
 ```
 
 The server communicates via standard input/output using the LSP protocol.
@@ -113,7 +109,7 @@ local configs = require('lspconfig.configs')
 
 configs.zeus = {
   default_config = {
-    cmd = { '/path/to/zeus', 'lsp', '--stdio' },
+    cmd = { 'zeus', 'lsp', '--stdio' },
     filetypes = { 'zeus' },
     root_dir = lspconfig.util.find_git_ancestor,
   },
@@ -129,7 +125,7 @@ Using `lsp-mode`:
 ```elisp
 (lsp-register-client
   (make-lsp-client
-    :new-connection (lsp-stdio-connection '("/path/to/zeus" "lsp" "--stdio"))
+    :new-connection (lsp-stdio-connection '("zeus" "lsp" "--stdio"))
     :major-modes '(zeus-mode)
     :server-id 'zeus-ls))
 ```
@@ -142,7 +138,7 @@ Using LSP package:
 {
   "clients": {
     "zeus": {
-      "command": ["/path/to/zeus", "lsp", "--stdio"],
+      "command": ["zeus", "lsp", "--stdio"],
       "selector": "source.zeus"
     }
   }
@@ -199,10 +195,10 @@ Automatic code formatting with consistent style.
 
 ### Server Not Starting
 
-1. Ensure the `zeus` binary exists:
+1. Ensure Zeus is installed and in your PATH:
    ```bash
-   make build
-   ls -la ./zeus
+   which zeus
+   zeus --version
    ```
 
 2. Check the path in your editor configuration

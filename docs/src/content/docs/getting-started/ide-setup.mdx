@@ -161,11 +161,7 @@ function main(): i32 {
 If you use a different editor that supports LSP, you can run the language server standalone:
 
 ```bash
-# Build Zeus
-make build
-
-# Start the LSP server (communicates via stdio)
-./zeus lsp --stdio
+zeus lsp --stdio
 ```
 
 The server uses standard input/output for LSP communication, making it compatible with any LSP-capable editor.
@@ -177,7 +173,7 @@ The server uses standard input/output for LSP communication, making it compatibl
     ```lua
     require('lspconfig.configs').zeus = {
       default_config = {
-        cmd = { '/path/to/zeus', 'lsp', '--stdio' },
+        cmd = { 'zeus', 'lsp', '--stdio' },
         filetypes = { 'zeus' },
         root_dir = function(fname)
           return vim.fn.getcwd()
@@ -191,7 +187,7 @@ The server uses standard input/output for LSP communication, making it compatibl
     ```elisp
     (lsp-register-client
       (make-lsp-client
-        :new-connection (lsp-stdio-connection '("/path/to/zeus" "lsp" "--stdio"))
+        :new-connection (lsp-stdio-connection '("zeus" "lsp" "--stdio"))
         :major-modes '(zeus-mode)
         :server-id 'zeus-ls))
     ```
