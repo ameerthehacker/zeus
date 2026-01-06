@@ -66,9 +66,42 @@ zig version
 # Should show: 0.14.x or later
 ```
 
-### 5. LLVM
+### 5. LLVM (18)
 
-LLVM is installed automatically as a Go dependency—no manual installation needed.
+The Zeus compiler uses LLVM via Go bindings. Install LLVM 18:
+
+```bash
+brew install llvm@18
+```
+
+Then add the following to your shell configuration (`~/.zshrc` or `~/.bashrc`):
+
+```bash
+# LLVM configuration for Zeus
+export LLVM_PATH="$(brew --prefix llvm@18)"
+export PATH="$LLVM_PATH/bin:$PATH"
+export LDFLAGS="-L$LLVM_PATH/lib"
+export CPPFLAGS="-I$LLVM_PATH/include"
+export CGO_CFLAGS="-I$LLVM_PATH/include"
+export CGO_LDFLAGS="-L$LLVM_PATH/lib -Wl,-rpath,$LLVM_PATH/lib"
+```
+
+Apply the changes:
+
+```bash
+source ~/.zshrc  # or ~/.bashrc
+```
+
+Verify:
+
+```bash
+llvm-config --version
+# Should show: 18.x.x
+```
+
+<Aside type="caution">
+  The Go LLVM bindings require these environment variables to be set correctly. If you encounter CGO or LLVM-related build errors, double-check that the paths are correct for your system.
+</Aside>
 
 ---
 
@@ -285,14 +318,46 @@ npm run package
 
 ## Common Issues
 
-### LLVM Not Found
+### LLVM Not Found / CGO Errors
 
-If you see LLVM-related errors:
+If you see errors like `cannot find -lLLVM` or `llvm-config: command not found`:
 
-```bash
-# Ensure Go can find LLVM
-go env -w CGO_ENABLED=1
-```
+1. **Ensure LLVM 18 is installed:**
+
+   ```bash
+   brew install llvm@18
+   ```
+
+2. **Verify environment variables are set:**
+
+   ```bash
+   echo $LLVM_PATH
+   # Should show: /opt/homebrew/opt/llvm@18 (Apple Silicon)
+   # Or: /usr/local/opt/llvm@18 (Intel)
+   ```
+
+3. **Check that llvm-config is in PATH:**
+
+   ```bash
+   which llvm-config
+   llvm-config --version
+   ```
+
+4. **Ensure CGO is enabled:**
+
+   ```bash
+   go env CGO_ENABLED
+   # Should show: 1
+   
+   # If not, enable it:
+   go env -w CGO_ENABLED=1
+   ```
+
+5. **Reload your shell configuration:**
+
+   ```bash
+   source ~/.zshrc  # or ~/.bashrc
+   ```
 
 ### Runtime Build Fails
 
