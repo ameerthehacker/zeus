@@ -1,0 +1,357 @@
+---
+title: Building from Source
+description: Build the Zeus compiler from source and set up a development environment.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+This guide walks you through building the Zeus compiler from source. This is recommended if you want to:
+
+- Contribute to Zeus development
+- Customize the compiler
+- Work on the latest unreleased features
+- Debug compiler internals
+
+<Aside type="tip">
+  For regular usage, we recommend [installing via Homebrew](/getting-started/installation/) instead.
+</Aside>
+
+---
+
+## Prerequisites
+
+### 1. Xcode Command Line Tools (macOS)
+
+Required for the C/C++ compiler (clang) and linker:
+
+```bash
+xcode-select --install
+```
+
+### 2. Homebrew
+
+If you don't have Homebrew installed:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### 3. Go (1.23 or later)
+
+The Zeus compiler is written in Go:
+
+```bash
+brew install go
+```
+
+Verify:
+
+```bash
+go version
+# Should show: go version go1.23.x darwin/arm64 (or amd64)
+```
+
+### 4. Zig (0.14 or later)
+
+The Zeus runtime is written in Zig:
+
+```bash
+brew install zig
+```
+
+Verify:
+
+```bash
+zig version
+# Should show: 0.14.x or later
+```
+
+### 5. LLVM
+
+LLVM is installed automatically as a Go dependency—no manual installation needed.
+
+---
+
+## Building the Compiler
+
+<Steps>
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/ameerthehacker/zeus.git
+   cd zeus
+   ```
+
+2. **Install Go dependencies**
+
+   ```bash
+   go mod download
+   ```
+
+3. **Build the runtime**
+
+   The runtime provides garbage collection, arrays, and other built-in operations:
+
+   ```bash
+   make build-runtime
+   ```
+
+4. **Build the compiler**
+
+   ```bash
+   make build
+   ```
+
+   This creates a `zeus` binary in the project root.
+
+5. **Verify the build**
+
+   ```bash
+   ./zeus --version
+   ```
+
+6. **(Optional) Add to PATH**
+
+   To use `zeus` from anywhere:
+
+   ```bash
+   # Add to ~/.zshrc or ~/.bashrc
+   export PATH="$HOME/path/to/zeus:$PATH"
+   ```
+
+</Steps>
+
+---
+
+## Development Workflow
+
+### Running Tests
+
+Run the full test suite:
+
+```bash
+make test
+```
+
+Run specific test categories:
+
+```bash
+make test-go        # Go unit tests
+make test-runtime   # Runtime tests
+make test-e2e       # End-to-end tests
+```
+
+### Compiling & Running Zeus Programs
+
+Use the playground directory for quick experiments:
+
+```bash
+# Create a test file
+echo 'function main(): i32 { return 42; }' > playground/test.zs
+
+# Compile and run
+make run file=test
+
+# Check exit code
+echo $?  # Should print 42
+```
+
+### Debug Mode
+
+Enable verbose output to see compiler internals:
+
+```bash
+make run file=test debug=true
+```
+
+This will:
+- Print the Zeus IR (intermediate representation)
+- Save LLVM IR files to `playground/debug/out/`
+- Show GC debug information
+
+### Build Flags
+
+| Flag | Description |
+|------|-------------|
+| `debug=true` | Enable debug output |
+| `nogc=true` | Disable garbage collection |
+| `release=true` | Use optimized runtime |
+
+Combine flags as needed:
+
+```bash
+make run file=test debug=true nogc=true
+```
+
+---
+
+## Project Structure
+
+```
+zeus/
+├── cmd/                    # CLI entry points
+│   ├── main.go             # Main entry point
+│   ├── build.go            # Build command
+│   └── lsp.go              # LSP server command
+├── internal/               # Compiler internals
+│   ├── lexer/              # Tokenizer
+│   ├── parser/             # Parser & AST construction
+│   ├── ast/                # Abstract Syntax Tree definitions
+│   ├── ir/                 # Intermediate representation & type checking
+│   ├── codegen/            # LLVM IR generation
+│   ├── symbol_table/       # Symbol table management
+│   ├── module/             # Module system
+│   ├── lsp/                # Language Server Protocol
+│   └── zeus_compiler/      # Compiler orchestration
+├── runtime/                # Zig runtime
+│   ├── gc.zig              # Garbage collector
+│   ├── gc_runtime.zig      # GC runtime interface
+│   ├── array_runtime.zig   # Array operations
+│   └── stackmap.zig        # Stack map for GC
+├── playground/             # Test files directory
+├── examples/               # Example programs
+├── test/                   # Test suites
+│   ├── e2e/                # End-to-end tests
+│   ├── lexer/              # Lexer tests
+│   └── parser/             # Parser tests
+├── lib/                    # Standard library
+│   └── std/                # Standard modules
+├── zeus-vscode/            # VS Code extension
+└── docs/                   # Documentation (this site)
+```
+
+<Aside type="tip">
+  For a deep dive into the compiler internals, see [Compiler Architecture](/tooling/compiler-architecture/).
+</Aside>
+
+---
+
+## Working on the Runtime
+
+The runtime is written in Zig and provides:
+- Garbage collection
+- Array operations
+- Memory management
+
+### Building the Runtime
+
+```bash
+make build-runtime
+```
+
+### Runtime Debug Mode
+
+For GC debugging:
+
+```bash
+make build-runtime-debug
+```
+
+### Key Runtime Files
+
+| File | Purpose |
+|------|---------|
+| `runtime/gc.zig` | Core garbage collector |
+| `runtime/gc_runtime.zig` | GC interface for compiled code |
+| `runtime/array_runtime.zig` | Dynamic array implementation |
+| `runtime/stackmap.zig` | Stack map parsing for precise GC |
+
+---
+
+## Working on the VS Code Extension
+
+The Zeus VS Code extension provides syntax highlighting and LSP support.
+
+### Setup
+
+```bash
+cd zeus-vscode
+npm install
+npm run compile
+```
+
+### Testing
+
+Press `F5` in VS Code to launch the Extension Development Host.
+
+### Packaging
+
+```bash
+npm run package
+```
+
+---
+
+## Common Issues
+
+### LLVM Not Found
+
+If you see LLVM-related errors:
+
+```bash
+# Ensure Go can find LLVM
+go env -w CGO_ENABLED=1
+```
+
+### Runtime Build Fails
+
+Ensure Zig is properly installed:
+
+```bash
+zig version  # Should be 0.14+
+```
+
+### Tests Failing
+
+Make sure the runtime is built first:
+
+```bash
+make build-runtime
+make test
+```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run the test suite: `make test`
+5. Submit a pull request
+
+See our [GitHub repository](https://github.com/ameerthehacker/zeus) for contribution guidelines.
+
+---
+
+## Makefile Reference
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the Zeus compiler |
+| `make build-runtime` | Build the runtime |
+| `make build-runtime-debug` | Build runtime with debug symbols |
+| `make run file=<name>` | Compile and run a playground file |
+| `make compile file=<name>` | Compile without running |
+| `make test` | Run all tests |
+| `make test-go` | Run Go tests only |
+| `make test-e2e` | Run end-to-end tests |
+| `make clean` | Remove build artifacts |
+| `make lsp` | Start the Language Server |
+
+---
+
+## Next Steps
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 2rem;">
+  <a href="/getting-started/hello-world/" style="display: block; padding: 1rem; background: var(--sl-color-bg-sidebar); border-radius: 8px; text-decoration: none;">
+    <strong>Hello World</strong>
+    <p style="margin: 0.5rem 0 0; opacity: 0.8; font-size: 0.9rem;">Write your first Zeus program</p>
+  </a>
+  <a href="/tooling/compiler/" style="display: block; padding: 1rem; background: var(--sl-color-bg-sidebar); border-radius: 8px; text-decoration: none;">
+    <strong>Compiler Reference</strong>
+    <p style="margin: 0.5rem 0 0; opacity: 0.8; font-size: 0.9rem;">Learn compiler commands</p>
+  </a>
+</div>
+

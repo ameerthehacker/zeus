@@ -478,7 +478,14 @@ func GetRuntimeDir() string {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to resolve symlinks: %s", err.Error()))
 			os.Exit(1)
 		}
-		runtimeDir = filepath.Dir(execPath)
+		binDir := filepath.Dir(execPath)
+		// Check if we're in a bin/ directory structure (e.g., Homebrew installation)
+		if filepath.Base(binDir) == "bin" {
+			runtimeDir = filepath.Dir(binDir)
+		} else {
+			// Otherwise, the binary is directly in the zeus home directory
+			runtimeDir = binDir
+		}
 		return filepath.Join(runtimeDir, "runtime", "zig-out", "out")
 	}
 	return runtimeDir
