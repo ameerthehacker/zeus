@@ -16,7 +16,11 @@ hero:
       icon: external
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+<div style="background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%); color: #1a1a1a; padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 2rem; text-align: center; font-weight: 500;">
+  🚧 <strong>Alpha Release</strong> — Zeus is under active development. APIs and syntax may change. Not recommended for production use.
+</div>
 
 <div class="hero-code-preview">
 
@@ -118,8 +122,7 @@ function main(): i32 {
 
 ---
 
-<div style="text-align: center; margin-top: 3rem; opacity: 0.7;">
-  <p>⚠️ Zeus is in early development. The language is evolving rapidly.</p>
-  <p>Star us on <a href="https://github.com/ameerthehacker/zeus">GitHub</a> to follow the journey!</p>
+<div style="text-align: center; margin-top: 3rem; padding: 1.5rem; background: rgba(251, 191, 36, 0.1); border-radius: 8px; border: 1px solid rgba(251, 191, 36, 0.3);">
+  <p style="margin: 0; font-size: 1.1rem;">⭐ Star us on <a href="https://github.com/ameerthehacker/zeus"><strong>GitHub</strong></a> to follow the journey!</p>
 </div>
 
