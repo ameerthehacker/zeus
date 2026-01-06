@@ -10,3 +10,4 @@ function main(): u32 {
   return array[0] + array[1] + array[2];
 }
 
+

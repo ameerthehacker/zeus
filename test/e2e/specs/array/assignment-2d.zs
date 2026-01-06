@@ -26,3 +26,4 @@ function main(): i32 {
   return _2dArray[0][0].sum() + _2dArray[1][0].sum() + _2dArray[1][1].sum();
 }
 
+
