@@ -41,6 +41,7 @@ const (
 	TokenTypeNumber
 	TokenTypeIdentifier
 	TokenTypeString
+	TokenTypeChar
 	literal_end
 	// keywords
 	keyword_beg
@@ -199,6 +200,8 @@ func (t TokenType) String() string {
 		return "new"
 	case TokenTypeNull:
 		return "null"
+	case TokenTypeChar:
+		return "char"
 	case TokenTypeEOF:
 		return "EOF"
 	}

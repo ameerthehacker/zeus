@@ -2,6 +2,8 @@ package ir
 
 import (
 	"fmt"
+	"strconv"
+	"unicode/utf8"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/module"
@@ -708,6 +710,23 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 		g.irBuilder.BuildImport(absoluteModulePath, _import.Name.Value, importedValue, _import.Name.Span)
 		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
 	}
+}
+
+func (g *IRModule) VisitChar(expr *ast.CharExprNode) zeus_value.Value {
+	zeus_error.Assert(utf8.RuneCount([]byte(expr.Value.Value)) == 1, "char literal must be a single character")
+	
+	firstRune, _ := utf8.DecodeRuneInString(expr.Value.Value)
+	u8Value := byte(firstRune)
+	u8ValueString := strconv.Itoa(int(u8Value))
+	
+	return zeus_value.NewConstant(
+		u8ValueString,
+		zeus_value.IntType{
+			Size: zeus_value.I8,
+			Signed: false,
+		},
+		expr.Value.Span,
+	)
 }
 
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {

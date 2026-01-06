@@ -219,7 +219,23 @@ func TestZeusLexer(t *testing.T) {
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 13), *token.NewPosition(1, 13))),
 			},
-			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated string", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated string literal", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
+		},
+		{
+			name:  "char",
+			input: `'A'`,
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeChar, "A", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 3))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
+			},
+		},
+		{
+			name:  "unterminated char",
+			input: `'A`,
+			expected: []*token.Token{
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 3), *token.NewPosition(1, 3))),
+			},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated char literal", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
 		},
 	}
 

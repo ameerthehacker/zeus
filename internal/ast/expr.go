@@ -431,11 +431,33 @@ func AsIndexingExpr(expr ExprNode) *IndexingExprNode {
 	}
 }
 
+type CharExprNode struct {
+	Value *token.Token
+	Span *token.Span
+}
+
+func (c *CharExprNode) GetSpan() *token.Span {
+	return c.Span
+}
+
+func (c *CharExprNode) PrettyString() string {
+	return c.Value.Value
+}
+
+func (c *CharExprNode) String() string {
+	return fmt.Sprintf("{ type: CharExprNode, Value: %s, Span: %s }", c.Value, c.GetSpan())
+}
+
+func (c *CharExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitChar(c)
+}
+
 // ExprVisitor interface
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
 	VisitIndexingExpression(node *IndexingExprNode) T
 	VisitNumber(node *NumberExprNode) T
+	VisitChar(node *CharExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
 	VisitIdentifier(node *IdentifierExprNode) T
 	VisitBoolean(node *BooleanExprNode) T

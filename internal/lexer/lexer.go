@@ -3,6 +3,7 @@ package lexer
 import (
 	"fmt"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -136,23 +137,38 @@ func (l *Lexer) eatNumber() {
 	l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
 }
 
-func (l *Lexer) eatString() {
+func (l *Lexer) eatStringOrChar(isChar bool) {
 	start := l.cursor
 	startPosition := l.getCurrentPosition()
 	l.advance()
-	for !l.isEOF(0) && l.source[l.cursor] != '"' {
+	quote := '"'
+	if isChar {
+		quote = '\''
+	}
+	for !l.isEOF(0) && l.source[l.cursor] != quote {
 		l.advance()
+	}
+	tokenType := token.TokenTypeString
+	if isChar {
+		tokenType = token.TokenTypeChar
 	}
 
 	if l.isEOF(0) {
-		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated string", token.NewSpan(*startPosition, *startPosition)))
+		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("unterminated %s literal", tokenType), token.NewSpan(*startPosition, *startPosition)))
 		return
 	}
 
 	endPosition := l.getCurrentPosition()
 	l.advance()
 
-	l.pushToken(token.NewTokenWithValue(token.TokenTypeString, string(l.source[start+1:l.cursor-1]), token.NewSpan(*startPosition, *endPosition)))
+	stringLiteral := string(l.source[start+1:l.cursor-1])
+
+	if isChar && utf8.RuneCount([]byte(stringLiteral)) != 1 {
+		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "char literal must be a single character", token.NewSpan(*startPosition, *startPosition)))
+		return
+	}
+
+	l.pushToken(token.NewTokenWithValue(tokenType, stringLiteral, token.NewSpan(*startPosition, *endPosition)))
 }
 
 func (l *Lexer) pushError(err *zeus_error.ZeusError) {
@@ -279,10 +295,12 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 				l.pushToken(token.NewToken(token.TokenTypeLessThan, token.NewSpan(*startPosition, *startPosition)))
 			}
 			l.advance()
+		case char == '\'':
+			l.eatStringOrChar(true)
 		case unicode.IsDigit(char):
 			l.eatNumber()
 		case char == '"':
-			l.eatString()
+			l.eatStringOrChar(false)
 		case isIdentifierRune(char):
 			l.eatIdentifierOrKeywordOrDatatype()
 		default:
