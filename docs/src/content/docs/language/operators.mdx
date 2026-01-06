@@ -1,0 +1,247 @@
+---
+title: Operators
+description: Arithmetic, comparison, and logical operators in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Operators
+
+Zeus provides a familiar set of operators for arithmetic, comparison, and logical operations.
+
+## Arithmetic Operators
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `+` | Addition | `5 + 3` → `8` |
+| `-` | Subtraction | `5 - 3` → `2` |
+| `*` | Multiplication | `5 * 3` → `15` |
+| `/` | Division | `15 / 3` → `5` |
+
+### Examples
+
+```zeus
+function main(): i32 {
+  let a: i32 = 10;
+  let b: i32 = 3;
+  
+  let sum: i32 = a + b;      // 13
+  let diff: i32 = a - b;     // 7
+  let product: i32 = a * b;  // 30
+  let quotient: i32 = a / b; // 3 (integer division)
+  
+  return sum + diff + product + quotient;
+}
+```
+
+### Integer Division
+
+Division between integers produces an integer result:
+
+```zeus
+let result: i32 = 7 / 2;  // 3, not 3.5
+```
+
+For floating-point division, use float types:
+
+```zeus
+let result: f64 = 7.0 / 2.0;  // 3.5
+```
+
+### Unary Minus
+
+Negate a value:
+
+```zeus
+let positive: i32 = 42;
+let negative: i32 = -positive;  // -42
+```
+
+## Comparison Operators
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equal to | `5 == 5` → `true` |
+| `!=` | Not equal to | `5 != 3` → `true` |
+| `<` | Less than | `3 < 5` → `true` |
+| `<=` | Less than or equal | `5 <= 5` → `true` |
+| `>` | Greater than | `5 > 3` → `true` |
+| `>=` | Greater than or equal | `5 >= 5` → `true` |
+
+### Examples
+
+```zeus
+function compare(a: i32, b: i32): i32 {
+  if (a == b) {
+    return 0;   // Equal
+  }
+  if (a < b) {
+    return -1;  // a is smaller
+  }
+  return 1;     // a is larger
+}
+
+function main(): i32 {
+  return compare(10, 5);  // Returns 1
+}
+```
+
+### Comparing Different Types
+
+Comparison works between compatible types:
+
+```zeus
+let intVal: i32 = 5;
+let floatVal: f64 = 5.0;
+
+// This works because i32 can be implicitly converted to f64
+let equal: boolean = floatVal == intVal;  // true
+```
+
+## Logical Operators
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `!` | Logical NOT | `!true` → `false` |
+
+<Aside type="note">
+  Logical AND (`&&`) and OR (`||`) are coming in a future release. For now, use nested if statements.
+</Aside>
+
+### Logical NOT
+
+```zeus
+function main(): i32 {
+  let isReady: boolean = true;
+  let notReady: boolean = !isReady;  // false
+  
+  if (!notReady) {
+    return 1;  // This executes
+  }
+  return 0;
+}
+```
+
+### Workaround for AND/OR
+
+Until `&&` and `||` are available, use nested conditions:
+
+```zeus
+// Instead of: if (a > 0 && b > 0)
+function bothPositive(a: i32, b: i32): boolean {
+  if (a > 0) {
+    if (b > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Instead of: if (a > 0 || b > 0)
+function eitherPositive(a: i32, b: i32): boolean {
+  if (a > 0) {
+    return true;
+  }
+  if (b > 0) {
+    return true;
+  }
+  return false;
+}
+```
+
+## Assignment Operator
+
+The `=` operator assigns a value to a variable:
+
+```zeus
+let x: i32 = 10;    // Initial assignment
+x = 20;             // Reassignment
+x = x + 5;          // Update based on current value
+```
+
+<Aside type="note">
+  Compound assignment operators (`+=`, `-=`, etc.) are coming soon.
+</Aside>
+
+## Operator Precedence
+
+Operators follow standard mathematical precedence:
+
+| Precedence | Operators | Description |
+|------------|-----------|-------------|
+| Highest | `.` | Member access |
+| | `()` | Function call |
+| | `!`, `-` (unary) | Logical NOT, negation |
+| | `*`, `/` | Multiplication, division |
+| | `+`, `-` | Addition, subtraction |
+| | `<`, `<=`, `>`, `>=` | Comparison |
+| | `==`, `!=` | Equality |
+| Lowest | `=` | Assignment |
+
+### Examples
+
+```zeus
+let result: i32 = 2 + 3 * 4;      // 14 (not 20)
+let result2: i32 = (2 + 3) * 4;   // 20 (parentheses first)
+let result3: i32 = 10 - 5 - 2;    // 3 (left to right)
+```
+
+## Practical Examples
+
+### Absolute Value
+
+```zeus
+function abs(n: i32): i32 {
+  if (n < 0) {
+    return -n;
+  }
+  return n;
+}
+```
+
+### Distance Formula (simplified)
+
+```zeus
+function manhattanDistance(x1: i32, y1: i32, x2: i32, y2: i32): i32 {
+  let dx: i32 = x2 - x1;
+  let dy: i32 = y2 - y1;
+  
+  if (dx < 0) {
+    dx = -dx;
+  }
+  if (dy < 0) {
+    dy = -dy;
+  }
+  
+  return dx + dy;
+}
+```
+
+### Min and Max
+
+```zeus
+function min(a: i32, b: i32): i32 {
+  if (a < b) {
+    return a;
+  }
+  return b;
+}
+
+function max(a: i32, b: i32): i32 {
+  if (a > b) {
+    return a;
+  }
+  return b;
+}
+
+function clamp(value: i32, minVal: i32, maxVal: i32): i32 {
+  return max(minVal, min(value, maxVal));
+}
+```
+
+---
+
+## Next
+
+<a href="/language/modules/">Modules →</a>
+

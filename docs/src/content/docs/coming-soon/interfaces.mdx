@@ -1,0 +1,166 @@
+---
+title: Interfaces
+description: Interfaces in Zeus - coming soon.
+banner:
+  content: |
+    🚧 This feature is coming soon and is not yet available.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Interfaces
+
+<Aside type="caution" title="Coming Soon">
+  Interfaces are planned for a future release of Zeus.
+</Aside>
+
+## Planned Features
+
+### Interface Declaration
+
+Define contracts that classes must implement:
+
+```zeus
+interface Printable {
+  print(): void;
+}
+
+interface Comparable {
+  compareTo(other: Comparable): i32;
+}
+```
+
+### Implementing Interfaces
+
+Classes can implement one or more interfaces:
+
+```zeus
+interface Shape {
+  area(): f64;
+  perimeter(): f64;
+}
+
+class Rectangle implements Shape {
+  public width: f64;
+  public height: f64;
+
+  constructor(w: f64, h: f64) {
+    this.width = w;
+    this.height = h;
+  }
+
+  public area(): f64 {
+    return this.width * this.height;
+  }
+
+  public perimeter(): f64 {
+    return 2.0 * (this.width + this.height);
+  }
+}
+```
+
+### Multiple Interfaces
+
+A class can implement multiple interfaces:
+
+```zeus
+interface Drawable {
+  draw(): void;
+}
+
+interface Clickable {
+  onClick(): void;
+}
+
+class Button implements Drawable, Clickable {
+  public draw(): void {
+    // Render the button
+  }
+
+  public onClick(): void {
+    // Handle click
+  }
+}
+```
+
+### Interface as Type
+
+Use interfaces as variable and parameter types:
+
+```zeus
+function calculateTotalArea(shapes: Shape[]): f64 {
+  let total: f64 = 0.0;
+  let i: i32 = 0;
+  
+  while (i < shapes.length()) {
+    total = total + shapes.get(i).area();
+    i = i + 1;
+  }
+  
+  return total;
+}
+```
+
+## Use Cases
+
+### Dependency Injection
+
+```zeus
+interface Logger {
+  log(message: string): void;
+}
+
+class ConsoleLogger implements Logger {
+  public log(message: string): void {
+    // Print to console
+  }
+}
+
+class FileLogger implements Logger {
+  public log(message: string): void {
+    // Write to file
+  }
+}
+
+class Application {
+  private logger: Logger;
+
+  constructor(logger: Logger) {
+    this.logger = logger;
+  }
+}
+```
+
+### Plugin Systems
+
+```zeus
+interface Plugin {
+  getName(): string;
+  execute(): void;
+}
+
+function runPlugins(plugins: Plugin[]): void {
+  let i: i32 = 0;
+  while (i < plugins.length()) {
+    plugins.get(i).execute();
+    i = i + 1;
+  }
+}
+```
+
+## Roadmap
+
+| Feature | Status |
+|---------|--------|
+| Interface declaration | Planned |
+| `implements` keyword | Planned |
+| Multiple interfaces | Planned |
+| Interface as type | Planned |
+| Default methods | Considered |
+
+---
+
+<div style="text-align: center; margin-top: 3rem; opacity: 0.7;">
+  <p>Stay updated on <a href="https://github.com/ameerthehacker/zeus">GitHub</a>!</p>
+</div>
+

@@ -1,0 +1,213 @@
+---
+title: Types
+description: Complete reference for Zeus's type system.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Types
+
+Zeus is a statically typed language. Every variable, parameter, and return value has a type known at compile time.
+
+## Primitive Types
+
+### Integer Types
+
+Zeus provides signed and unsigned integers of various sizes:
+
+| Type | Size | Range |
+|------|------|-------|
+| `i8` | 8-bit | -128 to 127 |
+| `i16` | 16-bit | -32,768 to 32,767 |
+| `i32` | 32-bit | -2.1B to 2.1B |
+| `i64` | 64-bit | -9.2×10¹⁸ to 9.2×10¹⁸ |
+| `u8` | 8-bit | 0 to 255 |
+| `u16` | 16-bit | 0 to 65,535 |
+| `u32` | 32-bit | 0 to 4.2B |
+| `u64` | 64-bit | 0 to 1.8×10¹⁹ |
+
+```zeus
+let small: i8 = 127;
+let normal: i32 = 1000000;
+let big: i64 = 9223372036854775807;
+let positive: u32 = 4000000000;
+```
+
+### Floating-Point Types
+
+| Type | Size | Precision |
+|------|------|-----------|
+| `f32` | 32-bit | ~7 decimal digits |
+| `f64` | 64-bit | ~15 decimal digits |
+
+```zeus
+let pi: f32 = 3.14159;
+let precise: f64 = 3.141592653589793;
+```
+
+### Boolean Type
+
+The `boolean` type has two values: `true` and `false`.
+
+```zeus
+let isReady: boolean = true;
+let hasError: boolean = false;
+```
+
+### Void Type
+
+`void` is used only as a function return type to indicate no value is returned:
+
+```zeus
+function logMessage(): void {
+  // No return statement needed
+}
+```
+
+<Aside type="caution">
+  You cannot declare variables with type `void`.
+</Aside>
+
+### Null
+
+`null` represents the absence of a value for object types:
+
+```zeus
+let p: Point = null;
+```
+
+---
+
+## Numeric Literals
+
+### Integer Literals
+
+Zeus supports multiple number bases:
+
+```zeus
+let decimal: i32 = 42;
+let binary: i32 = 0b101010;    // 42 in binary
+let octal: i32 = 0o52;         // 42 in octal
+let hex: i32 = 0x2A;           // 42 in hexadecimal
+```
+
+Use underscores for readability:
+
+```zeus
+let million: i32 = 1_000_000;
+let binary: i32 = 0b1111_0000;
+```
+
+### Floating-Point Literals
+
+```zeus
+let simple: f64 = 3.14;
+let scientific: f64 = 6.022e23;  // Scientific notation
+```
+
+---
+
+## Type Compatibility
+
+### Implicit Conversions
+
+Zeus performs automatic widening conversions:
+
+```zeus
+let small: i8 = 10;
+let big: i32 = small;  // OK: i8 → i32
+
+let integer: i32 = 42;
+let floating: f64 = integer;  // OK: i32 → f64
+```
+
+**Allowed implicit conversions:**
+- Smaller integers → larger integers (e.g., `i8` → `i32`)
+- Integers → floats (e.g., `i32` → `f64`)
+- `null` → any object type
+
+### Type Errors
+
+Narrowing conversions are not allowed:
+
+```zeus
+let big: i32 = 1000;
+let small: i8 = big;  // Error: cannot convert i32 to i8
+```
+
+Incompatible types cause errors:
+
+```zeus
+let num: i32 = 42;
+let flag: boolean = num;  // Error: cannot convert i32 to boolean
+```
+
+---
+
+## Complex Types
+
+### Arrays
+
+Arrays are declared with `Type[]` syntax:
+
+```zeus
+let numbers: i32[] = new i32[];
+let matrix: f64[][] = new f64[][];  // 2D array
+```
+
+See [Arrays](/language/arrays/) for more details.
+
+### Classes
+
+Classes define custom object types:
+
+```zeus
+class Rectangle {
+  public width: f64;
+  public height: f64;
+}
+
+let rect: Rectangle = new Rectangle();
+```
+
+See [Classes](/language/classes/) for more details.
+
+### Function Types
+
+Functions can be stored in variables:
+
+```zeus
+function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+let operation: function(i32, i32): i32 = add;
+```
+
+---
+
+## Type Checking
+
+Zeus performs thorough type checking at compile time:
+
+```zeus
+function process(value: i32): boolean {
+  return value > 0;
+}
+
+function main(): i32 {
+  let result: boolean = process(42);  // OK
+  
+  // let wrong: i32 = process(42);  // Error: boolean not assignable to i32
+  // process("hello");              // Error: string not assignable to i32
+  
+  return 0;
+}
+```
+
+---
+
+## Next
+
+<a href="/language/functions/">Functions →</a>
+

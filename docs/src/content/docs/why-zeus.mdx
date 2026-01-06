@@ -1,0 +1,177 @@
+---
+title: Why Zeus?
+description: The philosophy and motivation behind the Zeus programming language.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+# Why Zeus?
+
+Zeus exists to answer a simple question: **What if TypeScript compiled to native code?**
+
+## The Problem
+
+Modern software development presents developers with an uncomfortable choice:
+
+### The Web Developer's Dilemma
+
+If you're a JavaScript or TypeScript developer, you enjoy:
+- ✅ Familiar, expressive syntax
+- ✅ Rapid development cycles
+- ✅ Huge ecosystem and community
+- ❌ Performance ceiling due to interpretation/JIT
+- ❌ High memory overhead
+- ❌ No true native binaries
+
+### The Systems Programmer's Trade-off
+
+If you choose a systems language like Rust, Go, or C++:
+- ✅ Native performance
+- ✅ Low memory footprint
+- ✅ True compiled binaries
+- ❌ Steep learning curve
+- ❌ Unfamiliar syntax and paradigms
+- ❌ Slower iteration speed
+
+**Why should you have to choose?**
+
+---
+
+## The Zeus Solution
+
+Zeus bridges this gap with a clear philosophy:
+
+<CardGrid>
+  <Card title="Familiar Syntax" icon="seti:typescript">
+    If you know TypeScript, you already know most of Zeus. Classes, functions, types—they all work the way you expect.
+  </Card>
+  <Card title="Native Speed" icon="rocket">
+    Zeus compiles to native machine code via LLVM. No interpreter, no virtual machine, no JIT warmup.
+  </Card>
+  <Card title="Simple Memory Model" icon="approve-check">
+    Automatic garbage collection means you focus on your logic. No ownership rules, no borrow checker, no manual malloc/free.
+  </Card>
+  <Card title="Tooling First" icon="laptop">
+    The Language Server Protocol was built alongside the compiler, not as an afterthought. Great IDE support from day one.
+  </Card>
+</CardGrid>
+
+---
+
+## Design Principles
+
+Zeus follows four core principles that guide every design decision:
+
+### 1. Familiarity Over Novelty
+
+We don't reinvent syntax that already works. TypeScript's class syntax is excellent—why create something different?
+
+```zeus
+// This should feel immediately familiar
+class Rectangle {
+  public width: f64;
+  public height: f64;
+
+  constructor(w: f64, h: f64) {
+    this.width = w;
+    this.height = h;
+  }
+
+  public area(): f64 {
+    return this.width * this.height;
+  }
+}
+```
+
+### 2. Simplicity Over Complexity
+
+One obvious way to do things. Zeus avoids the "10 ways to do the same thing" problem.
+
+- **One kind of loop** for iteration (while)
+- **Clear type declarations** without inference ambiguity
+- **Explicit exports** instead of magic module resolution
+
+### 3. Tooling Is Not Optional
+
+Great tooling shouldn't be a third-party add-on. Zeus includes:
+
+- **Language Server Protocol** built into the compiler
+- **Real-time diagnostics** as you type
+- **Smart completions** for keywords, types, and symbols
+- **VS Code extension** ready to use
+
+### 4. Performance By Default
+
+Every Zeus program compiles to optimized native code:
+
+- **LLVM backend** for industry-standard optimization
+- **Static typing** enables compile-time optimizations
+- **No runtime overhead** from interpretation
+
+---
+
+## Who Is Zeus For?
+
+<CardGrid stagger>
+  <Card title="Web Developers" icon="earth">
+    You love TypeScript but want to build CLI tools, games, or performance-critical applications without learning a completely new language.
+  </Card>
+  <Card title="Students & Learners" icon="open-book">
+    You want to understand how compiled languages work without the complexity of manual memory management.
+  </Card>
+  <Card title="Curious Engineers" icon="magnifier">
+    You're interested in language design and compilers. Zeus is open source and approachable.
+  </Card>
+  <Card title="Performance Seekers" icon="rocket">
+    You need more speed than JavaScript can offer but don't want to invest months learning Rust or C++.
+  </Card>
+</CardGrid>
+
+---
+
+## Comparison
+
+| Aspect | JavaScript/TypeScript | Zeus | Rust/Go |
+|--------|----------------------|------|---------|
+| Syntax Familiarity | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| Native Performance | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| Memory Management | Automatic (GC) | Automatic (GC) | Manual/Ownership |
+| Learning Curve | Low | Low | High |
+| Binary Output | ❌ (needs runtime) | ✅ | ✅ |
+| IDE Support | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+
+---
+
+## The Journey
+
+Zeus is in active development. Here's what's ready and what's coming:
+
+### Available Now
+- ✅ Full class system with constructors and methods
+- ✅ Dynamic arrays with push/pop/get/set
+- ✅ Control flow (if/else, while loops)
+- ✅ Module system (import/export)
+- ✅ Garbage collection
+- ✅ VS Code extension with LSP
+
+### Coming Soon
+- 🔜 String handling
+- 🔜 Class inheritance
+- 🔜 Interfaces
+- 🔜 Exception handling
+- 🔜 Standard library
+
+<Aside type="note">
+  Zeus is a learning project and labor of love. It's not production-ready, but it's growing every day. [Star us on GitHub](https://github.com/ameerthehacker/zeus) to follow along!
+</Aside>
+
+---
+
+## Ready to Try?
+
+<div style="text-align: center; margin-top: 2rem;">
+  <a href="/getting-started/installation/" class="sl-link-button primary" style="display: inline-block; padding: 1rem 2rem; font-size: 1.1rem;">
+    Get Started with Zeus →
+  </a>
+</div>
+

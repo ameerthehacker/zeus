@@ -1,0 +1,252 @@
+---
+title: Compiler
+description: Complete reference for the Zeus compiler CLI.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Compiler
+
+The Zeus compiler transforms `.zs` source files into native executables. This guide covers all available commands and options.
+
+## Basic Usage
+
+### Compile and Run
+
+The quickest way to run a Zeus program:
+
+```bash
+make run file=myprogram
+```
+
+This compiles `playground/myprogram.zs` and runs the resulting binary.
+
+### Compile Only
+
+To compile without running:
+
+```bash
+make compile file=myprogram
+```
+
+The binary is placed in `playground/debug/myprogram`.
+
+## Direct Compiler Usage
+
+You can also invoke the compiler directly:
+
+```bash
+# Build the compiler first
+make build
+
+# Compile a file
+./zeus build myprogram.zs
+```
+
+### Output Formats
+
+The compiler can emit different output formats:
+
+<Tabs>
+  <TabItem label="Executable (default)">
+    ```bash
+    ./zeus build main.zs
+    # Creates: main (executable)
+    ```
+  </TabItem>
+  <TabItem label="Object File">
+    ```bash
+    ./zeus build --file-type=obj main.zs
+    # Creates: main.o
+    ```
+  </TabItem>
+  <TabItem label="LLVM IR">
+    ```bash
+    ./zeus build --file-type=ll main.zs
+    # Creates: main.ll (human-readable LLVM IR)
+    ```
+  </TabItem>
+  <TabItem label="Assembly">
+    ```bash
+    ./zeus build --file-type=asm main.zs
+    # Creates: main.s
+    ```
+  </TabItem>
+</Tabs>
+
+## Build Flags
+
+### Debug Mode
+
+Enable verbose output and save intermediate files:
+
+```bash
+make run file=myprogram debug=true
+```
+
+This will:
+- Print the Zeus IR (intermediate representation)
+- Save LLVM IR files to `playground/debug/out/`
+- Enable GC debug logging
+
+### Disable Garbage Collection
+
+Run without GC for testing or comparison:
+
+```bash
+make run file=myprogram nogc=true
+```
+
+### Release Mode
+
+Use the optimized runtime build:
+
+```bash
+make run file=myprogram release=true
+```
+
+### Combining Flags
+
+Flags can be combined:
+
+```bash
+make run file=myprogram debug=true release=true
+```
+
+## Makefile Commands
+
+### Build Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the Zeus compiler binary |
+| `make build-runtime` | Build the Zeus runtime (required first time) |
+| `make build-zeus-vscode` | Package the VS Code extension |
+
+### Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `make run file=<name>` | Compile and run a playground file |
+| `make compile file=<name>` | Compile a playground file |
+| `make lsp` | Start the Language Server |
+
+### Testing Commands
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run all tests |
+| `make test-go` | Run Go tests only |
+| `make test-runtime` | Run runtime tests only |
+| `make test-e2e` | Run end-to-end tests |
+
+### Cleanup
+
+| Command | Description |
+|---------|-------------|
+| `make clean` | Remove all build artifacts |
+
+## Compilation Pipeline
+
+The Zeus compiler processes your code through several stages:
+
+```
+Source (.zs)
+    ↓
+  Lexer → Tokens
+    ↓
+  Parser → AST
+    ↓
+  IR Generator → Zeus IR
+    ↓
+  Type Checker → Validated IR
+    ↓
+  Code Generator → LLVM IR
+    ↓
+  LLVM Optimizer → Optimized IR
+    ↓
+  Object Generator → .o files
+    ↓
+  Linker → Executable
+```
+
+### Viewing Intermediate Output
+
+With `debug=true`, you can inspect each stage:
+
+```bash
+make run file=myprogram debug=true
+```
+
+Check `playground/debug/out/` for:
+- `*.ll` — LLVM IR files for each module
+- GC debug information in the terminal output
+
+## Error Messages
+
+The compiler provides detailed error messages with source locations:
+
+```
+error: type 'f32' is not assignable to type 'i32'
+  --> main.zs:5:10
+   |
+ 5 |   let x: i32 = 3.14;
+   |          ^^^
+```
+
+### Common Errors
+
+| Error | Cause |
+|-------|-------|
+| Type mismatch | Assigning incompatible types |
+| Undefined symbol | Using a variable/function before declaration |
+| Missing return | Non-void function without return statement |
+| Circular dependency | Modules importing each other |
+
+## Project Structure
+
+For larger projects, organize your code in directories:
+
+```
+myproject/
+├── main.zs              # Entry point with main()
+├── models/
+│   ├── user.zs
+│   └── product.zs
+├── utils/
+│   └── helpers.zs
+└── playground/          # Quick experiments
+    └── test.zs
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `ZEUS_DEBUG` | Enable debug output (`true`/`false`) |
+| `ZEUS_NO_GC` | Disable garbage collection (`true`/`false`) |
+| `ZEUS_GC_DEBUG` | Enable GC-specific debug logs (`true`/`false`) |
+
+```bash
+ZEUS_DEBUG=true ./zeus build main.zs
+```
+
+## Platform Support
+
+| Platform | Status |
+|----------|--------|
+| macOS (Apple Silicon) | ✅ Supported |
+| macOS (Intel) | ✅ Supported |
+| Linux | 🔜 Coming soon |
+| Windows | 🔜 Planned |
+
+<Aside type="note">
+  Zeus currently targets macOS. Linux support is in active development.
+</Aside>
+
+---
+
+## Next
+
+<a href="/tooling/lsp/">Language Server →</a>
+

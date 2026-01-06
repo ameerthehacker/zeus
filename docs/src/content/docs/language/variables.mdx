@@ -1,0 +1,151 @@
+---
+title: Variables
+description: Learn how to declare and use variables in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Variables
+
+Variables in Zeus are statically typed and must be declared with explicit type annotations.
+
+## Declaration
+
+Use the `let` keyword to declare mutable variables:
+
+```zeus
+let age: i32 = 25;
+let temperature: f64 = 98.6;
+let isActive: boolean = true;
+```
+
+Use `const` for immutable values:
+
+```zeus
+const PI: f64 = 3.14159;
+const MAX_SIZE: i32 = 100;
+```
+
+<Aside type="caution">
+  Variables declared with `const` cannot be reassigned after initialization.
+</Aside>
+
+## Type Annotations
+
+Every variable requires a type annotation:
+
+```zeus
+let name: string = "Zeus";
+let count: i32 = 42;
+let ratio: f64 = 0.5;
+let flag: boolean = false;
+```
+
+The syntax is: `let variableName: Type = value;`
+
+## Default Values
+
+Variables can be declared without an initial value. They receive type-appropriate defaults:
+
+```zeus
+function main(): i32 {
+  let x: i32;      // Defaults to 0
+  let y: f64;      // Defaults to 0.0
+  let b: boolean;  // Defaults to false
+  
+  return x;  // Returns 0
+}
+```
+
+| Type | Default Value |
+|------|---------------|
+| `i8`, `i16`, `i32`, `i64` | `0` |
+| `u8`, `u16`, `u32`, `u64` | `0` |
+| `f32`, `f64` | `0.0` |
+| `boolean` | `false` |
+| Object types | `null` |
+
+## Reassignment
+
+Variables declared with `let` can be reassigned:
+
+```zeus
+let counter: i32 = 0;
+counter = 1;
+counter = counter + 1;  // counter is now 2
+```
+
+<Aside type="note">
+  You cannot change the type of a variable after declaration. `counter = 3.14` would be a type error.
+</Aside>
+
+## Naming Conventions
+
+Variable names must:
+- Start with a letter or underscore
+- Contain only letters, digits, and underscores
+- Not be a reserved keyword
+
+```zeus
+// Valid names
+let userName: i32 = 1;
+let _private: i32 = 2;
+let count2: i32 = 3;
+
+// Invalid names
+// let 2count: i32 = 4;   // Cannot start with digit
+// let my-var: i32 = 5;   // Hyphens not allowed
+// let let: i32 = 6;      // Reserved keyword
+```
+
+## Scope
+
+Variables are scoped to the block they're declared in:
+
+```zeus
+function main(): i32 {
+  let outer: i32 = 10;
+  
+  if (outer > 5) {
+    let inner: i32 = 20;
+    // Both outer and inner are accessible here
+  }
+  
+  // Only outer is accessible here
+  // inner is out of scope
+  
+  return outer;
+}
+```
+
+## Object Variables
+
+When declaring object variables, you must use the class name as the type:
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+}
+
+function main(): i32 {
+  let p: Point = new Point();
+  p.x = 10;
+  p.y = 20;
+  
+  return p.x + p.y;
+}
+```
+
+Object variables can be assigned `null`:
+
+```zeus
+let p: Point = null;
+```
+
+---
+
+## Next
+
+<a href="/language/types/">Types →</a>
+

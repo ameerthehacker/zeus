@@ -1,0 +1,297 @@
+---
+title: Linked List
+description: Implement a linked list data structure in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Linked List
+
+This example shows how to implement a classic linked list data structure using Zeus classes.
+
+## Node Class
+
+First, define a node that holds data and a reference to the next node:
+
+```zeus
+class Node {
+  public value: i32;
+  public next: Node;
+
+  constructor(value: i32) {
+    this.value = value;
+    this.next = null;
+  }
+}
+```
+
+## Basic Linked List
+
+A simple linked list with append and traversal:
+
+```zeus
+class Node {
+  public value: i32;
+  public next: Node;
+
+  constructor(value: i32) {
+    this.value = value;
+    this.next = null;
+  }
+}
+
+class LinkedList {
+  public head: Node;
+  public size: i32;
+
+  constructor() {
+    this.head = null;
+    this.size = 0;
+  }
+
+  public append(value: i32): void {
+    let newNode: Node = new Node(value);
+    
+    if (this.head == null) {
+      this.head = newNode;
+    } else {
+      let current: Node = this.head;
+      while (current.next != null) {
+        current = current.next;
+      }
+      current.next = newNode;
+    }
+    
+    this.size = this.size + 1;
+  }
+
+  public get(index: i32): i32 {
+    if (index < 0) {
+      return 0;
+    }
+    
+    let current: Node = this.head;
+    let i: i32 = 0;
+    
+    while (i < index) {
+      if (current == null) {
+        return 0;
+      }
+      current = current.next;
+      i = i + 1;
+    }
+    
+    if (current == null) {
+      return 0;
+    }
+    
+    return current.value;
+  }
+
+  public length(): i32 {
+    return this.size;
+  }
+}
+
+function main(): i32 {
+  let list: LinkedList = new LinkedList();
+  
+  list.append(10);
+  list.append(20);
+  list.append(30);
+  
+  let first: i32 = list.get(0);   // 10
+  let second: i32 = list.get(1);  // 20
+  let third: i32 = list.get(2);   // 30
+  
+  return first + second + third;  // 60
+}
+```
+
+## Prepend Operation
+
+Add elements at the beginning:
+
+```zeus
+class LinkedList {
+  // ... previous code ...
+
+  public prepend(value: i32): void {
+    let newNode: Node = new Node(value);
+    newNode.next = this.head;
+    this.head = newNode;
+    this.size = this.size + 1;
+  }
+}
+```
+
+## Sum All Elements
+
+Traverse the list and sum values:
+
+```zeus
+class LinkedList {
+  // ... previous code ...
+
+  public sum(): i32 {
+    let total: i32 = 0;
+    let current: Node = this.head;
+    
+    while (current != null) {
+      total = total + current.value;
+      current = current.next;
+    }
+    
+    return total;
+  }
+}
+
+function main(): i32 {
+  let list: LinkedList = new LinkedList();
+  list.append(1);
+  list.append(2);
+  list.append(3);
+  list.append(4);
+  list.append(5);
+  
+  return list.sum();  // 15
+}
+```
+
+## Find Element
+
+Search for a value in the list:
+
+```zeus
+class LinkedList {
+  // ... previous code ...
+
+  public contains(value: i32): boolean {
+    let current: Node = this.head;
+    
+    while (current != null) {
+      if (current.value == value) {
+        return true;
+      }
+      current = current.next;
+    }
+    
+    return false;
+  }
+
+  public indexOf(value: i32): i32 {
+    let current: Node = this.head;
+    let index: i32 = 0;
+    
+    while (current != null) {
+      if (current.value == value) {
+        return index;
+      }
+      current = current.next;
+      index = index + 1;
+    }
+    
+    return -1;  // Not found
+  }
+}
+```
+
+## Complete Example
+
+Here's a full working example:
+
+```zeus
+class Node {
+  public value: i32;
+  public next: Node;
+
+  constructor(value: i32) {
+    this.value = value;
+    this.next = null;
+  }
+}
+
+class LinkedList {
+  public head: Node;
+  public size: i32;
+
+  constructor() {
+    this.head = null;
+    this.size = 0;
+  }
+
+  public append(value: i32): void {
+    let newNode: Node = new Node(value);
+    
+    if (this.head == null) {
+      this.head = newNode;
+    } else {
+      let current: Node = this.head;
+      while (current.next != null) {
+        current = current.next;
+      }
+      current.next = newNode;
+    }
+    
+    this.size = this.size + 1;
+  }
+
+  public sum(): i32 {
+    let total: i32 = 0;
+    let current: Node = this.head;
+    
+    while (current != null) {
+      total = total + current.value;
+      current = current.next;
+    }
+    
+    return total;
+  }
+
+  public length(): i32 {
+    return this.size;
+  }
+}
+
+function main(): i32 {
+  let list: LinkedList = new LinkedList();
+  
+  // Add numbers 1 through 10
+  let i: i32 = 1;
+  while (i <= 10) {
+    list.append(i);
+    i = i + 1;
+  }
+  
+  // Sum should be 55 (1+2+3+...+10)
+  return list.sum();
+}
+```
+
+## Try It
+
+Save to `playground/linked-list.zs` and run:
+
+```bash
+make run file=linked-list
+echo $?  # Shows 55
+```
+
+## Concepts Demonstrated
+
+- **Classes** — Node and LinkedList classes
+- **Object references** — next pointer to other nodes
+- **Null handling** — Checking for null nodes
+- **Encapsulation** — Private size tracking
+
+<Aside type="tip">
+  Linked lists are great for learning, but Zeus's built-in arrays are usually more practical for real applications.
+</Aside>
+
+---
+
+## See Also
+
+- [Classes](/language/classes/) — Object-oriented programming
+- [Arrays](/language/arrays/) — Built-in dynamic arrays
+

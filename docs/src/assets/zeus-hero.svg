@@ -1,0 +1,65 @@
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background glow -->
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#facc15" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bolt-gradient" x1="150" y1="50" x2="250" y2="350" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fef08a"/>
+      <stop offset="0.5" stop-color="#facc15"/>
+      <stop offset="1" stop-color="#ca8a04"/>
+    </linearGradient>
+    <filter id="bolt-glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Outer glow circle -->
+  <circle cx="200" cy="200" r="180" fill="url(#glow)"/>
+  
+  <!-- Grid pattern -->
+  <g opacity="0.1">
+    <line x1="50" y1="100" x2="350" y2="100" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="50" y1="150" x2="350" y2="150" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="50" y1="200" x2="350" y2="200" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="50" y1="250" x2="350" y2="250" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="50" y1="300" x2="350" y2="300" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="100" y1="50" x2="100" y2="350" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="150" y1="50" x2="150" y2="350" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="200" y1="50" x2="200" y2="350" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="250" y1="50" x2="250" y2="350" stroke="#facc15" stroke-width="0.5"/>
+    <line x1="300" y1="50" x2="300" y2="350" stroke="#facc15" stroke-width="0.5"/>
+  </g>
+  
+  <!-- Lightning bolt - main shape -->
+  <g filter="url(#bolt-glow)">
+    <path 
+      d="M220 50 L140 190 L190 190 L170 350 L280 170 L220 170 L220 50Z" 
+      fill="url(#bolt-gradient)"
+      stroke="#fef08a"
+      stroke-width="3"
+      stroke-linejoin="round"
+    />
+  </g>
+  
+  <!-- Electric arcs -->
+  <g opacity="0.6">
+    <path d="M130 150 Q120 160 125 175" stroke="#facc15" stroke-width="2" fill="none"/>
+    <path d="M275 200 Q290 210 285 225" stroke="#facc15" stroke-width="2" fill="none"/>
+    <path d="M155 280 Q145 295 150 310" stroke="#facc15" stroke-width="2" fill="none"/>
+  </g>
+  
+  <!-- Sparkle dots -->
+  <circle cx="120" cy="140" r="3" fill="#facc15" opacity="0.8"/>
+  <circle cx="290" cy="180" r="2" fill="#facc15" opacity="0.6"/>
+  <circle cx="140" cy="300" r="2.5" fill="#facc15" opacity="0.7"/>
+  <circle cx="270" cy="280" r="2" fill="#facc15" opacity="0.5"/>
+  <circle cx="100" cy="220" r="1.5" fill="#facc15" opacity="0.4"/>
+  <circle cx="310" cy="250" r="1.5" fill="#facc15" opacity="0.4"/>
+</svg>
+

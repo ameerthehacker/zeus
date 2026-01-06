@@ -1,0 +1,189 @@
+---
+title: Installation
+description: How to install and build the Zeus compiler on your system.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+# Installation
+
+This guide walks you through installing all prerequisites and building the Zeus compiler from source.
+
+<Aside type="note">
+  Zeus currently supports **macOS** (Intel and Apple Silicon). Linux support is coming soon.
+</Aside>
+
+## Prerequisites
+
+Before building Zeus, you'll need the following tools installed:
+
+### 1. Xcode Command Line Tools
+
+Required for the C/C++ compiler (clang) and linker:
+
+```bash
+xcode-select --install
+```
+
+### 2. Homebrew
+
+If you don't have Homebrew installed:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+### 3. Go (1.23 or later)
+
+The Zeus compiler is written in Go:
+
+```bash
+brew install go
+```
+
+Verify the installation:
+
+```bash
+go version
+# Should show: go version go1.23.x darwin/arm64 (or amd64)
+```
+
+### 4. Zig (0.14 or later)
+
+The Zeus runtime is written in Zig:
+
+```bash
+brew install zig
+```
+
+Verify the installation:
+
+```bash
+zig version
+# Should show: 0.14.x or later
+```
+
+### 5. LLVM
+
+LLVM is installed automatically as a Go dependency when you build Zeus—no manual installation needed.
+
+---
+
+## Building Zeus
+
+<Steps>
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/ameerthehacker/zeus.git
+   cd zeus
+   ```
+
+2. **Install Go dependencies**
+
+   ```bash
+   go mod download
+   ```
+
+3. **Build the runtime**
+
+   The runtime provides garbage collection and built-in operations:
+
+   ```bash
+   make build-runtime
+   ```
+
+4. **Build the compiler** (optional)
+
+   If you want to use the `zeus` command globally:
+
+   ```bash
+   make build
+   ```
+
+   This creates a `zeus` binary in the project root.
+
+5. **Verify the installation**
+
+   Run the test suite to make sure everything works:
+
+   ```bash
+   make test
+   ```
+
+   Try compiling and running the example:
+
+   ```bash
+   make run file=main
+   ```
+
+</Steps>
+
+---
+
+## Quick Reference
+
+Here are the most common commands you'll use:
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the Zeus compiler binary |
+| `make build-runtime` | Build the Zeus runtime |
+| `make run file=<name>` | Compile and run a playground file |
+| `make compile file=<name>` | Compile without running |
+| `make test` | Run all tests |
+| `make clean` | Clean build artifacts |
+
+### Build Flags
+
+You can customize builds with these flags:
+
+```bash
+# Enable debug output (prints IR, LLVM files)
+make run file=main debug=true
+
+# Disable garbage collection
+make run file=main nogc=true
+
+# Use optimized runtime
+make run file=main release=true
+
+# Combine flags
+make run file=main debug=true nogc=true
+```
+
+---
+
+## Project Structure
+
+After cloning, here's what you'll find:
+
+```
+zeus/
+├── cmd/              # CLI commands
+├── internal/         # Compiler internals
+│   ├── lexer/        # Tokenizer
+│   ├── parser/       # Parser & AST
+│   ├── ir/           # Intermediate representation
+│   ├── codegen/      # LLVM code generation
+│   └── ...
+├── runtime/          # Zig runtime (GC, arrays)
+├── playground/       # Your test files go here
+├── examples/         # Example Zeus programs
+├── test/             # Test suites
+└── zeus-vscode/      # VS Code extension
+```
+
+---
+
+## Next Steps
+
+Now that Zeus is installed, let's write your first program:
+
+<div style="text-align: center; margin-top: 2rem;">
+  <a href="/getting-started/hello-world/" class="sl-link-button primary" style="display: inline-block; padding: 0.75rem 1.5rem;">
+    Write Your First Zeus Program →
+  </a>
+</div>
+

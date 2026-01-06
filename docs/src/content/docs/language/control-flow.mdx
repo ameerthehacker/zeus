@@ -1,0 +1,314 @@
+---
+title: Control Flow
+description: Conditional statements and loops in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Control Flow
+
+Zeus provides standard control flow constructs for conditional execution and iteration.
+
+## If Statements
+
+### Basic If
+
+Execute code conditionally:
+
+```zeus
+function main(): i32 {
+  let age: i32 = 20;
+  
+  if (age >= 18) {
+    return 1;  // Adult
+  }
+  
+  return 0;  // Minor
+}
+```
+
+### If-Else
+
+Handle both branches:
+
+```zeus
+function main(): i32 {
+  let score: i32 = 75;
+  
+  if (score >= 60) {
+    return 1;  // Pass
+  } else {
+    return 0;  // Fail
+  }
+}
+```
+
+### Nested If-Else
+
+Chain multiple conditions:
+
+```zeus
+function getGrade(score: i32): i32 {
+  if (score >= 90) {
+    return 4;  // A
+  } else {
+    if (score >= 80) {
+      return 3;  // B
+    } else {
+      if (score >= 70) {
+        return 2;  // C
+      } else {
+        if (score >= 60) {
+          return 1;  // D
+        } else {
+          return 0;  // F
+        }
+      }
+    }
+  }
+}
+
+function main(): i32 {
+  return getGrade(85);  // Returns 3 (B)
+}
+```
+
+## Conditions
+
+Conditions must evaluate to `boolean`:
+
+```zeus
+let x: i32 = 10;
+let y: i32 = 20;
+
+// Comparison operators
+if (x == y) { }   // Equal
+if (x != y) { }   // Not equal
+if (x < y) { }    // Less than
+if (x <= y) { }   // Less than or equal
+if (x > y) { }    // Greater than
+if (x >= y) { }   // Greater than or equal
+
+// Boolean values
+let flag: boolean = true;
+if (flag) { }
+
+// Negation
+if (!flag) { }
+```
+
+## While Loops
+
+Repeat while a condition is true:
+
+```zeus
+function main(): i32 {
+  let i: i32 = 0;
+  let sum: i32 = 0;
+  
+  while (i < 10) {
+    sum = sum + i;
+    i = i + 1;
+  }
+  
+  return sum;  // Returns 45 (0+1+2+...+9)
+}
+```
+
+### Counting Loop
+
+```zeus
+function factorial(n: i32): i32 {
+  let result: i32 = 1;
+  let i: i32 = 1;
+  
+  while (i <= n) {
+    result = result * i;
+    i = i + 1;
+  }
+  
+  return result;
+}
+
+function main(): i32 {
+  return factorial(5);  // Returns 120
+}
+```
+
+### Conditional Loop
+
+```zeus
+function findFirstPositive(arr: i32[], size: i32): i32 {
+  let i: i32 = 0;
+  
+  while (i < size) {
+    if (arr.get(i) > 0) {
+      return arr.get(i);
+    }
+    i = i + 1;
+  }
+  
+  return 0;  // Not found
+}
+```
+
+## Control Flow Patterns
+
+### Early Return
+
+Exit a function early when a condition is met:
+
+```zeus
+function isEven(n: i32): boolean {
+  if (n == 0) {
+    return true;
+  }
+  
+  // More complex check could go here
+  let remainder: i32 = n - (n / 2) * 2;
+  return remainder == 0;
+}
+```
+
+### Accumulator Pattern
+
+Build up a result through iteration:
+
+```zeus
+function sumArray(arr: i32[], length: i32): i32 {
+  let sum: i32 = 0;
+  let i: i32 = 0;
+  
+  while (i < length) {
+    sum = sum + arr.get(i);
+    i = i + 1;
+  }
+  
+  return sum;
+}
+```
+
+### Search Pattern
+
+Find an element in a collection:
+
+```zeus
+function contains(arr: i32[], length: i32, target: i32): boolean {
+  let i: i32 = 0;
+  
+  while (i < length) {
+    if (arr.get(i) == target) {
+      return true;
+    }
+    i = i + 1;
+  }
+  
+  return false;
+}
+```
+
+### Counter Pattern
+
+Count occurrences:
+
+```zeus
+function countPositive(arr: i32[], length: i32): i32 {
+  let count: i32 = 0;
+  let i: i32 = 0;
+  
+  while (i < length) {
+    if (arr.get(i) > 0) {
+      count = count + 1;
+    }
+    i = i + 1;
+  }
+  
+  return count;
+}
+```
+
+## Nested Loops
+
+Loops can be nested for multi-dimensional iteration:
+
+```zeus
+function multiplicationTable(): i32 {
+  let sum: i32 = 0;
+  let i: i32 = 1;
+  
+  while (i <= 5) {
+    let j: i32 = 1;
+    
+    while (j <= 5) {
+      sum = sum + (i * j);
+      j = j + 1;
+    }
+    
+    i = i + 1;
+  }
+  
+  return sum;
+}
+```
+
+## Practical Examples
+
+### Fibonacci
+
+```zeus
+function fibonacci(n: i32): i32 {
+  if (n <= 1) {
+    return n;
+  }
+  
+  let prev: i32 = 0;
+  let curr: i32 = 1;
+  let i: i32 = 2;
+  
+  while (i <= n) {
+    let next: i32 = prev + curr;
+    prev = curr;
+    curr = next;
+    i = i + 1;
+  }
+  
+  return curr;
+}
+
+function main(): i32 {
+  return fibonacci(10);  // Returns 55
+}
+```
+
+### Maximum Value
+
+```zeus
+function findMax(arr: i32[], length: i32): i32 {
+  if (length == 0) {
+    return 0;
+  }
+  
+  let max: i32 = arr.get(0);
+  let i: i32 = 1;
+  
+  while (i < length) {
+    if (arr.get(i) > max) {
+      max = arr.get(i);
+    }
+    i = i + 1;
+  }
+  
+  return max;
+}
+```
+
+<Aside type="note">
+  Zeus currently supports `while` loops. `for` loops and other iteration constructs are planned for future releases.
+</Aside>
+
+---
+
+## Next
+
+<a href="/language/operators/">Operators →</a>
+

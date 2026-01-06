@@ -1,0 +1,223 @@
+---
+title: Functions
+description: How to define and use functions in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Functions
+
+Functions are the primary way to organize and reuse code in Zeus.
+
+## Basic Syntax
+
+```zeus
+function functionName(param1: Type1, param2: Type2): ReturnType {
+  // function body
+  return value;
+}
+```
+
+## Simple Functions
+
+A function that takes two integers and returns their sum:
+
+```zeus
+function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+function main(): i32 {
+  let result: i32 = add(10, 20);
+  return result;  // Returns 30
+}
+```
+
+## Parameters
+
+Parameters are listed with their types:
+
+```zeus
+function greet(times: i32): i32 {
+  return times;
+}
+
+function calculate(x: f64, y: f64, z: f64): f64 {
+  return x + y + z;
+}
+```
+
+<Aside type="note">
+  All parameters require explicit type annotations.
+</Aside>
+
+## Return Types
+
+The return type is specified after the parameter list:
+
+```zeus
+function getNumber(): i32 {
+  return 42;
+}
+
+function isPositive(n: i32): boolean {
+  return n > 0;
+}
+
+function getPi(): f64 {
+  return 3.14159;
+}
+```
+
+## Void Functions
+
+Use `void` for functions that don't return a value:
+
+```zeus
+function doSomething(): void {
+  let x: i32 = 10;
+  // No return statement needed
+}
+
+function process(value: i32): void {
+  let doubled: i32 = value * 2;
+  return;  // Optional explicit return
+}
+```
+
+## The main Function
+
+Every Zeus program needs a `main` function as the entry point:
+
+```zeus
+function main(): i32 {
+  // Program starts here
+  return 0;  // Exit code
+}
+```
+
+The return value of `main` becomes the program's exit code:
+
+```bash
+./myprogram
+echo $?  # Shows the return value of main
+```
+
+## Calling Functions
+
+Call functions by name with arguments in parentheses:
+
+```zeus
+function multiply(a: i32, b: i32): i32 {
+  return a * b;
+}
+
+function main(): i32 {
+  let x: i32 = multiply(6, 7);       // x = 42
+  let y: i32 = multiply(x, 2);       // y = 84
+  let z: i32 = multiply(multiply(2, 3), 4);  // z = 24
+  
+  return z;
+}
+```
+
+## Recursion
+
+Functions can call themselves:
+
+```zeus
+function factorial(n: i32): i32 {
+  if (n <= 1) {
+    return 1;
+  }
+  return n * factorial(n - 1);
+}
+
+function main(): i32 {
+  return factorial(5);  // Returns 120
+}
+```
+
+## Functions with Objects
+
+Functions can take and return objects:
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
+function createPoint(x: i32, y: i32): Point {
+  return new Point(x, y);
+}
+
+function addPoints(p1: Point, p2: Point): Point {
+  return new Point(p1.x + p2.x, p1.y + p2.y);
+}
+
+function main(): i32 {
+  let a: Point = createPoint(1, 2);
+  let b: Point = createPoint(3, 4);
+  let c: Point = addPoints(a, b);
+  
+  return c.x + c.y;  // Returns 10
+}
+```
+
+## Function References
+
+Functions can be stored in variables:
+
+```zeus
+function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+function subtract(a: i32, b: i32): i32 {
+  return a - b;
+}
+
+function main(): i32 {
+  let op: function(i32, i32): i32 = add;
+  let result1: i32 = op(10, 5);  // 15
+  
+  op = subtract;
+  let result2: i32 = op(10, 5);  // 5
+  
+  return result1 + result2;  // 20
+}
+```
+
+## Multiple Return Paths
+
+All code paths must return a value (for non-void functions):
+
+```zeus
+function abs(n: i32): i32 {
+  if (n < 0) {
+    return n * -1;
+  } else {
+    return n;
+  }
+}
+
+function max(a: i32, b: i32): i32 {
+  if (a > b) {
+    return a;
+  }
+  return b;  // Implicit else
+}
+```
+
+---
+
+## Next
+
+<a href="/language/classes/">Classes →</a>
+

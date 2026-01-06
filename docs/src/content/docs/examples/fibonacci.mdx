@@ -1,0 +1,170 @@
+---
+title: Fibonacci Sequence
+description: Calculate Fibonacci numbers in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Fibonacci Sequence
+
+This example demonstrates recursion and iteration in Zeus by calculating Fibonacci numbers.
+
+## The Problem
+
+The Fibonacci sequence is: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, ...
+
+Each number is the sum of the two preceding numbers:
+- F(0) = 0
+- F(1) = 1
+- F(n) = F(n-1) + F(n-2) for n > 1
+
+## Recursive Solution
+
+The simplest implementation mirrors the mathematical definition:
+
+```zeus
+function fibonacci(n: i32): i32 {
+  if (n <= 0) {
+    return 0;
+  }
+  if (n == 1) {
+    return 1;
+  }
+  return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+function main(): i32 {
+  return fibonacci(10);  // Returns 55
+}
+```
+
+<Aside type="caution">
+  The recursive solution has exponential time complexity O(2^n). It's elegant but slow for large n.
+</Aside>
+
+## Iterative Solution
+
+A more efficient approach using a loop:
+
+```zeus
+function fibonacci(n: i32): i32 {
+  if (n <= 0) {
+    return 0;
+  }
+  if (n == 1) {
+    return 1;
+  }
+  
+  let prev: i32 = 0;
+  let curr: i32 = 1;
+  let i: i32 = 2;
+  
+  while (i <= n) {
+    let next: i32 = prev + curr;
+    prev = curr;
+    curr = next;
+    i = i + 1;
+  }
+  
+  return curr;
+}
+
+function main(): i32 {
+  return fibonacci(10);  // Returns 55
+}
+```
+
+This runs in O(n) time and O(1) space.
+
+## Generating a Sequence
+
+Store multiple Fibonacci numbers in an array:
+
+```zeus
+function generateFibonacci(count: i32): i32[] {
+  let result: i32[] = new i32[];
+  
+  if (count <= 0) {
+    return result;
+  }
+  
+  result.push(0);
+  if (count == 1) {
+    return result;
+  }
+  
+  result.push(1);
+  
+  let i: i32 = 2;
+  while (i < count) {
+    let next: i32 = result.get(i - 1) + result.get(i - 2);
+    result.push(next);
+    i = i + 1;
+  }
+  
+  return result;
+}
+
+function main(): i32 {
+  let fibs: i32[] = generateFibonacci(10);
+  // fibs = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+  
+  return fibs.get(9);  // Returns 34
+}
+```
+
+## Sum of Fibonacci Numbers
+
+Calculate the sum of the first n Fibonacci numbers:
+
+```zeus
+function sumFibonacci(n: i32): i32 {
+  let sum: i32 = 0;
+  let prev: i32 = 0;
+  let curr: i32 = 1;
+  
+  if (n >= 1) {
+    sum = sum + prev;  // Add F(0)
+  }
+  
+  let i: i32 = 1;
+  while (i < n) {
+    sum = sum + curr;
+    let next: i32 = prev + curr;
+    prev = curr;
+    curr = next;
+    i = i + 1;
+  }
+  
+  return sum;
+}
+
+function main(): i32 {
+  return sumFibonacci(10);  // Sum of first 10: 0+1+1+2+3+5+8+13+21+34 = 88
+}
+```
+
+## Try It
+
+Save any of these examples to `playground/fibonacci.zs` and run:
+
+```bash
+make run file=fibonacci
+echo $?  # Shows the result
+```
+
+## Concepts Demonstrated
+
+- **Recursion** — Functions calling themselves
+- **Iteration** — While loops for efficiency
+- **Arrays** — Storing sequences of values
+- **Conditionals** — Base cases with if statements
+
+---
+
+## See Also
+
+- [Functions](/language/functions/) — Function syntax and recursion
+- [Control Flow](/language/control-flow/) — Loops and conditionals
+- [Arrays](/language/arrays/) — Working with collections
+

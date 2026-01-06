@@ -1,0 +1,211 @@
+---
+title: IDE Setup
+description: Set up VS Code for the best Zeus development experience.
+---
+
+import { Aside, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+# IDE Setup
+
+Zeus includes a Language Server Protocol (LSP) implementation that provides real-time IDE features. This guide shows you how to set up VS Code for the best development experience.
+
+## VS Code Extension
+
+The Zeus VS Code extension provides:
+
+- ✅ **Syntax Highlighting** — Full color coding for `.zs` files
+- ✅ **Real-time Diagnostics** — Errors and warnings as you type
+- ✅ **Code Completion** — Keywords, types, variables, and functions
+- ✅ **Error Underlining** — Precise error locations
+
+<Aside type="note">
+  Coming soon: Hover information, Go to Definition, and Rename Symbol.
+</Aside>
+
+---
+
+## Installation
+
+<Steps>
+
+1. **Build the Zeus compiler**
+
+   The extension needs the `zeus` binary:
+
+   ```bash
+   cd /path/to/zeus
+   make build
+   ```
+
+2. **Install extension dependencies**
+
+   ```bash
+   cd zeus-vscode
+   npm install
+   npm run compile
+   ```
+
+3. **Configure the extension**
+
+   Choose one of these options:
+
+   <Tabs>
+     <TabItem label="Option A: Add to PATH (Recommended)">
+       Add Zeus to your shell's PATH:
+
+       ```bash
+       # Add to ~/.zshrc or ~/.bashrc
+       export PATH="$HOME/path/to/zeus:$PATH"
+       ```
+
+       Then restart your terminal and launch VS Code:
+
+       ```bash
+       source ~/.zshrc  # or ~/.bashrc
+       code .
+       ```
+     </TabItem>
+     <TabItem label="Option B: Configure in VS Code">
+       1. Open VS Code Settings (`Cmd+,`)
+       2. Search for "zeus"
+       3. Set `zeus.executablePath` to the full path:
+
+       ```json
+       {
+         "zeus.executablePath": "/Users/yourname/path/to/zeus/zeus"
+       }
+       ```
+     </TabItem>
+   </Tabs>
+
+4. **Launch the extension**
+
+   - Open the `zeus-vscode/` folder in VS Code
+   - Press `F5` to launch the Extension Development Host
+   - Open any `.zs` file to activate the language server
+
+</Steps>
+
+---
+
+## Extension Discovery
+
+The extension automatically searches for the Zeus binary in this order:
+
+1. Custom path from `zeus.executablePath` setting
+2. `./zeus` in the workspace root
+3. `zeus` from system PATH
+
+---
+
+## Features in Action
+
+### Real-time Diagnostics
+
+As you type, the extension shows errors immediately:
+
+```zeus
+function main(): i32 {
+  let x: i32 = "hello";  // Error: type 'string' is not assignable to 'i32'
+  return x;
+}
+```
+
+The error appears underlined in red with a descriptive message.
+
+### Code Completion
+
+Start typing and press `Ctrl+Space` (or `Cmd+Space` on Mac) to see suggestions:
+
+- **Keywords**: `let`, `const`, `function`, `class`, `if`, `while`, etc.
+- **Types**: `i32`, `f64`, `boolean`, `void`, etc.
+- **Variables**: All variables in the current scope
+- **Functions**: Available functions with signatures
+
+### Unused Variable Warnings
+
+The extension warns you about unused declarations:
+
+```zeus
+function main(): i32 {
+  let unused: i32 = 5;  // Warning: 'unused' is declared but never used
+  return 0;
+}
+```
+
+---
+
+## Standalone LSP Server
+
+If you use a different editor that supports LSP, you can run the language server standalone:
+
+```bash
+# Build Zeus
+make build
+
+# Start the LSP server (communicates via stdio)
+./zeus lsp --stdio
+```
+
+The server uses standard input/output for LSP communication, making it compatible with any LSP-capable editor.
+
+### Editor Configuration Examples
+
+<Tabs>
+  <TabItem label="Neovim (nvim-lspconfig)">
+    ```lua
+    require('lspconfig.configs').zeus = {
+      default_config = {
+        cmd = { '/path/to/zeus', 'lsp', '--stdio' },
+        filetypes = { 'zeus' },
+        root_dir = function(fname)
+          return vim.fn.getcwd()
+        end,
+      },
+    }
+    require('lspconfig').zeus.setup{}
+    ```
+  </TabItem>
+  <TabItem label="Emacs (lsp-mode)">
+    ```elisp
+    (lsp-register-client
+      (make-lsp-client
+        :new-connection (lsp-stdio-connection '("/path/to/zeus" "lsp" "--stdio"))
+        :major-modes '(zeus-mode)
+        :server-id 'zeus-ls))
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Troubleshooting
+
+### Extension Not Starting
+
+1. Check that the `zeus` binary exists and is executable
+2. Verify the path in settings or PATH
+3. Check the VS Code Output panel → "Zeus Language Server"
+
+### No Diagnostics Appearing
+
+1. Make sure the file has a `.zs` extension
+2. Check that the language server is running (look for process `zeus lsp`)
+3. Try reloading VS Code (`Cmd+Shift+P` → "Developer: Reload Window")
+
+### Slow Diagnostics
+
+The language server recompiles on every change. For very large files, there may be a slight delay.
+
+---
+
+## Next Steps
+
+Now that your IDE is set up, dive into the language:
+
+<div style="text-align: center; margin-top: 2rem;">
+  <a href="/language/variables/" class="sl-link-button primary" style="display: inline-block; padding: 0.75rem 1.5rem;">
+    Learn the Language →
+  </a>
+</div>
+

@@ -1,0 +1,297 @@
+---
+title: Classes
+description: Object-oriented programming with classes in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Classes
+
+Classes in Zeus provide a way to create custom types with properties and methods.
+
+## Basic Class
+
+```zeus
+class Rectangle {
+  public width: f64;
+  public height: f64;
+}
+
+function main(): i32 {
+  let rect: Rectangle = new Rectangle();
+  rect.width = 10.0;
+  rect.height = 5.0;
+  
+  return 0;
+}
+```
+
+## Constructors
+
+Use `constructor` to initialize objects:
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
+function main(): i32 {
+  let p: Point = new Point(10, 20);
+  return p.x + p.y;  // Returns 30
+}
+```
+
+<Aside type="note">
+  The constructor is called automatically when you use `new ClassName(...)`.
+</Aside>
+
+## Methods
+
+Classes can have methods that operate on the object:
+
+```zeus
+class Rectangle {
+  public width: f64;
+  public height: f64;
+
+  constructor(w: f64, h: f64) {
+    this.width = w;
+    this.height = h;
+  }
+
+  public area(): f64 {
+    return this.width * this.height;
+  }
+
+  public perimeter(): f64 {
+    return 2.0 * (this.width + this.height);
+  }
+}
+
+function main(): i32 {
+  let rect: Rectangle = new Rectangle(10.0, 5.0);
+  let a: f64 = rect.area();       // 50.0
+  let p: f64 = rect.perimeter();  // 30.0
+  
+  return 0;
+}
+```
+
+## The `this` Keyword
+
+Inside a class, `this` refers to the current instance:
+
+```zeus
+class Counter {
+  public value: i32;
+
+  constructor(start: i32) {
+    this.value = start;
+  }
+
+  public increment(): void {
+    this.value = this.value + 1;
+  }
+
+  public add(amount: i32): void {
+    this.value = this.value + amount;
+  }
+
+  public getValue(): i32 {
+    return this.value;
+  }
+}
+```
+
+## Access Modifiers
+
+Zeus supports `public` and `private` access modifiers:
+
+```zeus
+class BankAccount {
+  private balance: i32;
+  public accountId: i32;
+
+  constructor(id: i32, initialBalance: i32) {
+    this.accountId = id;
+    this.balance = initialBalance;
+  }
+
+  public deposit(amount: i32): void {
+    this.balance = this.balance + amount;
+  }
+
+  public getBalance(): i32 {
+    return this.balance;
+  }
+}
+
+function main(): i32 {
+  let account: BankAccount = new BankAccount(1, 100);
+  account.deposit(50);
+  
+  // account.balance = 0;  // Error: 'balance' is private
+  
+  return account.getBalance();  // 150
+}
+```
+
+## Nested Objects
+
+Classes can contain other objects as properties:
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
+class Line {
+  public start: Point;
+  public end: Point;
+
+  constructor(p1: Point, p2: Point) {
+    this.start = p1;
+    this.end = p2;
+  }
+
+  public length(): i32 {
+    let dx: i32 = this.end.x - this.start.x;
+    let dy: i32 = this.end.y - this.start.y;
+    return dx + dy;  // Simplified (Manhattan distance)
+  }
+}
+
+function main(): i32 {
+  let p1: Point = new Point(0, 0);
+  let p2: Point = new Point(10, 20);
+  let line: Line = new Line(p1, p2);
+  
+  return line.length();  // Returns 30
+}
+```
+
+## Object References
+
+Objects are passed by reference:
+
+```zeus
+class Box {
+  public value: i32;
+
+  constructor(v: i32) {
+    this.value = v;
+  }
+}
+
+function modifyBox(box: Box): void {
+  box.value = 999;
+}
+
+function main(): i32 {
+  let myBox: Box = new Box(10);
+  modifyBox(myBox);
+  
+  return myBox.value;  // Returns 999
+}
+```
+
+## Null Objects
+
+Object variables can be `null`:
+
+```zeus
+class Node {
+  public value: i32;
+  public next: Node;
+
+  constructor(v: i32) {
+    this.value = v;
+    this.next = null;  // No next node
+  }
+}
+
+function main(): i32 {
+  let node: Node = new Node(42);
+  // node.next is null
+  
+  return node.value;
+}
+```
+
+## Method Chaining
+
+Methods can return `this` for chaining (when returning the same type):
+
+```zeus
+class Builder {
+  public x: i32;
+  public y: i32;
+  public z: i32;
+
+  constructor() {
+    this.x = 0;
+    this.y = 0;
+    this.z = 0;
+  }
+
+  public setX(val: i32): i32 {
+    this.x = val;
+    return this.x;
+  }
+
+  public setY(val: i32): i32 {
+    this.y = val;
+    return this.y;
+  }
+}
+```
+
+## Classes with Arrays
+
+Classes can have array properties:
+
+```zeus
+class Team {
+  public scores: i32[];
+
+  constructor() {
+    this.scores = new i32[];
+  }
+
+  public addScore(score: i32): void {
+    this.scores.push(score);
+  }
+
+  public getScore(index: i32): i32 {
+    return this.scores.get(index);
+  }
+}
+
+function main(): i32 {
+  let team: Team = new Team();
+  team.addScore(10);
+  team.addScore(20);
+  team.addScore(30);
+  
+  return team.getScore(1);  // Returns 20
+}
+```
+
+---
+
+## Next
+
+<a href="/language/arrays/">Arrays →</a>
+

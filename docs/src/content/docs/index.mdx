@@ -1,0 +1,125 @@
+---
+title: Zeus Programming Language
+description: A modern, garbage-collected programming language with TypeScript-inspired syntax and native performance.
+template: splash
+hero:
+  tagline: TypeScript's Soul. Native Speed.
+  image:
+    file: ../../assets/zeus-hero.svg
+  actions:
+    - text: Get Started
+      link: /getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/ameerthehacker/zeus
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<div class="hero-code-preview">
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+
+  public sum(): i32 {
+    return this.x + this.y;
+  }
+}
+
+function main(): i32 {
+  let p: Point = new Point(10, 20);
+  return p.sum();  // Returns 30
+}
+```
+
+</div>
+
+## Why Zeus?
+
+Zeus bridges the gap between developer experience and performance. Write code that feels like TypeScript, but compiles to blazing-fast native binaries.
+
+<CardGrid stagger>
+  <Card title="TypeScript-Inspired" icon="seti:typescript">
+    Familiar syntax for millions of developers. If you know TypeScript, you already know 80% of Zeus.
+  </Card>
+  <Card title="Native Compilation" icon="rocket">
+    LLVM-powered compilation to native machine code. No interpreter, no runtime overhead.
+  </Card>
+  <Card title="Automatic GC" icon="approve-check">
+    Focus on your logic, not memory management. Precise garbage collection handles the rest.
+  </Card>
+  <Card title="IDE Ready" icon="laptop">
+    First-class Language Server Protocol support. Real-time diagnostics and completions in VS Code.
+  </Card>
+</CardGrid>
+
+## Quick Example
+
+Here's how simple it is to work with classes and arrays in Zeus:
+
+```zeus
+class Task {
+  public id: i32;
+  public priority: i32;
+
+  constructor(id: i32, priority: i32) {
+    this.id = id;
+    this.priority = priority;
+  }
+}
+
+function main(): i32 {
+  // Create a dynamic array of tasks
+  let tasks: Task[] = new Task[];
+  
+  // Add tasks to the array
+  tasks.push(new Task(1, 10));
+  tasks.push(new Task(2, 5));
+  tasks.push(new Task(3, 15));
+  
+  // Access elements
+  let highPriority: Task = tasks.get(2);
+  
+  return highPriority.priority;  // Returns 15
+}
+```
+
+## Get Started in Minutes
+
+<CardGrid>
+  <Card title="1. Install Prerequisites" icon="setting">
+    Install Go 1.23+, Zig 0.14+, and Xcode Command Line Tools.
+  </Card>
+  <Card title="2. Clone & Build" icon="document">
+    Clone the repository and build the compiler with a single command.
+  </Card>
+  <Card title="3. Write Code" icon="pencil">
+    Create your first `.zs` file and start writing Zeus code.
+  </Card>
+  <Card title="4. Compile & Run" icon="right-arrow">
+    Compile to native binary and run at full speed.
+  </Card>
+</CardGrid>
+
+<div style="text-align: center; margin-top: 2rem;">
+  <a href="/getting-started/installation/" class="sl-link-button primary" style="display: inline-block; padding: 1rem 2rem; font-size: 1.1rem;">
+    Start Building with Zeus →
+  </a>
+</div>
+
+---
+
+<div style="text-align: center; margin-top: 3rem; opacity: 0.7;">
+  <p>⚠️ Zeus is in early development. The language is evolving rapidly.</p>
+  <p>Star us on <a href="https://github.com/ameerthehacker/zeus">GitHub</a> to follow the journey!</p>
+</div>
+

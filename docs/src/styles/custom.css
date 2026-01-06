@@ -1,0 +1,356 @@
+/* Zeus Documentation - Custom Styles */
+
+/* Import fonts */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+/* Zeus Color Palette */
+:root {
+  /* Primary - Deep blues (Zeus/night sky) */
+  --zeus-blue-950: #020617;
+  --zeus-blue-900: #0a1628;
+  --zeus-blue-800: #0f2847;
+  --zeus-blue-700: #1e3a5f;
+  --zeus-blue-600: #2d4a6f;
+  
+  /* Accent - Electric yellows (lightning) */
+  --zeus-yellow-400: #facc15;
+  --zeus-yellow-500: #eab308;
+  --zeus-yellow-600: #ca8a04;
+  
+  /* Secondary accents */
+  --zeus-cyan-400: #22d3ee;
+  --zeus-cyan-500: #06b6d4;
+  
+  /* Starlight theme overrides */
+  --sl-color-accent-low: var(--zeus-blue-800);
+  --sl-color-accent: var(--zeus-yellow-500);
+  --sl-color-accent-high: var(--zeus-yellow-400);
+  
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #f8fafc;
+  --sl-color-gray-2: #e2e8f0;
+  --sl-color-gray-3: #cbd5e1;
+  --sl-color-gray-4: #94a3b8;
+  --sl-color-gray-5: #64748b;
+  --sl-color-gray-6: #475569;
+  
+  /* Typography */
+  --sl-font-system: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --sl-font-system-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+  
+  /* Headings font */
+  --zeus-font-heading: 'Space Grotesk', var(--sl-font-system);
+}
+
+/* Dark mode specific overrides */
+:root[data-theme='dark'] {
+  --sl-color-bg: var(--zeus-blue-950);
+  --sl-color-bg-nav: rgba(2, 6, 23, 0.95);
+  --sl-color-bg-sidebar: var(--zeus-blue-900);
+  --sl-color-hairline-light: var(--zeus-blue-700);
+  --sl-color-hairline: var(--zeus-blue-800);
+  
+  --sl-color-text: #e2e8f0;
+  --sl-color-text-accent: var(--zeus-yellow-400);
+}
+
+/* Light mode specific overrides */
+:root[data-theme='light'] {
+  --sl-color-accent: var(--zeus-blue-700);
+  --sl-color-accent-high: var(--zeus-blue-800);
+  --sl-color-text-accent: var(--zeus-blue-700);
+  --sl-color-bg: #f8fafc;
+  --sl-color-bg-nav: rgba(248, 250, 252, 0.95);
+  --sl-color-bg-sidebar: #f1f5f9;
+  --sl-color-hairline-light: #e2e8f0;
+  --sl-color-hairline: #cbd5e1;
+  --sl-color-text: #1e293b;
+}
+
+:root[data-theme='light'] .expressive-code {
+  --ec-codeBg: #f1f5f9;
+  --ec-codeSelectionBg: rgba(30, 58, 95, 0.15);
+}
+
+:root[data-theme='light'] .expressive-code .frame {
+  border-color: #cbd5e1;
+}
+
+:root[data-theme='light'] .sl-markdown-content table {
+  border-color: #cbd5e1;
+}
+
+:root[data-theme='light'] .sl-markdown-content th {
+  background: #e2e8f0;
+}
+
+:root[data-theme='light'] .sl-markdown-content td {
+  border-color: #e2e8f0;
+}
+
+:root[data-theme='light'] .sl-markdown-content blockquote {
+  background: #f1f5f9;
+  border-left-color: var(--zeus-blue-700);
+}
+
+:root[data-theme='light'] ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+:root[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+
+:root[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+:root[data-theme='light'] nav a:hover {
+  color: var(--zeus-blue-700);
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6,
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  font-family: var(--zeus-font-heading);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Hero section styling */
+.hero {
+  background: linear-gradient(135deg, var(--zeus-blue-950) 0%, var(--zeus-blue-800) 100%);
+  position: relative;
+  overflow: hidden;
+  margin: 0 -1rem;
+  padding: 3rem 2rem;
+}
+
+@media (min-width: 50rem) {
+  .hero {
+    margin: 0 -1.5rem;
+    padding: 4rem 3rem;
+  }
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(234, 179, 8, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(34, 211, 238, 0.08) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Light mode hero */
+:root[data-theme='light'] .hero {
+  background: linear-gradient(135deg, #1e3a5f 0%, #2d4a6f 100%);
+}
+
+:root[data-theme='light'] .hero h1,
+:root[data-theme='light'] .hero .tagline {
+  color: #ffffff;
+}
+
+/* Hero title styling */
+.hero h1 {
+  color: #f8fafc;
+  font-family: var(--zeus-font-heading);
+}
+
+.hero .tagline {
+  color: #cbd5e1;
+  font-size: 1.25rem;
+}
+
+/* Gradient text effect */
+.gradient-text {
+  background: linear-gradient(135deg, var(--zeus-yellow-400) 0%, var(--zeus-cyan-400) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Code blocks styling */
+.expressive-code {
+  --ec-brdRad: 12px;
+}
+
+.expressive-code .frame {
+  border: 1px solid var(--zeus-blue-700);
+}
+
+:root[data-theme='dark'] .expressive-code {
+  --ec-codeBg: var(--zeus-blue-900);
+  --ec-codeSelectionBg: rgba(234, 179, 8, 0.15);
+}
+
+/* Inline code */
+:not(pre) > code {
+  background: var(--zeus-blue-800);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-family: var(--sl-font-system-mono);
+}
+
+:root[data-theme='light'] :not(pre) > code {
+  background: #f1f5f9;
+  color: var(--zeus-blue-800);
+}
+
+/* Feature cards */
+.feature-card {
+  background: linear-gradient(135deg, var(--zeus-blue-800) 0%, var(--zeus-blue-900) 100%);
+  border: 1px solid var(--zeus-blue-700);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(234, 179, 8, 0.15);
+}
+
+.feature-card h3 {
+  color: var(--zeus-yellow-400);
+  margin-bottom: 0.5rem;
+}
+
+/* Badge styling for Coming Soon */
+.sl-badge {
+  font-family: var(--zeus-font-heading);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Sidebar styling */
+.sidebar-content {
+  font-family: var(--sl-font-system);
+}
+
+/* Navigation links */
+nav a:hover {
+  color: var(--zeus-yellow-400);
+}
+
+/* Button styling */
+.sl-link-button {
+  font-family: var(--zeus-font-heading);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.sl-link-button.primary {
+  background: linear-gradient(135deg, var(--zeus-yellow-500) 0%, var(--zeus-yellow-600) 100%);
+  color: var(--zeus-blue-950);
+}
+
+.sl-link-button.primary:hover {
+  box-shadow: 0 8px 24px rgba(234, 179, 8, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Grid pattern overlay for hero */
+.grid-pattern {
+  background-image: 
+    linear-gradient(rgba(30, 58, 95, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 58, 95, 0.3) 1px, transparent 1px);
+  background-size: 50px 50px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+}
+
+/* Animated lightning effect */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.lightning-icon {
+  animation: pulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px var(--zeus-yellow-400));
+}
+
+/* Tables */
+.sl-markdown-content table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--zeus-blue-700);
+}
+
+.sl-markdown-content th {
+  background: var(--zeus-blue-800);
+  font-family: var(--zeus-font-heading);
+  font-weight: 600;
+}
+
+.sl-markdown-content td {
+  border-color: var(--zeus-blue-800);
+}
+
+/* Blockquotes */
+.sl-markdown-content blockquote {
+  border-left-color: var(--zeus-yellow-500);
+  background: var(--zeus-blue-900);
+  border-radius: 0 8px 8px 0;
+}
+
+/* Selection */
+::selection {
+  background: rgba(234, 179, 8, 0.3);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--zeus-blue-900);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--zeus-blue-700);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--zeus-blue-600);
+}
+
+/* Custom callout/admonition styles */
+.starlight-aside {
+  border-radius: 12px;
+}
+
+.starlight-aside--tip {
+  border-color: var(--zeus-cyan-500);
+}
+
+.starlight-aside--caution {
+  border-color: var(--zeus-yellow-500);
+}
+

@@ -1,0 +1,361 @@
+---
+title: Calculator
+description: Build a simple calculator in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Calculator
+
+This example demonstrates building a simple calculator with multiple operations and a clean structure.
+
+## Basic Operations
+
+Start with the fundamental arithmetic functions:
+
+```zeus
+function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+function subtract(a: i32, b: i32): i32 {
+  return a - b;
+}
+
+function multiply(a: i32, b: i32): i32 {
+  return a * b;
+}
+
+function divide(a: i32, b: i32): i32 {
+  if (b == 0) {
+    return 0;  // Avoid division by zero
+  }
+  return a / b;
+}
+
+function main(): i32 {
+  let a: i32 = 20;
+  let b: i32 = 5;
+  
+  let sum: i32 = add(a, b);        // 25
+  let diff: i32 = subtract(a, b);  // 15
+  let prod: i32 = multiply(a, b);  // 100
+  let quot: i32 = divide(a, b);    // 4
+  
+  return sum + diff + prod + quot;  // 144
+}
+```
+
+## Calculator Class
+
+Encapsulate the calculator in a class with state:
+
+```zeus
+class Calculator {
+  public result: i32;
+
+  constructor() {
+    this.result = 0;
+  }
+
+  public add(value: i32): i32 {
+    this.result = this.result + value;
+    return this.result;
+  }
+
+  public subtract(value: i32): i32 {
+    this.result = this.result - value;
+    return this.result;
+  }
+
+  public multiply(value: i32): i32 {
+    this.result = this.result * value;
+    return this.result;
+  }
+
+  public divide(value: i32): i32 {
+    if (value != 0) {
+      this.result = this.result / value;
+    }
+    return this.result;
+  }
+
+  public clear(): void {
+    this.result = 0;
+  }
+
+  public getResult(): i32 {
+    return this.result;
+  }
+}
+
+function main(): i32 {
+  let calc: Calculator = new Calculator();
+  
+  calc.add(100);      // result = 100
+  calc.subtract(20);  // result = 80
+  calc.multiply(2);   // result = 160
+  calc.divide(4);     // result = 40
+  
+  return calc.getResult();  // 40
+}
+```
+
+## Floating Point Calculator
+
+For precise calculations, use floating-point types:
+
+```zeus
+class FloatCalculator {
+  public result: f64;
+
+  constructor() {
+    this.result = 0.0;
+  }
+
+  public add(value: f64): f64 {
+    this.result = this.result + value;
+    return this.result;
+  }
+
+  public subtract(value: f64): f64 {
+    this.result = this.result - value;
+    return this.result;
+  }
+
+  public multiply(value: f64): f64 {
+    this.result = this.result * value;
+    return this.result;
+  }
+
+  public divide(value: f64): f64 {
+    if (value != 0.0) {
+      this.result = this.result / value;
+    }
+    return this.result;
+  }
+
+  public getResult(): f64 {
+    return this.result;
+  }
+}
+
+function main(): i32 {
+  let calc: FloatCalculator = new FloatCalculator();
+  
+  calc.add(10.5);
+  calc.multiply(2.0);  // 21.0
+  
+  return 0;
+}
+```
+
+## Operation History
+
+Track operations using an array:
+
+```zeus
+class Operation {
+  public operand: i32;
+  public opType: i32;  // 1=add, 2=sub, 3=mul, 4=div
+
+  constructor(operand: i32, opType: i32) {
+    this.operand = operand;
+    this.opType = opType;
+  }
+}
+
+class HistoryCalculator {
+  public result: i32;
+  public history: Operation[];
+
+  constructor() {
+    this.result = 0;
+    this.history = new Operation[];
+  }
+
+  public add(value: i32): i32 {
+    this.result = this.result + value;
+    this.history.push(new Operation(value, 1));
+    return this.result;
+  }
+
+  public subtract(value: i32): i32 {
+    this.result = this.result - value;
+    this.history.push(new Operation(value, 2));
+    return this.result;
+  }
+
+  public multiply(value: i32): i32 {
+    this.result = this.result * value;
+    this.history.push(new Operation(value, 3));
+    return this.result;
+  }
+
+  public divide(value: i32): i32 {
+    if (value != 0) {
+      this.result = this.result / value;
+      this.history.push(new Operation(value, 4));
+    }
+    return this.result;
+  }
+
+  public operationCount(): i32 {
+    let count: i32 = 0;
+    let i: i32 = 0;
+    while (i < 100) {  // Max iterations for safety
+      // Count operations in history
+      count = count + 1;
+      i = i + 1;
+    }
+    return count;
+  }
+
+  public getResult(): i32 {
+    return this.result;
+  }
+}
+```
+
+## Mathematical Functions
+
+Additional utility functions:
+
+```zeus
+function abs(n: i32): i32 {
+  if (n < 0) {
+    return n * -1;
+  }
+  return n;
+}
+
+function max(a: i32, b: i32): i32 {
+  if (a > b) {
+    return a;
+  }
+  return b;
+}
+
+function min(a: i32, b: i32): i32 {
+  if (a < b) {
+    return a;
+  }
+  return b;
+}
+
+function power(base: i32, exp: i32): i32 {
+  if (exp == 0) {
+    return 1;
+  }
+  
+  let result: i32 = 1;
+  let i: i32 = 0;
+  
+  while (i < exp) {
+    result = result * base;
+    i = i + 1;
+  }
+  
+  return result;
+}
+
+function main(): i32 {
+  let a: i32 = abs(-42);     // 42
+  let b: i32 = max(10, 20);  // 20
+  let c: i32 = min(10, 20);  // 10
+  let d: i32 = power(2, 8);  // 256
+  
+  return a + b + c + d;  // 328
+}
+```
+
+## Complete Calculator
+
+A full-featured calculator combining everything:
+
+```zeus
+class Calculator {
+  public result: i32;
+
+  constructor() {
+    this.result = 0;
+  }
+
+  public set(value: i32): void {
+    this.result = value;
+  }
+
+  public add(value: i32): i32 {
+    this.result = this.result + value;
+    return this.result;
+  }
+
+  public subtract(value: i32): i32 {
+    this.result = this.result - value;
+    return this.result;
+  }
+
+  public multiply(value: i32): i32 {
+    this.result = this.result * value;
+    return this.result;
+  }
+
+  public divide(value: i32): i32 {
+    if (value != 0) {
+      this.result = this.result / value;
+    }
+    return this.result;
+  }
+
+  public negate(): i32 {
+    this.result = this.result * -1;
+    return this.result;
+  }
+
+  public clear(): void {
+    this.result = 0;
+  }
+
+  public get(): i32 {
+    return this.result;
+  }
+}
+
+function main(): i32 {
+  let calc: Calculator = new Calculator();
+  
+  // Calculate: ((10 + 5) * 3 - 15) / 3
+  calc.set(10);
+  calc.add(5);       // 15
+  calc.multiply(3);  // 45
+  calc.subtract(15); // 30
+  calc.divide(3);    // 10
+  
+  return calc.get();  // 10
+}
+```
+
+## Try It
+
+Save to `playground/calculator.zs` and run:
+
+```bash
+make run file=calculator
+echo $?  # Shows the result
+```
+
+## Concepts Demonstrated
+
+- **Functions** — Modular operations
+- **Classes** — Encapsulating state and behavior
+- **Conditionals** — Safe division
+- **Composition** — Building complex from simple
+
+---
+
+## See Also
+
+- [Functions](/language/functions/) — Function definitions
+- [Classes](/language/classes/) — Object-oriented design
+- [Operators](/language/operators/) — Arithmetic operations
+

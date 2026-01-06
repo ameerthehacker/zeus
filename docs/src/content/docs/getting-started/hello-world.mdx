@@ -1,0 +1,196 @@
+---
+title: Hello World
+description: Write and run your first Zeus program.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+# Hello World
+
+Let's write your first Zeus program! We'll create a simple program that demonstrates the basics.
+
+<Aside type="tip">
+  Zeus programs use the `.zs` file extension.
+</Aside>
+
+## Your First Program
+
+<Steps>
+
+1. **Create a new file**
+
+   Create a file called `hello.zs` in the `playground/` directory:
+
+   ```bash
+   touch playground/hello.zs
+   ```
+
+2. **Write the code**
+
+   Open `playground/hello.zs` and add:
+
+   ```zeus
+   function main(): i32 {
+     let answer: i32 = 42;
+     return answer;
+   }
+   ```
+
+3. **Compile and run**
+
+   ```bash
+   make run file=hello
+   ```
+
+4. **Check the result**
+
+   The program's return value is the exit code. Check it with:
+
+   ```bash
+   echo $?
+   # Output: 42
+   ```
+
+</Steps>
+
+---
+
+## Understanding the Code
+
+Let's break down what we wrote:
+
+```zeus
+function main(): i32 {
+  let answer: i32 = 42;
+  return answer;
+}
+```
+
+### The `main` Function
+
+Every Zeus program needs a `main` function—this is where execution begins:
+
+```zeus
+function main(): i32 {
+  // Your code here
+}
+```
+
+- `function` — Keyword to declare a function
+- `main` — The entry point function name
+- `(): i32` — Takes no parameters, returns a 32-bit integer
+
+### Variable Declaration
+
+```zeus
+let answer: i32 = 42;
+```
+
+- `let` — Declares a mutable variable
+- `answer` — Variable name
+- `: i32` — Type annotation (32-bit signed integer)
+- `= 42` — Initial value
+
+### Return Statement
+
+```zeus
+return answer;
+```
+
+Returns the value from the function. In `main`, this becomes the program's exit code.
+
+---
+
+## A More Interesting Example
+
+Let's try something with a class:
+
+```zeus
+class Greeter {
+  public times: i32;
+
+  constructor(t: i32) {
+    this.times = t;
+  }
+
+  public greetCount(): i32 {
+    return this.times;
+  }
+}
+
+function main(): i32 {
+  let greeter: Greeter = new Greeter(5);
+  return greeter.greetCount();
+}
+```
+
+Save this as `playground/greeter.zs` and run:
+
+```bash
+make run file=greeter
+echo $?
+# Output: 5
+```
+
+---
+
+## Working with Arrays
+
+Here's an example using dynamic arrays:
+
+```zeus
+function main(): i32 {
+  // Create an array of integers
+  let numbers: i32[] = new i32[];
+  
+  // Add some numbers
+  numbers.push(10);
+  numbers.push(20);
+  numbers.push(30);
+  
+  // Access by index
+  let first: i32 = numbers.get(0);
+  let second: i32 = numbers.get(1);
+  
+  return first + second;  // Returns 30
+}
+```
+
+Save as `playground/arrays.zs` and run:
+
+```bash
+make run file=arrays
+echo $?
+# Output: 30
+```
+
+---
+
+## Debug Mode
+
+Want to see what's happening under the hood? Use debug mode:
+
+```bash
+make run file=hello debug=true
+```
+
+This will:
+- Print the Zeus IR (intermediate representation)
+- Output LLVM IR files to `playground/debug/out/`
+- Show GC debug information
+
+---
+
+## What's Next?
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 2rem;">
+  <a href="/getting-started/ide-setup/" style="display: block; padding: 1rem; background: var(--sl-color-bg-sidebar); border-radius: 8px; text-decoration: none;">
+    <strong>IDE Setup</strong>
+    <p style="margin: 0.5rem 0 0; opacity: 0.8; font-size: 0.9rem;">Get VS Code working with Zeus</p>
+  </a>
+  <a href="/language/variables/" style="display: block; padding: 1rem; background: var(--sl-color-bg-sidebar); border-radius: 8px; text-decoration: none;">
+    <strong>Language Guide</strong>
+    <p style="margin: 0.5rem 0 0; opacity: 0.8; font-size: 0.9rem;">Learn the full language</p>
+  </a>
+</div>
+

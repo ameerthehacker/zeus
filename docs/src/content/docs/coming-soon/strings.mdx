@@ -1,0 +1,92 @@
+---
+title: Strings
+description: String handling in Zeus - coming soon.
+banner:
+  content: |
+    🚧 This feature is coming soon and is not yet available.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+# Strings
+
+<Aside type="caution" title="Coming Soon">
+  String support is under active development and will be available in an upcoming release.
+</Aside>
+
+## Planned Features
+
+### String Type
+
+A first-class `string` type for text handling:
+
+```zeus
+let greeting: string = "Hello, Zeus!";
+let name: string = "World";
+```
+
+### String Methods
+
+Common operations for working with text:
+
+```zeus
+let text: string = "Hello, World!";
+
+// Length
+let len: i32 = text.length();  // 13
+
+// Character access
+let char: u8 = text.charAt(0);  // 'H'
+
+// Concatenation
+let combined: string = text.concat(" How are you?");
+```
+
+### String Interpolation
+
+Embed expressions in strings:
+
+```zeus
+let name: string = "Zeus";
+let version: i32 = 1;
+
+let message: string = `Welcome to ${name} v${version}!`;
+```
+
+### UTF-8 Support
+
+Full Unicode support with UTF-8 encoding:
+
+```zeus
+let emoji: string = "Hello 👋";
+let japanese: string = "こんにちは";
+```
+
+## Current Workaround
+
+While strings are in development, you can work with character arrays for basic use cases:
+
+```zeus
+// Character codes can be used with u8
+let charA: u8 = 65;  // ASCII 'A'
+```
+
+## Roadmap
+
+| Feature | Status |
+|---------|--------|
+| Basic string type | 🔄 In Progress |
+| String literals | 🔄 In Progress |
+| charAt method | 🔄 In Progress |
+| length method | Planned |
+| concat method | Planned |
+| String interpolation | Planned |
+| Substring | Planned |
+| Search/Replace | Planned |
+
+---
+
+<div style="text-align: center; margin-top: 3rem; opacity: 0.7;">
+  <p>Want to help? Check out the <a href="https://github.com/ameerthehacker/zeus">GitHub repo</a> for contribution guidelines.</p>
+</div>
+

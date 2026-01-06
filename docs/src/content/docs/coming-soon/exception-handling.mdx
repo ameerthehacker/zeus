@@ -1,0 +1,214 @@
+---
+title: Exception Handling
+description: Try/catch exception handling in Zeus - coming soon.
+banner:
+  content: |
+    🚧 This feature is coming soon and is not yet available.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Exception Handling
+
+<Aside type="caution" title="Coming Soon">
+  Exception handling with try/catch is planned for a future release of Zeus.
+</Aside>
+
+## Planned Features
+
+### Try-Catch Blocks
+
+Handle runtime errors gracefully:
+
+```zeus
+function divide(a: i32, b: i32): i32 {
+  if (b == 0) {
+    throw "Division by zero";
+  }
+  return a / b;
+}
+
+function main(): i32 {
+  try {
+    let result: i32 = divide(10, 0);
+    return result;
+  } catch (e: string) {
+    // Handle the error
+    return -1;
+  }
+}
+```
+
+### Finally Block
+
+Code that always executes:
+
+```zeus
+function process(): i32 {
+  try {
+    // Risky operation
+    return riskyOperation();
+  } catch (e: string) {
+    // Handle error
+    return -1;
+  } finally {
+    // Always runs (cleanup)
+    cleanup();
+  }
+}
+```
+
+### Custom Exception Types
+
+Define your own exception classes:
+
+```zeus
+class ValidationError {
+  public message: string;
+  public field: string;
+
+  constructor(message: string, field: string) {
+    this.message = message;
+    this.field = field;
+  }
+}
+
+function validate(value: i32): void {
+  if (value < 0) {
+    throw new ValidationError("Value must be positive", "value");
+  }
+}
+
+function main(): i32 {
+  try {
+    validate(-5);
+  } catch (e: ValidationError) {
+    // Handle validation error specifically
+    return -1;
+  }
+  return 0;
+}
+```
+
+### Rethrowing Exceptions
+
+Catch, log, and rethrow:
+
+```zeus
+function wrapper(): void {
+  try {
+    innerFunction();
+  } catch (e: string) {
+    log(e);  // Log the error
+    throw e; // Rethrow
+  }
+}
+```
+
+## Common Patterns
+
+### Error Recovery
+
+```zeus
+function fetchWithRetry(url: string, attempts: i32): Data {
+  let i: i32 = 0;
+  
+  while (i < attempts) {
+    try {
+      return fetch(url);
+    } catch (e: NetworkError) {
+      i = i + 1;
+      if (i >= attempts) {
+        throw e;  // Give up after all attempts
+      }
+      // Wait and retry
+    }
+  }
+}
+```
+
+### Resource Management
+
+```zeus
+function processFile(path: string): void {
+  let file: File = open(path);
+  
+  try {
+    // Process file contents
+    processContents(file);
+  } finally {
+    file.close();  // Always close the file
+  }
+}
+```
+
+### Multiple Catch Blocks
+
+Handle different exception types differently:
+
+```zeus
+try {
+  riskyOperation();
+} catch (e: NetworkError) {
+  // Handle network issues
+  retryLater();
+} catch (e: ValidationError) {
+  // Handle validation issues
+  showUserError(e.message);
+} catch (e: string) {
+  // Handle any other error
+  logError(e);
+}
+```
+
+## Current Workaround
+
+Until exceptions are available, use return values for error handling:
+
+```zeus
+class Result {
+  public success: boolean;
+  public value: i32;
+  public error: i32;  // Error code
+
+  constructor(success: boolean, value: i32, error: i32) {
+    this.success = success;
+    this.value = value;
+    this.error = error;
+  }
+}
+
+function safeDivide(a: i32, b: i32): Result {
+  if (b == 0) {
+    return new Result(false, 0, 1);  // Error code 1
+  }
+  return new Result(true, a / b, 0);
+}
+
+function main(): i32 {
+  let result: Result = safeDivide(10, 0);
+  
+  if (!result.success) {
+    return result.error;
+  }
+  
+  return result.value;
+}
+```
+
+## Roadmap
+
+| Feature | Status |
+|---------|--------|
+| `try`/`catch` blocks | Planned |
+| `finally` blocks | Planned |
+| `throw` statement | Planned |
+| Custom exception types | Planned |
+| Stack traces | Considered |
+
+---
+
+<div style="text-align: center; margin-top: 3rem; opacity: 0.7;">
+  <p>Track progress on <a href="https://github.com/ameerthehacker/zeus">GitHub</a>!</p>
+</div>
+

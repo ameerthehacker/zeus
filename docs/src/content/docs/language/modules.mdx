@@ -1,0 +1,285 @@
+---
+title: Modules
+description: Organize your code with Zeus's import/export system.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Modules
+
+Zeus uses an import/export system to organize code across multiple files.
+
+## Exporting
+
+Use the `export` keyword to make functions and classes available to other files.
+
+### Exporting Functions
+
+```zeus
+// math.zs
+export function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+export function multiply(a: i32, b: i32): i32 {
+  return a * b;
+}
+
+// Private function (not exported)
+function helper(): i32 {
+  return 0;
+}
+```
+
+### Exporting Classes
+
+```zeus
+// shapes.zs
+export class Rectangle {
+  public width: f64;
+  public height: f64;
+
+  constructor(w: f64, h: f64) {
+    this.width = w;
+    this.height = h;
+  }
+
+  public area(): f64 {
+    return this.width * this.height;
+  }
+}
+
+export class Circle {
+  public radius: f64;
+
+  constructor(r: f64) {
+    this.radius = r;
+  }
+}
+```
+
+## Importing
+
+Use `import` to bring exported symbols into your file.
+
+### Basic Import
+
+```zeus
+// main.zs
+import { add, multiply } from "./math.zs";
+
+function main(): i32 {
+  let sum: i32 = add(5, 3);
+  let product: i32 = multiply(4, 2);
+  
+  return sum + product;  // 8 + 8 = 16
+}
+```
+
+### Importing Classes
+
+```zeus
+// main.zs
+import { Rectangle } from "./shapes.zs";
+
+function main(): i32 {
+  let rect: Rectangle = new Rectangle(10.0, 5.0);
+  let area: f64 = rect.area();
+  
+  return 0;
+}
+```
+
+### Importing Multiple Items
+
+```zeus
+import { Rectangle, Circle } from "./shapes.zs";
+import { add, multiply } from "./math.zs";
+```
+
+## File Organization
+
+A typical Zeus project structure:
+
+```
+project/
+├── main.zs           # Entry point
+├── math/
+│   └── utils.zs      # Math utilities
+├── models/
+│   ├── point.zs      # Point class
+│   └── rectangle.zs  # Rectangle class
+└── helpers/
+    └── array.zs      # Array helpers
+```
+
+### Example: Point Module
+
+```zeus
+// models/point.zs
+export class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+
+  public distanceFromOrigin(): i32 {
+    return this.x + this.y;  // Simplified
+  }
+}
+```
+
+### Example: Using the Point Module
+
+```zeus
+// main.zs
+import { Point } from "./models/point.zs";
+
+function main(): i32 {
+  let p: Point = new Point(3, 4);
+  return p.distanceFromOrigin();
+}
+```
+
+## Path Resolution
+
+Import paths are relative to the current file:
+
+```zeus
+// From main.zs in project root
+import { Point } from "./models/point.zs";
+
+// From helpers/array.zs
+import { Point } from "../models/point.zs";
+```
+
+## Standard Library
+
+Zeus includes a (growing) standard library at `@std/`:
+
+```zeus
+import { add } from "@std/math/index.zs";
+
+function main(): i32 {
+  return add(5, 3);
+}
+```
+
+<Aside type="note">
+  The standard library is under active development. More modules are coming soon!
+</Aside>
+
+## Best Practices
+
+### One Export per Concept
+
+Keep modules focused on a single responsibility:
+
+```zeus
+// Good: point.zs contains only Point-related code
+export class Point { ... }
+export function createPoint(x: i32, y: i32): Point { ... }
+
+// Avoid: mixing unrelated concepts in one file
+```
+
+### Clear Naming
+
+Name your files to match their contents:
+
+```
+models/
+├── point.zs       # Contains Point class
+├── rectangle.zs   # Contains Rectangle class
+└── circle.zs      # Contains Circle class
+```
+
+### Avoid Circular Dependencies
+
+Zeus will detect and report circular imports:
+
+```
+// a.zs imports from b.zs
+// b.zs imports from a.zs
+// Error: Circular dependency detected
+```
+
+Restructure your code to break the cycle:
+
+```
+// Extract shared code to c.zs
+// a.zs and b.zs both import from c.zs
+```
+
+## Complete Example
+
+Here's a multi-file project:
+
+**geometry/point.zs**
+```zeus
+export class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+}
+
+export function addPoints(p1: Point, p2: Point): Point {
+  return new Point(p1.x + p2.x, p1.y + p2.y);
+}
+```
+
+**geometry/line.zs**
+```zeus
+import { Point } from "./point.zs";
+
+export class Line {
+  public start: Point;
+  public end: Point;
+
+  constructor(p1: Point, p2: Point) {
+    this.start = p1;
+    this.end = p2;
+  }
+
+  public length(): i32 {
+    let dx: i32 = this.end.x - this.start.x;
+    let dy: i32 = this.end.y - this.start.y;
+    if (dx < 0) { dx = -dx; }
+    if (dy < 0) { dy = -dy; }
+    return dx + dy;
+  }
+}
+```
+
+**main.zs**
+```zeus
+import { Point, addPoints } from "./geometry/point.zs";
+import { Line } from "./geometry/line.zs";
+
+function main(): i32 {
+  let p1: Point = new Point(0, 0);
+  let p2: Point = new Point(10, 10);
+  
+  let line: Line = new Line(p1, p2);
+  
+  let p3: Point = addPoints(p1, p2);
+  
+  return line.length() + p3.x;  // 20 + 10 = 30
+}
+```
+
+---
+
+## Next
+
+Explore the tooling available for Zeus:
+
+<a href="/tooling/compiler/">Compiler →</a>
+

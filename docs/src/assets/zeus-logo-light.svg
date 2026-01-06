@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M18 2L6 16H14L12 30L26 12H17L18 2Z" fill="url(#bolt-light)" stroke="#ca8a04" stroke-width="1.5" stroke-linejoin="round"/>
+  <defs>
+    <linearGradient id="bolt-light" x1="6" y1="2" x2="26" y2="30" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#facc15"/>
+      <stop offset="1" stop-color="#ca8a04"/>
+    </linearGradient>
+  </defs>
+</svg>

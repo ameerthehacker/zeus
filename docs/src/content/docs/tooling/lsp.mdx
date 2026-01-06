@@ -1,0 +1,245 @@
+---
+title: Language Server
+description: Zeus Language Server Protocol (LSP) implementation.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+# Language Server
+
+Zeus includes a built-in Language Server Protocol (LSP) implementation that provides IDE features for any compatible editor.
+
+## Features
+
+<CardGrid>
+  <Card title="Real-time Diagnostics" icon="warning">
+    See errors and warnings as you type, before compilation.
+  </Card>
+  <Card title="Syntax Highlighting" icon="seti:json">
+    Full syntax highlighting for Zeus code.
+  </Card>
+  <Card title="Code Completion" icon="list-format">
+    Intelligent suggestions for keywords, types, and symbols.
+  </Card>
+  <Card title="Unused Warnings" icon="information">
+    Warnings for unused variables, functions, and classes.
+  </Card>
+</CardGrid>
+
+## Available Now
+
+### Diagnostics
+
+The language server reports errors in real-time:
+
+- **Lexer errors** — Invalid characters, unterminated strings
+- **Parser errors** — Syntax mistakes, unexpected tokens
+- **Type errors** — Type mismatches, invalid operations
+- **Semantic errors** — Undefined symbols, wrong argument counts
+
+Example error:
+
+```zeus
+function main(): i32 {
+  let x: i32 = "hello";  // ❌ Error: type 'string' is not assignable to 'i32'
+  return x;
+}
+```
+
+### Code Completion
+
+Press `Ctrl+Space` (or `Cmd+Space` on Mac) to see suggestions:
+
+**Keywords:**
+- Control flow: `if`, `else`, `while`, `return`
+- Declarations: `let`, `const`, `function`, `class`
+- Modifiers: `public`, `private`, `export`, `import`
+
+**Types:**
+- Integers: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`
+- Floats: `f32`, `f64`
+- Others: `boolean`, `void`
+
+**Symbols:**
+- Variables in scope
+- Functions with parameter signatures
+- Available classes
+
+### Unused Warnings
+
+The server warns about declarations that are never used:
+
+```zeus
+function main(): i32 {
+  let unused: i32 = 5;  // ⚠️ Warning: 'unused' is declared but never used
+  let used: i32 = 10;
+  return used;
+}
+```
+
+## Running the Server
+
+### Via VS Code
+
+1. Install the Zeus VS Code extension (see [IDE Setup](/getting-started/ide-setup/))
+2. Open any `.zs` file
+3. The server starts automatically
+
+### Standalone Mode
+
+For other editors, run the server directly:
+
+```bash
+# Build Zeus first
+make build
+
+# Start the LSP server
+./zeus lsp --stdio
+```
+
+The server communicates via standard input/output using the LSP protocol.
+
+## Editor Configuration
+
+### VS Code
+
+See the full [IDE Setup guide](/getting-started/ide-setup/).
+
+### Neovim
+
+Using `nvim-lspconfig`:
+
+```lua
+local lspconfig = require('lspconfig')
+local configs = require('lspconfig.configs')
+
+configs.zeus = {
+  default_config = {
+    cmd = { '/path/to/zeus', 'lsp', '--stdio' },
+    filetypes = { 'zeus' },
+    root_dir = lspconfig.util.find_git_ancestor,
+  },
+}
+
+lspconfig.zeus.setup{}
+```
+
+### Emacs
+
+Using `lsp-mode`:
+
+```elisp
+(lsp-register-client
+  (make-lsp-client
+    :new-connection (lsp-stdio-connection '("/path/to/zeus" "lsp" "--stdio"))
+    :major-modes '(zeus-mode)
+    :server-id 'zeus-ls))
+```
+
+### Sublime Text
+
+Using LSP package:
+
+```json
+{
+  "clients": {
+    "zeus": {
+      "command": ["/path/to/zeus", "lsp", "--stdio"],
+      "selector": "source.zeus"
+    }
+  }
+}
+```
+
+## Coming Soon
+
+<Aside type="note">
+  These features are planned for future releases:
+</Aside>
+
+### Hover Information
+
+Hover over symbols to see:
+- Type information
+- Documentation
+- Function signatures
+
+### Go to Definition
+
+Jump to where a symbol is defined:
+- `Cmd+Click` on a symbol
+- Works across files for imports
+
+### Find References
+
+Find all usages of a symbol throughout the project.
+
+### Rename Symbol
+
+Safely rename variables, functions, or classes across the entire codebase.
+
+### Document Symbols
+
+Outline view showing:
+- Functions
+- Classes
+- Top-level variables
+
+### Signature Help
+
+Parameter hints while typing function calls:
+
+```zeus
+add(|)  // Shows: add(a: i32, b: i32): i32
+```
+
+### Format Document
+
+Automatic code formatting with consistent style.
+
+## Troubleshooting
+
+### Server Not Starting
+
+1. Ensure the `zeus` binary exists:
+   ```bash
+   make build
+   ls -la ./zeus
+   ```
+
+2. Check the path in your editor configuration
+
+3. Look for errors in the editor's output panel
+
+### No Diagnostics
+
+1. Verify the file has a `.zs` extension
+2. Check that the language server process is running:
+   ```bash
+   ps aux | grep "zeus lsp"
+   ```
+3. Try reloading the editor window
+
+### Slow Response
+
+The language server recompiles on each change. For very large files, there may be a delay. This will be optimized in future releases.
+
+## Architecture
+
+The Zeus LSP implementation:
+
+1. **Receives** file changes from the editor
+2. **Lexes and parses** the modified files
+3. **Generates IR** and runs type checking
+4. **Collects** errors and warnings
+5. **Sends** diagnostics back to the editor
+
+All of this happens on every keystroke, providing instant feedback.
+
+---
+
+## See Also
+
+- [IDE Setup](/getting-started/ide-setup/) — Detailed VS Code setup instructions
+- [Compiler](/tooling/compiler/) — Command-line compilation
+

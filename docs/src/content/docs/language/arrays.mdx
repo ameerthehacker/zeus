@@ -1,0 +1,277 @@
+---
+title: Arrays
+description: Dynamic arrays in Zeus - creation, manipulation, and multi-dimensional arrays.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+# Arrays
+
+Zeus provides dynamic arrays that can grow and shrink at runtime. Arrays are first-class objects with built-in methods.
+
+## Creating Arrays
+
+Create an array using the `new` keyword:
+
+```zeus
+let numbers: i32[] = new i32[];
+let floats: f64[] = new f64[];
+let flags: boolean[] = new boolean[];
+```
+
+You can also specify an initial capacity:
+
+```zeus
+let numbers: i32[] = new i32[100];  // Pre-allocate space for 100 elements
+```
+
+<Aside type="tip">
+  Pre-allocating capacity can improve performance when you know the approximate size.
+</Aside>
+
+## Adding Elements
+
+Use `push` to add elements to the end:
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+numbers.push(30);
+// Array now contains: [10, 20, 30]
+```
+
+## Accessing Elements
+
+### Using `get`
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+numbers.push(30);
+
+let first: i32 = numbers.get(0);   // 10
+let second: i32 = numbers.get(1);  // 20
+let third: i32 = numbers.get(2);   // 30
+```
+
+### Using Bracket Notation
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+
+let first: i32 = numbers[0];   // 10
+let second: i32 = numbers[1];  // 20
+```
+
+<Aside type="note">
+  Bracket notation is syntactic sugar for the `get` method.
+</Aside>
+
+## Modifying Elements
+
+### Using `set`
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+
+numbers.set(0, 100);  // Replace first element
+// Array now contains: [100, 20]
+```
+
+### Using Bracket Notation
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+
+numbers[0] = 100;  // Replace first element
+numbers[1] = 200;  // Replace second element
+// Array now contains: [100, 200]
+```
+
+## Removing Elements
+
+Use `pop` to remove and return the last element:
+
+```zeus
+let numbers: i32[] = new i32[];
+numbers.push(10);
+numbers.push(20);
+numbers.push(30);
+
+let last: i32 = numbers.pop();  // Returns 30
+// Array now contains: [10, 20]
+```
+
+## Array Methods
+
+| Method | Description |
+|--------|-------------|
+| `push(value)` | Add element to end |
+| `pop()` | Remove and return last element |
+| `get(index)` | Get element at index |
+| `set(index, value)` | Set element at index |
+
+## Multi-Dimensional Arrays
+
+### 2D Arrays
+
+```zeus
+let matrix: i32[][] = new i32[][];
+
+// Add rows
+matrix.push(new i32[]);
+matrix.push(new i32[]);
+
+// Add elements to rows
+matrix.get(0).push(1);
+matrix.get(0).push(2);
+matrix.get(1).push(3);
+matrix.get(1).push(4);
+
+// Access elements
+let value: i32 = matrix.get(0).get(1);  // 2
+let value2: i32 = matrix[1][0];          // 3
+```
+
+### 3D Arrays
+
+```zeus
+let cube: i32[][][] = new i32[][][];
+
+cube.push(new i32[][]);
+cube.get(0).push(new i32[]);
+cube.get(0).get(0).push(42);
+
+let value: i32 = cube[0][0][0];  // 42
+```
+
+## Object Arrays
+
+Arrays can hold objects:
+
+```zeus
+class Point {
+  public x: i32;
+  public y: i32;
+
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
+  }
+
+  public sum(): i32 {
+    return this.x + this.y;
+  }
+}
+
+function main(): i32 {
+  let points: Point[] = new Point[];
+  
+  points.push(new Point(1, 2));
+  points.push(new Point(3, 4));
+  points.push(new Point(5, 6));
+  
+  let p: Point = points.get(1);
+  return p.sum();  // Returns 7
+}
+```
+
+## Practical Example
+
+Here's a function that sums all elements in an array:
+
+```zeus
+function sumArray(arr: i32[], length: i32): i32 {
+  let sum: i32 = 0;
+  let i: i32 = 0;
+  
+  while (i < length) {
+    sum = sum + arr.get(i);
+    i = i + 1;
+  }
+  
+  return sum;
+}
+
+function main(): i32 {
+  let numbers: i32[] = new i32[];
+  numbers.push(10);
+  numbers.push(20);
+  numbers.push(30);
+  numbers.push(40);
+  
+  return sumArray(numbers, 4);  // Returns 100
+}
+```
+
+## 2D Array Example
+
+Working with a matrix:
+
+```zeus
+class Matrix {
+  public data: i32[][];
+  public rows: i32;
+  public cols: i32;
+
+  constructor(r: i32, c: i32) {
+    this.rows = r;
+    this.cols = c;
+    this.data = new i32[][];
+    
+    let i: i32 = 0;
+    while (i < r) {
+      this.data.push(new i32[c]);
+      i = i + 1;
+    }
+  }
+
+  public setValue(row: i32, col: i32, value: i32): void {
+    this.data[row][col] = value;
+  }
+
+  public getValue(row: i32, col: i32): i32 {
+    return this.data[row][col];
+  }
+}
+
+function main(): i32 {
+  let m: Matrix = new Matrix(3, 3);
+  m.setValue(0, 0, 1);
+  m.setValue(1, 1, 5);
+  m.setValue(2, 2, 9);
+  
+  return m.getValue(1, 1);  // Returns 5
+}
+```
+
+## Bounds Checking
+
+Array access is bounds-checked at runtime. Accessing an invalid index returns a default value:
+
+```zeus
+let arr: i32[] = new i32[];
+arr.push(10);
+
+let safe: i32 = arr.get(0);    // 10
+let oob: i32 = arr.get(100);   // Returns 0 (default for i32)
+```
+
+<Aside type="caution">
+  Out-of-bounds access returns a default value rather than crashing. Be careful to track array sizes.
+</Aside>
+
+---
+
+## Next
+
+<a href="/language/control-flow/">Control Flow →</a>
+
