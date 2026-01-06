@@ -5,6 +5,9 @@
 # Installation:
 #   brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
 #   brew install zeus
+#
+# Note: Currently only ARM64 (Apple Silicon) builds are available.
+# Intel Macs can run the ARM64 binary via Rosetta 2.
 
 class Zeus < Formula
   desc "Zeus programming language compiler"
@@ -13,14 +16,16 @@ class Zeus < Formula
   license "MIT"
 
   on_macos do
+    # ARM64 (Apple Silicon) - primary build
     on_arm do
       url "https://github.com/ameerthehacker/zeus/releases/download/v#{version}/zeus-#{version}-darwin-arm64.tar.gz"
       sha256 "PLACEHOLDER_ARM64_SHA256"
     end
 
+    # Intel Macs - uses ARM64 binary via Rosetta 2
     on_intel do
-      url "https://github.com/ameerthehacker/zeus/releases/download/v#{version}/zeus-#{version}-darwin-x86_64.tar.gz"
-      sha256 "PLACEHOLDER_X86_64_SHA256"
+      url "https://github.com/ameerthehacker/zeus/releases/download/v#{version}/zeus-#{version}-darwin-arm64.tar.gz"
+      sha256 "PLACEHOLDER_ARM64_SHA256"
     end
   end
 

@@ -16,10 +16,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             arch: arm64
-          - os: macos-13
-            arch: x86_64
+          # Uncomment below for x86_64 builds (requires paid larger runner)
+          # - os: macos-13-xlarge
+          #   arch: x86_64
     
     runs-on: ${{ matrix.os }}
     
@@ -52,8 +53,8 @@ jobs:
           CGO_ENABLED: 1
           CGO_CFLAGS: "-I${{ env.LLVM_PATH }}/include"
           CGO_LDFLAGS: "-L${{ env.LLVM_PATH }}/lib -Wl,-rpath,${{ env.LLVM_PATH }}/lib"
-          PATH: "${{ env.LLVM_PATH }}/bin:$PATH"
         run: |
+          export PATH="${LLVM_PATH}/bin:$PATH"
           mkdir -p bin
           go build -o bin/zeus zeus.go
 
@@ -111,26 +112,22 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           ARM64_SHA256=$(cat "artifacts/zeus-${VERSION}-darwin-arm64.sha256")
-          X86_64_SHA256=$(cat "artifacts/zeus-${VERSION}-darwin-x86_64.sha256")
           echo "arm64_sha256=${ARM64_SHA256}" >> $GITHUB_OUTPUT
-          echo "x86_64_sha256=${X86_64_SHA256}" >> $GITHUB_OUTPUT
 
       - name: Update Homebrew formula
         run: |
           VERSION="${{ github.event.inputs.version }}"
           ARM64_SHA256="${{ steps.checksums.outputs.arm64_sha256 }}"
-          X86_64_SHA256="${{ steps.checksums.outputs.x86_64_sha256 }}"
           
           # Update version
           sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/zeus.rb
           
-          # Update ARM64 SHA256 (the line after on_arm do block's url)
-          sed -i "s/sha256 \"PLACEHOLDER_ARM64_SHA256\"/sha256 \"${ARM64_SHA256}\"/" Formula/zeus.rb
-          sed -i "/on_arm do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${ARM64_SHA256}\"/}" Formula/zeus.rb
+          # Update all SHA256 placeholders with ARM64 hash (both on_arm and on_intel use ARM64 binary)
+          sed -i "s/sha256 \"PLACEHOLDER_ARM64_SHA256\"/sha256 \"${ARM64_SHA256}\"/g" Formula/zeus.rb
           
-          # Update x86_64 SHA256 (the line after on_intel do block's url)
-          sed -i "s/sha256 \"PLACEHOLDER_X86_64_SHA256\"/sha256 \"${X86_64_SHA256}\"/" Formula/zeus.rb
-          sed -i "/on_intel do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${X86_64_SHA256}\"/}" Formula/zeus.rb
+          # Update existing SHA256 hashes
+          sed -i "/on_arm do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${ARM64_SHA256}\"/}" Formula/zeus.rb
+          sed -i "/on_intel do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${ARM64_SHA256}\"/}" Formula/zeus.rb
 
       - name: Commit formula update
         run: |
@@ -139,6 +136,36 @@ jobs:
           git add Formula/zeus.rb
           git commit -m "chore: update homebrew formula to v${{ github.event.inputs.version }}"
           git push
+
+      - name: Generate release notes
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          ARM64_SHA256="${{ steps.checksums.outputs.arm64_sha256 }}"
+          
+          cat << EOF > release_notes.md
+          ## Zeus v${VERSION}
+          
+          ### Installation
+          
+          **Via Homebrew (recommended):**
+          \`\`\`bash
+          brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
+          brew install zeus
+          \`\`\`
+          
+          **Manual installation:**
+          1. Download the archive for your Mac
+          2. Extract: \`tar -xzf zeus-${VERSION}-darwin-arm64.tar.gz\`
+          3. Add the \`bin\` directory to your PATH
+          
+          > **Note:** Intel Macs can run the ARM64 binary via Rosetta 2.
+          
+          ### Checksum
+          
+          | Architecture | SHA256 |
+          |--------------|--------|
+          | arm64 | \`${ARM64_SHA256}\` |
+          EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -149,25 +176,4 @@ jobs:
           prerelease: false
           files: |
             artifacts/*.tar.gz
-          body: |
-            ## Zeus v${{ github.event.inputs.version }}
-            
-            ### Installation
-            
-            **Via Homebrew (recommended):**
-            ```bash
-            brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
-            brew install zeus
-            ```
-            
-            **Manual installation:**
-            1. Download the appropriate archive for your architecture
-            2. Extract: `tar -xzf zeus-${{ github.event.inputs.version }}-darwin-<arch>.tar.gz`
-            3. Add the extracted directory to your PATH, or move `bin/zeus` to a directory in your PATH
-            
-            ### Checksums
-            
-            | Architecture | SHA256 |
-            |--------------|--------|
-            | arm64 | `${{ steps.checksums.outputs.arm64_sha256 }}` |
-            | x86_64 | `${{ steps.checksums.outputs.x86_64_sha256 }}` |
+          body_path: release_notes.md
