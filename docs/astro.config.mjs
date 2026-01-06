@@ -131,7 +131,6 @@ export default defineConfig({
         {
           label: 'Tooling',
           items: [
-            { label: 'Compiler', slug: 'tooling/compiler' },
             { label: 'Language Server', slug: 'tooling/lsp' },
           ],
         },
@@ -141,6 +140,13 @@ export default defineConfig({
             { label: 'Fibonacci', slug: 'examples/fibonacci' },
             { label: 'Linked List', slug: 'examples/linked-list' },
             { label: 'Calculator', slug: 'examples/calculator' },
+          ],
+        },
+        {
+          label: 'Developer',
+          items: [
+            { label: 'Building from Source', slug: 'developer/building-from-source' },
+            { label: 'Compiler Architecture', slug: 'developer/compiler-architecture' },
           ],
         },
         {
