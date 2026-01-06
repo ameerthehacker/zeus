@@ -21,15 +21,15 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
 
 1. **Create a new file**
 
-   Create a file called `hello.zs` in the `playground/` directory:
+   Create a file called `hello.zs`:
 
    ```bash
-   touch playground/hello.zs
+   touch hello.zs
    ```
 
 2. **Write the code**
 
-   Open `playground/hello.zs` and add:
+   Open `hello.zs` and add:
 
    ```zeus
    function main(): i32 {
@@ -41,7 +41,8 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
 3. **Compile and run**
 
    ```bash
-   make run file=hello
+   zeus build hello.zs -o hello
+   ./hello
    ```
 
 4. **Check the result**
@@ -126,10 +127,11 @@ function main(): i32 {
 }
 ```
 
-Save this as `playground/greeter.zs` and run:
+Save this as `greeter.zs` and run:
 
 ```bash
-make run file=greeter
+zeus build greeter.zs -o greeter
+./greeter
 echo $?
 # Output: 5
 ```
@@ -158,28 +160,16 @@ function main(): i32 {
 }
 ```
 
-Save as `playground/arrays.zs` and run:
+Save as `arrays.zs` and run:
 
 ```bash
-make run file=arrays
+zeus build arrays.zs -o arrays
+./arrays
 echo $?
 # Output: 30
 ```
 
 ---
-
-## Debug Mode
-
-Want to see what's happening under the hood? Use debug mode:
-
-```bash
-make run file=hello debug=true
-```
-
-This will:
-- Print the Zeus IR (intermediate representation)
-- Output LLVM IR files to `playground/debug/out/`
-- Show GC debug information
 
 ---
 
