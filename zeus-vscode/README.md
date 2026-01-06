@@ -22,7 +22,9 @@ The extension **automatically detects** Homebrew installations — no configurat
 
 ### 2. Install the Extension
 
-Install from the VS Code marketplace or build from source.
+**[Install from VS Code Marketplace →](https://marketplace.visualstudio.com/items?itemName=ameerthehacker.zeus-vscode)**
+
+Or search for "Zeus" in the VS Code Extensions panel.
 
 ## Configuration
 

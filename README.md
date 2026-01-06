@@ -5,6 +5,7 @@
 Zeus is a modern programming language that combines TypeScript's familiar syntax with native compilation. Write code that feels like TypeScript, but compiles to blazing-fast native binaries.
 
 [![Documentation](https://img.shields.io/badge/docs-zeus--lang.vercel.app-blue)](https://zeus-lang.vercel.app/)
+[![VS Code](https://img.shields.io/badge/VS%20Code-Extension-007ACC?logo=visual-studio-code)](https://marketplace.visualstudio.com/items?itemName=ameerthehacker.zeus-vscode)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > ⚠️ **Early Development** — Zeus is evolving rapidly. Not recommended for production use yet.
@@ -64,13 +65,7 @@ zeus build main.zs -o main
 
 ## VS Code Extension
 
-Get syntax highlighting and real-time diagnostics:
-
-```bash
-# Install from marketplace (coming soon)
-# Or build from source:
-cd zeus-vscode && npm install && npm run compile
-```
+Get syntax highlighting and real-time diagnostics — **[Install from Marketplace →](https://marketplace.visualstudio.com/items?itemName=ameerthehacker.zeus-vscode)**
 
 The extension auto-detects Homebrew installations — no configuration needed!
 
