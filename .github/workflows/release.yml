@@ -50,18 +50,11 @@ jobs:
 
       - name: Build Zeus binary
         run: |
-          # Debug: Show LLVM paths
-          echo "LLVM_PATH: ${LLVM_PATH}"
-          ls -la "${LLVM_PATH}/bin/llvm-config" || echo "llvm-config not found"
-          ls -la "${LLVM_PATH}/include/" | head -20 || echo "include dir not found"
-          
-          # Get flags from llvm-config
           LLVM_CONFIG="${LLVM_PATH}/bin/llvm-config"
-          echo "CGO_CFLAGS will be: $($LLVM_CONFIG --cflags)"
-          echo "CGO_LDFLAGS will be: $($LLVM_CONFIG --ldflags --libs all --system-libs)"
           
           export CGO_ENABLED=1
           export CGO_CFLAGS="$($LLVM_CONFIG --cflags)"
+          export CGO_CXXFLAGS="$($LLVM_CONFIG --cxxflags)"
           export CGO_LDFLAGS="$($LLVM_CONFIG --ldflags --libs all --system-libs)"
           
           mkdir -p bin
