@@ -138,7 +138,6 @@ export default defineConfig({
           label: 'Examples',
           items: [
             { label: 'Fibonacci', slug: 'examples/fibonacci' },
-            { label: 'Linked List', slug: 'examples/linked-list' },
             { label: 'Calculator', slug: 'examples/calculator' },
           ],
         },

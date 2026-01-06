@@ -536,6 +536,26 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 		case zeus_value.FloatType:
 			return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), opName)
 		}
+	case zeus_value.ObjectType:
+		// Object comparison (pointer comparison)
+		// Handles: object == null, object != null, object == object
+		leftValue := c.toLLVMValue(left)
+		var rightValue llvm.Value
+		if zeus_value.IsNullType(rightType) {
+			// Compare with null pointer
+			rightValue = llvm.ConstPointerNull(leftValue.Type())
+		} else {
+			rightValue = c.toLLVMValue(right)
+		}
+		// Use intIntOp for pointer comparison (IntEQ/IntNE work on pointers)
+		return intIntOp(leftValue, rightValue, opName)
+	case zeus_value.NullType:
+		// null compared with object (reversed order)
+		if zeus_value.IsObjectType(rightType) {
+			rightValue := c.toLLVMValue(right)
+			leftValue := llvm.ConstPointerNull(rightValue.Type())
+			return intIntOp(leftValue, rightValue, opName)
+		}
 	}
 
 	panic(fmt.Sprintf("invalid types %s and %s for binary operation %s", leftType, rightType, opName))
@@ -601,6 +621,28 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
 			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGE), left, right, opName)
 		})
+	}
+
+	c.symbolTable.DeclareSymbol(output.Name, result)
+}
+
+func (c *CodegenModule) genUnaryOp(instr *ir.Instr, input ir.UnaryOpInstrInput, output zeus_value.Var) {
+	var result llvm.Value
+	valueType := zeus_value.GetValueType(input.Value)
+	llvmValue := c.toLLVMValue(input.Value)
+
+	switch instr.Type {
+	case ir.InstrTypeNeg:
+		switch valueType.(type) {
+		case zeus_value.IntType:
+			result = c.builder.CreateNeg(llvmValue, "neg")
+		case zeus_value.FloatType:
+			result = c.builder.CreateFNeg(llvmValue, "fneg")
+		default:
+			panic(fmt.Sprintf("unsupported type for negation: %s", valueType))
+		}
+	case ir.InstrTypeNot:
+		result = c.builder.CreateNot(llvmValue, "not")
 	}
 
 	c.symbolTable.DeclareSymbol(output.Name, result)
@@ -731,12 +773,23 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	objectHeaderStructType := c.cxt.StructCreateNamed(objectHeaderStructName)
 	objectHeaderStructType.StructSetBody(objectHeaderElementTypes, false)
 
-	// create the class struct with the vtable struct as the first element
+	// Create the class struct type first as an opaque type (without body)
+	// This allows self-referential types where a class has a property of its own type
+	llvmStructType := c.cxt.StructCreateNamed(class.Name)
+
+	// Register the struct type in the map BEFORE setting its body
+	// This is necessary for self-referential types (e.g., Node with next: Node)
+	// When toLLVMType is called for a property of the same type, it can find this type in the map
+	c.zeusClassLLVMStructMap[class.Name] = &ZeusClassLLVMStruct{
+		ZeusClass:      class,
+		LLVMStructType: llvmStructType,
+	}
+
+	// Now build the class element types - self-references will work because the type is already in the map
 	classElementTypes := []llvm.Type{llvm.PointerType(objectHeaderStructType, 0)}
 	for _, property := range class.Properties {
 		classElementTypes = append(classElementTypes, c.toLLVMType(property.Property.ValueType))
 	}
-	llvmStructType := c.cxt.StructCreateNamed(class.Name)
 	llvmStructType.StructSetBody(classElementTypes, false)
 
 	vtableElementTypes := []llvm.Type{}
@@ -1052,6 +1105,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			fallthrough
 		case ir.InstrTypeGreaterThanEq:
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeNeg:
+			fallthrough
+		case ir.InstrTypeNot:
+			c.genUnaryOp(instr, *ir.AsUnaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCast:
 			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeExport:

@@ -1,0 +1,28 @@
+[
+    {
+        "name": "Basic arithmetic operations",
+        "exit": "144",
+        "entry": "basic-ops.zs"
+    },
+    {
+        "name": "Calculator class with state",
+        "exit": "40",
+        "entry": "class.zs"
+    },
+    {
+        "name": "Floating point calculator",
+        "exit": "0",
+        "entry": "float.zs"
+    },
+    {
+        "name": "Mathematical utility functions",
+        "exit": "72",
+        "entry": "math-funcs.zs"
+    },
+    {
+        "name": "Complete calculator with chained operations",
+        "exit": "10",
+        "entry": "complete.zs"
+    }
+]
+

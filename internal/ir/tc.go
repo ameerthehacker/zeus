@@ -488,7 +488,30 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeEqEq:
 		fallthrough
 	case InstrTypeNotEq:
-		fallthrough
+		p.tcBinaryOp(tc, instr, func(_, _ zeus_value.ValueType) zeus_value.ValueType {
+			return zeus_value.BoolType{}
+		}, func(a, b zeus_value.ValueType) bool {
+			// Allow number comparisons
+			if zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
+				return true
+			}
+			// Allow object type (class instances) compared with null
+			if zeus_value.IsObjectType(a) && zeus_value.IsNullType(b) {
+				return true
+			}
+			if zeus_value.IsNullType(a) && zeus_value.IsObjectType(b) {
+				return true
+			}
+			// Allow two object types to be compared
+			if zeus_value.IsObjectType(a) && zeus_value.IsObjectType(b) {
+				return true
+			}
+			// Allow boolean comparisons
+			if zeus_value.IsBoolType(a) && zeus_value.IsBoolType(b) {
+				return true
+			}
+			return false
+		})
 	case InstrTypeLessThan:
 		fallthrough
 	case InstrTypeGreaterThan:

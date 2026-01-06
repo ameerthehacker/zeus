@@ -7,6 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.9.1
+	go.lsp.dev/protocol v0.12.0
 	tinygo.org/x/go-llvm v0.0.0-20250422114502-b8f170971e74
 )
 
@@ -19,7 +20,6 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	go.lsp.dev/jsonrpc2 v0.10.0 // indirect
 	go.lsp.dev/pkg v0.0.0-20210717090340-384b27a52fb2 // indirect
-	go.lsp.dev/protocol v0.12.0 // indirect
 	go.lsp.dev/uri v0.3.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect

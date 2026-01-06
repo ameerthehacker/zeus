@@ -1,0 +1,24 @@
+[
+    {
+        "name": "Recursive fibonacci",
+        "exit": "55",
+        "entry": "recursive.zs"
+    },
+    {
+        "name": "Iterative fibonacci",
+        "exit": "55",
+        "entry": "iterative.zs"
+    },
+    {
+        "name": "Generate fibonacci sequence array",
+        "exit": "34",
+        "entry": "sequence.zs",
+        "nogc": true
+    },
+    {
+        "name": "Sum of fibonacci numbers",
+        "exit": "88",
+        "entry": "sum.zs"
+    }
+]
+

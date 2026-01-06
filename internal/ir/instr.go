@@ -630,7 +630,7 @@ func (i InstrType) String() string {
 	case InstrTypeDiv:
 		return "DIV"
 	case InstrTypeNeg:
-		return "NEQ"
+		return "NEG"
 	case InstrTypeEqEq:
 		return "EQ_EQ"
 	case InstrTypeNotEq:
