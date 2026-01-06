@@ -49,12 +49,11 @@ jobs:
           zig build -Doptimize=ReleaseSmall
 
       - name: Build Zeus binary
-        env:
-          CGO_ENABLED: 1
-          CGO_CFLAGS: "-I${{ env.LLVM_PATH }}/include"
-          CGO_LDFLAGS: "-L${{ env.LLVM_PATH }}/lib -Wl,-rpath,${{ env.LLVM_PATH }}/lib"
         run: |
           export PATH="${LLVM_PATH}/bin:$PATH"
+          export CGO_ENABLED=1
+          export CGO_CFLAGS="-I${LLVM_PATH}/include"
+          export CGO_LDFLAGS="-L${LLVM_PATH}/lib -Wl,-rpath,${LLVM_PATH}/lib"
           mkdir -p bin
           go build -o bin/zeus zeus.go
 
