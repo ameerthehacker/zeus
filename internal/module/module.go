@@ -14,7 +14,7 @@ import (
 const modZeusFile = "index.zs"
 const stdZeusModulePrefix = "@"
 const stdZeusModuleDir = "lib"
-const zeusHomeEnvVar = "ZEUS_HOME"
+const ZeusHomeEnvVar = "ZEUS_HOME"
 
 func GetModulePrefix(modulePath string) string {
 	moduleName := "$"
@@ -40,8 +40,8 @@ func ResolveFilePath(sourcePath string, importPath string) string {
 	if strings.HasPrefix(importPath, stdZeusModulePrefix) {
 		zeusHomePath, err := os.Getwd()
 
-		if os.Getenv(zeusHomeEnvVar) != "" {
-			zeusHomePath = os.Getenv(zeusHomeEnvVar)
+		if os.Getenv(ZeusHomeEnvVar) != "" {
+			zeusHomePath = os.Getenv(ZeusHomeEnvVar)
 		} else if err != nil {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
 			os.Exit(1)

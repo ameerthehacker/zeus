@@ -22,8 +22,6 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
-const zeusRuntimeDir = "ZEUS_RUNTIME_DIR"
-
 type Compiler struct {
 	codegen          *codegen.Codegen
 	outputDir        string
@@ -467,13 +465,20 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 }
 
 func GetRuntimeDir() string {
-	runtimeDir := os.Getenv(zeusRuntimeDir)
+	runtimeDir := os.Getenv(module.ZeusHomeEnvVar)
 	if runtimeDir == "" {
-		runtimeDir, err := os.Getwd()
+		execPath, err := os.Executable()
 		if err != nil {
-			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus home path: %s", err.Error()))
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus executable path: %s", err.Error()))
 			os.Exit(1)
 		}
+		// Resolve symlinks to get the actual binary location
+		execPath, err = filepath.EvalSymlinks(execPath)
+		if err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to resolve symlinks: %s", err.Error()))
+			os.Exit(1)
+		}
+		runtimeDir = filepath.Dir(execPath)
 		return filepath.Join(runtimeDir, "runtime", "zig-out", "out")
 	}
 	return runtimeDir
