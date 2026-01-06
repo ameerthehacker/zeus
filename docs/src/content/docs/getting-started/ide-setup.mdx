@@ -24,31 +24,58 @@ The Zeus VS Code extension provides:
 
 ## Installation
 
-<Steps>
+<Tabs>
+  <TabItem label="Homebrew Users (Recommended)">
+    If you installed Zeus via Homebrew, **no configuration is needed!** The extension automatically detects the Homebrew installation.
 
-1. **Build the Zeus compiler**
+    <Steps>
 
-   The extension needs the `zeus` binary:
+    1. **Install the VS Code extension**
 
-   ```bash
-   cd /path/to/zeus
-   make build
-   ```
+       Install the Zeus extension from the VS Code marketplace, or build from source:
 
-2. **Install extension dependencies**
+       ```bash
+       cd zeus-vscode
+       npm install
+       npm run compile
+       ```
 
-   ```bash
-   cd zeus-vscode
-   npm install
-   npm run compile
-   ```
+    2. **Open a Zeus file**
 
-3. **Configure the extension**
+       Open any `.zs` file and the language server will start automatically.
 
-   Choose one of these options:
+    </Steps>
 
-   <Tabs>
-     <TabItem label="Option A: Add to PATH (Recommended)">
+    <Aside type="tip">
+      The extension automatically finds Zeus at `/opt/homebrew/bin/zeus` (Apple Silicon) or `/usr/local/bin/zeus` (Intel).
+    </Aside>
+  </TabItem>
+  <TabItem label="Manual Installation">
+    If you built Zeus from source or installed it manually:
+
+    <Steps>
+
+    1. **Build the Zeus compiler**
+
+       ```bash
+       cd /path/to/zeus
+       make build
+       ```
+
+    2. **Install extension dependencies**
+
+       ```bash
+       cd zeus-vscode
+       npm install
+       npm run compile
+       ```
+
+    3. **Configure the extension**
+
+       Choose one of these options:
+
+       **Option A: Add to PATH**
+
        Add Zeus to your shell's PATH:
 
        ```bash
@@ -56,14 +83,10 @@ The Zeus VS Code extension provides:
        export PATH="$HOME/path/to/zeus:$PATH"
        ```
 
-       Then restart your terminal and launch VS Code:
+       Then restart your terminal and launch VS Code.
 
-       ```bash
-       source ~/.zshrc  # or ~/.bashrc
-       code .
-       ```
-     </TabItem>
-     <TabItem label="Option B: Configure in VS Code">
+       **Option B: Configure in VS Code**
+
        1. Open VS Code Settings (`Cmd+,`)
        2. Search for "zeus"
        3. Set `zeus.executablePath` to the full path:
@@ -73,16 +96,16 @@ The Zeus VS Code extension provides:
          "zeus.executablePath": "/Users/yourname/path/to/zeus/zeus"
        }
        ```
-     </TabItem>
-   </Tabs>
 
-4. **Launch the extension**
+    4. **Launch the extension**
 
-   - Open the `zeus-vscode/` folder in VS Code
-   - Press `F5` to launch the Extension Development Host
-   - Open any `.zs` file to activate the language server
+       - Open the `zeus-vscode/` folder in VS Code
+       - Press `F5` to launch the Extension Development Host
+       - Open any `.zs` file to activate the language server
 
-</Steps>
+    </Steps>
+  </TabItem>
+</Tabs>
 
 ---
 
@@ -90,8 +113,10 @@ The Zeus VS Code extension provides:
 
 The extension automatically searches for the Zeus binary in this order:
 
-1. Custom path from `zeus.executablePath` setting
-2. `./zeus` in the workspace root
+1. **Homebrew paths** (macOS only)
+   - `/opt/homebrew/bin/zeus` (Apple Silicon)
+   - `/usr/local/bin/zeus` (Intel)
+2. Custom path from `zeus.executablePath` setting
 3. `zeus` from system PATH
 
 ---

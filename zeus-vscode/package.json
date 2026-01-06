@@ -1,8 +1,9 @@
 {
     "name": "zeus-vscode",
-    "displayName": "zeus-vscode",
-    "description": "Language support for Zeus",
+    "displayName": "Zeus",
+    "description": "Language support for Zeus programming language",
     "version": "0.0.1",
+    "icon": "images/icon.png",
     "engines": {
         "vscode": "^1.90.0"
     },

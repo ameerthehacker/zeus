@@ -1,83 +1,48 @@
 # Zeus Language Support for VS Code
 
-Language support for the Zeus programming language.
+Official VS Code extension for the [Zeus programming language](https://zeus-lang.vercel.app/) — TypeScript's soul with native speed.
 
 ## Features
 
-- **Syntax Highlighting**: Full syntax highlighting for `.zs` files
-- **Language Server Protocol (LSP)**: Integrated language server with:
-  - Real-time error diagnostics (lexer and parser errors)
-  - Syntax validation
-  - Error highlighting with hover details
+- ✅ **Syntax Highlighting** — Full color coding for `.zs` files
+- ✅ **Real-time Diagnostics** — Errors and warnings as you type
+- ✅ **Code Completion** — Keywords, types, variables, and functions
+- ✅ **Error Underlining** — Precise error locations with hover details
 
-## Requirements
+## Installation
 
-The Zeus compiler/language server must be installed and accessible in your PATH.
-
-### Installation
+### 1. Install Zeus
 
 ```bash
-git clone https://github.com/ameerthehacker/zeus
-cd zeus
-go build -o zeus zeus.go
-
-# Add zeus to your PATH or use the configuration below
-export PATH="$HOME/Projects/zeus:$PATH"
+brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
+brew install zeus
 ```
+
+The extension **automatically detects** Homebrew installations — no configuration needed!
+
+### 2. Install the Extension
+
+Install from the VS Code marketplace or build from source.
 
 ## Configuration
 
-- `zeus.executablePath`: (Optional) Custom path to the Zeus executable. If not set, uses `zeus` from PATH.
-
-### Example Configuration
-
-If Zeus is not in your PATH, you can configure it in VS Code settings:
+If you installed Zeus manually, configure the path in VS Code settings:
 
 ```json
 {
-  "zeus.executablePath": "/Users/yourname/Projects/zeus/zeus"
+  "zeus.executablePath": "/path/to/zeus"
 }
 ```
 
-## Features in Detail
+## Commands
 
-### Diagnostics
+- **Zeus: Restart Language Server** — Restart the LSP if needed
 
-The extension provides real-time error detection as you type:
-- **Syntax Errors**: Identifies and highlights syntax errors
-- **Parser Errors**: Shows parsing issues with detailed messages
-- **Error Severity**: Differentiates between errors, warnings, and info messages
+## Learn More
 
-### Troubleshooting
-
-#### "spawn zeus ENOENT" error
-
-The extension can't find the `zeus` executable. Solutions:
-
-1. **Add Zeus to PATH** (recommended):
-   - Add to your `.zshrc` or `.bashrc`: `export PATH="$HOME/Projects/zeus:$PATH"`
-   - Launch VS Code from terminal: `code .`
-
-2. **Configure the path**: Set `zeus.executablePath` in VS Code settings
-
-## Development
-
-To test the extension locally:
-
-1. Build Zeus: `go build -o zeus zeus.go`
-2. Build the extension: `cd zeus-vscode && npm run compile`
-3. Press F5 in VS Code to launch the Extension Development Host
-4. Open a `.zs` file to see diagnostics in action
-
-## Release Notes
-
-### 0.0.1
-
-- Initial release
-- Syntax highlighting for Zeus files
-- Language Server Protocol integration
-- Real-time diagnostics (lexer and parser errors)
+- 📖 [Zeus Documentation](https://zeus-lang.vercel.app/)
+- 🐙 [GitHub Repository](https://github.com/ameerthehacker/zeus)
 
 ---
 
-**Enjoy!**
+**Enjoy building with Zeus! ⚡**
