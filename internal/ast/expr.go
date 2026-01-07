@@ -433,11 +433,10 @@ func AsIndexingExpr(expr ExprNode) *IndexingExprNode {
 
 type CharExprNode struct {
 	Value *token.Token
-	Span *token.Span
 }
 
 func (c *CharExprNode) GetSpan() *token.Span {
-	return c.Span
+	return c.Value.Span
 }
 
 func (c *CharExprNode) PrettyString() string {
@@ -450,6 +449,26 @@ func (c *CharExprNode) String() string {
 
 func (c *CharExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
 	return visitor.VisitChar(c)
+}
+
+type StringConstantExprNode struct {
+	Value * token.Token;
+}
+
+func (s *StringConstantExprNode) PrettyString() string {
+	return s.Value.Value
+}
+
+func (s *StringConstantExprNode) String() string {
+	return fmt.Sprintf("{ type: StringConstantExprNode, Value: %s, Span: %s }", s.Value, s.GetSpan())
+}
+
+func (s *StringConstantExprNode) GetSpan() *token.Span {
+	return s.Value.Span
+}
+
+func (s *StringConstantExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitStringConstant(s)
 }
 
 // ExprVisitor interface
@@ -468,5 +487,6 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitNewExpr(node *NewExprNode) T
 	VisitObjectPropertyAccessExpr(node *ObjectPropertyAccessExprNode) T
 	VisitNull(node *NullExprNode) T
+	VisitStringConstant(node *StringConstantExprNode) T
 	VisitValueType(node *ValueTypeNode) T
 }

@@ -199,7 +199,10 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeChar: func(parser *Parser, charToken *token.Token) ast.ExprNode {
-			return &ast.CharExprNode{Value: charToken, Span: charToken.Span}
+			return &ast.CharExprNode{Value: charToken}
+		},
+		token.TokenTypeString: func(parser *Parser, stringToken *token.Token) ast.ExprNode {
+			return &ast.StringConstantExprNode{Value: stringToken }
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)

@@ -729,6 +729,50 @@ func (g *IRModule) VisitChar(expr *ast.CharExprNode) zeus_value.Value {
 	)
 }
 
+func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_value.Value {
+	u8ArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{
+		ElementType: zeus_value.IntType{
+			Signed: false,
+			Span: expr.GetSpan(),
+		},
+	})
+	arrayCapacity := zeus_value.NewConstant(
+		strconv.Itoa(len(expr.Value.Value)),
+		zeus_value.IntType{
+			Signed: false,
+			Size: zeus_value.I32,
+			Span: expr.GetSpan(),
+		},
+		expr.GetSpan(),
+	)
+	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{arrayCapacity}, expr.GetSpan())
+
+	for _, char := range expr.Value.Value {
+		u8Value := byte(char)
+		u8ValueString := strconv.Itoa(int(u8Value))
+
+		// Create the byte constant
+		u8Constant := zeus_value.NewConstant(
+			u8ValueString,
+			zeus_value.IntType{
+				Size:   zeus_value.I8,
+				Signed: false,
+				Span:   expr.GetSpan(),
+			},
+			expr.GetSpan(),
+		)
+
+		// Get the push method from the array
+		pushMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_PUSH, false, expr.GetSpan())
+		pushMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(pushMethodPtr), expr.GetSpan())
+
+		// Call the push method with the byte value
+		g.irBuilder.BuildIndirectFuncCall(pushMethod, []zeus_value.Value{u8Constant}, expr.GetSpan())
+	}
+	
+	return u8Array
+}
+
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
 	zeus_error.Assert(false, "value type should not be emitted in the IR");
 	return nil

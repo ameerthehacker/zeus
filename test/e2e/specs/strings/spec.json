@@ -3,5 +3,10 @@
         "name": "utf8-char",
         "entry": "utf8-char.zs",
         "exit": "169"
+    },
+    {
+        "name": "string as byte array",
+        "entry": "byte_array.zs",
+        "exit": "98"
     }
 ]
