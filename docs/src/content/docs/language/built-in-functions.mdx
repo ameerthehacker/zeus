@@ -1,0 +1,74 @@
+---
+title: Built-in Functions
+description: Built-in functions available in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus provides built-in functions that are available globally without any imports.
+
+## I/O Functions
+
+### `log`
+
+Prints a string to standard output.
+
+```zeus
+log(message: u8[]): void
+```
+
+**Parameters:**
+- `message` — A string (u8 array) to print
+
+**Example:**
+
+```zeus
+function main(): void {
+  log("Hello, World!");
+  log("Zeus supports UTF-8 🚀");
+}
+```
+
+**Output:**
+```
+Hello, World!
+Zeus supports UTF-8 🚀
+```
+
+<Aside type="tip">
+  The `log` function fully supports UTF-8, including emojis and international characters.
+</Aside>
+
+---
+
+## String Literals
+
+In Zeus, string literals are automatically converted to `u8[]` (byte arrays). This means you can pass string literals directly to functions expecting `u8[]`:
+
+```zeus
+function main(): void {
+  // String literal is automatically a u8[]
+  log("Hello!");
+  
+  // You can also work with the bytes directly
+  let greeting: u8[] = "Hi there";
+  log(greeting);
+}
+```
+
+<Aside type="note">
+  Strings in Zeus are UTF-8 encoded byte arrays. Each character may be 1-4 bytes depending on the Unicode code point.
+</Aside>
+
+---
+
+## More Functions Coming Soon
+
+Additional standard library functions for math, string manipulation, and more are planned for future releases.
+
+---
+
+## Next
+
+<a href="/language/control-flow/">Control Flow →</a>
+

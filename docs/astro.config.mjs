@@ -121,6 +121,7 @@ export default defineConfig({
             { label: 'Variables', slug: 'language/variables' },
             { label: 'Types', slug: 'language/types' },
             { label: 'Functions', slug: 'language/functions' },
+            { label: 'Built-in Functions', slug: 'language/built-in-functions' },
             { label: 'Classes', slug: 'language/classes' },
             { label: 'Arrays', slug: 'language/arrays' },
             { label: 'Control Flow', slug: 'language/control-flow' },

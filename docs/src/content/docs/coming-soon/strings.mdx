@@ -60,14 +60,59 @@ let emoji: string = "Hello 👋";
 let japanese: string = "こんにちは";
 ```
 
-## Current Workaround
+### Immutability
 
-While strings are in development, you can work with character arrays for basic use cases:
+Strings in Zeus will be **immutable** — once created, their contents cannot be changed. Operations that modify strings will return new string instances:
 
 ```zeus
-// Character codes can be used with u8
-let charA: u8 = 65;  // ASCII 'A'
+let greeting: string = "Hello";
+let message: string = greeting.concat(", World!");  // Creates new string
+// greeting is still "Hello"
 ```
+
+<Aside type="note">
+  Immutable strings are safer for concurrent programming and enable optimizations like string interning.
+</Aside>
+
+## Current Workaround
+
+While the dedicated `string` type is in development, you can use **`u8[]` (byte arrays)** as strings. String literals are automatically converted to `u8[]`:
+
+```zeus
+function main(): void {
+  // String literals work as u8[] byte arrays
+  log("Hello, World!");
+  
+  // UTF-8 is fully supported, including emojis
+  log("Zeus says hi 👋");
+  
+  // You can store strings in variables
+  let message: u8[] = "Welcome to Zeus!";
+  log(message);
+}
+```
+
+### How it works
+
+- String literals (`"..."`) are automatically converted to `u8[]` (UTF-8 byte arrays)
+- The `log` function accepts `u8[]` and prints to stdout
+- Full UTF-8 support including multi-byte characters and emojis
+
+```zeus
+function main(): void {
+  // Each character is stored as UTF-8 bytes
+  let greeting: u8[] = "Hi! 🚀";
+  
+  // Access individual bytes
+  let firstByte: u8 = greeting.get(0);  // 72 ('H')
+  
+  log(greeting);
+}
+```
+
+<Aside type="tip">
+  This workaround provides full string functionality for output. The upcoming `string` type will add more operations like concatenation, searching, and slicing.
+</Aside>
 
 ## Roadmap
 
