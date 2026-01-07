@@ -67,6 +67,7 @@ type Var struct {
 	ValueType ValueType
 	Cxt       *Value
 	IsPtr     bool
+	IsConst   bool
 	Span      *token.Span
 	IsUsed    bool
 }

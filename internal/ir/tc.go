@@ -839,6 +839,13 @@ func (p *TypeCheckingPass) tcStore(tc *TypeChecker, instr *Instr) {
 		})
 	}
 
+	if input.Addr.IsConst {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot assign to constant '%s'", input.Addr.Name),
+			Span:    instr.Span,
+		})
+	}
+
 	input.Value = p.cmpValueWithImplicitCast(tc, instr, input.Addr.ValueType, input.Value)
 }
 
