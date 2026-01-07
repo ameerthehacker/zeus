@@ -752,9 +752,8 @@ func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_va
 	)
 	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{arrayCapacity}, expr.GetSpan())
 
-	for _, char := range expr.Value.Value {
-		u8Value := byte(char)
-		u8ValueString := strconv.Itoa(int(u8Value))
+	for _, b := range []byte(expr.Value.Value) {
+		u8ValueString := strconv.Itoa(int(b))
 
 		// Create the byte constant
 		u8Constant := zeus_value.NewConstant(

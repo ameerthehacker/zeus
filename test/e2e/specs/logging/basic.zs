@@ -1,5 +1,5 @@
 function main(): i32 {
-  log("Hello, World!");
+  log("Hello, World 👋");
   return 0;
 }
 
