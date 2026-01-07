@@ -577,6 +577,31 @@ func AsGetIndexInstrInput(input InstrInput) *GetIndexInstrInput {
 	return nil
 }
 
+type DeclPrimordialFuncInstrInput struct {
+	Function *zeus_value.Function
+}
+
+func NewDeclPrimordialFuncInstrInput(function *zeus_value.Function) *DeclPrimordialFuncInstrInput {
+	return &DeclPrimordialFuncInstrInput{
+		Function: function,
+	}
+}
+
+func (i DeclPrimordialFuncInstrInput) String() string {
+	return i.Function.String()
+}
+
+func AsDeclPrimordialFuncInstrInput(input InstrInput) *DeclPrimordialFuncInstrInput {
+	switch input := input.(type) {
+	case *DeclPrimordialFuncInstrInput:
+		return input
+	default:
+		panicInvalidInputType("DeclPrimordialFuncInstrInput", input)
+	}
+
+	return nil
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -602,6 +627,7 @@ const (
 	InstrTypeStore
 	// function
 	InstrTypeDeclFunc
+	InstrTypeDeclPrimordialFunc
 	InstrTypeCallFunc
 	InstrTypeIndirectFuncCall
 	InstrTypeReturn
@@ -649,6 +675,8 @@ func (i InstrType) String() string {
 		return "DECLARE_VAR"
 	case InstrTypeDeclFunc:
 		return "DECLARE_FUNC"
+	case InstrTypeDeclPrimordialFunc:
+		return "DECLARE_PRIMORDIAL_FUNC"
 	case InstrTypeCallFunc:
 		return "CALL_FUNC"
 	case InstrTypeReturn:
@@ -687,7 +715,11 @@ func IsControlFlowInstr(instrType InstrType) bool {
 }
 
 func IsFunctionDeclInstr(instrType InstrType) bool {
-	return instrType == InstrTypeDeclFunc
+	return instrType == InstrTypeDeclFunc 
+}
+
+func IsPrimordialFunctionDeclInstr(instrType InstrType) bool {
+	return instrType == InstrTypeDeclPrimordialFunc
 }
 
 func IsClassMethodDeclInstr(instrType InstrType) bool {

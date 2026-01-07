@@ -137,3 +137,8 @@ pub fn getZeusTypeSize(zeus_type: abi.ZeusType) u32 {
         ._null => return 0,
     }
 }
+
+/// Safely cast anyopaque pointer to ZeusArrayObj pointer
+pub inline fn castToArrayObj(ptr: *anyopaque) *abi.ZeusArrayObj {
+    return @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(ptr)));
+}

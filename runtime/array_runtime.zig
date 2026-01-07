@@ -18,9 +18,7 @@ const ARRAY_MIN_CAPACITY: u32 = 4;
 // ============================================================================
 
 /// Safely cast anyopaque pointer to ZeusArrayObj pointer
-inline fn castToArrayObj(ptr: *anyopaque) *abi.ZeusArrayObj {
-    return @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(ptr)));
-}
+const castToArrayObj = runtime_util.castToArrayObj;
 
 /// Get the size of each element in the array
 inline fn getElementSize(array_ptr: *abi.ZeusArrayObj) u32 {

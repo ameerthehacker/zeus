@@ -63,6 +63,11 @@ func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
 
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	g.symbolTable.EnterScope()
+	// generate the primordial function declarations
+	for _, fn := range zeus_value.GetPrimordialFunctionDefinitions() {
+		g.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
+	}
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
 	}

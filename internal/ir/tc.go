@@ -110,7 +110,7 @@ func (tc *TypeChecker) updateContext(instr *Instr) {
 
 // isInstructionAllowed checks if an instruction is allowed in the current context
 func (tc *TypeChecker) isInstructionAllowed(instr *Instr) bool {
-	isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type)
+	isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type) || IsPrimordialFunctionDeclInstr(instr.Type)
 	return isTopLevelInstr || tc.currentFunction != nil
 }
 
@@ -197,6 +197,12 @@ func (p *ArrayTypeCollectionPass) HandleInstruction(tc *TypeChecker, instr *Inst
 		p.collectArrayType(input.Variable.ValueType)
 	case InstrTypeDeclFunc:
 		input := AsDeclFuncInstrInput(instr.Input)
+		p.collectArrayType(input.Function.ReturnType)
+		for _, param := range input.Function.Params {
+			p.collectArrayType(param.ValueType)
+		}
+	case InstrTypeDeclPrimordialFunc:
+		input := AsDeclPrimordialFuncInstrInput(instr.Input)
 		p.collectArrayType(input.Function.ReturnType)
 		for _, param := range input.Function.Params {
 			p.collectArrayType(param.ValueType)
@@ -337,6 +343,8 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.resolveVarDecl(tc, instr)
 	case InstrTypeDeclFunc:
 		p.resolveFuncDecl(tc, instr)
+	case InstrTypeDeclPrimordialFunc:
+		p.resolvePrimordialFuncDecl(tc, instr)
 	case InstrTypeDeclClass:
 		p.resolveClassDecl(tc, instr)
 	case InstrTypeDeclClassMethod:
@@ -397,6 +405,14 @@ func (p *ToKnownTypesPass) resolveFuncDecl(tc *TypeChecker, instr *Instr) {
 	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType, true)
 
 	// Resolve parameter types
+	for i := range input.Function.Params {
+		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType, false)
+	}
+}
+
+func (p *ToKnownTypesPass) resolvePrimordialFuncDecl(tc *TypeChecker, instr *Instr) {
+	input := AsDeclPrimordialFuncInstrInput(instr.Input)
+	input.Function.ReturnType = p.resolveValueType(tc, input.Function.ReturnType, true)
 	for i := range input.Function.Params {
 		input.Function.Params[i].ValueType = p.resolveValueType(tc, input.Function.Params[i].ValueType, false)
 	}
@@ -566,6 +582,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
 		// TODO: add type checking for cast
+	case InstrTypeDeclPrimordialFunc:
+		// no type checking for primordial functions
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
@@ -1096,10 +1114,14 @@ func (p *TypeCheckingPass) tcDeclClassMethod(tc *TypeChecker, instr *Instr) {
 
 // UnusedWarningPass generates warnings for unused identifiers
 // This pass should run last after all usage tracking is complete
-type UnusedWarningPass struct{}
+type UnusedWarningPass struct{
+	primordialFunctions []*zeus_value.Function
+}
 
 func NewUnusedWarningPass() *UnusedWarningPass {
-	return &UnusedWarningPass{}
+	return &UnusedWarningPass{
+		primordialFunctions: []*zeus_value.Function{},
+	}
 }
 
 func (p *UnusedWarningPass) GetName() string {
@@ -1132,9 +1154,16 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleNewObj(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.handleObjectPropertyAccess(tc, instr)
+	case InstrTypeDeclPrimordialFunc:
+		p.handleDeclPrimordialFunc(instr)
 	case InstrTypeExport:
 		p.handleExport(instr)
 	}
+}
+
+func (p *UnusedWarningPass) handleDeclPrimordialFunc(instr *Instr) {
+	input := AsDeclPrimordialFuncInstrInput(instr.Input)
+	p.primordialFunctions = append(p.primordialFunctions, input.Function)
 }
 
 // handleVarDecl processes variable declarations and marks initializers as used
@@ -1350,6 +1379,12 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 				})
 			}
 		} else if function := zeus_value.AsFunction(value); function != nil {
+			// ignore unused primordial functions
+			for _, primordialFunction := range p.primordialFunctions {
+				if function.Name == primordialFunction.Name {
+					return
+				}
+			}
 			isMainFunction := function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint
 			// Check for unused functions, ignore class methods
 			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isMainFunction {

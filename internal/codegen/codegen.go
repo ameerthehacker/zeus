@@ -154,22 +154,21 @@ func (c *CodegenModule) getPrimordialRuntimeFunctionName(methodName string, prim
 	return fmt.Sprintf("%s_%s_%s", "zeus", primordialName, methodName)
 }
 
-func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function, primordialName string) (llvm.Value, llvm.Type) {
-	functionName := c.getPrimordialRuntimeFunctionName(method.Name, primordialName)
-
+func (c *CodegenModule) genExternalRuntimeFunction(functionName string, numParams int, hasThisPtr bool) (llvm.Value, llvm.Type) {
 	// Check if function already exists in global functions
 	if globalFunc, exists := c.globalLLVMFunctions[functionName]; exists {
 		return globalFunc.Function, globalFunc.FunctionType
 	}
 
-	// Create function signature: (this_ptr, return_buffer_ptr, ...param_ptrs) -> void
-	paramTypes := []llvm.Type{
-		llvm.PointerType(c.cxt.VoidType(), 0), // this pointer
-		llvm.PointerType(c.cxt.VoidType(), 0), // return buffer pointer
+	// Build parameter types: optional this_ptr, return_buffer_ptr, ...param_ptrs
+	paramTypes := []llvm.Type{}
+	if hasThisPtr {
+		paramTypes = append(paramTypes, llvm.PointerType(c.cxt.VoidType(), 0)) // this pointer
 	}
+	paramTypes = append(paramTypes, llvm.PointerType(c.cxt.VoidType(), 0)) // return buffer pointer
 
-	// Add pointer type for each method parameter
-	for range method.Params {
+	// Add pointer type for each parameter
+	for i := 0; i < numParams; i++ {
 		paramTypes = append(paramTypes, llvm.PointerType(c.cxt.VoidType(), 0))
 	}
 
@@ -182,6 +181,11 @@ func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function,
 	c.globalLLVMFunctions[functionName] = GlobalLLVMFunction{function, functionType}
 
 	return function, functionType
+}
+
+func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function, primordialName string) (llvm.Value, llvm.Type) {
+	functionName := c.getPrimordialRuntimeFunctionName(method.Name, primordialName)
+	return c.genExternalRuntimeFunction(functionName, len(method.Params), true)
 }
 
 func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
@@ -823,9 +827,11 @@ func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	if c.zeusClassLLVMStructMap[class.Name] != nil {
 		return c.zeusClassLLVMStructMap[class.Name]
-	} else if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && class.Name != ZeusObjectArrayClassName {
-		// we generate single object array class for all types of object array
+	} else if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && class.Name != ZeusObjectArrayClassName && zeus_value.IsObjectType(class.ArrayElementType) {
+		// we generate single object array class for all types of OBJECT arrays
 		// because they are represented exactly the same way in memory
+		// NOTE: primitive type arrays (u8[], i32[], etc.) need their own type info
+		// so the runtime knows the correct element size
 		c.zeusClassLLVMStructMap[class.Name] = c.genObjArrayClass()
 		return c.zeusClassLLVMStructMap[class.Name]
 	}
@@ -1033,6 +1039,53 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
+func (c *CodegenModule) genDeclPrimordialFunc(input ir.DeclPrimordialFuncInstrInput) {
+	function := input.Function
+	functionType := zeus_value.ToFunctionType(*function)
+
+	// Create the external function zeus_{function_name} using the shared helper
+	externalFuncName := fmt.Sprintf("zeus_%s", function.Name)
+	externalFunc, externalFuncType := c.genExternalRuntimeFunction(externalFuncName, len(function.Params), false)
+
+	// Reuse genFunc to create the wrapper function
+	llvmFunc := c.genFunc(*function)
+	llvmFunc.SetLinkage(llvm.InternalLinkage)
+
+	// Create entry basic block for the function body
+	entryBlock := llvm.AddBasicBlock(llvmFunc, "entry")
+	c.builder.SetInsertPointAtEnd(entryBlock)
+
+	// Alloca return buffer if function has a return type
+	var returnBufferPtr llvm.Value
+	hasReturnValue := functionType.ReturnType != nil && !zeus_value.IsVoidType(functionType.ReturnType)
+	if hasReturnValue {
+		returnBufferPtr = c.builder.CreateAlloca(c.toLLVMType(functionType.ReturnType), "return_buffer")
+	} else {
+		// Create a dummy pointer for void return
+		returnBufferPtr = llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	}
+
+	// Build args for the external call: return buffer ptr + alloca'd arg ptrs
+	externalCallArgs := []llvm.Value{returnBufferPtr}
+	for index, param := range llvmFunc.Params() {
+		// Alloca for each argument
+		argAlloca := c.builder.CreateAlloca(param.Type(), fmt.Sprintf("arg_%d_ptr", index))
+		c.builder.CreateStore(param, argAlloca)
+		externalCallArgs = append(externalCallArgs, argAlloca)
+	}
+
+	// Call the external function
+	c.builder.CreateCall(externalFuncType, externalFunc, externalCallArgs, "")
+
+	// Return the value from return buffer if needed
+	if hasReturnValue {
+		returnValue := c.builder.CreateLoad(c.toLLVMType(functionType.ReturnType), returnBufferPtr, "return_value")
+		c.builder.CreateRet(returnValue)
+	} else {
+		c.builder.CreateRetVoid()
+	}
+}
+
 func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Value {
 	switch value := value.(type) {
 	case zeus_value.IntType:
@@ -1123,6 +1176,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genObjectPropertyAccess(*ir.AsObjectPropertyAccessInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeIndirectFuncCall:
 			c.genIndirectFuncCall(*ir.AsIndirectFuncCallInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeDeclPrimordialFunc:
+			c.genDeclPrimordialFunc(*ir.AsDeclPrimordialFuncInstrInput(instr.Input))
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

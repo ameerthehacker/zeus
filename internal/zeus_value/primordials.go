@@ -42,3 +42,21 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	}
 	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, arrayType.GetSpan())
 }
+
+func GetPrimordialFunctionDefinitions() []*Function {
+	span := token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))
+		logFunction := NewFunction(
+		"log",
+		[]*Var{
+			NewVar("message", NewArrayType(IntType{
+				Signed: false,
+				Size: I8,
+				Span: span,
+			}, span), false, span),
+		},
+		VoidType{Span: span},
+		span,
+	)
+
+	return []*Function{logFunction}
+}
