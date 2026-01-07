@@ -3,7 +3,6 @@ package lexer
 import (
 	"fmt"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -163,8 +162,8 @@ func (l *Lexer) eatStringOrChar(isChar bool) {
 
 	stringLiteral := string(l.source[start+1:l.cursor-1])
 
-	if isChar && utf8.RuneCount([]byte(stringLiteral)) != 1 {
-		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "char literal must be a single character", token.NewSpan(*startPosition, *startPosition)))
+	if isChar && len(stringLiteral) != 1 {
+		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "char literal must be a single byte", token.NewSpan(*startPosition, *startPosition)))
 		return
 	}
 
