@@ -13,9 +13,10 @@ import (
 
 // TestSpec represents a single test case in a spec file
 type TestSpec struct {
-	Name  string `json:"name"`
-	Exit  string `json:"exit"`
-	Entry string `json:"entry"`
+	Name   string `json:"name"`
+	Exit   string `json:"exit"`
+	Entry  string `json:"entry"`
+	Stdout string `json:"stdout,omitempty"`
 }
 
 // buildCompiler builds the Zeus compiler and runtime, placing the compiler in the project root
@@ -115,9 +116,10 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 		return
 	}
 
-	// Execute the compiled program
+	// Execute the compiled program and capture stdout
 	execCmd := exec.Command(outputFile)
-	err = execCmd.Run()
+	stdoutBytes, err := execCmd.Output()
+	actualStdout := string(stdoutBytes)
 
 	// Get the exit code
 	var actualExitCode int
@@ -143,6 +145,15 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 	if actualExitCode != expectedExitCode {
 		t.Errorf("Test '%s' failed: expected exit code %d, got %d",
 			spec.Name, expectedExitCode, actualExitCode)
+	}
+
+	// Compare stdout if specified
+	if spec.Stdout != "" {
+		expectedStdout := spec.Stdout
+		if actualStdout != expectedStdout {
+			t.Errorf("Test '%s' failed: stdout mismatch\nExpected: %q\nActual: %q",
+				spec.Name, expectedStdout, actualStdout)
+		}
 	}
 }
 

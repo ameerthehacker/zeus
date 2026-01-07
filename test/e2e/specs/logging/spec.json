@@ -1,0 +1,9 @@
+[
+    {
+        "name": "basic log",
+        "entry": "basic.zs",
+        "exit": "0",
+        "stdout": "Hello, World!"
+    }
+]
+
