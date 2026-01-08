@@ -3,18 +3,19 @@
 
 const std = @import("std");
 const abi = @import("abi.zig");
-const runtime_util = @import("runtime_util.zig");
+const string_runtime = @import("string_runtime.zig");
 
-const castToArrayObj = runtime_util.castToArrayObj;
-
-/// zeus_log: Prints a u8[] array as a UTF-8 string to stdout
-/// Signature: zeus_log(return_buffer_ptr, str_array_ptr_ptr)
-export fn zeus_log(return_buffer_ptr: ?*anyopaque, str_array_ptr_ptr: *anyopaque) callconv(.C) void {
+/// zeus_log: Prints a string object to stdout
+/// Signature: zeus_log(return_buffer_ptr, string_ptr_ptr)
+export fn zeus_log(return_buffer_ptr: ?*anyopaque, string_ptr_ptr: *anyopaque) callconv(.C) void {
     _ = return_buffer_ptr;
 
-    // Dereference to get the ZeusArrayObj pointer
-    const array_obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(str_array_ptr_ptr))).*;
-    const array_ptr = castToArrayObj(array_obj_ptr);
+    // Dereference to get the ZeusStringObj pointer
+    const string_obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(string_ptr_ptr))).*;
+    const string_ptr = string_runtime.castToStringObj(string_obj_ptr);
+
+    // Get the internal u8[] array from the string
+    const array_ptr = string_ptr.data orelse return;
 
     const length = array_ptr.length;
     if (length == 0) return;
@@ -25,4 +26,3 @@ export fn zeus_log(return_buffer_ptr: ?*anyopaque, str_array_ptr_ptr: *anyopaque
         stdout.writeAll(str_bytes) catch {};
     }
 }
-

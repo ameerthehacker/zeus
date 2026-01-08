@@ -285,6 +285,8 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	// type check the zeus IR
 	sourceFiles = c.TypeCheck(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
+	// lower high-level IR constructs (e.g., string<->u8[] casts)
+	sourceFiles = c.LowerIR(sourceFiles)
 	// generate llvm IR
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
@@ -329,6 +331,16 @@ func (c *Compiler) TypeCheck(sourceFiles []*SourceFile) []*SourceFile {
 		typeChecker := ir.NewTypeChecker(sourceFile.IRBuilder, sourceFile.IsEntryPoint)
 		errors := typeChecker.TypeCheck()
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
+	}
+
+	return sourceFiles
+}
+
+func (c *Compiler) LowerIR(sourceFiles []*SourceFile) []*SourceFile {
+	for _, sourceFile := range sourceFiles {
+		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
+		lowerer := ir.NewLowerer(sourceFile.IRBuilder)
+		lowerer.Lower()
 	}
 
 	return sourceFiles

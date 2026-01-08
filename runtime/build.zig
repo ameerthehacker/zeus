@@ -34,10 +34,9 @@ pub fn build(b: *std.Build) void {
     
     const target = b.resolveTargetQuery(target_query);
 
-    // Standard optimization options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
-    // set a preferred release mode, allowing the user to decide how to optimize.
-    const optimize = b.standardOptimizeOption(.{});
+    // Use ReleaseFast by default for production performance (GC and runtime are performance-critical).
+    // Can be overridden with -Doptimize=Debug for debugging.
+    const optimize = b.option(std.builtin.OptimizeMode, "optimize", "Optimization mode") orelse .ReleaseFast;
 
     const output_dir = "out";
     // Create the runtime static library

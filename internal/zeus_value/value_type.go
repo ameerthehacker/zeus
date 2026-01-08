@@ -426,6 +426,15 @@ func IsFloatType(value ValueType) bool {
 	}
 }
 
+func IsUndefinedType(value ValueType) bool {
+	switch value.(type) {
+	case UndefinedType:
+		return true
+	default:
+		return false
+	}
+}
+
 func IsPrimitiveType(value ValueType) bool {
 	switch value.(type) {
 	case IntType, FloatType, BoolType:

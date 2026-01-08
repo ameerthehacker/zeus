@@ -17,7 +17,6 @@ import (
 type IRModule struct {
 	irBuilder       *IRBuilder
 	isLValueExpr    bool
-	symbolTable     *symbol_table.SymbolTable[zeus_value.Value]
 	errors          []*zeus_error.ZeusError
 	modulePath      string
 	exportedSymbols map[string]zeus_value.Value
@@ -28,11 +27,15 @@ func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modu
 	return &IRModule{
 		irBuilder:       ir_builder,
 		isLValueExpr:    false,
-		symbolTable:     symbol_table.NewSymbolTable[zeus_value.Value](),
 		modulePath:      modulePath,
 		exportedSymbols: map[string]zeus_value.Value{},
 		getModule:       getIRModule,
 	}
+}
+
+// symbolTable returns the IRBuilder's symbol table (single source of truth)
+func (g *IRModule) symbolTable() *symbol_table.SymbolTable[zeus_value.Value] {
+	return g.irBuilder.symbolTable
 }
 
 func (g *IRModule) pushError(err *zeus_error.ZeusError) {
@@ -62,23 +65,25 @@ func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
 }
 
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
-	g.symbolTable.EnterScope()
-	// generate the primordial function declarations
-	for _, fn := range zeus_value.GetPrimordialFunctionDefinitions() {
-		g.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	// Note: IRBuilder already has a global scope created in NewIRBuilder()
+	// and primordial classes are already registered via initializePrimordials()
+	
+	// Emit DECL_PRIMORDIAL_FUNC instructions for primordial functions
+	// (they were registered in symbol table during NewIRBuilder, but we still need IR instructions)
+	for _, fn := range zeus_value.Registry.GetAllFunctions() {
 		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
 	}
+
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
 	}
-	g.symbolTable.ExitScope()
 	g.irBuilder.Optimize()
 
 	return g.errors
 }
 
 func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
-	if _, ok := g.symbolTable.GetSymbolInCurrentScope(name); ok {
+	if _, ok := g.symbolTable().GetSymbolInCurrentScope(name); ok {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), span))
 		return true
 	}
@@ -87,11 +92,11 @@ func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
 }
 
 func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
-	g.symbolTable.EnterScope()
+	g.symbolTable().EnterScope()
 	for _, stmt := range stmt.Statements {
 		stmt.Accept(g)
 	}
-	g.symbolTable.ExitScope()
+	g.symbolTable().ExitScope()
 }
 
 func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
@@ -119,7 +124,7 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			decl.GetSpan(),
 		))
 
-		g.symbolTable.DeclareSymbol(decl.Identifier.Name.Value, variable)
+		g.symbolTable().DeclareSymbol(decl.Identifier.Name.Value, variable)
 	}
 }
 
@@ -286,28 +291,28 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
 	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
-	g.symbolTable.DeclareGlobalSymbol(name, fn)
-	g.symbolTable.EnterScope()
+	g.symbolTable().DeclareGlobalSymbol(name, fn)
+	g.symbolTable().EnterScope()
 
 	for index, param := range fnParams {
-		if _, ok := g.symbolTable.GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
+		if _, ok := g.symbolTable().GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare parameter '%s' in the same scope", param.Identifier.Name.Value), param.Identifier.Name.Span))
 			return nil
 		}
-		g.symbolTable.DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
+		g.symbolTable().DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
 	}
 
 	if class != nil {
 		valueType := zeus_value.NewObjectType(*class)
 		object := zeus_value.NewObject(token.THIS_KEYWORD, valueType, span)
-		g.symbolTable.DeclareSymbol(token.THIS_KEYWORD, &object)
+		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, &object)
 	}
 
 	g.irBuilder.SetInsertionBlock(body)
 	fnBody.Accept(g)
 	g.irBuilder.SetInsertionBlock(current_block)
 
-	g.symbolTable.ExitScope()
+	g.symbolTable().ExitScope()
 
 	return fn
 }
@@ -317,7 +322,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
-	variable, ok := g.symbolTable.GetSymbol(expr.Name.Value)
+	variable, ok := g.symbolTable().GetSymbol(expr.Name.Value)
 
 	if !ok {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("undefined identifier '%s'", expr.Name.Value), expr.Name.Span))
@@ -399,37 +404,26 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 }
 
-// getOrCreateArrayClass recursively creates and registers array primordial classes
-// For nested arrays like Point[][], it ensures Point[] is registered before Point[][]
+// getOrCreateArrayClass gets or creates an array primordial class from the registry.
+// The class is automatically registered in the symbol table and a DECL_CLASS instruction
+// is emitted at the beginning of the instruction list.
 func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_value.Class {
 	arrayClassName := arrayType.String()
-	
-	// Check if the array class already exists in the symbol table
-	if existingClass, ok := g.symbolTable.GetSymbol(arrayClassName); ok {
-		// Class already exists, reuse it
+
+	// Check if already in symbol table (already processed)
+	if existingClass, ok := g.symbolTable().GetSymbol(arrayClassName); ok {
 		return existingClass.(*zeus_value.Class)
 	}
-	
-	// If the element type is also an array, recursively ensure it's registered first
-	// For example, for Point[][], we need to ensure Point[] is registered before Point[][]
-	if elementArrayType, ok := arrayType.ElementType.(zeus_value.ArrayType); ok {
-		g.getOrCreateArrayClass(elementArrayType)
-	}
-	
-	// Create new array primordial class
-	arrayClass := zeus_value.GetArrayPrimordialClassDefinition(arrayType)
-	// Register with canonical name (don't generate unique names for primordial classes)
-	g.symbolTable.DeclareSymbol(arrayClassName, arrayClass)
-	
-	// Emit DECL_CLASS instruction so codegen can generate the LLVM struct
-	result := g.irBuilder.createTempVariable(arrayClass.GetSpan())
-	g.irBuilder.pushInstr(&Instr{
-		Type:   InstrTypeDeclClass,
-		Output: result,
-		Input:  NewDeclClassInstrInput(arrayClass),
-		Span:   arrayClass.GetSpan(),
-	})
-	
+
+	// Get or create from registry (handles nested array types internally)
+	arrayClass := zeus_value.Registry.GetOrCreateArrayClass(arrayType)
+
+	// Register in symbol table
+	g.symbolTable().DeclareSymbol(arrayClassName, arrayClass)
+
+	// Emit DECL_CLASS at the beginning of the instruction list
+	g.irBuilder.EmitClassDeclAtStart(arrayClass)
+
 	return arrayClass
 }
 
@@ -438,7 +432,7 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 // For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
 func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMethod) string {
 	irClassName := g.irBuilder.BuildClassDecl(class, class.GetSpan())
-	g.symbolTable.DeclareSymbol(class.Name, class)
+	g.symbolTable().DeclareSymbol(class.Name, class)
 
 	// Emit method bodies if AST nodes are provided (user-defined classes)
 	for _, method := range methodASTs {
@@ -627,13 +621,13 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		return nil
 	}
 
-	g.symbolTable.EnterScope()
+	g.symbolTable().EnterScope()
 	properties := []*zeus_value.ClassProperty{}
 	for _, property := range expr.Properties {
 		if g.isSymbolDeclared(property.Name.Name.Value, property.Name.GetSpan()) {
 			continue
 		}
-		g.symbolTable.DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()))
+		g.symbolTable().DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()))
 
 		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()), property.AccessModifier))
 	}
@@ -668,15 +662,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			function,
 			method.AccessModifier,
 		))
-		g.symbolTable.DeclareSymbol(method.Name.Name.Value, function)
+		g.symbolTable().DeclareSymbol(method.Name.Name.Value, function)
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
 	g.buildClass(class, expr.Methods)
-	g.symbolTable.ExitScope()
+	g.symbolTable().ExitScope()
 
 	// Re-declare the class in the outer scope after exiting the class members scope
-	g.symbolTable.DeclareSymbol(expr.Name.Name.Value, class)
+	g.symbolTable().DeclareSymbol(expr.Name.Name.Value, class)
 	return class
 }
 
@@ -713,7 +707,7 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 		}
 
 		g.irBuilder.BuildImport(absoluteModulePath, _import.Name.Value, importedValue, _import.Name.Span)
-		g.symbolTable.DeclareSymbol(_import.Name.Value, importedValue)
+		g.symbolTable().DeclareSymbol(_import.Name.Value, importedValue)
 	}
 }
 
@@ -734,47 +728,53 @@ func (g *IRModule) VisitChar(expr *ast.CharExprNode) zeus_value.Value {
 	)
 }
 
+// getOrCreateStringClass returns the string primordial class from the registry.
+// The class is pre-registered during IRBuilder initialization, so this just looks it up.
+func (g *IRModule) getOrCreateStringClass() *zeus_value.Class {
+	stringClassName := zeus_value.ZEUS_PRIMORDIAL_STRING
+
+	// String class should always be pre-registered in the symbol table
+	if existingClass, ok := g.symbolTable().GetSymbol(stringClassName); ok {
+		return existingClass.(*zeus_value.Class)
+	}
+
+	// This should never happen - string is registered during IRBuilder init
+	zeus_error.Assert(false, "string class not found in symbol table - this is a bug")
+	return nil
+}
+
 func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_value.Value {
-	u8ArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.ArrayType{
-		ElementType: zeus_value.IntType{
-			Signed: false,
-			Span: expr.GetSpan(),
-		},
-	})
-	arrayCapacity := zeus_value.NewConstant(
-		strconv.Itoa(len(expr.Value.Value)),
-		zeus_value.IntType{
-			Signed: false,
-			Size: zeus_value.I32,
-			Span: expr.GetSpan(),
-		},
-		expr.GetSpan(),
-	)
-	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{arrayCapacity}, expr.GetSpan())
-
-	for _, b := range []byte(expr.Value.Value) {
-		u8ValueString := strconv.Itoa(int(b))
-
-		// Create the byte constant
-		u8Constant := zeus_value.NewConstant(
-			u8ValueString,
-			zeus_value.IntType{
-				Size:   zeus_value.I8,
-				Signed: false,
-				Span:   expr.GetSpan(),
-			},
-			expr.GetSpan(),
-		)
-
-		// Get the push method from the array
-		pushMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_PUSH, false, expr.GetSpan())
-		pushMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(pushMethodPtr), expr.GetSpan())
-
-		// Call the push method with the byte value
-		g.irBuilder.BuildIndirectFuncCall(pushMethod, []zeus_value.Value{u8Constant}, expr.GetSpan())
+	// Get or create the string class
+	stringClass := g.getOrCreateStringClass()
+	
+	// Get string bytes
+	stringBytes := []byte(expr.Value.Value)
+	stringLen := len(stringBytes)
+	
+	// Get or create u8[] array class
+	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
+	
+	// Create u8[] array with capacity = string length
+	capacity := zeus_value.NewConstant(fmt.Sprintf("%d", stringLen), zeus_value.IntType{Size: zeus_value.I32, Span: expr.GetSpan()}, expr.GetSpan())
+	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{capacity}, expr.GetSpan())
+	
+	// Set each byte using array.set(index, byte)
+	for i, b := range stringBytes {
+		// Get the .set() method from the array object
+		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, expr.GetSpan())
+		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
+		
+		// Create index and byte constants
+		index := zeus_value.NewConstant(fmt.Sprintf("%d", i), zeus_value.IntType{Size: zeus_value.I32, Span: expr.GetSpan()}, expr.GetSpan())
+		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+		
+		// Call array.set(index, byte)
+		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{index, byteVal}, expr.GetSpan())
 	}
 	
-	return u8Array
+	// Create string object with the u8[] array
+	return g.irBuilder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, expr.GetSpan())
 }
 
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {

@@ -29,7 +29,7 @@ func NewIRBuilder() *IRBuilder {
 	symbol_table := symbol_table.NewSymbolTable[zeus_value.Value]()
 	symbol_table.EnterScope()
 
-	return &IRBuilder{
+	builder := &IRBuilder{
 		currentBlock:            nil,
 		tempVarCount:            0,
 		blocksCount:             0,
@@ -38,6 +38,70 @@ func NewIRBuilder() *IRBuilder {
 		blockIdInsetionIndexMap: make(map[int]int),
 		symbolTable:             symbol_table,
 	}
+
+	// Register all primordial classes from the registry upfront
+	// This ensures DECL_CLASS instructions are always at the beginning
+	builder.initializePrimordials()
+
+	return builder
+}
+
+// initializePrimordials registers all primordial classes and functions from the registry.
+// This is called once during IRBuilder creation to ensure all primordials are declared
+// at the start of the instruction list.
+func (b *IRBuilder) initializePrimordials() {
+	registry := zeus_value.Registry
+
+	// Emit DECL_CLASS for all registered primordial classes
+	for _, class := range registry.GetAllClasses() {
+		b.emitPrimordialClassDecl(class)
+	}
+
+	// Register primordial functions in symbol table (DECL_PRIMORDIAL_FUNC is emitted in Generate)
+	for _, fn := range registry.GetAllFunctions() {
+		b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	}
+}
+
+// emitPrimordialClassDecl emits a DECL_CLASS instruction for a primordial class
+// and registers it in the symbol table
+func (b *IRBuilder) emitPrimordialClassDecl(class *zeus_value.Class) {
+	// Register in symbol table
+	b.symbolTable.DeclareGlobalSymbol(class.Name, class)
+
+	// Emit DECL_CLASS instruction
+	result := b.createTempVariable(class.GetSpan())
+	b.pushInstr(&Instr{
+		Type:   InstrTypeDeclClass,
+		Output: result,
+		Input:  NewDeclClassInstrInput(class),
+		Span:   class.GetSpan(),
+	})
+}
+
+// EmitClassDeclAtStart emits a DECL_CLASS instruction at the start of the instruction list.
+// This is used for dynamically discovered array classes that need to be declared before use.
+func (b *IRBuilder) EmitClassDeclAtStart(class *zeus_value.Class) {
+	// Save current state
+	savedBlock := b.currentBlock
+	savedIndex := b.insertionIndex
+
+	// Switch to global insertion at the start
+	b.currentBlock = nil
+	b.insertionIndex = 0
+
+	// Emit DECL_CLASS
+	result := b.createTempVariable(class.GetSpan())
+	b.pushInstr(&Instr{
+		Type:   InstrTypeDeclClass,
+		Output: result,
+		Input:  NewDeclClassInstrInput(class),
+		Span:   class.GetSpan(),
+	})
+
+	// Restore state (account for inserted instruction)
+	b.currentBlock = savedBlock
+	b.insertionIndex = savedIndex + 1
 }
 
 func (b *IRBuilder) generateUniqueSymbolName(name string) string {

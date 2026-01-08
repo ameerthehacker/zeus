@@ -6,8 +6,8 @@ const abi = @import("abi.zig");
 const debug = @import("debug.zig");
 const runtime_util = @import("runtime_util.zig");
 
-var array_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = array_gpa.allocator();
+// Use C allocator for fast small allocations
+const allocator = std.heap.c_allocator;
 
 // Constants
 const ARRAY_GROWTH_FACTOR: u32 = 2;
@@ -324,4 +324,38 @@ export fn zeus_array_set(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, i
 
         debug.log(allocator, "array_set", "set value at index {}, new length={}", .{ target_index, array_ptr.length });
     }
+}
+
+/// Copy: zeus_array_copy(this_ptr, return_buffer_ptr, source_ptr_ptr)
+/// Copies data from source array to this array (shallow copy)
+/// Auto-resizes destination if needed using existing resize logic
+export fn zeus_array_copy(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, source_ptr_ptr: *anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return, not used
+
+    const dest_array = castToArrayObj(this_ptr);
+
+    // Dereference to get the source array pointer (passed via alloca)
+    const source_obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(source_ptr_ptr))).*;
+    const source_array = castToArrayObj(source_obj_ptr);
+
+    const element_size = getElementSize(dest_array);
+    const copy_length = source_array.length;
+
+    // Auto-resize destination if needed (reuses existing resize logic)
+    if (dest_array.capacity < copy_length) {
+        if (!resizeArray(dest_array, copy_length)) {
+            return;
+        }
+    }
+
+    // Copy the data
+    if (source_array.data != null and dest_array.data != null and copy_length > 0) {
+        const src_bytes = getDataBytes(source_array).?;
+        const dest_bytes = getDataBytes(dest_array).?;
+        const copy_size = getElementOffset(copy_length, element_size);
+        @memcpy(dest_bytes[0..copy_size], src_bytes[0..copy_size]);
+    }
+
+    // Update destination length
+    dest_array.length = copy_length;
 }

@@ -6,6 +6,7 @@ const std = @import("std");
 pub const ZeusObjectType = enum(u8) {
     object = 0,
     array = 1,
+    string = 2,
 };
 
 pub const ZeusType = enum(u8) { _i8 = 0, _i16 = 1, _i32 = 2, _i64 = 3, _f32 = 4, _f64 = 5, _bool = 6, object = 7, _null = 8 };

@@ -16,14 +16,25 @@ const stackmap = @import("stackmap.zig");
 const gc_mod = @import("gc.zig");
 const debug = @import("debug.zig");
 
-var gc_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-const allocator = gc_gpa.allocator();
+// Use C allocator for fast small allocations
+const allocator = std.heap.c_allocator;
 
 // Global GC instance
 var gc_instance = gc_mod.GC.init(allocator);
 
+// GC threshold - only run GC when we have this many allocations
+const GC_ALLOCATION_THRESHOLD: u32 = 100;
+var allocations_since_gc: u32 = 0;
+
 export fn zeus_gc_poll() void {
-    debug.log(allocator, "gc_poll", "===GC POLL START===", .{});
+    // Only run GC when we've accumulated enough allocations
+    // This avoids expensive stack walking on every safepoint
+    if (allocations_since_gc < GC_ALLOCATION_THRESHOLD) {
+        return;
+    }
+
+    debug.log(allocator, "gc_poll", "===GC POLL START (after {} allocations)===", .{allocations_since_gc});
+    allocations_since_gc = 0;
 
     // Clear previous GC roots
     gc_instance.clearRoots();
@@ -38,12 +49,14 @@ export fn zeus_gc_poll() void {
     // Register all found pointers as GC roots
     gc_instance.registerRoots(gc_roots.items);
 
-    // TODO: Trigger GC based on good heuristics
     gc_instance.gc();
     debug.log(allocator, "gc_poll", "===GC POLL END===", .{});
 }
 
 pub export fn zeus_gc_alloc(size: u32) ?*anyopaque {
+    // Track allocations for GC threshold
+    allocations_since_gc += 1;
+
     // Use the GC instance to allocate and track the object
     return gc_instance.alloc(size);
 }

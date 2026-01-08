@@ -2,11 +2,17 @@
     {
         "name": "utf8-char",
         "entry": "utf8-char.zs",
-        "exit": "169"
+        "exit": "97"
     },
     {
         "name": "string as byte array",
         "entry": "byte_array.zs",
         "exit": "98"
+    },
+    {
+        "name": "string-mutability",
+        "entry": "string-mutability.zs",
+        "exit": "0",
+        "stdout": "Hello World! 👋hello World! 👋"
     }
 ]
