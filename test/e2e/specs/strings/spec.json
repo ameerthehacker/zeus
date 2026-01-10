@@ -14,5 +14,20 @@
         "entry": "string-mutability.zs",
         "exit": "0",
         "stdout": "Hello World! 👋hello World! 👋"
+    },
+    {
+        "name": "string-length",
+        "entry": "string-length.zs",
+        "exit": "9"
+    },
+    {
+        "name": "string-compare",
+        "entry": "string-compare.zs",
+        "exit": "0"
+    },
+    {
+        "name": "string-equals",
+        "entry": "string-equals.zs",
+        "exit": "0"
     }
 ]

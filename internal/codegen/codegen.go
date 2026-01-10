@@ -576,6 +576,12 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 			leftValue := llvm.ConstPointerNull(rightValue.Type())
 			return intIntOp(leftValue, rightValue, opName)
 		}
+	case zeus_value.BoolType:
+		// Boolean comparison (i1 values use integer comparison)
+		switch rightType.(type) {
+		case zeus_value.BoolType:
+			return intIntOp(c.toLLVMValue(left), c.toLLVMValue(right), opName)
+		}
 	}
 
 	panic(fmt.Sprintf("invalid types %s and %s for binary operation %s", leftType, rightType, opName))

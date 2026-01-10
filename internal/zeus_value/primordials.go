@@ -25,7 +25,14 @@ const (
 
 // String property names
 const (
-	STRING_PROPERTY_DATA = "data"
+	STRING_PROPERTY_DATA   = "data"
+	STRING_PROPERTY_LENGTH = "length"
+)
+
+// String method names
+const (
+	STRING_METHOD_COMPARE = "compare"
+	STRING_METHOD_EQUALS  = "equals"
 )
 
 func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
@@ -66,10 +73,32 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 // in the runtime constructor we intern the string and return the same pointer
 func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	u8ArrayObjectType := ObjectType{Class: *GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
-	dataProperty := NewClassProperty(NewVar("data", u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
+	stringObjectType := ObjectType{Class: *NewClass(ZEUS_PRIMORDIAL_STRING, nil, nil, ZEUS_PRIMORDIAL_STRING, nil, span)}
+
+	// Properties
+	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
+	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
+	properties := []*ClassProperty{dataProperty, lengthProperty}
+
+	// Methods
 	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
 		NewVar("bytes", u8ArrayObjectType, true, span),
 	}, VoidType{Span: span}, span)
-	return NewClass(ZEUS_PRIMORDIAL_STRING, []*ClassProperty{dataProperty}, []*ClassMethod{NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span})}, ZEUS_PRIMORDIAL_STRING, nil, span)
+	// compare: returns -1 if this < other, 0 if equal, 1 if this > other
+	compareMethod := NewFunction(STRING_METHOD_COMPARE, []*Var{
+		NewVar("other", stringObjectType, true, span),
+	}, IntType{Size: I8, Signed: true, Span: span}, span)
+	// equals: returns true if strings are equal, false otherwise
+	equalsMethod := NewFunction(STRING_METHOD_EQUALS, []*Var{
+		NewVar("other", stringObjectType, true, span),
+	}, BoolType{Span: span}, span)
+
+	methods := []*ClassMethod{
+		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
+		NewClassMethod(compareMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
+		NewClassMethod(equalsMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
+	}
+
+	return NewClass(ZEUS_PRIMORDIAL_STRING, properties, methods, ZEUS_PRIMORDIAL_STRING, nil, span)
 }
 
