@@ -14,11 +14,11 @@ Zeus provides built-in functions that are available globally without any imports
 Prints a string to standard output.
 
 ```zeus
-log(message: u8[]): void
+log(message: string): void
 ```
 
 **Parameters:**
-- `message` — A string (u8 array) to print
+- `message` — A string to print
 
 **Example:**
 
@@ -26,6 +26,9 @@ log(message: u8[]): void
 function main(): void {
   log("Hello, World!");
   log("Zeus supports UTF-8 🚀");
+  
+  let greeting: string = "Welcome to Zeus!";
+  log(greeting);
 }
 ```
 
@@ -33,32 +36,28 @@ function main(): void {
 ```
 Hello, World!
 Zeus supports UTF-8 🚀
+Welcome to Zeus!
 ```
 
 <Aside type="tip">
   The `log` function fully supports UTF-8, including emojis and international characters.
 </Aside>
 
----
+### Logging Byte Arrays
 
-## String Literals
-
-In Zeus, string literals are automatically converted to `u8[]` (byte arrays). This means you can pass string literals directly to functions expecting `u8[]`:
+Since `u8[]` can be implicitly converted to `string`, you can log byte arrays by first converting them:
 
 ```zeus
 function main(): void {
-  // String literal is automatically a u8[]
-  log("Hello!");
+  let bytes: u8[] = new u8[];
+  bytes[0] = 'H';
+  bytes[1] = 'i';
   
-  // You can also work with the bytes directly
-  let greeting: u8[] = "Hi there";
-  log(greeting);
+  // Convert to string for logging
+  let text: string = bytes;
+  log(text);  // "Hi"
 }
 ```
-
-<Aside type="note">
-  Strings in Zeus are UTF-8 encoded byte arrays. Each character may be 1-4 bytes depending on the Unicode code point.
-</Aside>
 
 ---
 

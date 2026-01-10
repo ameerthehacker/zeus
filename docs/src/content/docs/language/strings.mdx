@@ -1,0 +1,217 @@
+---
+title: Strings
+description: String handling in Zeus — immutable text with UTF-8 support.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus provides a first-class `string` type for working with text. Strings are **immutable** sequences of UTF-8 encoded bytes.
+
+## String Literals
+
+String literals are enclosed in double quotes and create `string` objects:
+
+```zeus
+let greeting: string = "Hello, Zeus!";
+let emoji: string = "Welcome 👋";
+let japanese: string = "こんにちは";
+```
+
+String literals fully support UTF-8, including multi-byte characters and emojis.
+
+## String vs u8[]
+
+Zeus has two ways to work with text:
+
+| Type | Mutability | Use Case |
+|------|------------|----------|
+| `string` | Immutable | Text that shouldn't change |
+| `u8[]` | Mutable | When you need to modify bytes |
+
+### Creating Strings
+
+```zeus
+// String literal creates an immutable string
+let message: string = "Hello";
+```
+
+### Converting to Mutable Bytes
+
+When you assign a `string` to a `u8[]`, Zeus creates a **copy** of the underlying bytes. This copy is mutable:
+
+```zeus
+let original: string = "Hello";
+
+// Creates a mutable copy of the bytes
+let bytes: u8[] = original;
+
+// Modify the copy (original is unchanged)
+bytes[0] = 'h';
+
+log(original);  // "Hello" (unchanged)
+
+// To log bytes, convert back to string
+let modified: string = bytes;
+log(modified);  // "hello"
+```
+
+<Aside type="note">
+  Converting between `string` and `u8[]` always creates a copy. This ensures strings remain immutable.
+</Aside>
+
+## Properties
+
+### length
+
+Returns the length of the string in bytes (not characters).
+
+```zeus
+let text: string = "Hello";
+let len: i32 = text.length;  // 5
+
+let emoji: string = "👋";
+let emojiLen: i32 = emoji.length;  // 4 (UTF-8 bytes)
+```
+
+<Aside type="caution">
+  For multi-byte UTF-8 characters, `length` returns the byte count, not the character count. The emoji 👋 is 4 bytes in UTF-8.
+</Aside>
+
+## Methods
+
+### compare
+
+Compares two strings lexicographically (byte-by-byte).
+
+```zeus
+compare(other: string): i8
+```
+
+**Returns:**
+- `-1` if this string comes before `other`
+- `0` if the strings are equal
+- `1` if this string comes after `other`
+
+```zeus
+let a: string = "apple";
+let b: string = "banana";
+let c: string = "apple";
+
+let cmp1: i8 = a.compare(b);  // -1 (apple < banana)
+let cmp2: i8 = b.compare(a);  // 1  (banana > apple)
+let cmp3: i8 = a.compare(c);  // 0  (apple == apple)
+```
+
+### equals
+
+Checks if two strings are equal.
+
+```zeus
+equals(other: string): boolean
+```
+
+**Returns:** `true` if the strings have the same bytes, `false` otherwise.
+
+```zeus
+let a: string = "hello";
+let b: string = "hello";
+let c: string = "world";
+
+if (a.equals(b)) {
+  // This executes - strings are equal
+}
+
+if (a.equals(c) == false) {
+  // This executes - strings are different
+}
+```
+
+## Implicit Conversions
+
+Zeus supports implicit conversion between `string` and `u8[]`:
+
+### string → u8[]
+
+Creates a mutable copy of the string's bytes:
+
+```zeus
+let text: string = "Hello";
+let bytes: u8[] = text;  // Mutable copy
+bytes[0] = 'J';          // Modify the copy
+```
+
+### u8[] → string
+
+Creates a new immutable string from the bytes:
+
+```zeus
+let bytes: u8[] = new u8[];
+bytes[0] = 'H';
+bytes[1] = 'i';
+
+let text: string = bytes;  // Creates immutable string "Hi"
+```
+
+## Working with Bytes
+
+Since strings are UTF-8 encoded, you can work with individual bytes through `u8[]`:
+
+```zeus
+function main(): void {
+  let greeting: string = "Hi!";
+  
+  // Convert to mutable bytes
+  let bytes: u8[] = greeting;
+  
+  // Access individual bytes
+  let h: u8 = bytes[0];  // 72 ('H')
+  let i: u8 = bytes[1];  // 105 ('i')
+  let exclaim: u8 = bytes[2];  // 33 ('!')
+  
+  // Modify bytes
+  bytes[0] = 'h';  // lowercase
+  
+  // Convert back to string for output
+  let modified: string = bytes;
+  log(modified);  // "hi!"
+}
+```
+
+## UTF-8 Encoding
+
+Strings use UTF-8 encoding, where characters can be 1-4 bytes:
+
+| Character | Bytes | Example |
+|-----------|-------|---------|
+| ASCII | 1 byte | `'A'` = 65 |
+| Extended Latin | 2 bytes | `'é'` |
+| CJK | 3 bytes | `'日'` |
+| Emoji | 4 bytes | `'👋'` |
+
+```zeus
+let ascii: string = "A";
+let asciiLen: i32 = ascii.length;  // 1
+
+let emoji: string = "👋";
+let emojiLen: i32 = emoji.length;  // 4
+```
+
+## Future Features
+
+<Aside type="note" title="String Interning">
+  String interning (deduplicating identical strings in memory) is planned for a future release. This optimization will reduce memory usage when the same string value appears multiple times.
+</Aside>
+
+The following features are planned for future releases:
+
+- String concatenation
+- Substring extraction
+- Search and replace
+- String interpolation (`${expression}`)
+- Character iteration
+
+---
+
+## Next
+
+<a href="/language/arrays/">Arrays →</a>

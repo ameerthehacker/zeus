@@ -124,6 +124,7 @@ export default defineConfig({
             { label: 'Built-in Functions', slug: 'language/built-in-functions' },
             { label: 'Classes', slug: 'language/classes' },
             { label: 'Arrays', slug: 'language/arrays' },
+            { label: 'Strings', slug: 'language/strings' },
             { label: 'Control Flow', slug: 'language/control-flow' },
             { label: 'Operators', slug: 'language/operators' },
             { label: 'Modules', slug: 'language/modules' },
@@ -153,7 +154,6 @@ export default defineConfig({
           label: 'Coming Soon',
           badge: { text: 'Planned', variant: 'note' },
           items: [
-            { label: 'Strings', slug: 'coming-soon/strings' },
             { label: 'Inheritance', slug: 'coming-soon/inheritance' },
             { label: 'Interfaces', slug: 'coming-soon/interfaces' },
             { label: 'Closures', slug: 'coming-soon/closures' },

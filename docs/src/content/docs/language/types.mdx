@@ -123,6 +123,7 @@ let floating: f64 = integer;  // OK: i32 → f64
 - Smaller integers → larger integers (e.g., `i8` → `i32`)
 - Integers → floats (e.g., `i32` → `f64`)
 - `null` → any object type
+- `string` ↔ `u8[]` (creates a copy)
 
 ### Type Errors
 
@@ -143,6 +144,26 @@ let flag: boolean = num;  // Error: cannot convert i32 to boolean
 ---
 
 ## Complex Types
+
+### Strings
+
+The `string` type represents immutable UTF-8 text:
+
+```zeus
+let greeting: string = "Hello, World!";
+let emoji: string = "Zeus 🚀";
+```
+
+Strings can be implicitly converted to `u8[]` (mutable byte array) and vice versa:
+
+```zeus
+let text: string = "Hello";
+let bytes: u8[] = text;    // Creates mutable copy
+bytes[0] = 'h';            // Modify the copy
+let modified: string = bytes;  // Back to string
+```
+
+See [Strings](/language/strings/) for more details.
 
 ### Arrays
 
