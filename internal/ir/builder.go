@@ -597,6 +597,52 @@ func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property 
 	return result
 }
 
+// BuildLoadProperty loads a property value from an object.
+// This is a convenience method that combines BuildObjectPropertyAccess and BuildLoad,
+// setting the appropriate types on the intermediate variables.
+func (b *IRBuilder) BuildLoadProperty(object zeus_value.Value, propertyName string, propertyType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	// Get property pointer
+	propPtr := b.BuildObjectPropertyAccess(object, propertyName, false, span)
+	propPtrVar := zeus_value.AsVar(propPtr)
+	propPtrVar.ValueType = propertyType
+
+	// Load the property value
+	propValue := b.BuildLoad(propPtrVar, span)
+	propValueVar := zeus_value.AsVar(propValue)
+	propValueVar.ValueType = propertyType
+
+	return propValue
+}
+
+// BuildMethodCall calls a method on an object and returns the result.
+// This is a convenience method that combines:
+// 1. BuildObjectPropertyAccess to get the method
+// 2. BuildLoad to load the method pointer
+// 3. BuildIndirectFuncCall to call the method
+// All intermediate variables are properly typed.
+func (b *IRBuilder) BuildMethodCall(object zeus_value.Value, methodName string, args []zeus_value.Value, returnType zeus_value.ValueType, argTypes []zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	// Create method function type
+	methodType := zeus_value.NewFunctionType(returnType, argTypes)
+
+	// Get method pointer
+	methodPtr := b.BuildObjectPropertyAccess(object, methodName, false, span)
+	methodPtrVar := zeus_value.AsVar(methodPtr)
+	methodPtrVar.ValueType = methodType
+
+	// Load the method
+	method := b.BuildLoad(methodPtrVar, span)
+	methodVar := zeus_value.AsVar(method)
+	methodVar.ValueType = methodType
+
+	// Call the method
+	result := b.BuildIndirectFuncCall(method, args, span)
+	if resultVar := zeus_value.AsVar(result); resultVar != nil {
+		resultVar.ValueType = returnType
+	}
+
+	return result
+}
+
 func (b *IRBuilder) GetFunctionBlocks() []*BasicBlock {
 	functionBlocks := []*BasicBlock{}
 

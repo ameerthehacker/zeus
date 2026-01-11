@@ -222,12 +222,14 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		// Check if this is an array element assignment (array[0][1] = expr)
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
 			// Generate: arrayObject.set(index, value)
-			// Get the .set() method from the array object
-			setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET, false, expr.GetSpan())
-			setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
-			
-			// Call array.set(index, value)
-			g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{arrayRef.Index, right}, expr.GetSpan())
+			// Type checking will catch invalid assignments (e.g., to strings)
+			i32Type := zeus_value.IntType{Size: zeus_value.I32, Span: expr.GetSpan()}
+			valueType := zeus_value.GetValueType(right)
+			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
+				[]zeus_value.Value{arrayRef.Index, right},
+				zeus_value.VoidType{Span: expr.GetSpan()},
+				[]zeus_value.ValueType{i32Type, valueType},
+				expr.GetSpan())
 			
 			// Return the value that was set
 			return right
@@ -409,12 +411,12 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 // is emitted at the beginning of the instruction list.
 func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_value.Class {
 	arrayClassName := arrayType.String()
-
+	
 	// Check if already in symbol table (already processed)
 	if existingClass, ok := g.symbolTable().GetSymbol(arrayClassName); ok {
 		return existingClass.(*zeus_value.Class)
 	}
-
+	
 	// Get or create from registry (handles nested array types internally)
 	arrayClass := zeus_value.Registry.GetOrCreateArrayClass(arrayType)
 
@@ -423,7 +425,7 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 
 	// Emit DECL_CLASS at the beginning of the instruction list
 	g.irBuilder.EmitClassDeclAtStart(arrayClass)
-
+	
 	return arrayClass
 }
 
@@ -457,14 +459,14 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 	// Collect all indices
 	indices := []zeus_value.Value{}
 	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
-		index := indexExpr.Accept(g)
-		
+			index := indexExpr.Accept(g)
+			
 		// Cast index to i32 if needed (array methods expect i32)
-		indexType := zeus_value.GetValueType(index)
-		if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
-			index = g.irBuilder.BuildCast(index, zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
-		}
-		
+			indexType := zeus_value.GetValueType(index)
+			if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
+				index = g.irBuilder.BuildCast(index, zeus_value.IntType{Size: zeus_value.I32, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
+			}
+			
 		indices = append(indices, index)
 	}
 	

@@ -188,59 +188,42 @@ func (p *StringCastLoweringPass) lowerU8ArrayToStringCast(l *Lowerer, castInstr 
 	output := castInstr.Output
 	builder := l.GetBuilder()
 
-	// Get classes from symbol table
+	// Get classes and types
 	u8ArrayClass := getU8ArrayClass(builder)
 	stringClass := getStringClass(builder)
 	u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
 	stringType := zeus_value.NewObjectType(*stringClass)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Span: span}
 
-	// Create copy method function type: (source: u8[]) -> void
-	copyMethodType := zeus_value.NewFunctionType(
-		zeus_value.VoidType{Span: span},
-		[]zeus_value.ValueType{u8ArrayType},
-	)
+	// Set builder to insert before the CAST instruction
+	setInsertionPoint(builder, block, castInstr)
 
-	// Set builder to insert before the CAST instruction in the correct block
-	if block != nil {
-		builder.SetBlockInsertionBefore(block, castInstr)
-	} else {
-		builder.SetInsertionBefore(castInstr)
-	}
-
-	// Get source array length: source.length
-	lengthPtr := builder.BuildObjectPropertyAccess(sourceArray, zeus_value.ARRAY_PROPERTY_LENGTH, false, span)
-	lengthPtrVar := zeus_value.AsVar(lengthPtr)
-	lengthPtrVar.ValueType = zeus_value.IntType{Size: zeus_value.I32, Span: span}
-	sourceLength := builder.BuildLoad(lengthPtrVar, span)
-	sourceLengthVar := zeus_value.AsVar(sourceLength)
-	sourceLengthVar.ValueType = zeus_value.IntType{Size: zeus_value.I32, Span: span}
+	// Get source array length
+	sourceLength := builder.BuildLoadProperty(sourceArray, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
 
 	// Create new u8[] with capacity = source length
 	newArray := builder.BuildNewObj(u8ArrayClass, []zeus_value.Value{sourceLength}, span)
-	newArrayVar := zeus_value.AsVar(newArray)
-	newArrayVar.ValueType = u8ArrayType
+	zeus_value.AsVar(newArray).ValueType = u8ArrayType
 
 	// Call copy on new array: newArray.copy(source)
-	copyMethodPtr := builder.BuildObjectPropertyAccess(newArray, zeus_value.ARRAY_METHOD_COPY, false, span)
-	copyMethodPtrVar := zeus_value.AsVar(copyMethodPtr)
-	copyMethodPtrVar.ValueType = copyMethodType
-	copyMethod := builder.BuildLoad(copyMethodPtrVar, span)
-	copyMethodVar := zeus_value.AsVar(copyMethod)
-	copyMethodVar.ValueType = copyMethodType
-	builder.BuildIndirectFuncCall(copyMethod, []zeus_value.Value{sourceArray}, span)
+	builder.BuildMethodCall(newArray, zeus_value.ARRAY_METHOD_COPY,
+		[]zeus_value.Value{sourceArray},
+		zeus_value.VoidType{Span: span},
+		[]zeus_value.ValueType{u8ArrayType},
+		span)
 
 	// Create new string with the copied array
 	result := builder.BuildNewObj(stringClass, []zeus_value.Value{newArray}, span)
 	resultVar := zeus_value.AsVar(result)
 	resultVar.ValueType = stringType
 
-	// Update the output variable name to reference the result
+	// Update the output variable
 	if output != nil {
 		output.Name = resultVar.Name
 		output.ValueType = stringType
 	}
 
-	// Delete the original CAST instruction - it has been lowered
+	// Delete the original CAST instruction
 	builder.DeleteInstr(block, castInstr)
 }
 
@@ -252,38 +235,19 @@ func (p *StringCastLoweringPass) lowerStringToU8ArrayCast(l *Lowerer, castInstr 
 	output := castInstr.Output
 	builder := l.GetBuilder()
 
-	// Get classes from symbol table
+	// Get classes and types
 	u8ArrayClass := getU8ArrayClass(builder)
 	u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Span: span}
 
-	// Create copy method function type: (source: u8[]) -> void
-	copyMethodType := zeus_value.NewFunctionType(
-		zeus_value.VoidType{Span: span},
-		[]zeus_value.ValueType{u8ArrayType},
-	)
-
-	// Set builder to insert before the CAST instruction in the correct block
-	if block != nil {
-		builder.SetBlockInsertionBefore(block, castInstr)
-	} else {
-		builder.SetInsertionBefore(castInstr)
-	}
+	// Set builder to insert before the CAST instruction
+	setInsertionPoint(builder, block, castInstr)
 
 	// Access string.data to get the source u8[]
-	dataPtr := builder.BuildObjectPropertyAccess(sourceString, zeus_value.STRING_PROPERTY_DATA, false, span)
-	dataPtrVar := zeus_value.AsVar(dataPtr)
-	dataPtrVar.ValueType = u8ArrayType
-	sourceData := builder.BuildLoad(dataPtrVar, span)
-	sourceDataVar := zeus_value.AsVar(sourceData)
-	sourceDataVar.ValueType = u8ArrayType
+	sourceData := builder.BuildLoadProperty(sourceString, zeus_value.STRING_PROPERTY_DATA, u8ArrayType, span)
 
-	// Get source data length: sourceData.length
-	lengthPtr := builder.BuildObjectPropertyAccess(sourceData, zeus_value.ARRAY_PROPERTY_LENGTH, false, span)
-	lengthPtrVar := zeus_value.AsVar(lengthPtr)
-	lengthPtrVar.ValueType = zeus_value.IntType{Size: zeus_value.I32, Span: span}
-	sourceLength := builder.BuildLoad(lengthPtrVar, span)
-	sourceLengthVar := zeus_value.AsVar(sourceLength)
-	sourceLengthVar.ValueType = zeus_value.IntType{Size: zeus_value.I32, Span: span}
+	// Get source data length
+	sourceLength := builder.BuildLoadProperty(sourceData, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
 
 	// Create new u8[] with capacity = source length
 	newArray := builder.BuildNewObj(u8ArrayClass, []zeus_value.Value{sourceLength}, span)
@@ -291,21 +255,19 @@ func (p *StringCastLoweringPass) lowerStringToU8ArrayCast(l *Lowerer, castInstr 
 	newArrayVar.ValueType = u8ArrayType
 
 	// Call copy on new array: newArray.copy(sourceData)
-	copyMethodPtr := builder.BuildObjectPropertyAccess(newArray, zeus_value.ARRAY_METHOD_COPY, false, span)
-	copyMethodPtrVar := zeus_value.AsVar(copyMethodPtr)
-	copyMethodPtrVar.ValueType = copyMethodType
-	copyMethod := builder.BuildLoad(copyMethodPtrVar, span)
-	copyMethodVar := zeus_value.AsVar(copyMethod)
-	copyMethodVar.ValueType = copyMethodType
-	builder.BuildIndirectFuncCall(copyMethod, []zeus_value.Value{sourceData}, span)
+	builder.BuildMethodCall(newArray, zeus_value.ARRAY_METHOD_COPY,
+		[]zeus_value.Value{sourceData},
+		zeus_value.VoidType{Span: span},
+		[]zeus_value.ValueType{u8ArrayType},
+		span)
 
-	// Update the output variable name to reference the new array
+	// Update the output variable
 	if output != nil {
 		output.Name = newArrayVar.Name
 		output.ValueType = u8ArrayType
 	}
 
-	// Delete the original CAST instruction - it has been lowered
+	// Delete the original CAST instruction
 	builder.DeleteInstr(block, castInstr)
 }
 
@@ -313,12 +275,19 @@ func (p *StringCastLoweringPass) lowerStringToU8ArrayCast(l *Lowerer, castInstr 
 // Helper functions for lowering passes
 // =============================================================================
 
+// setInsertionPoint sets the builder to insert before the given instruction
+func setInsertionPoint(builder *IRBuilder, block *BasicBlock, instr *Instr) {
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBefore(instr)
+	}
+}
+
 // getU8ArrayClass returns the u8[] class from symbol table
 // This class must exist by the time lowering runs (registered during type checking)
 func getU8ArrayClass(builder *IRBuilder) *zeus_value.Class {
-	u8ArrayClassName := "u8[]"
-
-	existingClass, ok := builder.symbolTable.GetSymbol(u8ArrayClassName)
+	existingClass, ok := builder.symbolTable.GetSymbol("u8[]")
 	zeus_error.Assert(ok, "u8[] class not found in symbol table - lowering requires type checking to run first")
 
 	class := zeus_value.AsClass(existingClass)
@@ -330,9 +299,7 @@ func getU8ArrayClass(builder *IRBuilder) *zeus_value.Class {
 // getStringClass returns the string class from symbol table
 // This class must exist by the time lowering runs (registered during IRBuilder initialization)
 func getStringClass(builder *IRBuilder) *zeus_value.Class {
-	stringClassName := zeus_value.ZEUS_PRIMORDIAL_STRING
-
-	existingClass, ok := builder.symbolTable.GetSymbol(stringClassName)
+	existingClass, ok := builder.symbolTable.GetSymbol(zeus_value.ZEUS_PRIMORDIAL_STRING)
 	zeus_error.Assert(ok, "string class not found in symbol table - lowering requires type checking to run first")
 
 	class := zeus_value.AsClass(existingClass)
@@ -393,14 +360,11 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 	output := instr.Output
 	builder := l.GetBuilder()
 
-	// Set builder to insert before the GET_INDEX instruction in the correct block
-	if block != nil {
-		builder.SetBlockInsertionBefore(block, instr)
-	} else {
-		builder.SetInsertionBefore(instr)
-	}
+	// Set builder to insert before the GET_INDEX instruction
+	setInsertionPoint(builder, block, instr)
 
 	currentValue := input.Array
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Span: span}
 
 	// Check if this is string indexing
 	targetType := zeus_value.GetValueType(currentValue)
@@ -408,101 +372,62 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 		// String indexing: first access the .data property to get the u8[]
 		zeus_error.Assert(len(input.Indices) == 1, "string indexing should only have one index - type checking should have caught this")
 
-		// Get the u8[] class for type annotations
 		u8ArrayClass := getU8ArrayClass(builder)
 		u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
+		u8Type := zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}
 
 		// Access string.data to get the u8[]
-		dataPtr := builder.BuildObjectPropertyAccess(currentValue, zeus_value.STRING_PROPERTY_DATA, false, span)
-		dataPtrVar := zeus_value.AsVar(dataPtr)
-		dataPtrVar.ValueType = u8ArrayType
-		dataArray := builder.BuildLoad(dataPtrVar, span)
-		dataArrayVar := zeus_value.AsVar(dataArray)
-		dataArrayVar.ValueType = u8ArrayType
+		dataArray := builder.BuildLoadProperty(currentValue, zeus_value.STRING_PROPERTY_DATA, u8ArrayType, span)
 
-		// Now call .get(index) on the u8[] array
-		elementType := zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}
-		getMethodType := zeus_value.NewFunctionType(elementType, []zeus_value.ValueType{
-			zeus_value.IntType{Size: zeus_value.I32, Span: span},
-		})
-
-		getMethodPtr := builder.BuildObjectPropertyAccess(dataArray, zeus_value.ARRAY_METHOD_GET, false, span)
-		getMethodPtrVar := zeus_value.AsVar(getMethodPtr)
-		getMethodPtrVar.ValueType = getMethodType
-
-		getMethod := builder.BuildLoad(getMethodPtrVar, span)
-		getMethodVar := zeus_value.AsVar(getMethod)
-		getMethodVar.ValueType = getMethodType
-
-		result := builder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{input.Indices[0]}, span)
-		resultVar := zeus_value.AsVar(result)
-		resultVar.ValueType = elementType
+		// Call .get(index) on the u8[] array
+		result := builder.BuildMethodCall(dataArray, zeus_value.ARRAY_METHOD_GET,
+			[]zeus_value.Value{input.Indices[0]},
+			u8Type,
+			[]zeus_value.ValueType{i32Type},
+			span)
 
 		// Update the output variable
 		if output != nil {
+			resultVar := zeus_value.AsVar(result)
 			output.Name = resultVar.Name
-			output.ValueType = resultVar.ValueType
+			output.ValueType = u8Type
 		}
 
-		// Delete the original GET_INDEX instruction
 		builder.DeleteInstr(block, instr)
 		return
 	}
 
 	// Process each index, calling .get() method for each one
 	for _, index := range input.Indices {
-		// Get the array type to determine the element type
 		arrayType := zeus_value.GetValueType(currentValue)
-		var elementType zeus_value.ValueType
-		
+
 		objType := zeus_value.AsObjectType(arrayType)
 		zeus_error.Assert(objType != nil && objType.Class.ArrayElementType != nil,
 			"GET_INDEX lowering requires array type with element type - type checking should have caught this")
-		elementType = objType.Class.ArrayElementType
-
-		// Create get method function type: (index: i32) -> ElementType
-		getMethodType := zeus_value.NewFunctionType(elementType, []zeus_value.ValueType{
-			zeus_value.IntType{Size: zeus_value.I32, Span: span},
-		})
-
-		// Get the .get() method from the array object
-		getMethodPtr := builder.BuildObjectPropertyAccess(currentValue, zeus_value.ARRAY_METHOD_GET, false, span)
-		getMethodPtrVar := zeus_value.AsVar(getMethodPtr)
-		getMethodPtrVar.ValueType = getMethodType
-
-		// Load the method pointer
-		getMethod := builder.BuildLoad(getMethodPtrVar, span)
-		getMethodVar := zeus_value.AsVar(getMethod)
-		getMethodVar.ValueType = getMethodType
+		elementType := objType.Class.ArrayElementType
 
 		// Call array.get(index)
-		result := builder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{index}, span)
+		result := builder.BuildMethodCall(currentValue, zeus_value.ARRAY_METHOD_GET,
+			[]zeus_value.Value{index},
+			elementType,
+			[]zeus_value.ValueType{i32Type},
+			span)
+
+		// Set the result type - handle nested arrays specially
 		resultVar := zeus_value.AsVar(result)
-		
-		// Set the result type
-		// If element is an array type, it needs to be wrapped in ObjectType
 		if arrayElemType, ok := elementType.(zeus_value.ArrayType); ok {
 			// For nested arrays, we need to get the array class
-			arrayClassName := arrayElemType.String()
-			if existingClass, ok := builder.symbolTable.GetSymbol(arrayClassName); ok {
+			if existingClass, ok := builder.symbolTable.GetSymbol(arrayElemType.String()); ok {
 				if class := zeus_value.AsClass(existingClass); class != nil {
 					resultVar.ValueType = zeus_value.NewObjectType(*class)
-				} else {
-					resultVar.ValueType = elementType
 				}
-			} else {
-				resultVar.ValueType = elementType
 			}
-		} else if objType, ok := elementType.(zeus_value.ObjectType); ok {
-			resultVar.ValueType = objType
-		} else {
-			resultVar.ValueType = elementType
 		}
 
 		currentValue = result
 	}
 
-	// Update the output variable name to reference the final result
+	// Update the output variable
 	if output != nil && currentValue != nil {
 		if resultVar := zeus_value.AsVar(currentValue); resultVar != nil {
 			output.Name = resultVar.Name
@@ -510,6 +435,5 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 		}
 	}
 
-	// Delete the original GET_INDEX instruction - it has been lowered
 	builder.DeleteInstr(block, instr)
 }
