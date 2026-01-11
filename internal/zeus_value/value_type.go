@@ -426,6 +426,15 @@ func IsFloatType(value ValueType) bool {
 	}
 }
 
+func AsFloatType(value ValueType) *FloatType {
+	switch value := value.(type) {
+	case FloatType:
+		return &value
+	default:
+		return nil
+	}
+}
+
 func IsUndefinedType(value ValueType) bool {
 	switch value.(type) {
 	case UndefinedType:

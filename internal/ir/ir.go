@@ -191,7 +191,124 @@ func (g *IRModule) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 	g.irBuilder.SetInsertionBlock(merge_block)
 }
 
+func (g *IRModule) VisitForStmt(stmt *ast.ForStmtNode) {
+	// For loops create their own scope for the init variable
+	g.symbolTable().EnterScope()
+
+	// Execute init statement if present
+	if stmt.Init != nil {
+		stmt.Init.Accept(g)
+	}
+
+	// Create the required blocks
+	condition_block := g.irBuilder.BuildSuccessorBlock()
+	body_block := g.irBuilder.BuildSuccessorBlock()
+	update_block := g.irBuilder.BuildSuccessorBlock()
+	merge_block := g.irBuilder.BuildSuccessorBlock()
+	g.irBuilder.BuildJmp(condition_block, nil)
+
+	// Build condition block
+	g.irBuilder.SetInsertionBlock(condition_block)
+	if stmt.Condition != nil {
+		condition := stmt.Condition.Accept(g)
+		g.irBuilder.BuildCondJmp(body_block, merge_block, condition, stmt.Condition.GetSpan())
+	} else {
+		// No condition = infinite loop (always jump to body)
+		g.irBuilder.BuildJmp(body_block, nil)
+	}
+
+	// Generate the body block
+	g.irBuilder.SetInsertionBlock(body_block)
+	stmt.Body.Accept(g)
+	g.irBuilder.BuildJmp(update_block, nil)
+
+	// Generate the update block
+	g.irBuilder.SetInsertionBlock(update_block)
+	if stmt.Update != nil {
+		stmt.Update.Accept(g)
+	}
+	g.irBuilder.BuildJmp(condition_block, nil)
+
+	// Generate the merge block
+	g.irBuilder.SetInsertionBlock(merge_block)
+
+	g.symbolTable().ExitScope()
+}
+
+func (g *IRModule) isCompoundAssignment(tokenType token.TokenType) bool {
+	return tokenType == token.TokenTypePlusEqual ||
+		tokenType == token.TokenTypeMinusEqual ||
+		tokenType == token.TokenTypeStarEqual ||
+		tokenType == token.TokenTypeSlashEqual ||
+		tokenType == token.TokenTypePercentEqual
+}
+
+func (g *IRModule) getCompoundAssignmentOp(tokenType token.TokenType) InstrType {
+	switch tokenType {
+	case token.TokenTypePlusEqual:
+		return InstrTypeAdd
+	case token.TokenTypeMinusEqual:
+		return InstrTypeSub
+	case token.TokenTypeStarEqual:
+		return InstrTypeMul
+	case token.TokenTypeSlashEqual:
+		return InstrTypeDiv
+	case token.TokenTypePercentEqual:
+		return InstrTypeMod
+	default:
+		panic(fmt.Sprintf("unknown compound assignment operator: %s", tokenType))
+	}
+}
+
 func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
+	// Handle compound assignments (+=, -=, etc.)
+	if g.isCompoundAssignment(expr.Operator.Type) {
+		// Get the LHS address
+		g.isLValueExpr = true
+		left := expr.Left.Accept(g)
+		g.isLValueExpr = false
+		right := expr.Right.Accept(g)
+
+		// Check if this is an array element compound assignment
+		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
+			// For array[i] += value, we need to:
+			// 1. Get current value: temp = array.get(i)
+			// 2. Compute new value: temp = temp op value
+			// 3. Store back: array.set(i, temp)
+			currentValue := g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_GET,
+				[]zeus_value.Value{arrayRef.Index},
+				nil, // type will be inferred
+				[]zeus_value.ValueType{zeus_value.IntType{Size: zeus_value.I32, Span: expr.GetSpan()}},
+				expr.GetSpan())
+
+			op := g.getCompoundAssignmentOp(expr.Operator.Type)
+			newValue := g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+
+			i32Type := zeus_value.IntType{Size: zeus_value.I32, Span: expr.GetSpan()}
+			valueType := zeus_value.GetValueType(newValue)
+			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
+				[]zeus_value.Value{arrayRef.Index, newValue},
+				zeus_value.VoidType{Span: expr.GetSpan()},
+				[]zeus_value.ValueType{i32Type, valueType},
+				expr.GetSpan())
+
+			return newValue
+		}
+
+		// Regular variable compound assignment
+		addr := zeus_value.AsVar(left)
+		if addr == nil {
+			panic(fmt.Sprintf("invalid lvalue for compound assignment: %s", left))
+		}
+
+		// Load current value, apply operation, store back
+		currentValue := g.irBuilder.BuildLoad(addr, expr.GetSpan())
+		op := g.getCompoundAssignmentOp(expr.Operator.Type)
+		newValue := g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+		g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
+		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
+	}
+
 	g.isLValueExpr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
@@ -206,6 +323,23 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMul, expr.GetSpan())
 	case token.TokenTypeSlash:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
+	case token.TokenTypePercent:
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMod, expr.GetSpan())
+	case token.TokenTypeDoubleStar:
+		// Power operation requires f64 operands in LLVM
+		// Insert CAST instructions if operands are not f64
+		f64Type := zeus_value.FloatType{Size: zeus_value.F64, Span: expr.GetSpan()}
+		leftType := zeus_value.GetValueType(left)
+		rightType := zeus_value.GetValueType(right)
+
+		if !zeus_value.IsFloatType(leftType) || zeus_value.AsFloatType(leftType).Size != zeus_value.F64 {
+			left = g.irBuilder.BuildCast(left, f64Type, expr.GetSpan())
+		}
+		if !zeus_value.IsFloatType(rightType) || zeus_value.AsFloatType(rightType).Size != zeus_value.F64 {
+			right = g.irBuilder.BuildCast(right, f64Type, expr.GetSpan())
+		}
+
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypePower, expr.GetSpan())
 	case token.TokenTypeBangEqual:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeNotEq, expr.GetSpan())
 	case token.TokenTypeEqualEqual:
@@ -218,6 +352,10 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThan, expr.GetSpan())
 	case token.TokenTypeGreaterThanEqual:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
+	case token.TokenTypeAmpAmp:
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeAnd, expr.GetSpan())
+	case token.TokenTypePipePipe:
+		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeOr, expr.GetSpan())
 	case token.TokenTypeEqual:
 		// Check if this is an array element assignment (array[0][1] = expr)
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
@@ -230,11 +368,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 				zeus_value.VoidType{Span: expr.GetSpan()},
 				[]zeus_value.ValueType{i32Type, valueType},
 				expr.GetSpan())
-			
+
 			// Return the value that was set
 			return right
 		}
-		
+
 		// Regular variable assignment
 		addr := zeus_value.AsVar(left)
 		if addr == nil {
@@ -394,6 +532,40 @@ func (g *IRModule) VisitNull(expr *ast.NullExprNode) zeus_value.Value {
 }
 
 func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
+	// Handle prefix ++/-- (increment then return new value)
+	if expr.Operator.Type == token.TokenTypePlusPlus || expr.Operator.Type == token.TokenTypeMinusMinus {
+		// Get the address of the variable
+		g.isLValueExpr = true
+		target := expr.Expr.Accept(g)
+		g.isLValueExpr = false
+
+		addr := zeus_value.AsVar(target)
+		if addr == nil {
+			panic(fmt.Sprintf("invalid target for prefix %s: %s", expr.Operator.Type, target))
+		}
+
+		// Load current value
+		currentValue := g.irBuilder.BuildLoad(addr, expr.Operator.Span)
+
+		// Create constant 1 with same type as the address variable
+		// We use addr.ValueType because currentValue's type is not yet set (set by type checker)
+		one := zeus_value.NewConstant("1", addr.ValueType, expr.Operator.Span)
+
+		// Apply increment/decrement
+		var newValue zeus_value.Value
+		if expr.Operator.Type == token.TokenTypePlusPlus {
+			newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeAdd, expr.GetSpan())
+		} else {
+			newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeSub, expr.GetSpan())
+		}
+
+		// Store new value
+		g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
+
+		// Prefix returns the new value
+		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
+	}
+
 	value := expr.Expr.Accept(g)
 
 	switch expr.Operator.Type {
@@ -404,6 +576,39 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	default:
 		panic(fmt.Sprintf("unknown unary operator: %s", expr.Operator.Type))
 	}
+}
+
+func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value {
+	// Get the address of the variable
+	g.isLValueExpr = true
+	target := expr.Expr.Accept(g)
+	g.isLValueExpr = false
+
+	addr := zeus_value.AsVar(target)
+	if addr == nil {
+		panic(fmt.Sprintf("invalid target for postfix %s: %s", expr.Operator.Type, target))
+	}
+
+	// Load current value (this is what we'll return)
+	currentValue := g.irBuilder.BuildLoad(addr, expr.Operator.Span)
+
+	// Create constant 1 with same type as the address variable
+	// We use addr.ValueType because currentValue's type is not yet set (set by type checker)
+	one := zeus_value.NewConstant("1", addr.ValueType, expr.Operator.Span)
+
+	// Apply increment/decrement
+	var newValue zeus_value.Value
+	if expr.Operator.Type == token.TokenTypePlusPlus {
+		newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeAdd, expr.GetSpan())
+	} else {
+		newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeSub, expr.GetSpan())
+	}
+
+	// Store new value
+	g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
+
+	// Postfix returns the OLD value (before increment/decrement)
+	return currentValue
 }
 
 // getOrCreateArrayClass gets or creates an array primordial class from the registry.

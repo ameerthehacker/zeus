@@ -639,6 +639,24 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcBinaryOp(tc, instr, zeus_value.GetBiggerType, func(a, b zeus_value.ValueType) bool {
 			return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
 		})
+	case InstrTypeMod:
+		// Modulo only works on integers
+		p.tcBinaryOp(tc, instr, zeus_value.GetBiggerType, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsIntType(a) && zeus_value.IsIntType(b)
+		})
+	case InstrTypePower:
+		// Power works on numeric types (result is float if either operand is float)
+		p.tcBinaryOp(tc, instr, func(a, b zeus_value.ValueType) zeus_value.ValueType {
+			// If either is a float, result is float
+			if zeus_value.IsFloatType(a) || zeus_value.IsFloatType(b) {
+				return zeus_value.GetBiggerType(a, b)
+			}
+			// Integer power: for now, return the type of the base
+			// In practice, we might want to promote to f64 for safety
+			return a
+		}, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
+		})
 	case InstrTypeEqEq:
 		fallthrough
 	case InstrTypeNotEq:
@@ -694,6 +712,15 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcUnaryOp(tc, instr, func(_ zeus_value.ValueType) zeus_value.ValueType {
 			return zeus_value.BoolType{}
 		}, zeus_value.IsBoolType)
+	case InstrTypeAnd:
+		fallthrough
+	case InstrTypeOr:
+		// Logical AND/OR: both operands must be bool, result is bool
+		p.tcBinaryOp(tc, instr, func(_, _ zeus_value.ValueType) zeus_value.ValueType {
+			return zeus_value.BoolType{}
+		}, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsBoolType(a) && zeus_value.IsBoolType(b)
+		})
 	case InstrTypeNeg:
 		p.tcUnaryOp(tc, instr, func(operandType zeus_value.ValueType) zeus_value.ValueType {
 			switch operandType := operandType.(type) {
@@ -1447,9 +1474,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleStore(instr)
 	case InstrTypeLoad:
 		p.handleLoad(instr)
-	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
+	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv, InstrTypeMod, InstrTypePower,
 		InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
-		InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		InstrTypeLessThanEq, InstrTypeGreaterThanEq, InstrTypeAnd, InstrTypeOr:
 		p.handleBinaryOp(instr)
 	case InstrTypeNot, InstrTypeNeg:
 		p.handleUnaryOp(instr)

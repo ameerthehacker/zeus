@@ -1,7 +1,27 @@
 [
-  {
-    "name": "while loop",
-    "exit": "10",
-    "entry": "while.zs"
-  }
+    {
+        "name": "while loop",
+        "exit": "10",
+        "entry": "while.zs"
+    },
+    {
+        "name": "for loop - basic counting",
+        "exit": "0",
+        "entry": "for-basic.zs"
+    },
+    {
+        "name": "for loop - decrement",
+        "exit": "0",
+        "entry": "for-decrement.zs"
+    },
+    {
+        "name": "for loop - nested",
+        "exit": "0",
+        "entry": "for-nested.zs"
+    },
+    {
+        "name": "for loop - compound operators",
+        "exit": "0",
+        "entry": "for-compound.zs"
+    }
 ]

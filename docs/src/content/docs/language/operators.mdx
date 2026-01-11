@@ -15,6 +15,8 @@ Zeus provides a familiar set of operators for arithmetic, comparison, and logica
 | `-` | Subtraction | `5 - 3` → `2` |
 | `*` | Multiplication | `5 * 3` → `15` |
 | `/` | Division | `15 / 3` → `5` |
+| `%` | Modulo (remainder) | `7 % 3` → `1` |
+| `**` | Power (exponentiation) | `2.0 ** 3.0` → `8.0` |
 
 ### Examples
 
@@ -44,6 +46,24 @@ For floating-point division, use float types:
 
 ```zeus
 let result: f64 = 7.0 / 2.0;  // 3.5
+```
+
+### Modulo Operator
+
+The modulo operator returns the remainder of division:
+
+```zeus
+let remainder: i32 = 17 % 5;  // 2
+let isEven: boolean = (10 % 2) == 0;  // true
+```
+
+### Power Operator
+
+The power operator performs exponentiation. Note that it currently works with floating-point numbers:
+
+```zeus
+let squared: f64 = 2.0 ** 2.0;  // 4.0
+let cubed: f64 = 2.0 ** 3.0;    // 8.0
 ```
 
 ### Unary Minus
@@ -142,53 +162,44 @@ if (a < b) {
 | Operator | Description | Example |
 |----------|-------------|---------|
 | `!` | Logical NOT | `!true` → `false` |
+| `&&` | Logical AND | `true && false` → `false` |
+| `\|\|` | Logical OR | `true \|\| false` → `true` |
 
-<Aside type="note">
-  Logical AND (`&&`) and OR (`||`) are coming in a future release. For now, use nested if statements.
-</Aside>
-
-### Logical NOT
+### Examples
 
 ```zeus
 function main(): i32 {
-  let isReady: boolean = true;
-  let notReady: boolean = !isReady;  // false
+  let a: boolean = true;
+  let b: boolean = false;
   
-  if (!notReady) {
-    return 1;  // This executes
+  let notA: boolean = !a;           // false
+  let andResult: boolean = a && b;  // false
+  let orResult: boolean = a || b;   // true
+  
+  // Short-circuit evaluation
+  if (a || expensiveCheck()) {
+    // expensiveCheck() may not be called if a is true
   }
+  
   return 0;
 }
 ```
 
-### Workaround for AND/OR
-
-Until `&&` and `||` are available, use nested conditions:
+### Combining Conditions
 
 ```zeus
-// Instead of: if (a > 0 && b > 0)
-function bothPositive(a: i32, b: i32): boolean {
-  if (a > 0) {
-    if (b > 0) {
-      return true;
-    }
-  }
-  return false;
+function isInRange(x: i32, min: i32, max: i32): boolean {
+  return x >= min && x <= max;
 }
 
-// Instead of: if (a > 0 || b > 0)
-function eitherPositive(a: i32, b: i32): boolean {
-  if (a > 0) {
-    return true;
-  }
-  if (b > 0) {
-    return true;
-  }
-  return false;
+function isValidInput(value: i32): boolean {
+  return value > 0 || value == -1;  // -1 is a special "any" value
 }
 ```
 
-## Assignment Operator
+## Assignment Operators
+
+### Basic Assignment
 
 The `=` operator assigns a value to a variable:
 
@@ -198,9 +209,70 @@ x = 20;             // Reassignment
 x = x + 5;          // Update based on current value
 ```
 
-<Aside type="note">
-  Compound assignment operators (`+=`, `-=`, etc.) are coming soon.
-</Aside>
+### Compound Assignment Operators
+
+Zeus supports compound assignment operators that combine arithmetic and assignment:
+
+| Operator | Description | Equivalent |
+|----------|-------------|------------|
+| `+=` | Add and assign | `x = x + y` |
+| `-=` | Subtract and assign | `x = x - y` |
+| `*=` | Multiply and assign | `x = x * y` |
+| `/=` | Divide and assign | `x = x / y` |
+| `%=` | Modulo and assign | `x = x % y` |
+
+```zeus
+function main(): i32 {
+  let x: i32 = 10;
+  
+  x += 5;   // x is now 15
+  x -= 3;   // x is now 12
+  x *= 2;   // x is now 24
+  x /= 4;   // x is now 6
+  x %= 4;   // x is now 2
+  
+  return x;
+}
+```
+
+## Increment and Decrement Operators
+
+Zeus supports both prefix and postfix increment/decrement operators:
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `++x` | Prefix increment (increment, then return new value) | `let y: i32 = ++x;` |
+| `x++` | Postfix increment (return old value, then increment) | `let y: i32 = x++;` |
+| `--x` | Prefix decrement (decrement, then return new value) | `let y: i32 = --x;` |
+| `x--` | Postfix decrement (return old value, then decrement) | `let y: i32 = x--;` |
+
+### Prefix vs Postfix
+
+```zeus
+function main(): i32 {
+  let a: i32 = 5;
+  let b: i32 = ++a;  // a is 6, b is 6 (increment first)
+  
+  let c: i32 = 5;
+  let d: i32 = c++;  // c is 6, d is 5 (return old value first)
+  
+  return 0;
+}
+```
+
+### Common Usage in Loops
+
+```zeus
+function main(): i32 {
+  let sum: i32 = 0;
+  
+  for (let i: i32 = 0; i < 10; i++) {
+    sum += i;
+  }
+  
+  return sum;  // 45
+}
+```
 
 ## Operator Precedence
 
@@ -208,14 +280,18 @@ Operators follow standard mathematical precedence:
 
 | Precedence | Operators | Description |
 |------------|-----------|-------------|
-| Highest | `.` | Member access |
+| Highest | `++`, `--` (postfix) | Postfix increment/decrement |
+| | `.`, `[]` | Member access, indexing |
 | | `()` | Function call |
-| | `!`, `-` (unary) | Logical NOT, negation |
-| | `*`, `/` | Multiplication, division |
+| | `++`, `--` (prefix), `!`, `-` | Prefix increment/decrement, NOT, negation |
+| | `**` | Power (right-associative) |
+| | `*`, `/`, `%` | Multiplication, division, modulo |
 | | `+`, `-` | Addition, subtraction |
 | | `<`, `<=`, `>`, `>=` | Comparison |
 | | `==`, `!=` | Equality |
-| Lowest | `=` | Assignment |
+| | `&&` | Logical AND |
+| | `\|\|` | Logical OR |
+| Lowest | `=`, `+=`, `-=`, `*=`, `/=`, `%=` | Assignment |
 
 ### Examples
 

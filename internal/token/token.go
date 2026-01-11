@@ -27,6 +27,8 @@ const (
 	TokenTypeMinus
 	TokenTypeStar
 	TokenTypeSlash
+	TokenTypePercent
+	TokenTypeDoubleStar
 	TokenTypeEqual
 	TokenTypeBang
 	TokenTypeEqualEqual
@@ -35,6 +37,15 @@ const (
 	TokenTypeGreaterThanEqual
 	TokenTypeLessThan
 	TokenTypeLessThanEqual
+	TokenTypeAmpAmp
+	TokenTypePipePipe
+	TokenTypePlusEqual
+	TokenTypeMinusEqual
+	TokenTypeStarEqual
+	TokenTypeSlashEqual
+	TokenTypePercentEqual
+	TokenTypePlusPlus
+	TokenTypeMinusMinus
 	operator_end
 	// literals
 	literal_beg
@@ -52,6 +63,7 @@ const (
 	TokenTypeIf
 	TokenTypeElse
 	TokenTypeWhile
+	TokenTypeFor
 	TokenTypeTrue
 	TokenTypeFalse
 	TokenTypeImport
@@ -118,6 +130,10 @@ func (t TokenType) String() string {
 		return "*"
 	case TokenTypeSlash:
 		return "/"
+	case TokenTypePercent:
+		return "%"
+	case TokenTypeDoubleStar:
+		return "**"
 	case TokenTypeEqual:
 		return "="
 	case TokenTypeBang:
@@ -134,6 +150,24 @@ func (t TokenType) String() string {
 		return "<"
 	case TokenTypeLessThanEqual:
 		return "<="
+	case TokenTypeAmpAmp:
+		return "&&"
+	case TokenTypePipePipe:
+		return "||"
+	case TokenTypePlusEqual:
+		return "+="
+	case TokenTypeMinusEqual:
+		return "-="
+	case TokenTypeStarEqual:
+		return "*="
+	case TokenTypeSlashEqual:
+		return "/="
+	case TokenTypePercentEqual:
+		return "%="
+	case TokenTypePlusPlus:
+		return "++"
+	case TokenTypeMinusMinus:
+		return "--"
 	case TokenTypeNumber:
 		return "number"
 	case TokenTypeString:
@@ -154,6 +188,8 @@ func (t TokenType) String() string {
 		return "else"
 	case TokenTypeWhile:
 		return "while"
+	case TokenTypeFor:
+		return "for"
 	case TokenTypeTrue:
 		return "true"
 	case TokenTypeFalse:
@@ -216,6 +252,7 @@ var Keywords = map[string]TokenType{
 	TokenTypeIf.String():        TokenTypeIf,
 	TokenTypeElse.String():      TokenTypeElse,
 	TokenTypeWhile.String():     TokenTypeWhile,
+	TokenTypeFor.String():       TokenTypeFor,
 	TokenTypeTrue.String():      TokenTypeTrue,
 	TokenTypeFalse.String():     TokenTypeFalse,
 	TokenTypeImport.String():    TokenTypeImport,

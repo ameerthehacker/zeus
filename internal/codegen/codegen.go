@@ -601,6 +601,12 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 		result = c.genLLVMBinaryOp(input.Left, input.Right, "mul", c.builder.CreateMul, c.builder.CreateMul, c.builder.CreateFMul)
 	case ir.InstrTypeDiv:
 		result = c.genLLVMBinaryOp(input.Left, input.Right, "div", c.builder.CreateSDiv, c.builder.CreateUDiv, c.builder.CreateFDiv)
+	case ir.InstrTypeMod:
+		// Modulo (integer only)
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "mod", c.builder.CreateSRem, c.builder.CreateURem, nil)
+	case ir.InstrTypePower:
+		// Power operation - use llvm.pow intrinsic for floats, implement for ints
+		result = c.genPowerOp(input.Left, input.Right)
 	case ir.InstrTypeEqEq:
 		result = c.genLLVMBinaryOp(input.Left, input.Right, "eq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
 			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntEQ), left, right, opName)
@@ -649,9 +655,36 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
 			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGE), left, right, opName)
 		})
+	case ir.InstrTypeAnd:
+		// Logical AND (bool && bool)
+		result = c.builder.CreateAnd(c.toLLVMValue(input.Left), c.toLLVMValue(input.Right), "and")
+	case ir.InstrTypeOr:
+		// Logical OR (bool || bool)
+		result = c.builder.CreateOr(c.toLLVMValue(input.Left), c.toLLVMValue(input.Right), "or")
 	}
 
 	c.symbolTable.DeclareSymbol(output.Name, result)
+}
+
+// genPowerOp generates LLVM code for the power operation (a ** b)
+// Expects f64 operands - type casting should be done via CAST IR instructions
+func (c *CodegenModule) genPowerOp(left zeus_value.Value, right zeus_value.Value) llvm.Value {
+	leftValue := c.toLLVMValue(left)
+	rightValue := c.toLLVMValue(right)
+
+	// Get or create the pow intrinsic
+	powFnName := "llvm.pow.f64"
+	f64Type := c.cxt.DoubleType()
+
+	powFn := c.module.NamedFunction(powFnName)
+	if powFn.IsNil() {
+		powFnType := llvm.FunctionType(f64Type, []llvm.Type{f64Type, f64Type}, false)
+		powFn = llvm.AddFunction(c.module, powFnName, powFnType)
+	}
+
+	// Call pow intrinsic - operands should already be f64 (via CAST instructions)
+	powFnType := llvm.FunctionType(f64Type, []llvm.Type{f64Type, f64Type}, false)
+	return c.builder.CreateCall(powFnType, powFn, []llvm.Value{leftValue, rightValue}, "pow_result")
 }
 
 func (c *CodegenModule) genUnaryOp(instr *ir.Instr, input ir.UnaryOpInstrInput, output zeus_value.Var) {
@@ -1296,6 +1329,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			fallthrough
 		case ir.InstrTypeDiv:
 			fallthrough
+		case ir.InstrTypeMod:
+			fallthrough
+		case ir.InstrTypePower:
+			fallthrough
 		case ir.InstrTypeEqEq:
 			fallthrough
 		case ir.InstrTypeNotEq:
@@ -1307,6 +1344,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeLessThanEq:
 			fallthrough
 		case ir.InstrTypeGreaterThanEq:
+			fallthrough
+		case ir.InstrTypeAnd:
+			fallthrough
+		case ir.InstrTypeOr:
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeNeg:
 			fallthrough

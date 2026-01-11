@@ -67,6 +67,14 @@ type WhileStmtNode struct {
 	Span      *token.Span
 }
 
+type ForStmtNode struct {
+	Init      StmtNode // Variable declaration or expression statement (optional)
+	Condition ExprNode // Loop condition (optional)
+	Update    ExprNode // Update expression (optional)
+	Body      StmtNode
+	Span      *token.Span
+}
+
 type ImportStmtNode struct {
 	Source  *token.Token
 	Imports []*IdentifierExprNode
@@ -85,6 +93,7 @@ type StmtVisitor interface {
 	VisitReturnStmt(stmt *ReturnStmtNode)
 	VisitIfStmt(stmt *IfStmtNode)
 	VisitWhileStmt(stmt *WhileStmtNode)
+	VisitForStmt(stmt *ForStmtNode)
 	VisitImportStmt(stmt *ImportStmtNode)
 	VisitExportStmt(stmt *ExportStmtNode)
 }
@@ -249,6 +258,46 @@ func (w *WhileStmtNode) String() string {
 
 func (w *WhileStmtNode) PrettyString() string {
 	return fmt.Sprintf("while (%s) {\n%s\n}", w.Condition.PrettyString(), w.Body.PrettyString())
+}
+
+func (f *ForStmtNode) GetSpan() *token.Span {
+	return f.Span
+}
+
+func (f *ForStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitForStmt(f)
+}
+
+func (f *ForStmtNode) String() string {
+	initStr := "nil"
+	if f.Init != nil {
+		initStr = f.Init.String()
+	}
+	condStr := "nil"
+	if f.Condition != nil {
+		condStr = f.Condition.String()
+	}
+	updateStr := "nil"
+	if f.Update != nil {
+		updateStr = f.Update.String()
+	}
+	return fmt.Sprintf("{ type: ForStmtNode, Init: %s, Condition: %s, Update: %s, Body: %s, Span: %s }", initStr, condStr, updateStr, f.Body.String(), f.Span)
+}
+
+func (f *ForStmtNode) PrettyString() string {
+	initStr := ""
+	if f.Init != nil {
+		initStr = f.Init.PrettyString()
+	}
+	condStr := ""
+	if f.Condition != nil {
+		condStr = f.Condition.PrettyString()
+	}
+	updateStr := ""
+	if f.Update != nil {
+		updateStr = f.Update.PrettyString()
+	}
+	return fmt.Sprintf("for (%s; %s; %s) {\n%s\n}", initStr, condStr, updateStr, f.Body.PrettyString())
 }
 
 func (i *ImportStmtNode) GetSpan() *token.Span {

@@ -273,19 +273,90 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(*position, *position)))
 			l.advance()
 		case char == '+':
-			l.pushToken(token.NewToken(token.TokenTypePlus, token.NewSpan(*position, *position)))
+			startPosition := position
+			if l.matchNextRune('+') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypePlusPlus, token.NewSpan(*startPosition, *endPosition)))
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypePlusEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypePlus, token.NewSpan(*startPosition, *startPosition)))
+			}
 			l.advance()
 		case char == '-':
-			l.pushToken(token.NewToken(token.TokenTypeMinus, token.NewSpan(*position, *position)))
+			startPosition := position
+			if l.matchNextRune('-') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeMinusMinus, token.NewSpan(*startPosition, *endPosition)))
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeMinusEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypeMinus, token.NewSpan(*startPosition, *startPosition)))
+			}
 			l.advance()
 		case char == '*':
-			l.pushToken(token.NewToken(token.TokenTypeStar, token.NewSpan(*position, *position)))
+			startPosition := position
+			if l.matchNextRune('*') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeDoubleStar, token.NewSpan(*startPosition, *endPosition)))
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeStarEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypeStar, token.NewSpan(*startPosition, *startPosition)))
+			}
 			l.advance()
 		case char == '/':
+			startPosition := position
 			if l.matchNextRune('/') {
 				l.consumeLine()
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeSlashEqual, token.NewSpan(*startPosition, *endPosition)))
+				l.advance()
 			} else {
-				l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*position, *position)))
+				l.pushToken(token.NewToken(token.TokenTypeSlash, token.NewSpan(*startPosition, *startPosition)))
+				l.advance()
+			}
+		case char == '%':
+			startPosition := position
+			if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypePercentEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypePercent, token.NewSpan(*startPosition, *startPosition)))
+			}
+			l.advance()
+		case char == '&':
+			startPosition := position
+			if l.matchNextRune('&') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeAmpAmp, token.NewSpan(*startPosition, *endPosition)))
+				l.advance()
+			} else {
+				l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unexpected '&', did you mean '&&'?", token.NewSpan(*startPosition, *startPosition)))
+				l.advance()
+			}
+		case char == '|':
+			startPosition := position
+			if l.matchNextRune('|') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypePipePipe, token.NewSpan(*startPosition, *endPosition)))
+				l.advance()
+			} else {
+				l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unexpected '|', did you mean '||'?", token.NewSpan(*startPosition, *startPosition)))
 				l.advance()
 			}
 		case char == ':':

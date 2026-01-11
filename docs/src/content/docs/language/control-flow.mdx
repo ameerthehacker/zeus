@@ -93,6 +93,75 @@ if (flag) { }
 
 // Negation
 if (!flag) { }
+
+// Logical operators
+if (x > 0 && y > 0) { }  // AND
+if (x > 0 || y > 0) { }  // OR
+```
+
+## For Loops
+
+The `for` loop is ideal for counting iterations:
+
+```zeus
+function main(): i32 {
+  let sum: i32 = 0;
+  
+  for (let i: i32 = 0; i < 10; i++) {
+    sum += i;
+  }
+  
+  return sum;  // Returns 45 (0+1+2+...+9)
+}
+```
+
+### For Loop Syntax
+
+The `for` loop has three parts:
+
+```zeus
+for (initializer; condition; increment) {
+  // loop body
+}
+```
+
+- **Initializer**: Runs once before the loop starts (typically declares loop variable)
+- **Condition**: Checked before each iteration; loop continues while true
+- **Increment**: Runs after each iteration (typically updates loop variable)
+
+### Examples
+
+Counting down:
+
+```zeus
+for (let i: i32 = 10; i > 0; i--) {
+  log("Countdown: ");
+}
+log("Liftoff!");
+```
+
+Stepping by 2:
+
+```zeus
+for (let i: i32 = 0; i < 10; i += 2) {
+  // i will be 0, 2, 4, 6, 8
+}
+```
+
+Nested for loops:
+
+```zeus
+function main(): i32 {
+  let sum: i32 = 0;
+  
+  for (let i: i32 = 0; i < 3; i++) {
+    for (let j: i32 = 0; j < 3; j++) {
+      sum += i * j;
+    }
+  }
+  
+  return sum;
+}
 ```
 
 ## While Loops
@@ -299,10 +368,6 @@ function findMax(arr: i32[], length: i32): i32 {
   return max;
 }
 ```
-
-<Aside type="note">
-  Zeus currently supports `while` loops. `for` loops and other iteration constructs are planned for future releases.
-</Aside>
 
 ---
 

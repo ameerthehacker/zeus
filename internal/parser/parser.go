@@ -20,29 +20,47 @@ type Parser struct {
 }
 
 const (
-	UnaryOperatorPrecedence = 4
-	NewOperatorPrecedence   = 5
+	UnaryOperatorPrecedence = 13 // Higher than all binary operators
+	NewOperatorPrecedence   = 11 // Lower than indexing (12) to allow new Type[size], but equal to function call to NOT parse () as function call
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeDot:              6,
-	token.TokenTypeLeftBracket:      6,
-	token.TokenTypeLeftParen:        5,
-	token.TokenTypeStar:             4,
-	token.TokenTypeSlash:            4,
-	token.TokenTypePlus:             3,
-	token.TokenTypeMinus:            3,
-	token.TokenTypeGreaterThan:      3,
-	token.TokenTypeGreaterThanEqual: 3,
-	token.TokenTypeLessThan:         3,
-	token.TokenTypeLessThanEqual:    3,
-	token.TokenTypeEqualEqual:       2,
-	token.TokenTypeBangEqual:        2,
-	token.TokenTypeEqual:            1,
+	token.TokenTypeDot:              12,
+	token.TokenTypeLeftBracket:      12,
+	token.TokenTypeLeftParen:        11,
+	token.TokenTypePlusPlus:         10, // postfix ++/--
+	token.TokenTypeMinusMinus:       10,
+	token.TokenTypeDoubleStar:       9, // power (right associative)
+	token.TokenTypeStar:             8,
+	token.TokenTypeSlash:            8,
+	token.TokenTypePercent:          8,
+	token.TokenTypePlus:             7,
+	token.TokenTypeMinus:            7,
+	token.TokenTypeGreaterThan:      6,
+	token.TokenTypeGreaterThanEqual: 6,
+	token.TokenTypeLessThan:         6,
+	token.TokenTypeLessThanEqual:    6,
+	token.TokenTypeEqualEqual:       5,
+	token.TokenTypeBangEqual:        5,
+	token.TokenTypeAmpAmp:           4, // logical AND
+	token.TokenTypePipePipe:         3, // logical OR
+	// Assignment operators (lowest precedence but > 0 so they get parsed)
+	token.TokenTypeEqual:        1,
+	token.TokenTypePlusEqual:    1,
+	token.TokenTypeMinusEqual:   1,
+	token.TokenTypeStarEqual:    1,
+	token.TokenTypeSlashEqual:   1,
+	token.TokenTypePercentEqual: 1,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
-	token.TokenTypeEqual: true,
+	token.TokenTypeEqual:        true,
+	token.TokenTypePlusEqual:    true,
+	token.TokenTypeMinusEqual:   true,
+	token.TokenTypeStarEqual:    true,
+	token.TokenTypeSlashEqual:   true,
+	token.TokenTypePercentEqual: true,
+	token.TokenTypeDoubleStar:   true, // power is right associative: 2**3**4 = 2**(3**4)
 }
 
 func getPrecedence(token *token.Token) int {
@@ -177,6 +195,12 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.ValueTypeNode{ValueType: zeus_value.ToValueType(token), Span: token.Span}
 	}
 
+	// Prefix increment/decrement parselet
+	prefixIncrementParseLet := func(parser *Parser, tok *token.Token) ast.ExprNode {
+		expr := parser.parseExprOfPrecedence(UnaryOperatorPrecedence, false)
+		return &ast.UnaryExprNode{Operator: tok, Expr: expr}
+	}
+
 	prefixParselets := map[token.TokenType]func(parser *Parser, token *token.Token) ast.ExprNode{
 		token.TokenTypeNumber: func(parser *Parser, token *token.Token) ast.ExprNode {
 			return &ast.NumberExprNode{Value: token}
@@ -202,7 +226,7 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.CharExprNode{Value: charToken}
 		},
 		token.TokenTypeString: func(parser *Parser, stringToken *token.Token) ast.ExprNode {
-			return &ast.StringConstantExprNode{Value: stringToken }
+			return &ast.StringConstantExprNode{Value: stringToken}
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
@@ -223,20 +247,23 @@ func NewParser(tokens []*token.Token) *Parser {
 				}
 			}
 		},
-		token.TokenTypeFunction: functionParselet,
-		token.TokenTypeMinus:    unaryOperatorParseLet,
-		token.TokenTypeClass:    classParselet,
-		token.TokenTypeInt8:     valueTypeParseLet,
-		token.TokenTypeInt16:    valueTypeParseLet,
-		token.TokenTypeInt32:    valueTypeParseLet,
-		token.TokenTypeInt64:    valueTypeParseLet,
-		token.TokenTypeUInt8:    valueTypeParseLet,
-		token.TokenTypeUInt16:   valueTypeParseLet,
-		token.TokenTypeUInt32:   valueTypeParseLet,
-		token.TokenTypeUInt64:   valueTypeParseLet,
-		token.TokenTypeFloat32:  valueTypeParseLet,
-		token.TokenTypeFloat64:  valueTypeParseLet,
-		token.TokenTypeBoolean:  valueTypeParseLet,
+		token.TokenTypeFunction:   functionParselet,
+		token.TokenTypeMinus:      unaryOperatorParseLet,
+		token.TokenTypeBang:       unaryOperatorParseLet, // logical NOT
+		token.TokenTypePlusPlus:   prefixIncrementParseLet,
+		token.TokenTypeMinusMinus: prefixIncrementParseLet,
+		token.TokenTypeClass:      classParselet,
+		token.TokenTypeInt8:       valueTypeParseLet,
+		token.TokenTypeInt16:      valueTypeParseLet,
+		token.TokenTypeInt32:      valueTypeParseLet,
+		token.TokenTypeInt64:      valueTypeParseLet,
+		token.TokenTypeUInt8:      valueTypeParseLet,
+		token.TokenTypeUInt16:     valueTypeParseLet,
+		token.TokenTypeUInt32:     valueTypeParseLet,
+		token.TokenTypeUInt64:     valueTypeParseLet,
+		token.TokenTypeFloat32:    valueTypeParseLet,
+		token.TokenTypeFloat64:    valueTypeParseLet,
+		token.TokenTypeBoolean:    valueTypeParseLet,
 	}
 
 	indexingExpressionParseLet := func(parser *Parser, left ast.ExprNode, openBracket *token.Token) ast.ExprNode {
@@ -244,21 +271,37 @@ func NewParser(tokens []*token.Token) *Parser {
 		return &ast.IndexingExprNode{Array: left, IndexingMeta: *indexingMetadata, Span: &token.Span{Start: openBracket.Span.Start, End: parser.peek().Span.End}}
 	}
 
+	// Postfix increment/decrement parselet
+	postfixIncrementParseLet := func(parser *Parser, left ast.ExprNode, tok *token.Token) ast.ExprNode {
+		return &ast.PostfixExprNode{Expr: left, Operator: tok}
+	}
+
 	infixParselets := map[token.TokenType]func(parser *Parser, left ast.ExprNode, token *token.Token) ast.ExprNode{
 		token.TokenTypePlus:             binaryOperatorParseLet,
 		token.TokenTypeMinus:            binaryOperatorParseLet,
 		token.TokenTypeStar:             binaryOperatorParseLet,
 		token.TokenTypeSlash:            binaryOperatorParseLet,
+		token.TokenTypePercent:          binaryOperatorParseLet, // modulo
+		token.TokenTypeDoubleStar:       binaryOperatorParseLet, // power
 		token.TokenTypeEqualEqual:       binaryOperatorParseLet,
 		token.TokenTypeBangEqual:        binaryOperatorParseLet,
 		token.TokenTypeGreaterThan:      binaryOperatorParseLet,
 		token.TokenTypeGreaterThanEqual: binaryOperatorParseLet,
 		token.TokenTypeLessThan:         binaryOperatorParseLet,
 		token.TokenTypeLessThanEqual:    binaryOperatorParseLet,
+		token.TokenTypeAmpAmp:           binaryOperatorParseLet, // logical AND
+		token.TokenTypePipePipe:         binaryOperatorParseLet, // logical OR
 		token.TokenTypeEqual:            binaryOperatorParseLet,
+		token.TokenTypePlusEqual:        binaryOperatorParseLet, // compound assignment
+		token.TokenTypeMinusEqual:       binaryOperatorParseLet,
+		token.TokenTypeStarEqual:        binaryOperatorParseLet,
+		token.TokenTypeSlashEqual:       binaryOperatorParseLet,
+		token.TokenTypePercentEqual:     binaryOperatorParseLet,
 		token.TokenTypeLeftParen:        functionCallParseLet,
 		token.TokenTypeDot:              objectPropertyAccessParseLet,
 		token.TokenTypeLeftBracket:      indexingExpressionParseLet,
+		token.TokenTypePlusPlus:         postfixIncrementParseLet, // postfix ++
+		token.TokenTypeMinusMinus:       postfixIncrementParseLet, // postfix --
 	}
 
 	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
@@ -493,6 +536,56 @@ func (p *Parser) parseWhileStmt() *ast.WhileStmtNode {
 	return &ast.WhileStmtNode{Condition: condition, Body: body, Span: span}
 }
 
+func (p *Parser) parseForStmt() *ast.ForStmtNode {
+	forKeyword := p.consumeToken(token.TokenTypeFor)
+	p.consumeToken(token.TokenTypeLeftParen, "after for")
+
+	// Parse init (optional: can be var decl or expression)
+	var init ast.StmtNode
+	if p.peek().Type != token.TokenTypeSemicolon {
+		if p.peek().Type == token.TokenTypeLet || p.peek().Type == token.TokenTypeConst {
+			// Variable declaration without trailing semicolon (we'll consume it ourselves)
+			varDeclTypeToken := p.consume()
+			varDeclType := ast.VarDeclTypeLet
+			if varDeclTypeToken.Type == token.TokenTypeConst {
+				varDeclType = ast.VarDeclTypeConst
+			}
+			decls := []ast.VarDeclNode{}
+			for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
+				decl := p.parseVarDecl(true, varDeclType, "for loop initializer")
+				decls = append(decls, *decl)
+				p.consumeOptionalToken(token.TokenTypeComma)
+			}
+			span := &token.Span{Start: varDeclTypeToken.Span.Start, End: decls[len(decls)-1].GetSpan().End}
+			init = &ast.VarDeclStmtNode{Decls: decls, Span: span}
+		} else {
+			expr := p.ParseExpr("in for loop initializer")
+			init = &ast.ExprStmtNode{Expr: expr}
+		}
+	}
+	p.consumeToken(token.TokenTypeSemicolon, "after for loop initializer")
+
+	// Parse condition (optional)
+	var condition ast.ExprNode
+	if p.peek().Type != token.TokenTypeSemicolon {
+		condition = p.ParseExpr("in for loop condition")
+	}
+	p.consumeToken(token.TokenTypeSemicolon, "after for loop condition")
+
+	// Parse update (optional)
+	var update ast.ExprNode
+	if p.peek().Type != token.TokenTypeRightParen {
+		update = p.ParseExpr("in for loop update")
+	}
+	p.consumeToken(token.TokenTypeRightParen, "after for loop update")
+
+	// Parse body
+	body := p.ParseStmt()
+	span := &token.Span{Start: forKeyword.Span.Start, End: body.GetSpan().End}
+
+	return &ast.ForStmtNode{Init: init, Condition: condition, Update: update, Body: body, Span: span}
+}
+
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	var span *token.Span
 	varDeclTypeToken := p.consume()
@@ -686,6 +779,8 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return nil
 	case token.TokenTypeWhile:
 		return p.parseWhileStmt()
+	case token.TokenTypeFor:
+		return p.parseForStmt()
 	case token.TokenTypeImport:
 		return p.parseImportStmt()
 	case token.TokenTypeExport:

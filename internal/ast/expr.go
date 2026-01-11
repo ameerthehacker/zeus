@@ -149,6 +149,30 @@ func (u *UnaryExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value
 	return visitor.VisitUnaryExpr(u)
 }
 
+// PostfixExprNode represents postfix operators like i++ and i--
+type PostfixExprNode struct {
+	Expr     ExprNode
+	Operator *token.Token
+}
+
+func (p *PostfixExprNode) GetSpan() *token.Span {
+	startPosition := p.Expr.GetSpan().Start
+	endPosition := p.Operator.Span.End
+	return &token.Span{Start: startPosition, End: endPosition}
+}
+
+func (p *PostfixExprNode) PrettyString() string {
+	return fmt.Sprintf("(%s%s)", p.Expr.PrettyString(), p.Operator.Type)
+}
+
+func (p *PostfixExprNode) String() string {
+	return fmt.Sprintf("{ type: PostfixExprNode, Expr: %s, Operator: %s, Span: %s }", p.Expr.String(), p.Operator.Type, p.GetSpan())
+}
+
+func (p *PostfixExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitPostfixExpr(p)
+}
+
 // IdentifierExprNode and its methods
 type IdentifierExprNode struct {
 	Name *token.Token
@@ -478,6 +502,7 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitNumber(node *NumberExprNode) T
 	VisitChar(node *CharExprNode) T
 	VisitUnaryExpr(node *UnaryExprNode) T
+	VisitPostfixExpr(node *PostfixExprNode) T
 	VisitIdentifier(node *IdentifierExprNode) T
 	VisitBoolean(node *BooleanExprNode) T
 	VisitGroupingExpr(node *GroupingExprNode) T

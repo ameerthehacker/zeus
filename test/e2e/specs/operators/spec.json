@@ -1,0 +1,27 @@
+[
+    {
+        "name": "Modulo operator",
+        "exit": "0",
+        "entry": "modulo.zs"
+    },
+    {
+        "name": "Power operator",
+        "exit": "0",
+        "entry": "power.zs"
+    },
+    {
+        "name": "Logical operators (&&, ||, !)",
+        "exit": "0",
+        "entry": "logical.zs"
+    },
+    {
+        "name": "Compound assignment operators (+=, -=, *=, /=, %=)",
+        "exit": "0",
+        "entry": "compound.zs"
+    },
+    {
+        "name": "Increment/Decrement operators (++, --)",
+        "exit": "0",
+        "entry": "increment.zs"
+    }
+]

@@ -608,6 +608,8 @@ const (
 	InstrTypeSub
 	InstrTypeMul
 	InstrTypeDiv
+	InstrTypeMod   // modulo
+	InstrTypePower // exponentiation (**)
 	// casting
 	InstrTypeCast
 	// comparison operations
@@ -620,6 +622,8 @@ const (
 	InstrTypeGreaterThanEq
 	// logical operations
 	InstrTypeNot
+	InstrTypeAnd // logical AND (&&)
+	InstrTypeOr  // logical OR (||)
 	// variable declaration
 	InstrTypeDeclVar
 	// mem management
@@ -657,6 +661,10 @@ func (i InstrType) String() string {
 		return "MUL"
 	case InstrTypeDiv:
 		return "DIV"
+	case InstrTypeMod:
+		return "MOD"
+	case InstrTypePower:
+		return "POWER"
 	case InstrTypeNeg:
 		return "NEG"
 	case InstrTypeEqEq:
@@ -673,6 +681,10 @@ func (i InstrType) String() string {
 		return "GREATER_THAN_EQ"
 	case InstrTypeNot:
 		return "NOT"
+	case InstrTypeAnd:
+		return "AND"
+	case InstrTypeOr:
+		return "OR"
 	case InstrTypeDeclVar:
 		return "DECLARE_VAR"
 	case InstrTypeDeclFunc:
