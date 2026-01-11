@@ -11,7 +11,7 @@ Zeus provides built-in functions that are available globally without any imports
 
 ### `log`
 
-Prints a string to standard output.
+Prints a string to standard output, followed by a newline.
 
 ```zeus
 log(message: string): void
@@ -40,7 +40,7 @@ Welcome to Zeus!
 ```
 
 <Aside type="tip">
-  The `log` function fully supports UTF-8, including emojis and international characters.
+  The `log` function fully supports UTF-8, including emojis and international characters. Each call to `log` automatically adds a newline at the end.
 </Aside>
 
 ### Logging Byte Arrays

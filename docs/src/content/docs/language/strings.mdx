@@ -19,6 +19,38 @@ let japanese: string = "こんにちは";
 
 String literals fully support UTF-8, including multi-byte characters and emojis.
 
+### Escape Sequences
+
+String literals support escape sequences for special characters:
+
+| Escape | Character |
+|--------|-----------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\\` | Backslash |
+| `\"` | Double quote |
+| `\'` | Single quote |
+| `\0` | Null character |
+
+```zeus
+function main(): void {
+  log("Line 1\nLine 2");     // Two lines
+  log("Col1\tCol2\tCol3");   // Tab-separated
+  log("Say \"Hello\"");      // Embedded quotes
+  log("Path: C:\\Users");    // Backslash
+}
+```
+
+**Output:**
+```
+Line 1
+Line 2
+Col1	Col2	Col3
+Say "Hello"
+Path: C:\Users
+```
+
 ## String vs u8[]
 
 Zeus has two ways to work with text:

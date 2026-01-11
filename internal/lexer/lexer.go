@@ -137,16 +137,26 @@ func (l *Lexer) eatNumber() {
 }
 
 func (l *Lexer) eatStringOrChar(isChar bool) {
-	start := l.cursor
 	startPosition := l.getCurrentPosition()
-	l.advance()
+	l.advance() // consume opening quote
 	quote := '"'
 	if isChar {
 		quote = '\''
 	}
+
+	var result []rune
 	for !l.isEOF(0) && l.source[l.cursor] != quote {
-		l.advance()
+		if l.source[l.cursor] == '\\' && !l.isEOF(1) {
+			// Handle escape sequences
+			l.advance() // consume backslash
+			escaped := l.processEscapeSequence()
+			result = append(result, escaped)
+		} else {
+			result = append(result, l.source[l.cursor])
+			l.advance()
+		}
 	}
+
 	tokenType := token.TokenTypeString
 	if isChar {
 		tokenType = token.TokenTypeChar
@@ -158,9 +168,9 @@ func (l *Lexer) eatStringOrChar(isChar bool) {
 	}
 
 	endPosition := l.getCurrentPosition()
-	l.advance()
+	l.advance() // consume closing quote
 
-	stringLiteral := string(l.source[start+1:l.cursor-1])
+	stringLiteral := string(result)
 
 	if isChar && len(stringLiteral) != 1 {
 		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "char literal must be a single byte", token.NewSpan(*startPosition, *startPosition)))
@@ -168,6 +178,36 @@ func (l *Lexer) eatStringOrChar(isChar bool) {
 	}
 
 	l.pushToken(token.NewTokenWithValue(tokenType, stringLiteral, token.NewSpan(*startPosition, *endPosition)))
+}
+
+// processEscapeSequence processes an escape sequence after the backslash has been consumed
+func (l *Lexer) processEscapeSequence() rune {
+	if l.isEOF(0) {
+		return '\\'
+	}
+
+	char := l.source[l.cursor]
+	l.advance()
+
+	switch char {
+	case 'n':
+		return '\n'
+	case 't':
+		return '\t'
+	case 'r':
+		return '\r'
+	case '\\':
+		return '\\'
+	case '"':
+		return '"'
+	case '\'':
+		return '\''
+	case '0':
+		return '\x00'
+	default:
+		// Unknown escape sequence - return the character as-is
+		return char
+	}
 }
 
 func (l *Lexer) pushError(err *zeus_error.ZeusError) {

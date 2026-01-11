@@ -13,7 +13,7 @@
         "name": "string-mutability",
         "entry": "string-mutability.zs",
         "exit": "0",
-        "stdout": "Hello World! 👋hello World! 👋"
+        "stdout": "Hello World! 👋\nhello World! 👋\n"
     },
     {
         "name": "string-length",
