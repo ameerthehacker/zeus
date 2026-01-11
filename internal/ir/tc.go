@@ -706,6 +706,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		// TODO: add type checking for cast
 	case InstrTypeDeclPrimordialFunc:
 		// no type checking for primordial functions
+	case InstrTypeGetIndex:
+		p.tcGetIndex(tc, instr)
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
@@ -1266,6 +1268,66 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	}
 }
 
+func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
+	input := AsGetIndexInstrInput(instr.Input)
+	output := instr.Output
+	arrayType := tc.getValueType(input.Array)
+
+	// Check that the value being indexed is an array (which is an ObjectType with array properties)
+	if !zeus_value.IsObjectType(arrayType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", arrayType),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	objType := zeus_value.AsObjectType(arrayType)
+	
+	// Check if this is actually an array class (has ArrayElementType)
+	if objType.Class.ArrayElementType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", objType.Class.Name),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	// Validate each index is an integer type
+	for _, index := range input.Indices {
+		indexType := tc.getValueType(index)
+		if !zeus_value.IsIntType(indexType) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("array index must be an integer, got '%s'", indexType),
+				Span:    instr.Span,
+			})
+		}
+	}
+
+	// Determine the result type by peeling off array dimensions
+	// For array[i][j], we need to peel off one dimension per index
+	resultType := arrayType
+	for range input.Indices {
+		if objType := zeus_value.AsObjectType(resultType); objType != nil && objType.Class.ArrayElementType != nil {
+			resultType = objType.Class.ArrayElementType
+		} else {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("too many indices for array type '%s'", arrayType),
+				Span:    instr.Span,
+			})
+			return
+		}
+	}
+
+	// If the result is still an array type, wrap it in ObjectType
+	if arrayResultType, ok := resultType.(zeus_value.ArrayType); ok {
+		resultClass := tc.getClassFromArrayType(arrayResultType)
+		resultType = zeus_value.NewObjectType(*resultClass)
+	}
+
+	output.ValueType = resultType
+}
+
 
 func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
@@ -1338,6 +1400,8 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleDeclPrimordialFunc(instr)
 	case InstrTypeExport:
 		p.handleExport(instr)
+	case InstrTypeGetIndex:
+		p.handleGetIndex(instr)
 	}
 }
 
@@ -1543,6 +1607,22 @@ func (p *UnusedWarningPass) handleExport(instr *Instr) {
 	// Mark exported classes as used
 	if class := zeus_value.AsClass(input.Value); class != nil {
 		class.IsUsed = true
+	}
+}
+
+func (p *UnusedWarningPass) handleGetIndex(instr *Instr) {
+	input := AsGetIndexInstrInput(instr.Input)
+
+	// Mark the array as used
+	if arrayVar := zeus_value.AsVar(input.Array); arrayVar != nil {
+		arrayVar.IsUsed = true
+	}
+
+	// Mark all index variables as used
+	for _, index := range input.Indices {
+		if indexVar := zeus_value.AsVar(index); indexVar != nil {
+			indexVar.IsUsed = true
+		}
 	}
 }
 

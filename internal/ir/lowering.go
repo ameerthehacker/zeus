@@ -34,7 +34,10 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	}
 
 	// Initialize lowering passes
+	// Note: IndexLoweringPass should run before StringCastLoweringPass
+	// because array operations may involve string arrays
 	l.passes = []LowerPass{
+		NewIndexLoweringPass(),
 		NewStringCastLoweringPass(),
 	}
 
@@ -232,12 +235,13 @@ func (p *StringCastLoweringPass) lowerU8ArrayToStringCast(l *Lowerer, castInstr 
 	resultVar.ValueType = stringType
 
 	// Update the output variable name to reference the result
-	// The CAST instruction remains but codegen will look up the output by name,
-	// which now matches the string created by lowering
 	if output != nil {
 		output.Name = resultVar.Name
 		output.ValueType = stringType
 	}
+
+	// Delete the original CAST instruction - it has been lowered
+	builder.DeleteInstr(block, castInstr)
 }
 
 // lowerStringToU8ArrayCast lowers a string -> u8[] cast
@@ -296,12 +300,13 @@ func (p *StringCastLoweringPass) lowerStringToU8ArrayCast(l *Lowerer, castInstr 
 	builder.BuildIndirectFuncCall(copyMethod, []zeus_value.Value{sourceData}, span)
 
 	// Update the output variable name to reference the new array
-	// The CAST instruction remains but codegen will look up the output by name,
-	// which now matches the new array created by lowering
 	if output != nil {
 		output.Name = newArrayVar.Name
 		output.ValueType = u8ArrayType
 	}
+
+	// Delete the original CAST instruction - it has been lowered
+	builder.DeleteInstr(block, castInstr)
 }
 
 // =============================================================================
@@ -334,4 +339,129 @@ func getStringClass(builder *IRBuilder) *zeus_value.Class {
 	zeus_error.Assert(class != nil, "string symbol is not a class")
 
 	return class
+}
+
+// =============================================================================
+// IndexLoweringPass - Lowers GET_INDEX instructions to .get() method calls
+// =============================================================================
+
+type indexToLower struct {
+	instr *Instr
+	input *GetIndexInstrInput
+	block *BasicBlock
+}
+
+// IndexLoweringPass lowers GET_INDEX instructions to array.get() method calls
+type IndexLoweringPass struct {
+	indicesToLower []indexToLower
+}
+
+func NewIndexLoweringPass() *IndexLoweringPass {
+	return &IndexLoweringPass{}
+}
+
+func (p *IndexLoweringPass) GetName() string {
+	return "IndexLowering"
+}
+
+// HandleInstruction collects GET_INDEX instructions that need lowering
+func (p *IndexLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type != InstrTypeGetIndex {
+		return
+	}
+
+	input := AsGetIndexInstrInput(instr.Input)
+	if input == nil {
+		return
+	}
+
+	p.indicesToLower = append(p.indicesToLower, indexToLower{instr, input, l.GetCurrentBlock()})
+}
+
+// Finalize performs the actual lowering transformations
+func (p *IndexLoweringPass) Finalize(l *Lowerer) {
+	for _, indexOp := range p.indicesToLower {
+		p.lowerGetIndex(l, indexOp.instr, indexOp.input, indexOp.block)
+	}
+}
+
+// lowerGetIndex converts GET_INDEX into a sequence of array.get() method calls
+// For array[i][j], generates: temp = array.get(i); result = temp.get(j)
+func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIndexInstrInput, block *BasicBlock) {
+	span := instr.Span
+	output := instr.Output
+	builder := l.GetBuilder()
+
+	// Set builder to insert before the GET_INDEX instruction in the correct block
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBefore(instr)
+	}
+
+	currentValue := input.Array
+
+	// Process each index, calling .get() method for each one
+	for _, index := range input.Indices {
+		// Get the array type to determine the element type
+		arrayType := zeus_value.GetValueType(currentValue)
+		var elementType zeus_value.ValueType
+		
+		objType := zeus_value.AsObjectType(arrayType)
+		zeus_error.Assert(objType != nil && objType.Class.ArrayElementType != nil,
+			"GET_INDEX lowering requires array type with element type - type checking should have caught this")
+		elementType = objType.Class.ArrayElementType
+
+		// Create get method function type: (index: i32) -> ElementType
+		getMethodType := zeus_value.NewFunctionType(elementType, []zeus_value.ValueType{
+			zeus_value.IntType{Size: zeus_value.I32, Span: span},
+		})
+
+		// Get the .get() method from the array object
+		getMethodPtr := builder.BuildObjectPropertyAccess(currentValue, zeus_value.ARRAY_METHOD_GET, false, span)
+		getMethodPtrVar := zeus_value.AsVar(getMethodPtr)
+		getMethodPtrVar.ValueType = getMethodType
+
+		// Load the method pointer
+		getMethod := builder.BuildLoad(getMethodPtrVar, span)
+		getMethodVar := zeus_value.AsVar(getMethod)
+		getMethodVar.ValueType = getMethodType
+
+		// Call array.get(index)
+		result := builder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{index}, span)
+		resultVar := zeus_value.AsVar(result)
+		
+		// Set the result type
+		// If element is an array type, it needs to be wrapped in ObjectType
+		if arrayElemType, ok := elementType.(zeus_value.ArrayType); ok {
+			// For nested arrays, we need to get the array class
+			arrayClassName := arrayElemType.String()
+			if existingClass, ok := builder.symbolTable.GetSymbol(arrayClassName); ok {
+				if class := zeus_value.AsClass(existingClass); class != nil {
+					resultVar.ValueType = zeus_value.NewObjectType(*class)
+				} else {
+					resultVar.ValueType = elementType
+				}
+			} else {
+				resultVar.ValueType = elementType
+			}
+		} else if objType, ok := elementType.(zeus_value.ObjectType); ok {
+			resultVar.ValueType = objType
+		} else {
+			resultVar.ValueType = elementType
+		}
+
+		currentValue = result
+	}
+
+	// Update the output variable name to reference the final result
+	if output != nil && currentValue != nil {
+		if resultVar := zeus_value.AsVar(currentValue); resultVar != nil {
+			output.Name = resultVar.Name
+			output.ValueType = resultVar.ValueType
+		}
+	}
+
+	// Delete the original GET_INDEX instruction - it has been lowered
+	builder.DeleteInstr(block, instr)
 }

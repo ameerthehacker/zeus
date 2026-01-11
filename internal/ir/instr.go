@@ -643,6 +643,8 @@ const (
 	InstrTypeNewObj
 	// object property access
 	InstrTypeObjectPropertyAccess
+	// array indexing (HIR - lowered before codegen)
+	InstrTypeGetIndex
 )
 
 func (i InstrType) String() string {
@@ -705,6 +707,8 @@ func (i InstrType) String() string {
 		return "OBJECT_PROPERTY_ACCESS"
 	case InstrTypeDeclClassMethod:
 		return "DECLARE_CLASS_METHOD"
+	case InstrTypeGetIndex:
+		return "GET_INDEX"
 	default:
 		panic("unknown instruction type")
 	}

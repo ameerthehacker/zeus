@@ -193,6 +193,31 @@ func (b *IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
 	b.blockIdInsetionIndexMap[block.Id] = instrIndex
 }
 
+// DeleteInstr removes an instruction from the IR.
+// If block is nil, the instruction is removed from the global instruction list.
+// If block is provided, the instruction is removed from that block's instruction list.
+func (b *IRBuilder) DeleteInstr(block *BasicBlock, instr *Instr) {
+	if block == nil {
+		// Delete from global instructions
+		instrIndex := slices.Index(b.instrs, instr)
+		zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in global instructions list", instr.String()))
+		b.instrs = slices.Delete(b.instrs, instrIndex, instrIndex+1)
+		// Adjust insertion index if needed
+		if b.insertionIndex > instrIndex {
+			b.insertionIndex--
+		}
+	} else {
+		// Delete from block instructions
+		instrIndex := slices.Index(block.Instrs, instr)
+		zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block %d instructions list", instr.String(), block.Id))
+		block.Instrs = slices.Delete(block.Instrs, instrIndex, instrIndex+1)
+		// Adjust block insertion index if needed
+		if blockIdx, ok := b.blockIdInsetionIndexMap[block.Id]; ok && blockIdx > instrIndex {
+			b.blockIdInsetionIndexMap[block.Id]--
+		}
+	}
+}
+
 func (b *IRBuilder) BuildBinaryOp(left, right zeus_value.Value, op InstrType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
@@ -393,6 +418,19 @@ func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value
 		Type:   InstrTypeNewObj,
 		Output: result,
 		Input:  NewNewObjInstrInput(callee, args),
+		Span:   span,
+	})
+
+	return result
+}
+
+func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeGetIndex,
+		Output: result,
+		Input:  NewGetIndexInstrInput(array, indices),
 		Span:   span,
 	})
 
