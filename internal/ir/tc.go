@@ -614,7 +614,23 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeDeclVar:
 		p.tcDeclVar(tc, instr)
 	case InstrTypeAdd:
-		fallthrough
+		p.tcBinaryOp(tc, instr, func(a, b zeus_value.ValueType) zeus_value.ValueType {
+			// String + string returns string
+			if isStringType(a) && isStringType(b) {
+				return a
+			}
+			return zeus_value.GetBiggerType(a, b)
+		}, func(a, b zeus_value.ValueType) bool {
+			// Allow number + number
+			if zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
+				return true
+			}
+			// Allow string + string (concatenation)
+			if isStringType(a) && isStringType(b) {
+				return true
+			}
+			return false
+		})
 	case InstrTypeSub:
 		fallthrough
 	case InstrTypeMul:
@@ -648,6 +664,10 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 			if zeus_value.IsBoolType(a) && zeus_value.IsBoolType(b) {
 				return true
 			}
+			// Allow string comparisons
+			if isStringType(a) && isStringType(b) {
+				return true
+			}
 			return false
 		})
 	case InstrTypeLessThan:
@@ -660,7 +680,15 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcBinaryOp(tc, instr, func(_, _ zeus_value.ValueType) zeus_value.ValueType {
 			return zeus_value.BoolType{}
 		}, func(a, b zeus_value.ValueType) bool {
-			return zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b)
+			// Allow number comparisons
+			if zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
+				return true
+			}
+			// Allow string comparisons
+			if isStringType(a) && isStringType(b) {
+				return true
+			}
+			return false
 		})
 	case InstrTypeNot:
 		p.tcUnaryOp(tc, instr, func(_ zeus_value.ValueType) zeus_value.ValueType {
@@ -891,6 +919,14 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 }
 
 // isU8ArrayType checks if a type is u8[] (array of unsigned 8-bit integers)
+// isStringType checks if a type is a string type
+func isStringType(valueType zeus_value.ValueType) bool {
+	if objType, ok := valueType.(zeus_value.ObjectType); ok {
+		return objType.Class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING
+	}
+	return false
+}
+
 func isU8ArrayType(valueType zeus_value.ValueType) bool {
 	arrayType, ok := valueType.(zeus_value.ArrayType)
 	if !ok {

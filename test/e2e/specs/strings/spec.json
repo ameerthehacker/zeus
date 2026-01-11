@@ -39,5 +39,11 @@
         "name": "string-concat",
         "entry": "string-concat.zs",
         "exit": "0"
+    },
+    {
+        "name": "string-operators",
+        "entry": "string-operators.zs",
+        "exit": "0",
+        "stdout": "hello world\na == c: true\na != b: true\na < b: true\nb > a: true\na <= c: true\na >= c: true\n"
     }
 ]

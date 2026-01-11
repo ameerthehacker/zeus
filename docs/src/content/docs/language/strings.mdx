@@ -158,6 +158,93 @@ if (a.equals(c) == false) {
 }
 ```
 
+### concat
+
+Concatenates two strings and returns a new string.
+
+```zeus
+concat(other: string): string
+```
+
+**Returns:** A new string containing both strings joined together.
+
+```zeus
+let hello: string = "Hello";
+let world: string = "World";
+
+let greeting: string = hello.concat(" ").concat(world);
+log(greeting);  // "Hello World"
+```
+
+<Aside type="tip">
+  You can also use the `+` operator for string concatenation. See [String Operators](#string-operators) below.
+</Aside>
+
+## String Operators
+
+Zeus supports operators for string manipulation and comparison:
+
+### Concatenation (+)
+
+The `+` operator concatenates two strings:
+
+```zeus
+let first: string = "Hello";
+let second: string = "World";
+let result: string = first + " " + second;
+log(result);  // "Hello World"
+```
+
+### Equality Operators (== and !=)
+
+Compare strings for equality or inequality:
+
+```zeus
+let a: string = "hello";
+let b: string = "hello";
+let c: string = "world";
+
+if (a == b) {
+  log("a equals b");  // This executes
+}
+
+if (a != c) {
+  log("a not equals c");  // This executes
+}
+```
+
+### Comparison Operators (<, >, <=, >=)
+
+Compare strings lexicographically (dictionary order):
+
+```zeus
+let apple: string = "apple";
+let banana: string = "banana";
+
+if (apple < banana) {
+  log("apple comes before banana");  // This executes
+}
+
+if (banana > apple) {
+  log("banana comes after apple");  // This executes
+}
+
+let a: string = "hello";
+let b: string = "hello";
+
+if (a <= b) {
+  log("a <= b");  // This executes (they're equal)
+}
+
+if (a >= b) {
+  log("a >= b");  // This executes (they're equal)
+}
+```
+
+<Aside type="note">
+  String comparison is byte-by-byte, which means it's case-sensitive and follows ASCII/UTF-8 ordering. Uppercase letters come before lowercase letters (e.g., `"Apple" < "apple"`).
+</Aside>
+
 ## Indexing
 
 You can read individual bytes from a string using indexing:
@@ -264,7 +351,6 @@ let emojiLen: i32 = emoji.length;  // 4
 
 The following features are planned for future releases:
 
-- String concatenation
 - Substring extraction
 - Search and replace
 - String interpolation (`${expression}`)

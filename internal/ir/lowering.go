@@ -36,8 +36,11 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	// Initialize lowering passes
 	// Note: IndexLoweringPass should run before StringCastLoweringPass
 	// because array operations may involve string arrays
+	// StringOperatorLoweringPass should run before StringCastLoweringPass
+	// because string operators need to be lowered to method calls first
 	l.passes = []LowerPass{
 		NewIndexLoweringPass(),
+		NewStringOperatorLoweringPass(),
 		NewStringCastLoweringPass(),
 	}
 
@@ -436,4 +439,156 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 	}
 
 	builder.DeleteInstr(block, instr)
+}
+
+// =============================================================================
+// StringOperatorLoweringPass - Lowers string operators to method calls
+// =============================================================================
+
+type stringOpToLower struct {
+	instr *Instr
+	input *BinaryOpInstrInput
+	block *BasicBlock
+}
+
+// StringOperatorLoweringPass lowers string operators (+, ==, !=, <, >, <=, >=)
+// to method calls (concat, equals, compare)
+type StringOperatorLoweringPass struct {
+	opsToLower []stringOpToLower
+}
+
+func NewStringOperatorLoweringPass() *StringOperatorLoweringPass {
+	return &StringOperatorLoweringPass{}
+}
+
+func (p *StringOperatorLoweringPass) GetName() string {
+	return "StringOperatorLowering"
+}
+
+// HandleInstruction collects binary operations on strings that need lowering
+func (p *StringOperatorLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	// Check if this is a binary operation
+	if !isBinaryOp(instr.Type) {
+		return
+	}
+
+	input := AsBinaryOpInstrInput(instr.Input)
+	if input == nil {
+		return
+	}
+
+	// Check if both operands are strings
+	leftType := zeus_value.GetValueType(input.Left)
+	rightType := zeus_value.GetValueType(input.Right)
+
+	if !isStringType(leftType) || !isStringType(rightType) {
+		return
+	}
+
+	p.opsToLower = append(p.opsToLower, stringOpToLower{instr, input, l.GetCurrentBlock()})
+}
+
+// Finalize performs the actual lowering transformations
+func (p *StringOperatorLoweringPass) Finalize(l *Lowerer) {
+	for _, op := range p.opsToLower {
+		p.lowerStringOp(l, op.instr, op.input, op.block)
+	}
+}
+
+// lowerStringOp converts a string binary operation to method calls
+func (p *StringOperatorLoweringPass) lowerStringOp(l *Lowerer, instr *Instr, input *BinaryOpInstrInput, block *BasicBlock) {
+	span := instr.Span
+	output := instr.Output
+	builder := l.GetBuilder()
+
+	// Set builder to insert before the binary operation instruction
+	setInsertionPoint(builder, block, instr)
+
+	stringClass := getStringClass(builder)
+	stringType := zeus_value.NewObjectType(*stringClass)
+
+	switch instr.Type {
+	case InstrTypeAdd:
+		// string + string -> left.concat(right)
+		result := builder.BuildMethodCall(input.Left, zeus_value.STRING_METHOD_CONCAT,
+			[]zeus_value.Value{input.Right},
+			stringType,
+			[]zeus_value.ValueType{stringType},
+			span)
+
+		if output != nil {
+			resultVar := zeus_value.AsVar(result)
+			output.Name = resultVar.Name
+			output.ValueType = stringType
+		}
+
+	case InstrTypeEqEq:
+		// string == string -> left.equals(right)
+		boolType := zeus_value.BoolType{Span: span}
+		result := builder.BuildMethodCall(input.Left, zeus_value.STRING_METHOD_EQUALS,
+			[]zeus_value.Value{input.Right},
+			boolType,
+			[]zeus_value.ValueType{stringType},
+			span)
+
+		if output != nil {
+			resultVar := zeus_value.AsVar(result)
+			output.Name = resultVar.Name
+			output.ValueType = boolType
+		}
+
+	case InstrTypeNotEq:
+		// string != string -> !left.equals(right)
+		boolType := zeus_value.BoolType{Span: span}
+		equalsResult := builder.BuildMethodCall(input.Left, zeus_value.STRING_METHOD_EQUALS,
+			[]zeus_value.Value{input.Right},
+			boolType,
+			[]zeus_value.ValueType{stringType},
+			span)
+
+		// Negate the result
+		result := builder.BuildUnaryOp(equalsResult, InstrTypeNot, span)
+
+		if output != nil {
+			resultVar := zeus_value.AsVar(result)
+			output.Name = resultVar.Name
+			output.ValueType = boolType
+		}
+
+	case InstrTypeLessThan, InstrTypeGreaterThan, InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		// string comparison -> left.compare(right) <op> 0
+		i8Type := zeus_value.IntType{Size: zeus_value.I8, Signed: true, Span: span}
+		compareResult := builder.BuildMethodCall(input.Left, zeus_value.STRING_METHOD_COMPARE,
+			[]zeus_value.Value{input.Right},
+			i8Type,
+			[]zeus_value.ValueType{stringType},
+			span)
+
+		// Compare with 0 using the appropriate comparison
+		zero := zeus_value.NewConstant("0", i8Type, span)
+
+		// Map the original operator to the comparison against 0
+		compOp := instr.Type
+		result := builder.BuildBinaryOp(compareResult, zero, compOp, span)
+
+		if output != nil {
+			resultVar := zeus_value.AsVar(result)
+			output.Name = resultVar.Name
+			output.ValueType = zeus_value.BoolType{Span: span}
+		}
+	}
+
+	builder.DeleteInstr(block, instr)
+}
+
+// isBinaryOp checks if an instruction type is a binary operation
+func isBinaryOp(instrType InstrType) bool {
+	switch instrType {
+	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv,
+		InstrTypeEqEq, InstrTypeNotEq,
+		InstrTypeLessThan, InstrTypeGreaterThan,
+		InstrTypeLessThanEq, InstrTypeGreaterThanEq:
+		return true
+	}
+	return false
 }

@@ -11,7 +11,7 @@ Zeus provides a familiar set of operators for arithmetic, comparison, and logica
 
 | Operator | Description | Example |
 |----------|-------------|---------|
-| `+` | Addition | `5 + 3` → `8` |
+| `+` | Addition (numbers) or concatenation (strings) | `5 + 3` → `8`, `"a" + "b"` → `"ab"` |
 | `-` | Subtraction | `5 - 3` → `2` |
 | `*` | Multiplication | `5 * 3` → `15` |
 | `/` | Division | `15 / 3` → `5` |
@@ -95,6 +95,47 @@ let floatVal: f64 = 5.0;
 // This works because i32 can be implicitly converted to f64
 let equal: boolean = floatVal == intVal;  // true
 ```
+
+## String Operators
+
+Zeus supports operators for string manipulation:
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `+` | Concatenation | `"Hello" + " World"` → `"Hello World"` |
+| `==` | Equal to | `"abc" == "abc"` → `true` |
+| `!=` | Not equal to | `"abc" != "xyz"` → `true` |
+| `<` | Lexicographically less | `"apple" < "banana"` → `true` |
+| `<=` | Less than or equal | `"abc" <= "abc"` → `true` |
+| `>` | Lexicographically greater | `"banana" > "apple"` → `true` |
+| `>=` | Greater than or equal | `"abc" >= "abc"` → `true` |
+
+### String Concatenation
+
+```zeus
+let greeting: string = "Hello" + " " + "World";
+log(greeting);  // "Hello World"
+```
+
+### String Comparison
+
+```zeus
+let a: string = "apple";
+let b: string = "banana";
+let c: string = "apple";
+
+if (a == c) {
+  log("a equals c");  // This executes
+}
+
+if (a < b) {
+  log("apple comes before banana");  // This executes
+}
+```
+
+<Aside type="note">
+  String comparison is byte-by-byte (lexicographic), which is case-sensitive. Uppercase letters come before lowercase letters in ASCII order.
+</Aside>
 
 ## Logical Operators
 
