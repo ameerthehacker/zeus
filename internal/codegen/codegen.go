@@ -207,6 +207,12 @@ func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
 	currentInsertionBlock := c.builder.GetInsertBlock()
 
 	for _, method := range class.Methods {
+		// Skip lowered methods - they are handled entirely by IR lowering
+		// and don't need runtime wrapper functions
+		if method.IsLowered {
+			continue
+		}
+
 		// update the method name to include the class name prefix
 		scopedClassMethod := zeus_value.NewClassMethod(
 			zeus_value.NewFunction(
@@ -540,6 +546,16 @@ func (c *CodegenModule) genCondJmp(input ir.CondJmpInstrInput) {
 
 type BinaryOpLLVMFunc func(llvm.Value, llvm.Value, string) llvm.Value
 
+// genComparisonOp generates LLVM code for comparison operations
+// This reduces repetition for ==, !=, <, >, <=, >= operators
+func (c *CodegenModule) genComparisonOp(left, right zeus_value.Value, name string, signedPred, unsignedPred llvm.IntPredicate, floatPred llvm.FloatPredicate) llvm.Value {
+	return c.genLLVMBinaryOp(left, right, name,
+		func(l, r llvm.Value, n string) llvm.Value { return c.builder.CreateICmp(signedPred, l, r, n) },
+		func(l, r llvm.Value, n string) llvm.Value { return c.builder.CreateICmp(unsignedPred, l, r, n) },
+		func(l, r llvm.Value, n string) llvm.Value { return c.builder.CreateFCmp(floatPred, l, r, n) },
+	)
+}
+
 func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.Value, opName string, intIntOp BinaryOpLLVMFunc, uIntuIntOp BinaryOpLLVMFunc, floatFloat BinaryOpLLVMFunc) llvm.Value {
 	leftType := zeus_value.GetValueType(left)
 	rightType := zeus_value.GetValueType(right)
@@ -608,53 +624,17 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 		// Power operation - use llvm.pow intrinsic for floats, implement for ints
 		result = c.genPowerOp(input.Left, input.Right)
 	case ir.InstrTypeEqEq:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "eq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntEQ), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntEQ), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOEQ), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "eq", llvm.IntEQ, llvm.IntEQ, llvm.FloatOEQ)
 	case ir.InstrTypeNotEq:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "notEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntNE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntNE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatONE), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "notEq", llvm.IntNE, llvm.IntNE, llvm.FloatONE)
 	case ir.InstrTypeLessThan:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "lessThan", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSLT), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntULT), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOLT), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "lessThan", llvm.IntSLT, llvm.IntULT, llvm.FloatOLT)
 	case ir.InstrTypeGreaterThan:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "greaterThan", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSGT), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntUGT), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGT), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "greaterThan", llvm.IntSGT, llvm.IntUGT, llvm.FloatOGT)
 	case ir.InstrTypeLessThanEq:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "lessThanEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSLE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntULE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOLE), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "lessThanEq", llvm.IntSLE, llvm.IntULE, llvm.FloatOLE)
 	case ir.InstrTypeGreaterThanEq:
-		result = c.genLLVMBinaryOp(input.Left, input.Right, "greaterThanEq", func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntSGE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateICmp(llvm.IntPredicate(llvm.IntUGE), left, right, opName)
-		}, func(left llvm.Value, right llvm.Value, opName string) llvm.Value {
-			return c.builder.CreateFCmp(llvm.FloatPredicate(llvm.FloatOGE), left, right, opName)
-		})
+		result = c.genComparisonOp(input.Left, input.Right, "greaterThanEq", llvm.IntSGE, llvm.IntUGE, llvm.FloatOGE)
 	case ir.InstrTypeAnd:
 		// Logical AND (bool && bool)
 		result = c.builder.CreateAnd(c.toLLVMValue(input.Left), c.toLLVMValue(input.Right), "and")
@@ -936,9 +916,13 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 			llvm.ConstArray(c.cxt.Int8Type(), gcOffsetsArray)},
 		false))
 	// initialize the llvm methods array
+	// Count only non-constructor, non-lowered methods for vtable
 	methodCount := 0
 	for _, method := range class.Methods {
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			continue
+		}
+		if method.IsLowered {
 			continue
 		}
 		methodCount += 1

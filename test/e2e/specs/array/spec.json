@@ -43,5 +43,30 @@
         "name": "1D array sum",
         "exit": "11",
         "entry": "1d-sum.zs"
+    },
+    {
+        "name": "Array concat",
+        "exit": "15",
+        "entry": "concat.zs"
+    },
+    {
+        "name": "Array slice",
+        "exit": "90",
+        "entry": "slice.zs"
+    },
+    {
+        "name": "Array search (indexOf, lastIndexOf, includes)",
+        "exit": "0",
+        "entry": "search.zs"
+    },
+    {
+        "name": "Array manipulation (reverse, fill, clear, isEmpty)",
+        "exit": "0",
+        "entry": "manipulation.zs"
+    },
+    {
+        "name": "Array find and findIndex",
+        "exit": "60",
+        "entry": "find.zs"
     }
 ]

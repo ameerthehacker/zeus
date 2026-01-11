@@ -9,11 +9,24 @@ const ZEUS_PRIMORDIAL_STRING = "string"
 
 // Array method names
 const (
-	ARRAY_METHOD_PUSH = "push"
-	ARRAY_METHOD_POP  = "pop"
-	ARRAY_METHOD_GET  = "get"
-	ARRAY_METHOD_SET  = "set"
-	ARRAY_METHOD_COPY = "copy"
+	ARRAY_METHOD_PUSH               = "push"
+	ARRAY_METHOD_POP                = "pop"
+	ARRAY_METHOD_GET                = "get"
+	ARRAY_METHOD_SET                = "set"
+	ARRAY_METHOD_COPY               = "copy"
+	ARRAY_METHOD_COPY_RANGE         = "copyRange"
+	ARRAY_METHOD_COPY_RANGE_REVERSE = "copyRangeReversed"
+	ARRAY_METHOD_CONCAT             = "concat"
+	ARRAY_METHOD_SLICE              = "slice"
+	ARRAY_METHOD_INDEX_OF           = "indexOf"
+	ARRAY_METHOD_LAST_INDEX         = "lastIndexOf"
+	ARRAY_METHOD_FIND               = "find"
+	ARRAY_METHOD_FIND_INDEX         = "findIndex"
+	ARRAY_METHOD_INCLUDES           = "includes"
+	ARRAY_METHOD_REVERSE            = "reverse"
+	ARRAY_METHOD_FILL               = "fill"
+	ARRAY_METHOD_CLEAR              = "clear"
+	ARRAY_METHOD_IS_EMPTY           = "isEmpty"
 )
 
 // Array property names
@@ -37,37 +50,151 @@ const (
 )
 
 func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
+	span := arrayType.GetSpan()
+	// Use i32 (signed) for parameters/properties that interact with user code
+	// This allows negative index checking at runtime and -1 return values for search
+	i32Type := IntType{Size: I32, Signed: true, Span: span}
+	selfArrayType := NewArrayType(arrayType.ElementType, span)
+
 	// capacity of the array (private - internal implementation detail)
-	capacityProperty := NewClassProperty(NewVar("capacity", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()), &token.Token{Type: token.TokenTypePrivate, Span: arrayType.GetSpan()})
+	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
 	// length of the array (public - commonly accessed property)
-	lengthProperty := NewClassProperty(NewVar("length", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()), &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()})
+	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
 	// opaque pointer to the data of the array (private - internal implementation)
-	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: arrayType.GetSpan()}, true, arrayType.GetSpan()), &token.Token{Type: token.TokenTypePrivate, Span: arrayType.GetSpan()})
+	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
 	properties := []*ClassProperty{capacityProperty, lengthProperty, dataProperty}
-	// declare all the public methods of an array
-	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
-		NewVar("capacity", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()),
-	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	pushMethod := NewFunction(ARRAY_METHOD_PUSH, []*Var{NewVar("value", arrayType.ElementType, false, arrayType.GetSpan())}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	popMethod := NewFunction(ARRAY_METHOD_POP, []*Var{}, arrayType.ElementType, arrayType.GetSpan())
-	getMethod := NewFunction(ARRAY_METHOD_GET, []*Var{NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan())}, arrayType.ElementType, arrayType.GetSpan())
-	setMethod := NewFunction(ARRAY_METHOD_SET, []*Var{
-		NewVar("index", IntType{Size: I32, Span: arrayType.GetSpan()}, false, arrayType.GetSpan()),
-		NewVar("value", arrayType.ElementType, false, arrayType.GetSpan()),
-	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	// copy method: copies data from another array of the same type
-	copyMethod := NewFunction(ARRAY_METHOD_COPY, []*Var{
-		NewVar("source", NewArrayType(arrayType.ElementType, arrayType.GetSpan()), false, arrayType.GetSpan()),
-	}, VoidType{Span: arrayType.GetSpan()}, arrayType.GetSpan())
-	methods := []*ClassMethod{
-		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
-		NewClassMethod(pushMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
-		NewClassMethod(popMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
-		NewClassMethod(getMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
-		NewClassMethod(setMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
-		NewClassMethod(copyMethod, &token.Token{Type: token.TokenTypePublic, Span: arrayType.GetSpan()}),
+
+	// Helper function to create a public method
+	publicMethod := func(method *Function) *ClassMethod {
+		return NewClassMethod(method, &token.Token{Type: token.TokenTypePublic, Span: span})
 	}
-	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, arrayType.GetSpan())
+
+	// Helper function to create a public method that is lowered (no runtime wrapper needed)
+	loweredMethod := func(method *Function) *ClassMethod {
+		return NewLoweredClassMethod(method, &token.Token{Type: token.TokenTypePublic, Span: span})
+	}
+
+	// Constructor
+	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
+		NewVar("capacity", i32Type, false, span),
+	}, VoidType{Span: span}, span)
+
+	// Basic element operations
+	pushMethod := NewFunction(ARRAY_METHOD_PUSH, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, VoidType{Span: span}, span)
+
+	popMethod := NewFunction(ARRAY_METHOD_POP, []*Var{}, arrayType.ElementType, span)
+
+	getMethod := NewFunction(ARRAY_METHOD_GET, []*Var{
+		NewVar("index", i32Type, false, span),
+	}, arrayType.ElementType, span)
+
+	setMethod := NewFunction(ARRAY_METHOD_SET, []*Var{
+		NewVar("index", i32Type, false, span),
+		NewVar("value", arrayType.ElementType, false, span),
+	}, VoidType{Span: span}, span)
+
+	// Array copy operations
+	copyMethod := NewFunction(ARRAY_METHOD_COPY, []*Var{
+		NewVar("source", selfArrayType, false, span),
+	}, VoidType{Span: span}, span)
+
+	// copyRange: copies a range of elements from source to this array
+	// Used internally by lowering for concat/slice
+	copyRangeMethod := NewFunction(ARRAY_METHOD_COPY_RANGE, []*Var{
+		NewVar("source", selfArrayType, false, span),
+		NewVar("srcOffset", i32Type, false, span),
+		NewVar("destOffset", i32Type, false, span),
+		NewVar("count", i32Type, false, span),
+	}, VoidType{Span: span}, span)
+
+	// copyRangeReversed: copies a range of elements from source in reverse order
+	// Used internally by lowering for reverse
+	copyRangeReversedMethod := NewFunction(ARRAY_METHOD_COPY_RANGE_REVERSE, []*Var{
+		NewVar("source", selfArrayType, false, span),
+		NewVar("srcOffset", i32Type, false, span),
+		NewVar("destOffset", i32Type, false, span),
+		NewVar("count", i32Type, false, span),
+	}, VoidType{Span: span}, span)
+
+	// concat: returns a new array with elements from both arrays
+	concatMethod := NewFunction(ARRAY_METHOD_CONCAT, []*Var{
+		NewVar("other", selfArrayType, false, span),
+	}, selfArrayType, span)
+
+	// slice: returns a new array with elements from start (inclusive) to end (exclusive)
+	sliceMethod := NewFunction(ARRAY_METHOD_SLICE, []*Var{
+		NewVar("start", i32Type, false, span),
+		NewVar("end", i32Type, false, span),
+	}, selfArrayType, span)
+
+	// Search operations
+	// indexOf: returns index of first occurrence, -1 if not found
+	indexOfMethod := NewFunction(ARRAY_METHOD_INDEX_OF, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, i32Type, span)
+
+	// lastIndexOf: returns index of last occurrence, -1 if not found
+	lastIndexOfMethod := NewFunction(ARRAY_METHOD_LAST_INDEX, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, i32Type, span)
+
+	// find: returns the first element that equals value, or default if not found
+	findMethod := NewFunction(ARRAY_METHOD_FIND, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, arrayType.ElementType, span)
+
+	// findIndex: returns index of first element that equals value, -1 if not found
+	// (same as indexOf, provided for API consistency)
+	findIndexMethod := NewFunction(ARRAY_METHOD_FIND_INDEX, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, i32Type, span)
+
+	// includes: returns true if array contains the value
+	includesMethod := NewFunction(ARRAY_METHOD_INCLUDES, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, BoolType{Span: span}, span)
+
+	// Non-mutating operations
+	// reverse: returns a new array with elements in reverse order
+	reverseMethod := NewFunction(ARRAY_METHOD_REVERSE, []*Var{}, selfArrayType, span)
+
+	// fill: fills all elements with the given value
+	fillMethod := NewFunction(ARRAY_METHOD_FILL, []*Var{
+		NewVar("value", arrayType.ElementType, false, span),
+	}, VoidType{Span: span}, span)
+
+	// clear: clears all elements (sets length to 0)
+	clearMethod := NewFunction(ARRAY_METHOD_CLEAR, []*Var{}, VoidType{Span: span}, span)
+
+	// State check
+	// isEmpty: returns true if length is 0
+	isEmptyMethod := NewFunction(ARRAY_METHOD_IS_EMPTY, []*Var{}, BoolType{Span: span}, span)
+
+	methods := []*ClassMethod{
+		publicMethod(constructorMethod),
+		publicMethod(pushMethod),
+		publicMethod(popMethod),
+		publicMethod(getMethod),
+		publicMethod(setMethod),
+		publicMethod(copyMethod),
+		publicMethod(copyRangeMethod),
+		publicMethod(copyRangeReversedMethod), // Used by reverse lowering
+		loweredMethod(concatMethod),           // Handled by IR lowering, no runtime call
+		loweredMethod(sliceMethod),            // Handled by IR lowering, no runtime call
+		publicMethod(indexOfMethod),
+		publicMethod(lastIndexOfMethod),
+		publicMethod(findMethod),
+		publicMethod(findIndexMethod),
+		publicMethod(includesMethod),
+		loweredMethod(reverseMethod), // Handled by IR lowering, no runtime call
+		publicMethod(fillMethod),
+		publicMethod(clearMethod),
+		publicMethod(isEmptyMethod),
+	}
+
+	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
 }
 
 // string is nothing but an array of u8

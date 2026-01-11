@@ -1466,6 +1466,15 @@ func (p *UnusedWarningPass) GetName() string {
 	return "UnusedWarningPass"
 }
 
+// markValueAsUsed marks a value (Var or Function) as used if applicable
+func markValueAsUsed(value zeus_value.Value) {
+	if v := zeus_value.AsVar(value); v != nil {
+		v.IsUsed = true
+	} else if f := zeus_value.AsFunction(value); f != nil {
+		f.IsUsed = true
+	}
+}
+
 func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	switch instr.Type {
 	case InstrTypeDeclVar:
@@ -1509,28 +1518,15 @@ func (p *UnusedWarningPass) handleDeclPrimordialFunc(instr *Instr) {
 // handleVarDecl processes variable declarations and marks initializers as used
 func (p *UnusedWarningPass) handleVarDecl(instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
-
-	// If the variable has an initializer, mark it as used
 	if input.Initializer != nil {
-		// If the initializer is a variable or function, mark it as used
-		if initVar := zeus_value.AsVar(input.Initializer); initVar != nil {
-			initVar.IsUsed = true
-		} else if initFunc := zeus_value.AsFunction(input.Initializer); initFunc != nil {
-			initFunc.IsUsed = true
-		}
+		markValueAsUsed(input.Initializer)
 	}
 }
 
 // handleStore processes variable assignments and marks values as used
 func (p *UnusedWarningPass) handleStore(instr *Instr) {
 	input := AsStoreInstrInput(instr.Input)
-
-	// If the value being stored is a variable or function, mark it as used
-	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
-		valueVar.IsUsed = true
-	} else if valueFunc := zeus_value.AsFunction(input.Value); valueFunc != nil {
-		valueFunc.IsUsed = true
-	}
+	markValueAsUsed(input.Value)
 }
 
 // handleLoad processes variable usage and marks variables as used
@@ -1544,86 +1540,41 @@ func (p *UnusedWarningPass) handleLoad(instr *Instr) {
 // handleBinaryOp processes binary operations and marks operands as used
 func (p *UnusedWarningPass) handleBinaryOp(instr *Instr) {
 	input := AsBinaryOpInstrInput(instr.Input)
-
-	// Mark the left operand as used
-	if leftVar := zeus_value.AsVar(input.Left); leftVar != nil {
-		leftVar.IsUsed = true
-	} else if leftFunc := zeus_value.AsFunction(input.Left); leftFunc != nil {
-		leftFunc.IsUsed = true
-	}
-
-	// Mark the right operand as used
-	if rightVar := zeus_value.AsVar(input.Right); rightVar != nil {
-		rightVar.IsUsed = true
-	} else if rightFunc := zeus_value.AsFunction(input.Right); rightFunc != nil {
-		rightFunc.IsUsed = true
-	}
+	markValueAsUsed(input.Left)
+	markValueAsUsed(input.Right)
 }
 
 // handleUnaryOp processes unary operations and marks the operand as used
 func (p *UnusedWarningPass) handleUnaryOp(instr *Instr) {
 	input := AsUnaryOpInstrInput(instr.Input)
-
-	// Mark the operand as used
-	if operandVar := zeus_value.AsVar(input.Value); operandVar != nil {
-		operandVar.IsUsed = true
-	} else if operandFunc := zeus_value.AsFunction(input.Value); operandFunc != nil {
-		operandFunc.IsUsed = true
-	}
+	markValueAsUsed(input.Value)
 }
 
 // handleCallFunc processes function calls and marks arguments as used
 func (p *UnusedWarningPass) handleCallFunc(instr *Instr) {
 	input := AsCallFuncInstrInput(instr.Input)
+	markValueAsUsed(input.Callee)
+	markValuesAsUsed(input.Args)
+}
 
-	// Mark the callee as used (variable or function)
-	if calleeVar := zeus_value.AsVar(input.Callee); calleeVar != nil {
-		calleeVar.IsUsed = true
-	} else if calleeFunc := zeus_value.AsFunction(input.Callee); calleeFunc != nil {
-		calleeFunc.IsUsed = true
-	}
-
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
-			argFunc.IsUsed = true
-		}
+// markValuesAsUsed marks all values in a slice as used
+func markValuesAsUsed(values []zeus_value.Value) {
+	for _, v := range values {
+		markValueAsUsed(v)
 	}
 }
 
 // handleIndirectFuncCall processes indirect function calls and marks the function and arguments as used
 func (p *UnusedWarningPass) handleIndirectFuncCall(instr *Instr) {
 	input := AsIndirectFuncCallInstrInput(instr.Input)
-
-	// Mark the function as used (variable or function)
-	if funcVar := zeus_value.AsVar(input.Function); funcVar != nil {
-		funcVar.IsUsed = true
-	} else if function := zeus_value.AsFunction(input.Function); function != nil {
-		function.IsUsed = true
-	}
-
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
-			argFunc.IsUsed = true
-		}
-	}
+	markValueAsUsed(input.Function)
+	markValuesAsUsed(input.Args)
 }
 
 // handleReturn processes return statements and marks the return value as used
 func (p *UnusedWarningPass) handleReturn(instr *Instr) {
 	input := AsReturnInstrInput(instr.Input)
-
-	// Mark the return value as used if it's not nil
-	if returnValueVar := zeus_value.AsVar(input.Value); returnValueVar != nil {
-		returnValueVar.IsUsed = true
-	} else if returnValueFunc := zeus_value.AsFunction(input.Value); returnValueFunc != nil {
-		returnValueFunc.IsUsed = true
-	}
+	markValueAsUsed(input.Value)
 }
 
 // handleCondJmp processes conditional jumps and marks the condition as used
@@ -1639,20 +1590,10 @@ func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
 // handleNewObj processes new object expressions and marks the class as used
 func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
-
-	// Mark the class as used when an object is created from it
 	if class := zeus_value.AsClass(input.Callee); class != nil {
 		class.IsUsed = true
 	}
-
-	// Mark arguments as used
-	for i := range input.Args {
-		if argVar := zeus_value.AsVar(input.Args[i]); argVar != nil {
-			argVar.IsUsed = true
-		} else if argFunc := zeus_value.AsFunction(input.Args[i]); argFunc != nil {
-			argFunc.IsUsed = true
-		}
-	}
+	markValuesAsUsed(input.Args)
 }
 
 // handleObjectPropertyAccess processes object property accesses and marks the object as used

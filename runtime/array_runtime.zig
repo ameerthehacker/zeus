@@ -359,3 +359,414 @@ export fn zeus_array_copy(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, 
     // Update destination length
     dest_array.length = copy_length;
 }
+
+/// CopyRange: zeus_array_copyRange(this_ptr, return_buffer_ptr, source_ptr_ptr, src_offset_ptr, dest_offset_ptr, count_ptr)
+/// Copies a range of elements from source array to this array at the specified offset
+/// This is used by the lowered concat/slice operations
+export fn zeus_array_copyRange(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, source_ptr_ptr: *anyopaque, src_offset_ptr: *anyopaque, dest_offset_ptr: *anyopaque, count_ptr: *anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return, not used
+
+    const dest_array = castToArrayObj(this_ptr);
+
+    // Dereference to get the source array pointer (passed via alloca)
+    const source_obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(source_ptr_ptr))).*;
+    const source_array = castToArrayObj(source_obj_ptr);
+
+    // Get offset and count values
+    const src_offset_val = @as(*i32, @ptrCast(@alignCast(src_offset_ptr))).*;
+    const dest_offset_val = @as(*i32, @ptrCast(@alignCast(dest_offset_ptr))).*;
+    const count_val = @as(*i32, @ptrCast(@alignCast(count_ptr))).*;
+
+    // Validate and convert to unsigned
+    if (src_offset_val < 0 or dest_offset_val < 0 or count_val <= 0) {
+        return;
+    }
+
+    const src_offset: u32 = @intCast(src_offset_val);
+    const dest_offset: u32 = @intCast(dest_offset_val);
+    const count: u32 = @intCast(count_val);
+
+    const element_size = getElementSize(dest_array);
+
+    // Bounds check on source
+    if (src_offset + count > source_array.length) {
+        debug.log(allocator, "array_copyRange", "source range {}..{} exceeds length {}", .{ src_offset, src_offset + count, source_array.length });
+        return;
+    }
+
+    // Ensure destination has enough capacity
+    const required_length = dest_offset + count;
+    if (dest_array.capacity < required_length) {
+        if (!resizeArray(dest_array, required_length)) {
+            return;
+        }
+    }
+
+    // Copy the data
+    if (source_array.data != null and dest_array.data != null and count > 0) {
+        const src_bytes = getDataBytes(source_array).?;
+        const dest_bytes = getDataBytes(dest_array).?;
+        const src_byte_offset = getElementOffset(src_offset, element_size);
+        const dest_byte_offset = getElementOffset(dest_offset, element_size);
+        const copy_size = getElementOffset(count, element_size);
+        @memcpy(dest_bytes[dest_byte_offset .. dest_byte_offset + copy_size], src_bytes[src_byte_offset .. src_byte_offset + copy_size]);
+    }
+
+    // Update destination length if we extended it
+    if (required_length > dest_array.length) {
+        dest_array.length = required_length;
+    }
+
+    debug.log(allocator, "array_copyRange", "copied {} elements from src[{}..] to dest[{}..], new length={}", .{ count, src_offset, dest_offset, dest_array.length });
+}
+
+// ============================================================================
+// Helper Functions for Element Comparison
+// ============================================================================
+
+/// Compare two elements at given memory locations
+/// Returns true if they are equal, false otherwise
+fn elementsEqual(ptr1: [*]const u8, ptr2: [*]const u8, element_size: u32, element_type: abi.ZeusType) bool {
+    switch (element_type) {
+        ._i8 => {
+            const a = @as(*const i8, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const i8, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._i16 => {
+            const a = @as(*const i16, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const i16, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._i32 => {
+            const a = @as(*const i32, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const i32, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._i64 => {
+            const a = @as(*const i64, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const i64, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._f32 => {
+            const a = @as(*const f32, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const f32, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._f64 => {
+            const a = @as(*const f64, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const f64, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._bool => {
+            const a = @as(*const bool, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const bool, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        .object => {
+            const a = @as(*const ?*anyopaque, @ptrCast(@alignCast(ptr1))).*;
+            const b = @as(*const ?*anyopaque, @ptrCast(@alignCast(ptr2))).*;
+            return a == b;
+        },
+        ._null => {
+            // For null type, do byte comparison
+            return std.mem.eql(u8, ptr1[0..element_size], ptr2[0..element_size]);
+        },
+    }
+}
+
+/// Copy raw data between arrays
+fn copyArrayData(dest_array: *abi.ZeusArrayObj, src_array: *abi.ZeusArrayObj, dest_offset: u32, src_offset: u32, count: u32) void {
+    if (count == 0) return;
+    const element_size = getElementSize(dest_array);
+    if (getDataBytes(dest_array)) |dest_bytes| {
+        if (getDataBytes(src_array)) |src_bytes| {
+            const dest_start = getElementOffset(dest_offset, element_size);
+            const src_start = getElementOffset(src_offset, element_size);
+            const copy_size = getElementOffset(count, element_size);
+            @memcpy(dest_bytes[dest_start .. dest_start + copy_size], src_bytes[src_start .. src_start + copy_size]);
+        }
+    }
+}
+
+// ============================================================================
+// New Array Methods
+// ============================================================================
+
+// Note: concat and slice are handled entirely at the IR lowering level
+// They use NEW_OBJ (factory function) + copyRange for proper object creation
+// No runtime functions are needed - the methods are marked as IsLowered
+// in primordials.go so codegen doesn't generate wrapper functions for them
+
+/// IndexOf: zeus_array_indexOf(this_ptr, return_buffer_ptr_ptr, value_ptr)
+/// Returns the index of the first occurrence of value, or -1 if not found
+export fn zeus_array_indexOf(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const element_size = getElementSize(this_array);
+    const type_info = this_array.obj_header.getObjectTypeInfo();
+    const element_type = type_info.array_element_type;
+
+    var result: i32 = -1;
+
+    if (this_array.length > 0) {
+        if (getDataBytes(this_array)) |data_bytes| {
+            const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+            var i: u32 = 0;
+            while (i < this_array.length) : (i += 1) {
+                const offset = getElementOffset(i, element_size);
+                if (elementsEqual(data_bytes + offset, value_bytes, element_size, element_type)) {
+                    result = @intCast(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Return the result
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(i32))) |result_bytes| {
+        const result_ptr = @as(*i32, @ptrCast(@alignCast(result_bytes.ptr)));
+        result_ptr.* = result;
+    }
+}
+
+/// LastIndexOf: zeus_array_lastIndexOf(this_ptr, return_buffer_ptr_ptr, value_ptr)
+/// Returns the index of the last occurrence of value, or -1 if not found
+export fn zeus_array_lastIndexOf(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const element_size = getElementSize(this_array);
+    const type_info = this_array.obj_header.getObjectTypeInfo();
+    const element_type = type_info.array_element_type;
+
+    var result: i32 = -1;
+
+    if (this_array.length > 0) {
+        if (getDataBytes(this_array)) |data_bytes| {
+            const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+            // Search backwards
+            var i: u32 = this_array.length;
+            while (i > 0) {
+                i -= 1;
+                const offset = getElementOffset(i, element_size);
+                if (elementsEqual(data_bytes + offset, value_bytes, element_size, element_type)) {
+                    result = @intCast(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Return the result
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(i32))) |result_bytes| {
+        const result_ptr = @as(*i32, @ptrCast(@alignCast(result_bytes.ptr)));
+        result_ptr.* = result;
+    }
+}
+
+/// Find: zeus_array_find(this_ptr, return_buffer_ptr_ptr, value_ptr)
+/// Returns the first element that equals value, or default value if not found
+export fn zeus_array_find(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const element_size = getElementSize(this_array);
+    const type_info = this_array.obj_header.getObjectTypeInfo();
+    const element_type = type_info.array_element_type;
+
+    // Allocate return buffer for the element
+    const result_bytes = runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, element_size);
+    if (result_bytes == null) {
+        return;
+    }
+
+    // Initialize to default value (zero)
+    @memset(result_bytes.?[0..element_size], 0);
+
+    if (this_array.length > 0) {
+        if (getDataBytes(this_array)) |data_bytes| {
+            const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+            // Search forwards
+            for (0..this_array.length) |i| {
+                const offset = getElementOffset(@intCast(i), element_size);
+                if (elementsEqual(data_bytes + offset, value_bytes, element_size, element_type)) {
+                    // Found it - copy the element to result
+                    @memcpy(result_bytes.?[0..element_size], data_bytes[offset .. offset + element_size]);
+                    return;
+                }
+            }
+        }
+    }
+    // Not found - result is already set to default (zero)
+}
+
+/// FindIndex: zeus_array_findIndex(this_ptr, return_buffer_ptr_ptr, value_ptr)
+/// Returns the index of first element that equals value, or -1 if not found
+/// (Same behavior as indexOf, provided for API consistency)
+export fn zeus_array_findIndex(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const element_size = getElementSize(this_array);
+    const type_info = this_array.obj_header.getObjectTypeInfo();
+    const element_type = type_info.array_element_type;
+
+    var result: i32 = -1;
+
+    if (this_array.length > 0) {
+        if (getDataBytes(this_array)) |data_bytes| {
+            const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+            // Search forwards
+            for (0..this_array.length) |i| {
+                const offset = getElementOffset(@intCast(i), element_size);
+                if (elementsEqual(data_bytes + offset, value_bytes, element_size, element_type)) {
+                    result = @intCast(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Return the result
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(i32))) |result_bytes| {
+        const result_ptr = @as(*i32, @ptrCast(@alignCast(result_bytes.ptr)));
+        result_ptr.* = result;
+    }
+}
+
+/// Includes: zeus_array_includes(this_ptr, return_buffer_ptr_ptr, value_ptr)
+/// Returns true if array contains the value, false otherwise
+export fn zeus_array_includes(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const element_size = getElementSize(this_array);
+    const type_info = this_array.obj_header.getObjectTypeInfo();
+    const element_type = type_info.array_element_type;
+
+    var result: bool = false;
+
+    if (this_array.length > 0) {
+        if (getDataBytes(this_array)) |data_bytes| {
+            const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+            var i: u32 = 0;
+            while (i < this_array.length) : (i += 1) {
+                const offset = getElementOffset(i, element_size);
+                if (elementsEqual(data_bytes + offset, value_bytes, element_size, element_type)) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Return the result
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(bool))) |result_bytes| {
+        result_bytes[0] = if (result) 1 else 0;
+    }
+}
+
+/// CopyRangeReversed: zeus_array_copyRangeReversed(this_ptr, return_buffer_ptr, source_ptr_ptr, src_offset_ptr, dest_offset_ptr, count_ptr)
+/// Copies a range of elements from source array to this array in REVERSE order
+/// This is used by the lowered reverse() operation
+/// Elements at source[srcOffset..srcOffset+count] are copied to dest[destOffset..destOffset+count] in reverse
+export fn zeus_array_copyRangeReversed(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, source_ptr_ptr: *anyopaque, src_offset_ptr: *anyopaque, dest_offset_ptr: *anyopaque, count_ptr: *anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return, not used
+
+    const dest_array = castToArrayObj(this_ptr);
+
+    // Dereference to get the source array pointer (passed via alloca)
+    const source_obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(source_ptr_ptr))).*;
+    const source_array = castToArrayObj(source_obj_ptr);
+
+    // Get offset and count values
+    const src_offset_val = @as(*i32, @ptrCast(@alignCast(src_offset_ptr))).*;
+    const dest_offset_val = @as(*i32, @ptrCast(@alignCast(dest_offset_ptr))).*;
+    const count_val = @as(*i32, @ptrCast(@alignCast(count_ptr))).*;
+
+    // Validate and convert to unsigned
+    if (src_offset_val < 0 or dest_offset_val < 0 or count_val <= 0) {
+        return;
+    }
+
+    const src_offset: u32 = @intCast(src_offset_val);
+    const dest_offset: u32 = @intCast(dest_offset_val);
+    const count: u32 = @intCast(count_val);
+
+    const element_size = getElementSize(dest_array);
+
+    // Bounds check on source
+    if (src_offset + count > source_array.length) {
+        debug.log(allocator, "array_copyRangeReversed", "source range {}..{} exceeds length {}", .{ src_offset, src_offset + count, source_array.length });
+        return;
+    }
+
+    // Ensure destination has enough capacity
+    const required_length = dest_offset + count;
+    if (dest_array.capacity < required_length) {
+        if (!resizeArray(dest_array, required_length)) {
+            return;
+        }
+    }
+
+    // Copy the data in REVERSE order
+    if (source_array.data != null and dest_array.data != null and count > 0) {
+        const src_bytes = getDataBytes(source_array).?;
+        const dest_bytes = getDataBytes(dest_array).?;
+
+        var i: u32 = 0;
+        while (i < count) : (i += 1) {
+            // Source index: reading from end towards start
+            const src_idx = src_offset + count - 1 - i;
+            // Dest index: writing from start towards end
+            const dest_idx = dest_offset + i;
+
+            const src_byte_offset = getElementOffset(src_idx, element_size);
+            const dest_byte_offset = getElementOffset(dest_idx, element_size);
+            @memcpy(dest_bytes[dest_byte_offset .. dest_byte_offset + element_size], src_bytes[src_byte_offset .. src_byte_offset + element_size]);
+        }
+    }
+
+    // Update destination length if we extended it
+    if (required_length > dest_array.length) {
+        dest_array.length = required_length;
+    }
+
+    debug.log(allocator, "array_copyRangeReversed", "copied {} elements in reverse from src[{}..] to dest[{}..], new length={}", .{ count, src_offset, dest_offset, dest_array.length });
+}
+
+/// Fill: zeus_array_fill(this_ptr, return_buffer_ptr, value_ptr)
+/// Fills all elements with the given value
+export fn zeus_array_fill(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, value_ptr: *anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return
+
+    const this_array = castToArrayObj(this_ptr);
+    if (this_array.length == 0) return;
+
+    const element_size = getElementSize(this_array);
+    if (getDataBytes(this_array)) |data_bytes| {
+        const value_bytes = @as([*]const u8, @ptrCast(@alignCast(value_ptr)));
+        var i: u32 = 0;
+        while (i < this_array.length) : (i += 1) {
+            const offset = getElementOffset(i, element_size);
+            @memcpy(data_bytes[offset .. offset + element_size], value_bytes[0..element_size]);
+        }
+    }
+
+    debug.log(allocator, "array_fill", "filled {} elements", .{this_array.length});
+}
+
+/// Clear: zeus_array_clear(this_ptr, return_buffer_ptr)
+/// Clears all elements (sets length to 0)
+export fn zeus_array_clear(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque) callconv(.C) void {
+    _ = return_buffer_ptr; // void return
+
+    const this_array = castToArrayObj(this_ptr);
+    this_array.length = 0;
+
+    debug.log(allocator, "array_clear", "cleared array", .{});
+}
+
+/// IsEmpty: zeus_array_isEmpty(this_ptr, return_buffer_ptr_ptr)
+/// Returns true if length is 0
+export fn zeus_array_isEmpty(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque) callconv(.C) void {
+    const this_array = castToArrayObj(this_ptr);
+    const result: bool = this_array.length == 0;
+
+    // Return the result
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(bool))) |result_bytes| {
+        result_bytes[0] = if (result) 1 else 0;
+    }
+}

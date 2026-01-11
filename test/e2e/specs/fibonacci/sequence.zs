@@ -1,4 +1,4 @@
-function generateFibonacci(count: u32): i32[] {
+function generateFibonacci(count: i32): i32[] {
   let result: i32[] = new i32[];
   
   if (count <= 0) {
@@ -12,7 +12,7 @@ function generateFibonacci(count: u32): i32[] {
   
   result.push(1);
   
-  let i: u32 = 2;
+  let i: i32 = 2;
   while (i < count) {
     let next: i32 = result.get(i - 1) + result.get(i - 2);
     result.push(next);

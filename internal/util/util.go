@@ -24,6 +24,10 @@ func GetMethodIndex(class zeus_value.Class, methodName string) int {
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
+		// Skip lowered methods - they are not in the vtable
+		if method.IsLowered {
+			continue
+		}
 		if method.Method.Name == methodName {
 			return methodIndex
 		}

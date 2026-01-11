@@ -147,12 +147,26 @@ func (p *ClassProperty) String() string {
 type ClassMethod struct {
 	Method         *Function
 	AccessModifier *token.Token
+	// IsLowered indicates that this method is handled entirely by IR lowering
+	// and doesn't need a runtime wrapper function generated
+	IsLowered bool
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
 	return &ClassMethod{
 		Method:         method,
 		AccessModifier: accessModifier,
+		IsLowered:      false,
+	}
+}
+
+// NewLoweredClassMethod creates a method that is handled by IR lowering
+// and doesn't need a runtime wrapper function
+func NewLoweredClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
+	return &ClassMethod{
+		Method:         method,
+		AccessModifier: accessModifier,
+		IsLowered:      true,
 	}
 }
 

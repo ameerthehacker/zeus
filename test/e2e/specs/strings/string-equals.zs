@@ -5,7 +5,7 @@ function main(): i8 {
   let d: string = "hello!";
 
   // a == b should be true
-  if (a.equals(b) == false) {
+  if (!a.equals(b)) {
     return 1;
   }
 

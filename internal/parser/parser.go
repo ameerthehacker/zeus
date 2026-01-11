@@ -20,30 +20,34 @@ type Parser struct {
 }
 
 const (
-	UnaryOperatorPrecedence = 13 // Higher than all binary operators
-	NewOperatorPrecedence   = 11 // Lower than indexing (12) to allow new Type[size], but equal to function call to NOT parse () as function call
+	// Unary operators need precedence LOWER than member access (14), function call (13), and postfix (12)
+	// so that !arr.isEmpty() parses as !(arr.isEmpty()) not (!arr).isEmpty()
+	// but HIGHER than power (10) so -5 ** 2 is (-5) ** 2
+	UnaryOperatorPrecedence = 11
+	NewOperatorPrecedence   = 13 // Equal to function call to allow new Type() but below indexing (14) to allow new Type[size]
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeDot:              12,
-	token.TokenTypeLeftBracket:      12,
-	token.TokenTypeLeftParen:        11,
-	token.TokenTypePlusPlus:         10, // postfix ++/--
-	token.TokenTypeMinusMinus:       10,
-	token.TokenTypeDoubleStar:       9, // power (right associative)
-	token.TokenTypeStar:             8,
-	token.TokenTypeSlash:            8,
-	token.TokenTypePercent:          8,
-	token.TokenTypePlus:             7,
-	token.TokenTypeMinus:            7,
-	token.TokenTypeGreaterThan:      6,
-	token.TokenTypeGreaterThanEqual: 6,
-	token.TokenTypeLessThan:         6,
-	token.TokenTypeLessThanEqual:    6,
-	token.TokenTypeEqualEqual:       5,
-	token.TokenTypeBangEqual:        5,
-	token.TokenTypeAmpAmp:           4, // logical AND
-	token.TokenTypePipePipe:         3, // logical OR
+	token.TokenTypeDot:              14, // member access (highest)
+	token.TokenTypeLeftBracket:      14, // array indexing
+	token.TokenTypeLeftParen:        13, // function call
+	token.TokenTypePlusPlus:         12, // postfix ++/--
+	token.TokenTypeMinusMinus:       12,
+	// UnaryOperatorPrecedence = 11 (prefix !, -, ++, --)
+	token.TokenTypeDoubleStar:       10, // power (right associative)
+	token.TokenTypeStar:             9,
+	token.TokenTypeSlash:            9,
+	token.TokenTypePercent:          9,
+	token.TokenTypePlus:             8,
+	token.TokenTypeMinus:            8,
+	token.TokenTypeGreaterThan:      7,
+	token.TokenTypeGreaterThanEqual: 7,
+	token.TokenTypeLessThan:         7,
+	token.TokenTypeLessThanEqual:    7,
+	token.TokenTypeEqualEqual:       6,
+	token.TokenTypeBangEqual:        6,
+	token.TokenTypeAmpAmp:           5, // logical AND
+	token.TokenTypePipePipe:         4, // logical OR
 	// Assignment operators (lowest precedence but > 0 so they get parsed)
 	token.TokenTypeEqual:        1,
 	token.TokenTypePlusEqual:    1,
