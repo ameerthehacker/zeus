@@ -33,6 +33,7 @@ const (
 const (
 	STRING_METHOD_COMPARE = "compare"
 	STRING_METHOD_EQUALS  = "equals"
+	STRING_METHOD_CONCAT  = "concat"
 )
 
 func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
@@ -73,32 +74,43 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 // in the runtime constructor we intern the string and return the same pointer
 func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	u8ArrayObjectType := ObjectType{Class: *GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
-	stringObjectType := ObjectType{Class: *NewClass(ZEUS_PRIMORDIAL_STRING, nil, nil, ZEUS_PRIMORDIAL_STRING, nil, span)}
 
 	// Properties
 	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
 	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
 	properties := []*ClassProperty{dataProperty, lengthProperty}
 
-	// Methods
+	// Create the string class first (without methods that reference itself)
+	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
+
+	// Methods - use UserDefinedType for self-reference to avoid copy issues
+	// The type checker will resolve "string" to the actual string ObjectType
+	selfType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
+
 	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
 		NewVar("bytes", u8ArrayObjectType, true, span),
 	}, VoidType{Span: span}, span)
 	// compare: returns -1 if this < other, 0 if equal, 1 if this > other
 	compareMethod := NewFunction(STRING_METHOD_COMPARE, []*Var{
-		NewVar("other", stringObjectType, true, span),
+		NewVar("other", selfType, true, span),
 	}, IntType{Size: I8, Signed: true, Span: span}, span)
 	// equals: returns true if strings are equal, false otherwise
 	equalsMethod := NewFunction(STRING_METHOD_EQUALS, []*Var{
-		NewVar("other", stringObjectType, true, span),
+		NewVar("other", selfType, true, span),
 	}, BoolType{Span: span}, span)
+	// concat: returns a new string with the other string appended
+	concatMethod := NewFunction(STRING_METHOD_CONCAT, []*Var{
+		NewVar("other", selfType, true, span),
+	}, selfType, span)
 
-	methods := []*ClassMethod{
+	// Update the class with methods
+	stringClass.Methods = []*ClassMethod{
 		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
 		NewClassMethod(compareMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
 		NewClassMethod(equalsMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
+		NewClassMethod(concatMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
 	}
 
-	return NewClass(ZEUS_PRIMORDIAL_STRING, properties, methods, ZEUS_PRIMORDIAL_STRING, nil, span)
+	return stringClass
 }
 

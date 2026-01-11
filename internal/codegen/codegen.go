@@ -3,6 +3,7 @@ package codegen
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/module"
@@ -27,6 +28,7 @@ type ZeusClassLLVMStruct struct {
 	LLVMVTableInstance       *llvm.Value
 	LLVMObjHeaderInstance    llvm.Value
 	LLVMConstructorMethod    *llvm.Value
+	LLVMFactoryFunction      *llvm.Value
 	CurrentVTableMethodIndex int
 }
 
@@ -45,7 +47,7 @@ func NewZeusClassModule(modulePath string, class zeus_value.Class) ZeusClassModu
 }
 
 func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTableMethods []llvm.Value, llvmObjHeaderStruct llvm.Type, llvmVTableInstance *llvm.Value, llvmObjHeaderInstance llvm.Value, llvmConstructorMethod *llvm.Value) *ZeusClassLLVMStruct {
-	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTableMethods, llvmObjHeaderStruct, llvmVTableInstance, llvmObjHeaderInstance, llvmConstructorMethod, 0}
+	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTableMethods, llvmObjHeaderStruct, llvmVTableInstance, llvmObjHeaderInstance, llvmConstructorMethod, nil, 0}
 }
 
 const MemAllocFunctionName = "zeus_gc_alloc"
@@ -925,6 +927,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		c.genPrimordialClassMethods(class)
 	}
 
+	// Declare factory function signature (body will be generated in Phase 3)
+	c.declareFactoryFunction(class)
+
 	return zeusClassLLVMStruct
 }
 
@@ -938,45 +943,151 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	callee, ok := input.Callee.(*zeus_value.Class)
 	zeus_error.Assert(ok, fmt.Sprintf("callee %s is not a class", input.Callee))
 
-	// Class LLVM struct is guaranteed to exist because DECL_CLASS is processed first
-	llvmStructType := c.getLLVMStructType(callee.Name)
-	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.cxt.Int32Type(), c.getSizeOfClass(*callee), false), llvm.ConstInt(c.cxt.Int32Type(), 16, false))
-	llvmStructObjHeaderField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, OBJ_HEADER_STRUCT_INDEX, fmt.Sprintf("%s_header_field", callee.Name))
-	llvmObjHeader := c.getLLVMObjHeaderPtr(callee.Name)
+	// Determine the factory function name
+	// For object array types (e.g., Point[]), use the shared Object[] factory
+	factoryClassName := callee.Name
+	if callee.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && callee.Name != ZeusObjectArrayClassName && zeus_value.IsObjectType(callee.ArrayElementType) {
+		factoryClassName = ZeusObjectArrayClassName
+	}
+	factoryFunctionName := getFactoryFunctionName(factoryClassName)
+	factoryFunc := c.module.NamedFunction(factoryFunctionName)
+	zeus_error.Assert(!factoryFunc.IsNil(), fmt.Sprintf("factory function %s not found", factoryFunctionName))
+
+	// Build factory function parameter types
+	paramTypes := []llvm.Type{}
+	for _, arg := range input.Args {
+		paramTypes = append(paramTypes, c.toLLVMType(zeus_value.GetValueType(arg)))
+	}
+	returnType := llvm.PointerType(c.cxt.VoidType(), 0)
+	factoryFunctionType := llvm.FunctionType(returnType, paramTypes, false)
+
+	// Convert args to LLVM values
+	factoryArgs := []llvm.Value{}
+	for _, arg := range input.Args {
+		factoryArgs = append(factoryArgs, c.toLLVMValue(arg))
+	}
+
+	// Call the factory function
+	llvmStruct := c.builder.CreateCall(factoryFunctionType, factoryFunc, factoryArgs, factoryFunctionName)
+	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
+}
+
+// getFactoryFunctionName returns the factory function name for a class
+// e.g., "u8[]" -> "zeus_new_u8_array", "string" -> "zeus_new_string", "MyClass" -> "zeus_new_MyClass"
+func getFactoryFunctionName(className string) string {
+	// Replace [] with _array for array types
+	mangledName := strings.ReplaceAll(className, "[]", "_array")
+	return fmt.Sprintf("zeus_new_%s", mangledName)
+}
+
+// declareFactoryFunction declares the factory function signature for a class
+// This is called in Phase 1 before NEW_OBJ instructions are processed
+func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Value {
+	factoryFunctionName := getFactoryFunctionName(class.Name)
+
+	// Check if already declared
+	existingFunc := c.module.NamedFunction(factoryFunctionName)
+	if !existingFunc.IsNil() {
+		return existingFunc
+	}
+
+	// Find constructor method to get parameter types
+	var constructorMethod *zeus_value.Function
+	for _, method := range class.Methods {
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			constructorMethod = method.Method
+			break
+		}
+	}
+
+	// Build parameter types for factory function (same as constructor params)
+	paramTypes := []llvm.Type{}
+	if constructorMethod != nil {
+		for _, param := range constructorMethod.Params {
+			paramTypes = append(paramTypes, c.toLLVMType(param.ValueType))
+		}
+	}
+
+	// Factory function returns a pointer to the object
+	returnType := llvm.PointerType(c.cxt.VoidType(), 0)
+	factoryFunctionType := llvm.FunctionType(returnType, paramTypes, false)
+	factoryFunction := llvm.AddFunction(c.module, factoryFunctionName, factoryFunctionType)
+	factoryFunction.SetLinkage(llvm.ExternalLinkage)
+
+	// Store factory function reference
+	structInfo := c.zeusClassLLVMStructMap[class.Name]
+	if structInfo != nil {
+		structInfo.LLVMFactoryFunction = &factoryFunction
+	}
+
+	return factoryFunction
+}
+
+// genFactoryFunctionBody generates the body for a factory function
+// This is called in Phase 3 after all constructors are available
+func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
+	factoryFunctionName := getFactoryFunctionName(class.Name)
+	factoryFunction := c.module.NamedFunction(factoryFunctionName)
+	zeus_error.Assert(!factoryFunction.IsNil(), fmt.Sprintf("factory function %s not declared", factoryFunctionName))
+
+	// Find constructor method to get parameter types
+	var constructorMethod *zeus_value.Function
+	for _, method := range class.Methods {
+		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+			constructorMethod = method.Method
+			break
+		}
+	}
+
+	// Create the function body
+	entryBlock := llvm.AddBasicBlock(factoryFunction, "entry")
+	currentInsertionBlock := c.builder.GetInsertBlock()
+	c.builder.SetInsertPointAtEnd(entryBlock)
+
+	// Allocate memory for the object
+	llvmStructType := c.getLLVMStructType(class.Name)
+	llvmStruct := c.callGlobalLLVMFunction(MemAllocFunctionName, llvm.ConstInt(c.cxt.Int32Type(), c.getSizeOfClass(class), false))
+
+	// Set up object header
+	llvmStructObjHeaderField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, OBJ_HEADER_STRUCT_INDEX, fmt.Sprintf("%s_header_field", class.Name))
+	llvmObjHeader := c.getLLVMObjHeaderPtr(class.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
-	// store default values for primitive types
-	for propertyIndex, property := range callee.Properties {
+
+	// Initialize properties to default values
+	for propertyIndex, property := range class.Properties {
 		defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
-		// skip the obj header
-		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", callee.Name, property.Property.Name))
+		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", class.Name, property.Property.Name))
 		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
 	}
 
-	llvmConstructorMethod := c.getLLVMConstructorMethod(callee.Name)
-	if llvmConstructorMethod != nil {
-		constructorMethod := *llvmConstructorMethod
+	// Call constructor if it exists
+	llvmConstructorMethod := c.getLLVMConstructorMethod(class.Name)
+	if llvmConstructorMethod != nil && constructorMethod != nil {
+		constructorFunc := *llvmConstructorMethod
 		constructorParamTypes := []zeus_value.ValueType{}
-		for _, arg := range input.Args {
-			constructorParamTypes = append(constructorParamTypes, zeus_value.GetValueType(arg))
+		for _, param := range constructorMethod.Params {
+			constructorParamTypes = append(constructorParamTypes, param.ValueType)
 		}
-		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(*callee))
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(class))
 		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
-		// create the param values
-		constructorMethodParams := []llvm.Value{}
-		for _, arg := range input.Args {
-			constructorMethodParams = append(constructorMethodParams, c.toLLVMValue(arg))
-		}
-		constructorMethodParams = append(constructorMethodParams, llvmStruct)
-		// call the constructor method
-		constructorMethodName := constructorMethod.Name()
-		c.builder.CreateCall(constructorMethodType, constructorMethod, constructorMethodParams, constructorMethodName)
 
-	} else {
-		// constructor not mandatory when there is no args
-		constructorMethodName := fmt.Sprintf("%s.%s", callee.Name, token.CONSTRUCTOR_METHOD_NAME)
-		zeus_error.Assert(len(input.Args) == 0, fmt.Sprintf("constructor method %s not found", constructorMethodName))
+		// Get constructor params from factory function params
+		constructorParams := []llvm.Value{}
+		for i := 0; i < len(constructorMethod.Params); i++ {
+			constructorParams = append(constructorParams, factoryFunction.Param(i))
+		}
+		constructorParams = append(constructorParams, llvmStruct)
+
+		c.builder.CreateCall(constructorMethodType, constructorFunc, constructorParams, "")
 	}
-	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
+
+	// Return the created object
+	c.builder.CreateRet(llvmStruct)
+
+	// Restore insertion point
+	if !currentInsertionBlock.IsNil() {
+		c.builder.SetInsertPointAtEnd(currentInsertionBlock)
+	}
 }
 
 func (c *CodegenModule) appendThisParamToFunction(method zeus_value.Function, class zeus_value.Class) zeus_value.Function {
@@ -1224,6 +1335,12 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		basicBlock := c.getOrCreateBasicBlock(block.Id, currentFunction)
 		c.builder.SetInsertPointAtEnd(basicBlock)
 	})
+
+	// Phase 3: Generate factory function bodies for all classes
+	// This must happen after all class methods (including constructors) are processed
+	for _, structInfo := range c.zeusClassLLVMStructMap {
+		c.genFactoryFunctionBody(structInfo.ZeusClass)
+	}
 
 	c.symbolTable.ExitScope()
 }

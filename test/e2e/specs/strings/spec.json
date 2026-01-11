@@ -34,5 +34,10 @@
         "name": "string-indexing",
         "entry": "string-indexing.zs",
         "exit": "0"
+    },
+    {
+        "name": "string-concat",
+        "entry": "string-concat.zs",
+        "exit": "0"
     }
 ]
