@@ -387,6 +387,7 @@ func (p *IndexLoweringPass) Finalize(l *Lowerer) {
 
 // lowerGetIndex converts GET_INDEX into a sequence of array.get() method calls
 // For array[i][j], generates: temp = array.get(i); result = temp.get(j)
+// For string[i], generates: temp = string.data; result = temp.get(i)
 func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIndexInstrInput, block *BasicBlock) {
 	span := instr.Span
 	output := instr.Output
@@ -400,6 +401,53 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 	}
 
 	currentValue := input.Array
+
+	// Check if this is string indexing
+	targetType := zeus_value.GetValueType(currentValue)
+	if objType := zeus_value.AsObjectType(targetType); objType != nil && objType.Class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING {
+		// String indexing: first access the .data property to get the u8[]
+		zeus_error.Assert(len(input.Indices) == 1, "string indexing should only have one index - type checking should have caught this")
+
+		// Get the u8[] class for type annotations
+		u8ArrayClass := getU8ArrayClass(builder)
+		u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
+
+		// Access string.data to get the u8[]
+		dataPtr := builder.BuildObjectPropertyAccess(currentValue, zeus_value.STRING_PROPERTY_DATA, false, span)
+		dataPtrVar := zeus_value.AsVar(dataPtr)
+		dataPtrVar.ValueType = u8ArrayType
+		dataArray := builder.BuildLoad(dataPtrVar, span)
+		dataArrayVar := zeus_value.AsVar(dataArray)
+		dataArrayVar.ValueType = u8ArrayType
+
+		// Now call .get(index) on the u8[] array
+		elementType := zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}
+		getMethodType := zeus_value.NewFunctionType(elementType, []zeus_value.ValueType{
+			zeus_value.IntType{Size: zeus_value.I32, Span: span},
+		})
+
+		getMethodPtr := builder.BuildObjectPropertyAccess(dataArray, zeus_value.ARRAY_METHOD_GET, false, span)
+		getMethodPtrVar := zeus_value.AsVar(getMethodPtr)
+		getMethodPtrVar.ValueType = getMethodType
+
+		getMethod := builder.BuildLoad(getMethodPtrVar, span)
+		getMethodVar := zeus_value.AsVar(getMethod)
+		getMethodVar.ValueType = getMethodType
+
+		result := builder.BuildIndirectFuncCall(getMethod, []zeus_value.Value{input.Indices[0]}, span)
+		resultVar := zeus_value.AsVar(result)
+		resultVar.ValueType = elementType
+
+		// Update the output variable
+		if output != nil {
+			output.Name = resultVar.Name
+			output.ValueType = resultVar.ValueType
+		}
+
+		// Delete the original GET_INDEX instruction
+		builder.DeleteInstr(block, instr)
+		return
+	}
 
 	// Process each index, calling .get() method for each one
 	for _, index := range input.Indices {

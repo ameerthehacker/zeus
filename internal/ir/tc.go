@@ -1240,10 +1240,18 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		}
 
 		if !isFound {
-			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("property %s not found in class %s", input.Property, class.Name),
-				Span:    output.Span,
-			})
+			// Special case: provide a clearer error for string immutability
+			if class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING && input.Property == zeus_value.ARRAY_METHOD_SET {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: "cannot assign to string index: strings are immutable",
+					Span:    output.Span,
+				})
+			} else {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("property %s not found in class %s", input.Property, class.Name),
+					Span:    output.Span,
+				})
+			}
 		}
 
 		if input.Property == token.CONSTRUCTOR_METHOD_NAME {
@@ -1271,23 +1279,48 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
 	input := AsGetIndexInstrInput(instr.Input)
 	output := instr.Output
-	arrayType := tc.getValueType(input.Array)
+	targetType := tc.getValueType(input.Array)
 
-	// Check that the value being indexed is an array (which is an ObjectType with array properties)
-	if !zeus_value.IsObjectType(arrayType) {
+	// Check that the value being indexed is an object type (array or string)
+	if !zeus_value.IsObjectType(targetType) {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", arrayType),
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array or string", targetType),
 			Span:    instr.Span,
 		})
 		return
 	}
 
-	objType := zeus_value.AsObjectType(arrayType)
-	
+	objType := zeus_value.AsObjectType(targetType)
+
+	// Check if this is a string (string indexing returns u8)
+	if objType.Class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING {
+		// String indexing only supports a single index
+		if len(input.Indices) != 1 {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: "string indexing only supports a single index",
+				Span:    instr.Span,
+			})
+			return
+		}
+
+		// Validate index is an integer type
+		indexType := tc.getValueType(input.Indices[0])
+		if !zeus_value.IsIntType(indexType) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("string index must be an integer, got '%s'", indexType),
+				Span:    instr.Span,
+			})
+		}
+
+		// String indexing returns u8 (unsigned byte)
+		output.ValueType = zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: instr.Span}
+		return
+	}
+
 	// Check if this is actually an array class (has ArrayElementType)
 	if objType.Class.ArrayElementType == nil {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", objType.Class.Name),
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array or string", objType.Class.Name),
 			Span:    instr.Span,
 		})
 		return
@@ -1306,13 +1339,13 @@ func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
 
 	// Determine the result type by peeling off array dimensions
 	// For array[i][j], we need to peel off one dimension per index
-	resultType := arrayType
+	resultType := targetType
 	for range input.Indices {
 		if objType := zeus_value.AsObjectType(resultType); objType != nil && objType.Class.ArrayElementType != nil {
 			resultType = objType.Class.ArrayElementType
 		} else {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: fmt.Sprintf("too many indices for array type '%s'", arrayType),
+				Message: fmt.Sprintf("too many indices for array type '%s'", targetType),
 				Span:    instr.Span,
 			})
 			return

@@ -471,6 +471,7 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 	// When this is an lvalue (left side of assignment), we need to handle it differently
 	// For array[0][1] = expr, we need to emit GET_INDEX for all indices except the last,
 	// then return ArrayElementRef with the last index for the assignment handling
+	// Note: String immutability is enforced during type checking when .set() is called
 	if g.isLValueExpr {
 		// Process all indices except the last one with GET_INDEX
 		for i := 0; i < len(indices)-1; i++ {

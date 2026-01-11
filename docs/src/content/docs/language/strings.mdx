@@ -126,6 +126,34 @@ if (a.equals(c) == false) {
 }
 ```
 
+## Indexing
+
+You can read individual bytes from a string using indexing:
+
+```zeus
+let greeting: string = "Hello";
+
+let h: u8 = greeting[0];  // 72 ('H')
+let e: u8 = greeting[1];  // 101 ('e')
+let o: u8 = greeting[4];  // 111 ('o')
+```
+
+Since strings are immutable, you **cannot** assign to a string index:
+
+```zeus
+let text: string = "Hello";
+text[0] = 'h';  // Error: cannot assign to string index: strings are immutable
+```
+
+To modify characters, convert to `u8[]` first:
+
+```zeus
+let text: string = "Hello";
+let bytes: u8[] = text;   // Create mutable copy
+bytes[0] = 'h';           // Modify the copy
+let modified: string = bytes;  // "hello"
+```
+
 ## Implicit Conversions
 
 Zeus supports implicit conversion between `string` and `u8[]`:
