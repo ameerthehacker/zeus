@@ -671,35 +671,43 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 	// Collect all indices
 	indices := []zeus_value.Value{}
 	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
-			index := indexExpr.Accept(g)
-			
-	// Cast index to i32 if needed (array methods expect i32)
+		index := indexExpr.Accept(g)
+
+		// Cast index to i32 if needed (array methods expect i32)
 		indexType := zeus_value.GetValueType(index)
 		if intType, ok := indexType.(zeus_value.IntType); ok && intType.Size != zeus_value.I32 {
 			index = g.irBuilder.BuildCast(index, zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}, expr.GetSpan())
 		}
-			
+
 		indices = append(indices, index)
 	}
-	
+
 	// When this is an lvalue (left side of assignment), we need to handle it differently
 	// For array[0][1] = expr, we need to emit GET_INDEX for all indices except the last,
 	// then return ArrayElementRef with the last index for the assignment handling
 	// Note: String immutability is enforced during type checking when .set() is called
+	// Note: Bounds checking is NOT done for writes - array.set() handles extension automatically
 	if g.isLValueExpr {
 		// Process all indices except the last one with GET_INDEX
 		for i := 0; i < len(indices)-1; i++ {
 			currentValue = g.irBuilder.BuildGetIndex(currentValue, []zeus_value.Value{indices[i]}, expr.GetSpan())
 		}
-		
+
 		// Return an ArrayElementRef that contains the object and the last index
 		// This will be used by VisitBinaryExpr to generate the .set() call
 		lastIndex := indices[len(indices)-1]
 		return zeus_value.NewArrayElementRef(currentValue, lastIndex, expr.GetSpan())
 	}
-	
-	// For reading (rvalue), emit a single GET_INDEX instruction with all indices
-	// The lowering pass will transform this into the appropriate .get() method calls
+
+	// For reading (rvalue), emit bounds check for the first index only
+	// The lowering pass will transform GET_INDEX into the appropriate .get() method calls
+	// Note: We only bounds check the first index here; nested array accesses will have
+	// their own bounds checks when the GET_INDEX is lowered
+	if len(indices) > 0 {
+		g.emitBoundsCheck(currentValue, indices[0], expr.GetSpan())
+	}
+
+	// Emit GET_INDEX with all indices (lowering pass will handle the .get() calls)
 	return g.irBuilder.BuildGetIndex(currentValue, indices, expr.GetSpan())
 }
 
@@ -915,41 +923,10 @@ func (g *IRModule) emitNullCheck(object zeus_value.Value, propertyName string, s
 	// Generate throw block: create Error and throw
 	g.irBuilder.SetInsertionBlock(throwBlock)
 
-	// Get the Error class from symbol table
-	errorClass := g.getOrCreateErrorClass()
-
-	// Create error message: "NullReferenceException: Cannot access property 'X' on null object"
-	errorMessage := fmt.Sprintf("NullReferenceException: Cannot access property '%s' on null object", propertyName)
-
-	// Get the string class and u8[] array class
-	stringClass := g.getOrCreateStringClass()
-	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
-	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
-
-	// Create u8[] array for the error message bytes
-	stringBytes := []byte(errorMessage)
-	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{
-		zeus_value.NewConstant(fmt.Sprintf("%d", len(stringBytes)), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span),
-	}, span)
-
-	// Set each byte in the array
-	for i, b := range stringBytes {
-		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, span)
-		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), span)
-		index := zeus_value.NewConstant(fmt.Sprintf("%d", i), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span)
-		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
-		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{index, byteVal}, span)
-	}
-
-	// Create string object from u8[] array
-	stringObj := g.irBuilder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, span)
-
-	// Create Error object with the message
-	errorObj := g.irBuilder.BuildNewObj(errorClass, []zeus_value.Value{stringObj}, span)
-
-	// Throw the error
-	classId := errorClass.Id
-	g.irBuilder.BuildThrow(classId, errorObj, g.modulePath, span)
+	// Create and throw NullReferenceException
+	errorName := "NullReferenceException"
+	errorMessage := fmt.Sprintf("Cannot access property '%s' on null object", propertyName)
+	g.emitThrowError(errorName, errorMessage, span)
 
 	// Continue block: normal execution continues here
 	g.irBuilder.SetInsertionBlock(continueBlock)
@@ -968,6 +945,87 @@ func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
 	// This should never happen - Error is registered during IRBuilder init
 	zeus_error.Assert(false, "Error class not found in symbol table - this is a bug")
 	return nil
+}
+
+// emitBoundsCheck generates IR to check if an array index is within bounds and throw if not
+func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Value, span *token.Span) {
+	// Create blocks for bounds check
+	throwBlock := g.irBuilder.BuildSuccessorBlock()
+	continueBlock := g.irBuilder.BuildSuccessorBlock()
+
+	// Get array length
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+	lengthPtr := g.irBuilder.BuildObjectPropertyAccess(array, zeus_value.ARRAY_PROPERTY_LENGTH, false, span)
+	length := g.irBuilder.BuildLoad(zeus_value.AsVar(lengthPtr), span)
+
+	// Check if index < 0
+	zero := zeus_value.NewConstant("0", i32Type, span)
+	isNegative := g.irBuilder.BuildBinaryOp(index, zero, InstrTypeLessThan, span)
+
+	// Check if index >= length
+	isOverflow := g.irBuilder.BuildBinaryOp(index, length, InstrTypeGreaterThanEq, span)
+
+	// Combine: outOfBounds = isNegative || isOverflow
+	outOfBounds := g.irBuilder.BuildBinaryOp(isNegative, isOverflow, InstrTypeOr, span)
+
+	// If out of bounds, jump to throw block; otherwise continue
+	g.irBuilder.BuildCondJmp(throwBlock, continueBlock, outOfBounds, span)
+
+	// Generate throw block: create Error and throw
+	g.irBuilder.SetInsertionBlock(throwBlock)
+
+	// Create and throw IndexOutOfBoundsException
+	errorName := "IndexOutOfBoundsException"
+	errorMessage := "Array index out of bounds"
+	g.emitThrowError(errorName, errorMessage, span)
+
+	// Continue block: normal execution continues here
+	g.irBuilder.SetInsertionBlock(continueBlock)
+}
+
+// emitThrowError creates an Error object with the given name and message and throws it
+func (g *IRModule) emitThrowError(errorName string, errorMessage string, span *token.Span) {
+	// Get the Error class from symbol table
+	errorClass := g.getOrCreateErrorClass()
+
+	// Get the string class and u8[] array class
+	stringClass := g.getOrCreateStringClass()
+	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
+	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+
+	// Create string object for error name
+	nameStringObj := g.createStringObject(errorName, stringClass, u8ArrayClass, i32Type, span)
+
+	// Create string object for error message
+	messageStringObj := g.createStringObject(errorMessage, stringClass, u8ArrayClass, i32Type, span)
+
+	// Create Error object with name and message
+	errorObj := g.irBuilder.BuildNewObj(errorClass, []zeus_value.Value{nameStringObj, messageStringObj}, span)
+
+	// Throw the error
+	classId := errorClass.Id
+	g.irBuilder.BuildThrow(classId, errorObj, g.modulePath, span)
+}
+
+// createStringObject creates a string object from a Go string
+func (g *IRModule) createStringObject(str string, stringClass *zeus_value.Class, u8ArrayClass *zeus_value.Class, i32Type zeus_value.IntType, span *token.Span) zeus_value.Value {
+	stringBytes := []byte(str)
+	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{
+		zeus_value.NewConstant(fmt.Sprintf("%d", len(stringBytes)), i32Type, span),
+	}, span)
+
+	// Set each byte in the array
+	for i, b := range stringBytes {
+		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, span)
+		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), span)
+		idx := zeus_value.NewConstant(fmt.Sprintf("%d", i), i32Type, span)
+		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
+		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{idx, byteVal}, span)
+	}
+
+	// Create string object from u8[] array
+	return g.irBuilder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, span)
 }
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {

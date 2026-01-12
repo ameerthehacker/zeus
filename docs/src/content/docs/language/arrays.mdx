@@ -207,22 +207,55 @@ class Matrix {
 
 ## Bounds Checking
 
-Out-of-bounds access currently returns the default value for the element type:
+Zeus performs automatic bounds checking when reading from arrays. Accessing an index outside the valid range throws an `IndexOutOfBoundsException`:
 
 ```zeus
 let arr: i32[] = new i32[];
 arr.push(10);
+arr.push(20);
 
-let safe: i32 = arr[0];    // 10
-let oob: i32 = arr[100];   // 0 (default for i32)
+let safe: i32 = arr[0];    // 10 - valid
+let also_safe: i32 = arr[1];  // 20 - valid
+let oob: i32 = arr[5];     // Throws IndexOutOfBoundsException!
 ```
 
 <Aside type="caution">
-  Out-of-bounds access currently returns default values. Always check `length` when needed.
+  Reading from an invalid index throws an exception. Always ensure indices are within bounds or use try-catch to handle potential errors.
 </Aside>
 
+### Handling Bounds Errors
+
+You can catch bounds errors using try-catch:
+
+```zeus
+function safeGet(arr: i32[], index: i32): i32 {
+  try {
+    return arr[index];
+  } catch (e: Error) {
+    log("Index out of bounds: " + e.message);
+    return -1;  // Return default value
+  }
+}
+```
+
+### Safe Access Pattern
+
+Check length before accessing:
+
+```zeus
+function getOrDefault(arr: i32[], index: i32, defaultValue: i32): i32 {
+  if (index < 0) {
+    return defaultValue;
+  }
+  if (index >= arr.length) {
+    return defaultValue;
+  }
+  return arr[index];
+}
+```
+
 <Aside type="note">
-  **Coming Soon:** Proper bounds checking with exception throwing is planned. Out-of-bounds access will throw an exception instead of returning default values.
+  Array writes using bracket notation (`arr[i] = value`) automatically extend the array if needed, so they don't throw bounds exceptions.
 </Aside>
 
 ---

@@ -1,5 +1,5 @@
 function throwError(): void {
-  throw new Error("Test error");
+  throw new Error("Error", "Test error");
 }
 
 function main(): i32 {

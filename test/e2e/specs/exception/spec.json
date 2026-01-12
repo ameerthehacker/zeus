@@ -28,5 +28,17 @@
             "let person: Person;",
             ">   11 |   log(person.name);"
         ]
+    },
+    {
+        "name": "Array bounds check throws exception",
+        "entry": "array-bounds.zs",
+        "exit": "1",
+        "no_color": true,
+        "stderr_contains": [
+            "Unhandled Exception: IndexOutOfBoundsException: Array index out of bounds",
+            "Stack Trace:",
+            "main",
+            "let value: i32 = array[5];"
+        ]
     }
 ]

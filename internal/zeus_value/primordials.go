@@ -247,6 +247,7 @@ func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 
 // Error property names
 const (
+	ERROR_PROPERTY_NAME    = "name"
 	ERROR_PROPERTY_MESSAGE = "message"
 )
 
@@ -254,18 +255,25 @@ const (
 // Error is the base class for all exception types in Zeus
 // It has a reserved class ID (1) for efficient exception type matching at runtime
 func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
-	// Error class has a message property which is a string
+	// Error class has name and message properties which are strings
 	stringType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
+
+	// name property (public) - the error type name (e.g., "Error", "IndexOutOfBoundsException")
+	nameProperty := NewClassProperty(
+		NewVar(ERROR_PROPERTY_NAME, stringType, true, span),
+		&token.Token{Type: token.TokenTypePublic, Span: span},
+	)
 
 	// message property (public) - the error message
 	messageProperty := NewClassProperty(
 		NewVar(ERROR_PROPERTY_MESSAGE, stringType, true, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
 	)
-	properties := []*ClassProperty{messageProperty}
+	properties := []*ClassProperty{nameProperty, messageProperty}
 
-	// Constructor takes a message string
+	// Constructor takes name and message strings
 	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
+		NewVar("name", stringType, true, span),
 		NewVar("msg", stringType, true, span),
 	}, VoidType{Span: span}, span)
 

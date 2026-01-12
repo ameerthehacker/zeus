@@ -228,6 +228,43 @@ function main(): i32 {
 }
 ```
 
+### Null Reference Checking
+
+Zeus automatically checks for null when accessing object properties. Attempting to access a property on a null object throws a `NullReferenceException`:
+
+```zeus
+class Person {
+  public name: string;
+  constructor(name: string) {
+    this.name = name;
+  }
+}
+
+function main(): i32 {
+  let person: Person;       // null by default
+  log(person.name);         // Throws NullReferenceException!
+  return 0;
+}
+```
+
+<Aside type="caution">
+  Always ensure objects are initialized before accessing their properties, or use try-catch to handle potential null reference errors.
+</Aside>
+
+### Handling Null Safely
+
+You can use try-catch to handle null reference errors:
+
+```zeus
+function getPersonName(person: Person): string {
+  try {
+    return person.name;
+  } catch (e: Error) {
+    return "Unknown";
+  }
+}
+```
+
 ## Method Chaining
 
 Methods can return `this` for chaining (when returning the same type):
