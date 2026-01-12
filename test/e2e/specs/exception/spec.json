@@ -15,5 +15,18 @@
         "entry": "try-no-throw.zs",
         "exit": "0",
         "stdout": "In try block\n"
+    },
+    {
+        "name": "Null reference throws exception",
+        "entry": "null-reference.zs",
+        "exit": "1",
+        "no_color": true,
+        "stderr_contains": [
+            "Unhandled Exception: NullReferenceException: Cannot access property 'name' on null object",
+            "Stack Trace:",
+            "main",
+            "let person: Person;",
+            ">   11 |   log(person.name);"
+        ]
     }
 ]

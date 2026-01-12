@@ -873,6 +873,13 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
 	}
+
+	// Null check: if object is null, throw NullReferenceException
+	// Skip null check for 'this' expressions since 'this' is never null inside a class
+	if !g.isThisExpression(expr.Object) {
+		g.emitNullCheck(object, property, expr.GetSpan())
+	}
+
 	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, g.isLValueExpr, expr.GetSpan())
 
 	if g.isLValueExpr {
@@ -880,6 +887,87 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	} else {
 		return g.irBuilder.BuildLoad(zeus_value.AsVar(propertyPtr), expr.GetSpan())
 	}
+}
+
+// isThisExpression checks if an expression is a 'this' reference
+func (g *IRModule) isThisExpression(expr ast.ExprNode) bool {
+	if identExpr, ok := expr.(*ast.IdentifierExprNode); ok {
+		return identExpr.Name.Value == token.THIS_KEYWORD
+	}
+	return false
+}
+
+// emitNullCheck generates IR to check if an object is null and throw an error if it is
+func (g *IRModule) emitNullCheck(object zeus_value.Value, propertyName string, span *token.Span) {
+	// Create blocks for null check
+	throwBlock := g.irBuilder.BuildSuccessorBlock()
+	continueBlock := g.irBuilder.BuildSuccessorBlock()
+
+	// Create null constant for comparison
+	nullConst := zeus_value.NewConstant("null", zeus_value.NullType{Span: span}, span)
+
+	// Compare object with null (object == null)
+	isNull := g.irBuilder.BuildBinaryOp(object, nullConst, InstrTypeEqEq, span)
+
+	// If null, jump to throw block; otherwise continue
+	g.irBuilder.BuildCondJmp(throwBlock, continueBlock, isNull, span)
+
+	// Generate throw block: create Error and throw
+	g.irBuilder.SetInsertionBlock(throwBlock)
+
+	// Get the Error class from symbol table
+	errorClass := g.getOrCreateErrorClass()
+
+	// Create error message: "NullReferenceException: Cannot access property 'X' on null object"
+	errorMessage := fmt.Sprintf("NullReferenceException: Cannot access property '%s' on null object", propertyName)
+
+	// Get the string class and u8[] array class
+	stringClass := g.getOrCreateStringClass()
+	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
+	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
+
+	// Create u8[] array for the error message bytes
+	stringBytes := []byte(errorMessage)
+	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{
+		zeus_value.NewConstant(fmt.Sprintf("%d", len(stringBytes)), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span),
+	}, span)
+
+	// Set each byte in the array
+	for i, b := range stringBytes {
+		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, span)
+		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), span)
+		index := zeus_value.NewConstant(fmt.Sprintf("%d", i), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span)
+		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
+		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{index, byteVal}, span)
+	}
+
+	// Create string object from u8[] array
+	stringObj := g.irBuilder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, span)
+
+	// Create Error object with the message
+	errorObj := g.irBuilder.BuildNewObj(errorClass, []zeus_value.Value{stringObj}, span)
+
+	// Throw the error
+	classId := errorClass.Id
+	g.irBuilder.BuildThrow(classId, errorObj, g.modulePath, span)
+
+	// Continue block: normal execution continues here
+	g.irBuilder.SetInsertionBlock(continueBlock)
+}
+
+// getOrCreateErrorClass returns the Error primordial class from the symbol table.
+func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
+	// Error class is registered with name "Error" (not the primordial constant "error")
+	errorClassName := "Error"
+
+	// Error class should always be pre-registered in the symbol table
+	if existingClass, ok := g.symbolTable().GetSymbol(errorClassName); ok {
+		return existingClass.(*zeus_value.Class)
+	}
+
+	// This should never happen - Error is registered during IRBuilder init
+	zeus_error.Assert(false, "Error class not found in symbol table - this is a bug")
+	return nil
 }
 
 func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {

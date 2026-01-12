@@ -1,5 +1,28 @@
 // ANSI Color utilities for terminal output
 // Provides consistent color formatting across the runtime
+// Supports NO_COLOR environment variable (https://no-color.org/)
+
+const std = @import("std");
+
+/// Check if colors should be disabled (NO_COLOR env var is set)
+var no_color_checked: bool = false;
+var no_color_enabled: bool = false;
+
+fn isNoColor() bool {
+    if (!no_color_checked) {
+        no_color_checked = true;
+        if (std.posix.getenv("NO_COLOR")) |_| {
+            no_color_enabled = true;
+        }
+    }
+    return no_color_enabled;
+}
+
+/// Get color code, returning empty string if NO_COLOR is set
+pub fn get(comptime color: []const u8) []const u8 {
+    if (isNoColor()) return "";
+    return color;
+}
 
 /// ANSI Reset - clears all formatting
 pub const reset = "\x1b[0m";
@@ -28,14 +51,22 @@ pub const white_bold = "\x1b[37;1m";
 
 /// Format a string with color and automatic reset
 pub fn colorize(comptime color: []const u8, text: []const u8) void {
-    const stderr = @import("std").io.getStdErr().writer();
-    stderr.print("{s}{s}{s}", .{ color, text, reset }) catch {};
+    const stderr = std.io.getStdErr().writer();
+    if (isNoColor()) {
+        stderr.print("{s}", .{text}) catch {};
+    } else {
+        stderr.print("{s}{s}{s}", .{ color, text, reset }) catch {};
+    }
 }
 
 /// Print formatted text with color
 pub fn printColored(comptime color: []const u8, comptime fmt: []const u8, args: anytype) void {
-    const stderr = @import("std").io.getStdErr().writer();
-    stderr.print(color, .{}) catch {};
-    stderr.print(fmt, args) catch {};
-    stderr.print(reset, .{}) catch {};
+    const stderr = std.io.getStdErr().writer();
+    if (isNoColor()) {
+        stderr.print(fmt, args) catch {};
+    } else {
+        stderr.print(color, .{}) catch {};
+        stderr.print(fmt, args) catch {};
+        stderr.print(reset, .{}) catch {};
+    }
 }

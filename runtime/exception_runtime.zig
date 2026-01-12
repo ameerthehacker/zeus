@@ -361,19 +361,19 @@ fn printUnhandledException(exc: *const ZeusException) void {
     const stderr = std.io.getStdErr().writer();
 
     // Print exception header
-    stderr.print("\n" ++ colors.red_bold ++ "Unhandled Exception" ++ colors.reset ++ ": ", .{}) catch {};
+    stderr.print("\n{s}Unhandled Exception{s}: ", .{ colors.get(colors.red_bold), colors.get(colors.reset) }) catch {};
 
     // Try to get error message from object
     printErrorMessage(stderr, exc.object_ptr);
 
-    stderr.print("\n\n" ++ colors.bold ++ "Stack Trace:" ++ colors.reset ++ "\n", .{}) catch {};
+    stderr.print("\n\n{s}Stack Trace:{s}\n", .{ colors.get(colors.bold), colors.get(colors.reset) }) catch {};
 
     // Print each frame with source location and code snippet
     if (exc.stack_trace) |trace| {
         for (trace.frames, 0..) |frame, i| {
             const func_name = frame.function_name orelse "<unknown>";
 
-            stderr.print("  {d}: " ++ colors.yellow ++ "{s}" ++ colors.reset ++ "\n", .{ i, func_name }) catch {};
+            stderr.print("  {d}: {s}{s}{s}\n", .{ i, colors.get(colors.yellow), func_name, colors.get(colors.reset) }) catch {};
 
             // Print source location if available
             if (frame.file_path) |file_path| {
@@ -410,13 +410,15 @@ fn printCodeSnippetIndented(writer: anytype, file_path: []const u8, line: u32) v
     // Print context: line before, error line, line after
     while (reader.readUntilDelimiterOrEof(&buf, '\n') catch null) |line_content| {
         if (line_num >= line -| 1 and line_num <= line + 1) {
-            const prefix = if (line_num == line) "       " ++ colors.red ++ ">" ++ colors.reset else "        ";
-            const highlight = if (line_num == line) colors.red else "";
-            const reset_code = if (line_num == line) colors.reset else "";
-
-            writer.print("{s} {d:>4} | {s}{s}{s}\n", .{
-                prefix, line_num, highlight, line_content, reset_code,
-            }) catch {};
+            if (line_num == line) {
+                writer.print("       {s}>{s} {d:>4} | {s}{s}{s}\n", .{
+                    colors.get(colors.red), colors.get(colors.reset),
+                    line_num,
+                    colors.get(colors.red), line_content, colors.get(colors.reset),
+                }) catch {};
+            } else {
+                writer.print("         {d:>4} | {s}\n", .{ line_num, line_content }) catch {};
+            }
         }
 
         if (line_num > line + 1) break;
@@ -438,13 +440,15 @@ fn printCodeSnippet(writer: anytype, file_path: []const u8, line: u32) void {
     // Print context: line before, error line, line after
     while (reader.readUntilDelimiterOrEof(&buf, '\n') catch null) |line_content| {
         if (line_num >= line -| 1 and line_num <= line + 1) {
-            const prefix = if (line_num == line) "  " ++ colors.red ++ ">" ++ colors.reset else "   ";
-            const highlight = if (line_num == line) colors.red else "";
-            const reset_code = if (line_num == line) colors.reset else "";
-
-            writer.print("{s} {d:>4} | {s}{s}{s}\n", .{
-                prefix, line_num, highlight, line_content, reset_code,
-            }) catch {};
+            if (line_num == line) {
+                writer.print("  {s}>{s} {d:>4} | {s}{s}{s}\n", .{
+                    colors.get(colors.red), colors.get(colors.reset),
+                    line_num,
+                    colors.get(colors.red), line_content, colors.get(colors.reset),
+                }) catch {};
+            } else {
+                writer.print("    {d:>4} | {s}\n", .{ line_num, line_content }) catch {};
+            }
         }
 
         if (line_num > line + 1) break;

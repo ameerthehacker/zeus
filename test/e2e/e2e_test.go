@@ -13,10 +13,13 @@ import (
 
 // TestSpec represents a single test case in a spec file
 type TestSpec struct {
-	Name   string `json:"name"`
-	Exit   string `json:"exit"`
-	Entry  string `json:"entry"`
-	Stdout string `json:"stdout,omitempty"`
+	Name           string   `json:"name"`
+	Exit           string   `json:"exit"`
+	Entry          string   `json:"entry"`
+	Stdout         string   `json:"stdout,omitempty"`
+	Stderr         string   `json:"stderr,omitempty"`          // Expected exact stderr output
+	StderrContains []string `json:"stderr_contains,omitempty"` // Strings that must be present in stderr
+	NoColor        bool     `json:"no_color,omitempty"`        // Run with NO_COLOR=1
 }
 
 // buildCompiler builds the Zeus compiler and runtime, placing the compiler in the project root
@@ -116,10 +119,21 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 		return
 	}
 
-	// Execute the compiled program and capture stdout
+	// Execute the compiled program and capture stdout/stderr
 	execCmd := exec.Command(outputFile)
-	stdoutBytes, err := execCmd.Output()
-	actualStdout := string(stdoutBytes)
+	
+	// Set NO_COLOR environment variable if specified
+	if spec.NoColor {
+		execCmd.Env = append(os.Environ(), "NO_COLOR=1")
+	}
+
+	var stdoutBuf, stderrBuf strings.Builder
+	execCmd.Stdout = &stdoutBuf
+	execCmd.Stderr = &stderrBuf
+
+	err = execCmd.Run()
+	actualStdout := stdoutBuf.String()
+	actualStderr := stderrBuf.String()
 
 	// Get the exit code
 	var actualExitCode int
@@ -143,8 +157,8 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 
 	// Compare exit codes
 	if actualExitCode != expectedExitCode {
-		t.Errorf("Test '%s' failed: expected exit code %d, got %d",
-			spec.Name, expectedExitCode, actualExitCode)
+		t.Errorf("Test '%s' failed: expected exit code %d, got %d\nStderr: %s",
+			spec.Name, expectedExitCode, actualExitCode, actualStderr)
 	}
 
 	// Compare stdout if specified
@@ -153,6 +167,23 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 		if actualStdout != expectedStdout {
 			t.Errorf("Test '%s' failed: stdout mismatch\nExpected: %q\nActual: %q",
 				spec.Name, expectedStdout, actualStdout)
+		}
+	}
+
+	// Compare stderr if specified (exact match)
+	if spec.Stderr != "" {
+		expectedStderr := spec.Stderr
+		if actualStderr != expectedStderr {
+			t.Errorf("Test '%s' failed: stderr mismatch\nExpected:\n%s\nActual:\n%s",
+				spec.Name, expectedStderr, actualStderr)
+		}
+	}
+
+	// Check stderr contains specified strings
+	for _, expected := range spec.StderrContains {
+		if !strings.Contains(actualStderr, expected) {
+			t.Errorf("Test '%s' failed: stderr does not contain expected string\nExpected to contain: %q\nActual stderr:\n%s",
+				spec.Name, expected, actualStderr)
 		}
 	}
 }
