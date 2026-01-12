@@ -54,6 +54,9 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 
 	// string class - reuse the existing definition
 	r.classes[ZEUS_PRIMORDIAL_STRING] = GetStringPrimordialClassDefinition(r.defaultSpan)
+
+	// Error class - base class for all exceptions (must be registered before any Error subclasses)
+	r.classes[ZEUS_PRIMORDIAL_ERROR] = GetErrorPrimordialClassDefinition(r.defaultSpan)
 }
 
 func (r *PrimordialRegistry) registerFunctions() {

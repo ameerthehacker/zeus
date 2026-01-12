@@ -6,6 +6,10 @@ import (
 
 const ZEUS_PRIMORDIAL_ARRAY = "array"
 const ZEUS_PRIMORDIAL_STRING = "string"
+const ZEUS_PRIMORDIAL_ERROR = "error"
+
+// Reserved class ID for Error - used for exception type matching
+const ERROR_CLASS_ID = 1
 
 // Array method names
 const (
@@ -239,5 +243,57 @@ func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	}
 
 	return stringClass
+}
+
+// Error property names
+const (
+	ERROR_PROPERTY_MESSAGE = "message"
+)
+
+// GetErrorPrimordialClassDefinition returns the built-in Error class definition
+// Error is the base class for all exception types in Zeus
+// It has a reserved class ID (1) for efficient exception type matching at runtime
+func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
+	// Error class has a message property which is a string
+	stringType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
+
+	// message property (public) - the error message
+	messageProperty := NewClassProperty(
+		NewVar(ERROR_PROPERTY_MESSAGE, stringType, true, span),
+		&token.Token{Type: token.TokenTypePublic, Span: span},
+	)
+	properties := []*ClassProperty{messageProperty}
+
+	// Constructor takes a message string
+	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
+		NewVar("msg", stringType, true, span),
+	}, VoidType{Span: span}, span)
+
+	methods := []*ClassMethod{
+		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
+	}
+
+	// Use reserved class ID for Error class
+	return NewClassWithId(ERROR_CLASS_ID, "Error", properties, methods, ZEUS_PRIMORDIAL_ERROR, span)
+}
+
+// IsErrorClass checks if a class is the Error class or derives from it
+func IsErrorClass(class *Class) bool {
+	if class == nil {
+		return false
+	}
+	// Check if this is the Error class itself
+	if class.Id == ERROR_CLASS_ID {
+		return true
+	}
+	// Check parent class chain
+	current := class.ParentClass
+	for current != nil {
+		if current.Id == ERROR_CLASS_ID {
+			return true
+		}
+		current = current.ParentClass
+	}
+	return false
 }
 

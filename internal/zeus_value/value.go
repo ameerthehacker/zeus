@@ -175,27 +175,60 @@ func (m *ClassMethod) String() string {
 }
 
 type Class struct {
-	Id         int
-	Name       string
-	Properties []*ClassProperty
-	Methods    []*ClassMethod
-	IsUsed     bool
-	PrimordialName string
+	Id               int
+	Name             string
+	ParentClass      *Class // Parent class for inheritance (nil if no parent)
+	Properties       []*ClassProperty
+	Methods          []*ClassMethod
+	IsUsed           bool
+	PrimordialName   string
 	ArrayElementType ValueType
-	Span       *token.Span
+	Span             *token.Span
 }
 
 func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
 	classIdCounter += 1
 	return &Class{
-		Id:         classIdCounter,
-		Name:       name,
-		Properties: properties,
-		Methods:    methods,
-		IsUsed:     false,
-		PrimordialName: primordialName,
+		Id:               classIdCounter,
+		Name:             name,
+		ParentClass:      nil,
+		Properties:       properties,
+		Methods:          methods,
+		IsUsed:           false,
+		PrimordialName:   primordialName,
 		ArrayElementType: arrayElementType,
-		Span:       span,
+		Span:             span,
+	}
+}
+
+// NewClassWithParent creates a new class that inherits from a parent class
+func NewClassWithParent(name string, parentClass *Class, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
+	classIdCounter += 1
+	return &Class{
+		Id:               classIdCounter,
+		Name:             name,
+		ParentClass:      parentClass,
+		Properties:       properties,
+		Methods:          methods,
+		IsUsed:           false,
+		PrimordialName:   primordialName,
+		ArrayElementType: arrayElementType,
+		Span:             span,
+	}
+}
+
+// NewClassWithId creates a class with a specific ID (for reserved primordial classes like Error)
+func NewClassWithId(id int, name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, span *token.Span) *Class {
+	return &Class{
+		Id:               id,
+		Name:             name,
+		ParentClass:      nil,
+		Properties:       properties,
+		Methods:          methods,
+		IsUsed:           false,
+		PrimordialName:   primordialName,
+		ArrayElementType: nil,
+		Span:             span,
 	}
 }
 

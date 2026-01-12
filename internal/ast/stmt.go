@@ -86,6 +86,27 @@ type ExportStmtNode struct {
 	Span *token.Span
 }
 
+// CatchClause represents a single catch clause in a try-catch statement
+type CatchClause struct {
+	ErrorVar  *IdentifierExprNode // The variable to bind the caught error to (e.g., 'e' in catch (e: Error))
+	ErrorType *ValueTypeNode      // The type of error to catch (must be Error or subclass)
+	Body      *BlockStmtNode      // The catch block body
+	Span      *token.Span
+}
+
+// TryCatchStmtNode represents a try { } catch (e: Type) { } statement
+type TryCatchStmtNode struct {
+	TryBody      *BlockStmtNode  // The try block
+	CatchClauses []*CatchClause  // One or more catch clauses
+	Span         *token.Span
+}
+
+// ThrowStmtNode represents a throw expression; statement
+type ThrowStmtNode struct {
+	Expr ExprNode    // The expression to throw (must be Error or subclass instance)
+	Span *token.Span
+}
+
 type StmtVisitor interface {
 	VisitExprStmt(stmt *ExprStmtNode)
 	VisitVarDeclStmt(stmt *VarDeclStmtNode)
@@ -96,6 +117,8 @@ type StmtVisitor interface {
 	VisitForStmt(stmt *ForStmtNode)
 	VisitImportStmt(stmt *ImportStmtNode)
 	VisitExportStmt(stmt *ExportStmtNode)
+	VisitTryCatchStmt(stmt *TryCatchStmtNode)
+	VisitThrowStmt(stmt *ThrowStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -336,4 +359,62 @@ func (e *ExportStmtNode) String() string {
 
 func (e *ExportStmtNode) PrettyString() string {
 	return fmt.Sprintf("export %s", e.Expr)
+}
+
+// CatchClause methods
+
+func (c *CatchClause) String() string {
+	return fmt.Sprintf("{ type: CatchClause, ErrorVar: %s, ErrorType: %s, Body: %s, Span: %s }", c.ErrorVar.String(), c.ErrorType.String(), c.Body.String(), c.Span)
+}
+
+func (c *CatchClause) PrettyString() string {
+	return fmt.Sprintf("catch (%s: %s) %s", c.ErrorVar.PrettyString(), c.ErrorType.PrettyString(), c.Body.PrettyString())
+}
+
+func (c *CatchClause) GetSpan() *token.Span {
+	return c.Span
+}
+
+// TryCatchStmtNode methods
+
+func (t *TryCatchStmtNode) String() string {
+	catchClauses := []string{}
+	for _, clause := range t.CatchClauses {
+		catchClauses = append(catchClauses, clause.String())
+	}
+	return fmt.Sprintf("{ type: TryCatchStmtNode, TryBody: %s, CatchClauses: [%s], Span: %s }", t.TryBody.String(), strings.Join(catchClauses, ", "), t.Span)
+}
+
+func (t *TryCatchStmtNode) PrettyString() string {
+	catchClauses := []string{}
+	for _, clause := range t.CatchClauses {
+		catchClauses = append(catchClauses, clause.PrettyString())
+	}
+	return fmt.Sprintf("try %s %s", t.TryBody.PrettyString(), strings.Join(catchClauses, " "))
+}
+
+func (t *TryCatchStmtNode) GetSpan() *token.Span {
+	return t.Span
+}
+
+func (t *TryCatchStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitTryCatchStmt(t)
+}
+
+// ThrowStmtNode methods
+
+func (t *ThrowStmtNode) String() string {
+	return fmt.Sprintf("{ type: ThrowStmtNode, Expr: %s, Span: %s }", t.Expr.String(), t.Span)
+}
+
+func (t *ThrowStmtNode) PrettyString() string {
+	return fmt.Sprintf("throw %s", t.Expr.PrettyString())
+}
+
+func (t *ThrowStmtNode) GetSpan() *token.Span {
+	return t.Span
+}
+
+func (t *ThrowStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitThrowStmt(t)
 }

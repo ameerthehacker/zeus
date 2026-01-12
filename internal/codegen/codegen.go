@@ -68,6 +68,13 @@ type CodegenModule struct {
 	targetDataLayout       llvm.TargetData
 	globalLLVMFunctions    map[string]GlobalLLVMFunction
 	zeusObjectTypeInfoType llvm.Type
+	// Debug info
+	diBuilder         *llvm.DIBuilder
+	diCompileUnit     llvm.Metadata
+	diFile            llvm.Metadata
+	diCurrentFunction llvm.Metadata
+	sourceFilePath    string
+	sourceDir         string
 }
 
 func NewCodegen() *Codegen {
@@ -93,6 +100,49 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		llvm.PointerType(zeusObjectInfoStructType, 0),
 	}, false)
 
+	// Extract directory and filename from path
+	sourceDir := "."
+	sourceFile := name
+	if lastSlash := strings.LastIndex(name, "/"); lastSlash != -1 {
+		sourceDir = name[:lastSlash]
+		sourceFile = name[lastSlash+1:]
+	}
+
+	// Create debug info builder
+	diBuilder := llvm.NewDIBuilder(module)
+
+	// Create compile unit
+	diCompileUnit := diBuilder.CreateCompileUnit(llvm.DICompileUnit{
+		Language:       llvm.DwarfLang(0x000c), // DW_LANG_C99 (0x000c)
+		File:           sourceFile,
+		Dir:            sourceDir,
+		Producer:       "Zeus Compiler",
+		Optimized:      false,
+		Flags:          "",
+		RuntimeVersion: 0,
+	})
+
+	// Create file metadata
+	diFile := diBuilder.CreateFile(sourceFile, sourceDir)
+
+	// Add debug info version flag to module
+	module.AddNamedMetadataOperand("llvm.module.flags",
+		c.cxt.MDNode([]llvm.Metadata{
+			llvm.ConstInt(c.cxt.Int32Type(), 2, false).ConstantAsMetadata(), // Warning behavior
+			c.cxt.MDString("Debug Info Version"),
+			llvm.ConstInt(c.cxt.Int32Type(), 3, false).ConstantAsMetadata(), // DWARF version
+		}),
+	)
+
+	// Add DWARF version flag
+	module.AddNamedMetadataOperand("llvm.module.flags",
+		c.cxt.MDNode([]llvm.Metadata{
+			llvm.ConstInt(c.cxt.Int32Type(), 2, false).ConstantAsMetadata(),
+			c.cxt.MDString("Dwarf Version"),
+			llvm.ConstInt(c.cxt.Int32Type(), 4, false).ConstantAsMetadata(),
+		}),
+	)
+
 	return &CodegenModule{
 		module:                 module,
 		builder:                builder,
@@ -106,6 +156,11 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		targetDataLayout:       targetDataLayout,
 		globalLLVMFunctions:    globalLLVMFunctions,
 		zeusObjectTypeInfoType: zeusObjectInfoStructType,
+		diBuilder:              diBuilder,
+		diCompileUnit:          diCompileUnit,
+		diFile:                 diFile,
+		sourceFilePath:         name,
+		sourceDir:              sourceDir,
 	}
 }
 
@@ -136,6 +191,59 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
 	builder.CreateRetVoid()
 	builder.Dispose()
+
+	// Exception handling runtime functions
+
+	// zeus_throw(class_id: i32, object_ptr: ptr, source_file: ptr, source_line: i32) - throws an exception (noreturn)
+	zeusThrowType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{
+		c.cxt.Int32Type(),                       // class_id
+		llvm.PointerType(c.cxt.VoidType(), 0),   // object_ptr
+		llvm.PointerType(c.cxt.Int8Type(), 0),   // source_file (char*)
+		c.cxt.Int32Type(),                       // source_line
+	}, false)
+	zeusThrowFunc := llvm.AddFunction(module, "zeus_throw", zeusThrowType)
+	zeusThrowFunc.AddFunctionAttr(c.cxt.CreateEnumAttribute(llvm.AttributeKindID("noreturn"), 0))
+	globalFunctions["zeus_throw"] = GlobalLLVMFunction{zeusThrowFunc, zeusThrowType}
+
+	// zeus_try_begin(jmp_buf: ptr, class_ids: ptr, num_classes: i32) -> i32 - begin try block with setjmp
+	// Returns 0 for normal execution, 1 when exception is caught
+	zeusTryBeginType := llvm.FunctionType(c.cxt.Int32Type(), []llvm.Type{
+		llvm.PointerType(c.cxt.VoidType(), 0), // jmp_buf pointer
+		llvm.PointerType(c.cxt.Int32Type(), 0), // class_ids array
+		c.cxt.Int32Type(),                      // num_classes
+	}, false)
+	zeusTryBeginFunc := llvm.AddFunction(module, "zeus_try_begin", zeusTryBeginType)
+	globalFunctions["zeus_try_begin"] = GlobalLLVMFunction{zeusTryBeginFunc, zeusTryBeginType}
+
+	// zeus_pop_handler() - unregister exception handler
+	zeusPopHandlerType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
+	zeusPopHandlerFunc := llvm.AddFunction(module, "zeus_pop_handler", zeusPopHandlerType)
+	globalFunctions["zeus_pop_handler"] = GlobalLLVMFunction{zeusPopHandlerFunc, zeusPopHandlerType}
+
+	// zeus_get_current_exception() -> ptr - get current exception (or null)
+	zeusGetCurrentExceptionType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{}, false)
+	zeusGetCurrentExceptionFunc := llvm.AddFunction(module, "zeus_get_current_exception", zeusGetCurrentExceptionType)
+	globalFunctions["zeus_get_current_exception"] = GlobalLLVMFunction{zeusGetCurrentExceptionFunc, zeusGetCurrentExceptionType}
+
+	// zeus_get_exception_object(exc: ptr) -> ptr - get error object from exception
+	zeusGetExceptionObjectType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0)}, false)
+	zeusGetExceptionObjectFunc := llvm.AddFunction(module, "zeus_get_exception_object", zeusGetExceptionObjectType)
+	globalFunctions["zeus_get_exception_object"] = GlobalLLVMFunction{zeusGetExceptionObjectFunc, zeusGetExceptionObjectType}
+
+	// zeus_get_exception_class_id(exc: ptr) -> i32 - get class ID from exception
+	zeusGetExceptionClassIdType := llvm.FunctionType(c.cxt.Int32Type(), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0)}, false)
+	zeusGetExceptionClassIdFunc := llvm.AddFunction(module, "zeus_get_exception_class_id", zeusGetExceptionClassIdType)
+	globalFunctions["zeus_get_exception_class_id"] = GlobalLLVMFunction{zeusGetExceptionClassIdFunc, zeusGetExceptionClassIdType}
+
+	// zeus_exception_instanceof(exc: ptr, target_class_id: i32) -> i1 - check if exception is instance of class
+	zeusExceptionInstanceofType := llvm.FunctionType(c.cxt.Int1Type(), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0), c.cxt.Int32Type()}, false)
+	zeusExceptionInstanceofFunc := llvm.AddFunction(module, "zeus_exception_instanceof", zeusExceptionInstanceofType)
+	globalFunctions["zeus_exception_instanceof"] = GlobalLLVMFunction{zeusExceptionInstanceofFunc, zeusExceptionInstanceofType}
+
+	// zeus_clear_exception() - clear current exception
+	zeusClearExceptionType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
+	zeusClearExceptionFunc := llvm.AddFunction(module, "zeus_clear_exception", zeusClearExceptionType)
+	globalFunctions["zeus_clear_exception"] = GlobalLLVMFunction{zeusClearExceptionFunc, zeusClearExceptionType}
 
 	return globalFunctions
 }
@@ -472,10 +580,50 @@ func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
 	if c.isEntryPoint && input.Function.Name == token.MAIN_FUNCTION_NAME {
 		llvmFunc.SetLinkage(llvm.ExternalLinkage)
 	} else {
-		llvmFunc.SetLinkage(llvm.PrivateLinkage)
+		// Use InternalLinkage instead of PrivateLinkage to preserve symbol names
+		// for stack traces and debugging
+		llvmFunc.SetLinkage(llvm.InternalLinkage)
+	}
+
+	// Create debug info for function
+	if c.diBuilder != nil && input.Function.Span != nil {
+		// Create subroutine type (void function type for simplicity)
+		diSubroutineType := c.diBuilder.CreateSubroutineType(llvm.DISubroutineType{
+			File: c.diFile,
+		})
+
+		// Create function debug info
+		diFunc := c.diBuilder.CreateFunction(c.diFile, llvm.DIFunction{
+			Name:         input.Function.Name,
+			LinkageName:  input.Function.Name,
+			File:         c.diFile,
+			Line:         input.Function.Span.Start.Line,
+			Type:         diSubroutineType,
+			LocalToUnit:  true,
+			IsDefinition: true,
+			ScopeLine:    input.Function.Span.Start.Line,
+			Flags:        0,
+			Optimized:    false,
+		})
+
+		// Attach debug info to the function
+		llvmFunc.SetSubprogram(diFunc)
+		c.diCurrentFunction = diFunc
 	}
 
 	return llvmFunc
+}
+
+// setDebugLocation sets the debug location on the builder for the given span
+func (c *CodegenModule) setDebugLocation(span *token.Span) {
+	if c.diBuilder != nil && !c.diCurrentFunction.IsNil() && span != nil {
+		c.builder.SetCurrentDebugLocation(
+			uint(span.Start.Line),
+			uint(span.Start.Column),
+			c.diCurrentFunction,
+			llvm.Metadata{},
+		)
+	}
 }
 
 func (c *CodegenModule) genReturn(input ir.ReturnInstrInput) {
@@ -1127,6 +1275,32 @@ func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_va
 	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(class.Name, token.CONSTRUCTOR_METHOD_NAME)
 	function := c.genFunc(methodWithThisParam)
 
+	// Create debug info for method
+	if c.diBuilder != nil && method.Span != nil {
+		// Create subroutine type
+		diSubroutineType := c.diBuilder.CreateSubroutineType(llvm.DISubroutineType{
+			File: c.diFile,
+		})
+
+		// Create function debug info
+		diFunc := c.diBuilder.CreateFunction(c.diFile, llvm.DIFunction{
+			Name:         methodWithThisParam.Name,
+			LinkageName:  methodWithThisParam.Name,
+			File:         c.diFile,
+			Line:         method.Span.Start.Line,
+			Type:         diSubroutineType,
+			LocalToUnit:  true,
+			IsDefinition: true,
+			ScopeLine:    method.Span.Start.Line,
+			Flags:        0,
+			Optimized:    false,
+		})
+
+		// Attach debug info to the function
+		function.SetSubprogram(diFunc)
+		c.diCurrentFunction = diFunc
+	}
+
 	if !isConstructor {
 		// update the vtable global initializer
 		structInfo := c.zeusClassLLVMStructMap[class.Name]
@@ -1291,19 +1465,27 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			} else {
 				currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
 			}
+			// Don't set debug location for function declaration itself
 		case ir.InstrTypeDeclVar:
+			c.setDebugLocation(instr.Span)
 			c.genDeclVar(*ir.AsDeclVarInstrInput(instr.Input))
 		case ir.InstrTypeStore:
+			c.setDebugLocation(instr.Span)
 			c.genStore(*ir.AsStoreInstrInput(instr.Input))
 		case ir.InstrTypeReturn:
+			c.setDebugLocation(instr.Span)
 			c.genReturn(*ir.AsReturnInstrInput(instr.Input))
 		case ir.InstrTypeLoad:
+			c.setDebugLocation(instr.Span)
 			c.genLoad(*ir.AsLoadInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCallFunc:
+			c.setDebugLocation(instr.Span)
 			c.genCallFunc(*ir.AsCallFuncInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeJmp:
+			c.setDebugLocation(instr.Span)
 			c.genJmp(*ir.AsJmpInstrInput(instr.Input))
 		case ir.InstrTypeCondJmp:
+			c.setDebugLocation(instr.Span)
 			c.genCondJmp(*ir.AsCondJmpInstrInput(instr.Input))
 		case ir.InstrTypeAdd:
 			fallthrough
@@ -1332,12 +1514,15 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeAnd:
 			fallthrough
 		case ir.InstrTypeOr:
+			c.setDebugLocation(instr.Span)
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeNeg:
 			fallthrough
 		case ir.InstrTypeNot:
+			c.setDebugLocation(instr.Span)
 			c.genUnaryOp(instr, *ir.AsUnaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCast:
+			c.setDebugLocation(instr.Span)
 			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeExport:
 			c.genExport(*ir.AsExportInstrInput(instr.Input))
@@ -1346,13 +1531,32 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeDeclClass:
 			c.genDeclClass(*ir.AsDeclClassInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeNewObj:
+			c.setDebugLocation(instr.Span)
 			c.genNewObj(*ir.AsNewObjInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeObjectPropertyAccess:
+			c.setDebugLocation(instr.Span)
 			c.genObjectPropertyAccess(*ir.AsObjectPropertyAccessInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeIndirectFuncCall:
+			c.setDebugLocation(instr.Span)
 			c.genIndirectFuncCall(*ir.AsIndirectFuncCallInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeDeclPrimordialFunc:
 			c.genDeclPrimordialFunc(*ir.AsDeclPrimordialFuncInstrInput(instr.Input))
+		// Exception handling instructions
+		case ir.InstrTypeThrow:
+			c.setDebugLocation(instr.Span)
+			c.genThrow(*ir.AsThrowInstrInput(instr.Input))
+		case ir.InstrTypePushHandler:
+			c.setDebugLocation(instr.Span)
+			input := ir.AsPushHandlerInstrInput(instr.Input)
+			c.genPushHandler(*input, currentFunction)
+		case ir.InstrTypePopHandler:
+			c.genPopHandler()
+		case ir.InstrTypeCheckException:
+			c.genCheckException(*ir.AsCheckExceptionInstrInput(instr.Input))
+		case ir.InstrTypeGetException:
+			c.genGetException(*instr.Output)
+		case ir.InstrTypeClearException:
+			c.genClearException()
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}
@@ -1367,7 +1571,147 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		c.genFactoryFunctionBody(structInfo.ZeusClass)
 	}
 
+	// Finalize debug info
+	if c.diBuilder != nil {
+		c.diBuilder.Finalize()
+	}
+
 	c.symbolTable.ExitScope()
+}
+
+// DumpIR returns the LLVM IR as a string for debugging
+func (c *CodegenModule) DumpIR() string {
+	return c.module.String()
+}
+
+// genThrow generates LLVM code for throwing an exception
+func (c *CodegenModule) genThrow(input ir.ThrowInstrInput) {
+	// Get the class ID as an i32 constant
+	classIdValue := llvm.ConstInt(c.cxt.Int32Type(), uint64(input.ClassId), false)
+
+	// Get the object pointer
+	objectPtr := c.toLLVMValue(input.ObjectPtr)
+
+	// Create source file string global
+	sourceFileStr := llvm.ConstString(input.SourceFile, true) // null-terminated
+	sourceFileGlobal := llvm.AddGlobal(c.module, sourceFileStr.Type(), "throw_source_file")
+	sourceFileGlobal.SetInitializer(sourceFileStr)
+	sourceFileGlobal.SetLinkage(llvm.PrivateLinkage)
+	sourceFileGlobal.SetGlobalConstant(true)
+
+	// Get pointer to source file string
+	sourceFilePtr := c.builder.CreateInBoundsGEP(
+		sourceFileStr.Type(),
+		sourceFileGlobal,
+		[]llvm.Value{
+			llvm.ConstInt(c.cxt.Int32Type(), 0, false),
+			llvm.ConstInt(c.cxt.Int32Type(), 0, false),
+		},
+		"source_file_ptr",
+	)
+
+	// Get source line as i32 constant
+	sourceLineValue := llvm.ConstInt(c.cxt.Int32Type(), uint64(input.SourceLine), false)
+
+	// Call zeus_throw(class_id, object_ptr, source_file, source_line)
+	c.callGlobalLLVMFunction("zeus_throw", classIdValue, objectPtr, sourceFilePtr, sourceLineValue)
+
+	// Mark as unreachable (zeus_throw is noreturn)
+	c.builder.CreateUnreachable()
+}
+
+// genPushHandler generates LLVM code for registering an exception handler
+// This uses setjmp/longjmp to implement try-catch semantics
+func (c *CodegenModule) genPushHandler(input ir.PushHandlerInstrInput, currentFunction llvm.Value) {
+	// Create a global array of class IDs
+	classIdValues := make([]llvm.Value, len(input.ClassIds))
+	for i, classId := range input.ClassIds {
+		classIdValues[i] = llvm.ConstInt(c.cxt.Int32Type(), uint64(classId), false)
+	}
+
+	// Create a constant array of class IDs
+	classIdsArrayType := llvm.ArrayType(c.cxt.Int32Type(), len(input.ClassIds))
+	classIdsArray := llvm.ConstArray(c.cxt.Int32Type(), classIdValues)
+
+	// Create a global variable for the class IDs array
+	globalClassIds := llvm.AddGlobal(c.module, classIdsArrayType, "exception_class_ids")
+	globalClassIds.SetInitializer(classIdsArray)
+	globalClassIds.SetLinkage(llvm.PrivateLinkage)
+	globalClassIds.SetGlobalConstant(true)
+
+	// Get pointer to first element
+	classIdsPtr := c.builder.CreateInBoundsGEP(classIdsArrayType, globalClassIds, []llvm.Value{
+		llvm.ConstInt(c.cxt.Int32Type(), 0, false),
+		llvm.ConstInt(c.cxt.Int32Type(), 0, false),
+	}, "class_ids_ptr")
+
+	// Get number of classes
+	numClasses := llvm.ConstInt(c.cxt.Int32Type(), uint64(len(input.ClassIds)), false)
+
+	// Allocate jmp_buf on the stack
+	// jmp_buf is typically an array of platform-specific size
+	// On most platforms, we can use a large enough array (256 bytes should be safe)
+	jmpBufType := llvm.ArrayType(c.cxt.Int8Type(), 256)
+	jmpBuf := c.builder.CreateAlloca(jmpBufType, "jmp_buf")
+
+	// Cast to void pointer for the runtime function
+	jmpBufPtr := c.builder.CreateBitCast(jmpBuf, llvm.PointerType(c.cxt.VoidType(), 0), "jmp_buf_ptr")
+
+	// Call zeus_try_begin(jmp_buf, class_ids_ptr, num_classes) -> i32
+	// Returns 0 for normal execution, 1 when exception is caught
+	tryBeginFunc := c.globalLLVMFunctions["zeus_try_begin"]
+	setjmpResult := c.builder.CreateCall(tryBeginFunc.FunctionType, tryBeginFunc.Function,
+		[]llvm.Value{jmpBufPtr, classIdsPtr, numClasses}, "setjmp_result")
+
+	// Get the try body block
+	tryBodyBlock := c.getOrCreateBasicBlock(input.TryBodyBlock.Id, currentFunction)
+
+	// Get the handler block (must use getOrCreateBasicBlock to ensure it exists)
+	handlerBlock := c.getOrCreateBasicBlock(input.HandlerBlock.Id, currentFunction)
+
+	// Branch based on setjmp result: if 0, go to try body; else go to catch handler
+	zero := llvm.ConstInt(c.cxt.Int32Type(), 0, false)
+	cmp := c.builder.CreateICmp(llvm.IntEQ, setjmpResult, zero, "is_normal")
+	c.builder.CreateCondBr(cmp, tryBodyBlock, handlerBlock)
+}
+
+// genPopHandler generates LLVM code for unregistering an exception handler
+func (c *CodegenModule) genPopHandler() {
+	c.callGlobalLLVMFunction("zeus_pop_handler")
+}
+
+// genCheckException generates LLVM code for checking if an exception is pending
+func (c *CodegenModule) genCheckException(input ir.CheckExceptionInstrInput) {
+	// Call zeus_get_current_exception()
+	exc := c.callGlobalLLVMFunction("zeus_get_current_exception")
+
+	// Check if exception is not null
+	nullPtr := llvm.ConstPointerNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	hasException := c.builder.CreateICmp(llvm.IntNE, exc, nullPtr, "has_exception")
+
+	// Get or create the basic blocks
+	handlerBlock := c.basicBlocks[input.HandlerBlock.Id]
+	continueBlock := c.basicBlocks[input.ContinueBlock.Id]
+
+	// Branch to handler if exception, otherwise continue
+	c.builder.CreateCondBr(hasException, handlerBlock, continueBlock)
+}
+
+// genGetException generates LLVM code for getting the current exception object
+func (c *CodegenModule) genGetException(output zeus_value.Var) {
+	// Call zeus_get_current_exception()
+	exc := c.callGlobalLLVMFunction("zeus_get_current_exception")
+
+	// Call zeus_get_exception_object(exc) to get the actual Error object
+	errorObj := c.callGlobalLLVMFunction("zeus_get_exception_object", exc)
+
+	// Store in output variable
+	c.symbolTable.DeclareSymbol(output.Name, errorObj)
+}
+
+// genClearException generates LLVM code for clearing the current exception
+func (c *CodegenModule) genClearException() {
+	c.callGlobalLLVMFunction("zeus_clear_exception")
 }
 
 func (c *CodegenModule) GetModule() llvm.Module {

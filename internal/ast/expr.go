@@ -312,10 +312,11 @@ func (t *IndexingExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_va
 
 // ClassDeclExprNode and its methods
 type ClassDeclExprNode struct {
-	Name       *IdentifierExprNode
-	Properties []*ClassProperty
-	Methods    []*ClassMethod
-	Span       *token.Span
+	Name        *IdentifierExprNode
+	ParentClass *IdentifierExprNode // Optional parent class for inheritance (extends)
+	Properties  []*ClassProperty
+	Methods     []*ClassMethod
+	Span        *token.Span
 }
 
 func (c *ClassDeclExprNode) GetSpan() *token.Span {
@@ -331,11 +332,19 @@ func (c *ClassDeclExprNode) PrettyString() string {
 	for _, method := range c.Methods {
 		methods = append(methods, method.Name.PrettyString())
 	}
-	return fmt.Sprintf("class %s {\n%s\n%s\n}", c.Name.PrettyString(), strings.Join(properties, "\n"), strings.Join(methods, "\n"))
+	extendsStr := ""
+	if c.ParentClass != nil {
+		extendsStr = fmt.Sprintf(" extends %s", c.ParentClass.PrettyString())
+	}
+	return fmt.Sprintf("class %s%s {\n%s\n%s\n}", c.Name.PrettyString(), extendsStr, strings.Join(properties, "\n"), strings.Join(methods, "\n"))
 }
 
 func (c *ClassDeclExprNode) String() string {
-	return fmt.Sprintf("{ type: ClassDeclExprNode, Name: %s, Properties: [%s], Methods: [%s], Span: %s }", c.Name.String(), classPropertiesString(c.Properties), classMethodsString(c.Methods), c.GetSpan())
+	parentStr := "nil"
+	if c.ParentClass != nil {
+		parentStr = c.ParentClass.String()
+	}
+	return fmt.Sprintf("{ type: ClassDeclExprNode, Name: %s, ParentClass: %s, Properties: [%s], Methods: [%s], Span: %s }", c.Name.String(), parentStr, classPropertiesString(c.Properties), classMethodsString(c.Methods), c.GetSpan())
 }
 
 func (c *ClassDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {

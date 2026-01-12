@@ -763,6 +763,20 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		// no type checking for primordial functions
 	case InstrTypeGetIndex:
 		p.tcGetIndex(tc, instr)
+	// Exception handling instructions
+	case InstrTypeThrow:
+		p.tcThrow(tc, instr)
+	case InstrTypePushHandler:
+		// Push handler doesn't require type checking
+	case InstrTypePopHandler:
+		// Pop handler doesn't require type checking
+	case InstrTypeCheckException:
+		// Check exception doesn't require type checking
+	case InstrTypeGetException:
+		// Get exception sets output type to the exception pointer type
+		// This will be resolved when binding to catch variable
+	case InstrTypeClearException:
+		// Clear exception doesn't require type checking
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
@@ -1448,6 +1462,41 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 func (p *TypeCheckingPass) tcDeclClassMethod(tc *TypeChecker, instr *Instr) {
 	input := AsDeclClassMethodInstrInput(instr.Input)
 	p.validateFunctionReturns(tc, input.Method, input.Body)
+}
+
+// tcThrow validates that the thrown expression is an Error class or subclass
+func (p *TypeCheckingPass) tcThrow(tc *TypeChecker, instr *Instr) {
+	input := AsThrowInstrInput(instr.Input)
+	objectPtr := input.ObjectPtr
+
+	// Get the type of the thrown value
+	valueType := tc.getValueType(objectPtr)
+
+	// Check if it's an object type
+	if !zeus_value.IsObjectType(valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found '%s'", valueType),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	// Check if the class is Error or a subclass of Error
+	objectType := zeus_value.AsObjectType(valueType)
+	if objectType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found '%s'", valueType),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	if !zeus_value.IsErrorClass(&objectType.Class) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found class '%s'", objectType.Class.Name),
+			Span:    instr.Span,
+		})
+	}
 }
 
 // UnusedWarningPass generates warnings for unused identifiers

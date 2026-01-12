@@ -544,6 +544,14 @@ func (b *IRBuilder) GetBranchingBlocks(block *BasicBlock) []*BasicBlock {
 			branchingBlocks = append(branchingBlocks, AsJmpInstrInput(instr.Input).Target)
 		case InstrTypeCondJmp:
 			branchingBlocks = append(branchingBlocks, AsCondJmpInstrInput(instr.Input).TrueTarget, AsCondJmpInstrInput(instr.Input).FalseTarget)
+		case InstrTypePushHandler:
+			// PUSH_HANDLER branches to both try body and handler block
+			input := AsPushHandlerInstrInput(instr.Input)
+			branchingBlocks = append(branchingBlocks, input.TryBodyBlock, input.HandlerBlock)
+		case InstrTypeCheckException:
+			// CHECK_EXCEPTION branches to handler or continue block
+			input := AsCheckExceptionInstrInput(instr.Input)
+			branchingBlocks = append(branchingBlocks, input.HandlerBlock, input.ContinueBlock)
 		}
 	}
 
@@ -641,6 +649,65 @@ func (b *IRBuilder) BuildMethodCall(object zeus_value.Value, methodName string, 
 	}
 
 	return result
+}
+
+// BuildThrow builds a THROW instruction
+func (b *IRBuilder) BuildThrow(classId int, objectPtr zeus_value.Value, sourceFile string, span *token.Span) {
+	sourceLine := 0
+	if span != nil {
+		sourceLine = span.Start.Line
+	}
+	b.pushInstr(&Instr{
+		Type:  InstrTypeThrow,
+		Input: NewThrowInstrInput(classId, objectPtr, sourceFile, sourceLine),
+		Span:  span,
+	})
+}
+
+// BuildPushHandler builds a PUSH_HANDLER instruction to register an exception handler
+func (b *IRBuilder) BuildPushHandler(handlerBlock *BasicBlock, tryBodyBlock *BasicBlock, classIds []int, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypePushHandler,
+		Input: NewPushHandlerInstrInput(handlerBlock, tryBodyBlock, classIds),
+		Span:  span,
+	})
+}
+
+// BuildPopHandler builds a POP_HANDLER instruction to unregister an exception handler
+func (b *IRBuilder) BuildPopHandler(span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypePopHandler,
+		Span: span,
+	})
+}
+
+// BuildCheckException builds a CHECK_EXCEPTION instruction that branches based on exception state
+func (b *IRBuilder) BuildCheckException(handlerBlock *BasicBlock, continueBlock *BasicBlock, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypeCheckException,
+		Input: NewCheckExceptionInstrInput(handlerBlock, continueBlock),
+		Span:  span,
+	})
+}
+
+// BuildGetException builds a GET_EXCEPTION instruction to retrieve the current exception
+func (b *IRBuilder) BuildGetException(expectedType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = expectedType
+	b.pushInstr(&Instr{
+		Type:   InstrTypeGetException,
+		Output: result,
+		Span:   span,
+	})
+	return result
+}
+
+// BuildClearException builds a CLEAR_EXCEPTION instruction to clear the current exception state
+func (b *IRBuilder) BuildClearException(span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeClearException,
+		Span: span,
+	})
 }
 
 func (b *IRBuilder) GetFunctionBlocks() []*BasicBlock {

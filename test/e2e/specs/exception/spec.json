@@ -1,0 +1,19 @@
+[
+    {
+        "name": "Basic try-catch catches exception",
+        "entry": "catch-basic.zs",
+        "exit": "42"
+    },
+    {
+        "name": "Catch block can log and return",
+        "entry": "catch-with-log.zs",
+        "exit": "0",
+        "stdout": "Caught error: Test error\n"
+    },
+    {
+        "name": "Try block without exception continues normally",
+        "entry": "try-no-throw.zs",
+        "exit": "0",
+        "stdout": "In try block\n"
+    }
+]

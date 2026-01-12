@@ -148,6 +148,14 @@ func NewParser(tokens []*token.Token) *Parser {
 
 	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
 		className := parser.consumeIdentifier("class name")
+
+		// Check for optional extends clause
+		var parentClass *ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeExtends {
+			parser.consume() // consume 'extends'
+			parentClass = parser.consumeIdentifier("parent class name")
+		}
+
 		parser.consumeToken(token.TokenTypeLeftBrace, "after class name")
 
 		methods := []*ast.ClassMethod{}
@@ -187,7 +195,7 @@ func NewParser(tokens []*token.Token) *Parser {
 
 		closeBrace := parser.consumeToken(token.TokenTypeRightBrace, "after class members")
 
-		return &ast.ClassDeclExprNode{Name: className, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
+		return &ast.ClassDeclExprNode{Name: className, ParentClass: parentClass, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
 	}
 
 	objectPropertyAccessParseLet := func(parser *Parser, left ast.ExprNode, dot *token.Token) ast.ExprNode {
@@ -699,6 +707,73 @@ func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
 	return &ast.ExportStmtNode{Expr: expr, Span: &token.Span{Start: exportKeyword.Span.Start, End: expr.GetSpan().End}}
 }
 
+func (p *Parser) parseTryCatchStmt() *ast.TryCatchStmtNode {
+	tryKeyword := p.consumeToken(token.TokenTypeTry)
+
+	// Parse the try block
+	tryBody := p.parseBlockStmt()
+
+	// Parse one or more catch clauses
+	catchClauses := []*ast.CatchClause{}
+	for p.peek().Type == token.TokenTypeCatch {
+		catchClause := p.parseCatchClause()
+		catchClauses = append(catchClauses, catchClause)
+	}
+
+	if len(catchClauses) == 0 {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "try statement must have at least one catch clause", tryBody.GetSpan()))
+	}
+
+	// Calculate span
+	var endSpan token.Position
+	if len(catchClauses) > 0 {
+		endSpan = catchClauses[len(catchClauses)-1].Span.End
+	} else {
+		endSpan = tryBody.Span.End
+	}
+
+	return &ast.TryCatchStmtNode{
+		TryBody:      tryBody,
+		CatchClauses: catchClauses,
+		Span:         &token.Span{Start: tryKeyword.Span.Start, End: endSpan},
+	}
+}
+
+func (p *Parser) parseCatchClause() *ast.CatchClause {
+	catchKeyword := p.consumeToken(token.TokenTypeCatch)
+
+	// Parse (errorVar: ErrorType)
+	p.consumeToken(token.TokenTypeLeftParen, "after catch")
+	errorVar := p.consumeIdentifier("in catch clause")
+	p.consumeToken(token.TokenTypeColon, "after error variable in catch clause")
+	errorType := p.consumeDataType("error type", "catch clause")
+	p.consumeToken(token.TokenTypeRightParen, "after error type in catch clause")
+
+	// Parse catch body
+	body := p.parseBlockStmt()
+
+	return &ast.CatchClause{
+		ErrorVar:  errorVar,
+		ErrorType: errorType,
+		Body:      body,
+		Span:      &token.Span{Start: catchKeyword.Span.Start, End: body.Span.End},
+	}
+}
+
+func (p *Parser) parseThrowStmt() *ast.ThrowStmtNode {
+	throwKeyword := p.consumeToken(token.TokenTypeThrow)
+
+	// Parse the expression to throw
+	expr := p.ParseExpr("in throw statement")
+
+	p.consumeSemicolon()
+
+	return &ast.ThrowStmtNode{
+		Expr: expr,
+		Span: &token.Span{Start: throwKeyword.Span.Start, End: expr.GetSpan().End},
+	}
+}
+
 // Synchronizes the parser by consuming tokens until it encounters a semicolon or right brace
 // this helps in preventing errors that are side effects of a previous error
 func (p *Parser) synchronize() {
@@ -718,6 +793,9 @@ func (p *Parser) synchronize() {
 		token.TokenTypeLeftBrace:  true,
 		token.TokenTypeRightBrace: true,
 		token.TokenTypeIf:         true,
+		token.TokenTypeTry:        true,
+		token.TokenTypeCatch:      true,
+		token.TokenTypeThrow:      true,
 	}
 	stopAfterTokens := map[token.TokenType]bool{
 		token.TokenTypeSemicolon: true,
@@ -789,6 +867,10 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return p.parseImportStmt()
 	case token.TokenTypeExport:
 		return p.parseExportStmt()
+	case token.TokenTypeTry:
+		return p.parseTryCatchStmt()
+	case token.TokenTypeThrow:
+		return p.parseThrowStmt()
 	default:
 		return p.parseExprStmt()
 	}

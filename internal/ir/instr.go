@@ -602,6 +602,93 @@ func AsDeclPrimordialFuncInstrInput(input InstrInput) *DeclPrimordialFuncInstrIn
 	return nil
 }
 
+// ThrowInstrInput is the input for THROW instruction
+type ThrowInstrInput struct {
+	ClassId    int               // Class ID of the exception type
+	ObjectPtr  zeus_value.Value  // Pointer to the Error object
+	SourceFile string            // Source file where throw occurred
+	SourceLine int               // Line number where throw occurred
+}
+
+func NewThrowInstrInput(classId int, objectPtr zeus_value.Value, sourceFile string, sourceLine int) *ThrowInstrInput {
+	return &ThrowInstrInput{
+		ClassId:    classId,
+		ObjectPtr:  objectPtr,
+		SourceFile: sourceFile,
+		SourceLine: sourceLine,
+	}
+}
+
+func (i ThrowInstrInput) String() string {
+	return fmt.Sprintf("throw class_id=%d, obj=%s at %s:%d", i.ClassId, i.ObjectPtr, i.SourceFile, i.SourceLine)
+}
+
+func AsThrowInstrInput(input InstrInput) *ThrowInstrInput {
+	switch input := input.(type) {
+	case *ThrowInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ThrowInstrInput", input)
+	}
+	return nil
+}
+
+// PushHandlerInstrInput is the input for PUSH_HANDLER instruction
+type PushHandlerInstrInput struct {
+	HandlerBlock  *BasicBlock // The block to jump to when exception is caught
+	TryBodyBlock  *BasicBlock // The block containing the try body
+	ClassIds      []int       // Class IDs this handler catches (in order of catch clauses)
+}
+
+func NewPushHandlerInstrInput(handlerBlock *BasicBlock, tryBodyBlock *BasicBlock, classIds []int) *PushHandlerInstrInput {
+	return &PushHandlerInstrInput{
+		HandlerBlock: handlerBlock,
+		TryBodyBlock: tryBodyBlock,
+		ClassIds:     classIds,
+	}
+}
+
+func (i PushHandlerInstrInput) String() string {
+	return fmt.Sprintf("push_handler handler=%d, try_body=%d, class_ids=%v", i.HandlerBlock.Id, i.TryBodyBlock.Id, i.ClassIds)
+}
+
+func AsPushHandlerInstrInput(input InstrInput) *PushHandlerInstrInput {
+	switch input := input.(type) {
+	case *PushHandlerInstrInput:
+		return input
+	default:
+		panicInvalidInputType("PushHandlerInstrInput", input)
+	}
+	return nil
+}
+
+// CheckExceptionInstrInput is the input for CHECK_EXCEPTION instruction
+type CheckExceptionInstrInput struct {
+	HandlerBlock *BasicBlock  // Block to jump to if exception is pending
+	ContinueBlock *BasicBlock // Block to jump to if no exception
+}
+
+func NewCheckExceptionInstrInput(handlerBlock *BasicBlock, continueBlock *BasicBlock) *CheckExceptionInstrInput {
+	return &CheckExceptionInstrInput{
+		HandlerBlock:  handlerBlock,
+		ContinueBlock: continueBlock,
+	}
+}
+
+func (i CheckExceptionInstrInput) String() string {
+	return fmt.Sprintf("check_exception handler=%d, continue=%d", i.HandlerBlock.Id, i.ContinueBlock.Id)
+}
+
+func AsCheckExceptionInstrInput(input InstrInput) *CheckExceptionInstrInput {
+	switch input := input.(type) {
+	case *CheckExceptionInstrInput:
+		return input
+	default:
+		panicInvalidInputType("CheckExceptionInstrInput", input)
+	}
+	return nil
+}
+
 const (
 	// math operations
 	InstrTypeAdd InstrType = iota
@@ -649,6 +736,13 @@ const (
 	InstrTypeObjectPropertyAccess
 	// array indexing (HIR - lowered before codegen)
 	InstrTypeGetIndex
+	// exception handling
+	InstrTypeThrow          // Throw exception: calls zeus_throw(class_id, obj_ptr)
+	InstrTypePushHandler    // Push catch handler onto handler stack at try entry
+	InstrTypePopHandler     // Pop handler from stack at try exit
+	InstrTypeCheckException // Check if exception pending after call in try block
+	InstrTypeGetException   // Get current exception object for catch binding
+	InstrTypeClearException // Clear exception after successful catch
 )
 
 func (i InstrType) String() string {
@@ -721,13 +815,25 @@ func (i InstrType) String() string {
 		return "DECLARE_CLASS_METHOD"
 	case InstrTypeGetIndex:
 		return "GET_INDEX"
+	case InstrTypeThrow:
+		return "THROW"
+	case InstrTypePushHandler:
+		return "PUSH_HANDLER"
+	case InstrTypePopHandler:
+		return "POP_HANDLER"
+	case InstrTypeCheckException:
+		return "CHECK_EXCEPTION"
+	case InstrTypeGetException:
+		return "GET_EXCEPTION"
+	case InstrTypeClearException:
+		return "CLEAR_EXCEPTION"
 	default:
 		panic("unknown instruction type")
 	}
 }
 
 func IsControlFlowInstr(instrType InstrType) bool {
-	return instrType == InstrTypeJmp || instrType == InstrTypeCondJmp || instrType == InstrTypeReturn
+	return instrType == InstrTypeJmp || instrType == InstrTypeCondJmp || instrType == InstrTypeReturn || instrType == InstrTypeThrow || instrType == InstrTypeCheckException || instrType == InstrTypePushHandler
 }
 
 func IsFunctionDeclInstr(instrType InstrType) bool {

@@ -14,6 +14,12 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
+// TryContext holds information about the current try block being processed
+type TryContext struct {
+	HandlerBlock *BasicBlock // The exception handler block
+	ClassIds     []int       // Class IDs of catch clauses
+}
+
 type IRModule struct {
 	irBuilder       *IRBuilder
 	isLValueExpr    bool
@@ -21,6 +27,7 @@ type IRModule struct {
 	modulePath      string
 	exportedSymbols map[string]zeus_value.Value
 	getModule       func(modulePath string) *IRModule
+	tryContextStack []*TryContext // Stack of try contexts for nested try blocks
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -963,4 +970,158 @@ func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_va
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
 	zeus_error.Assert(false, "value type should not be emitted in the IR");
 	return nil
+}
+
+// pushTryContext pushes a new try context onto the stack
+func (g *IRModule) pushTryContext(handlerBlock *BasicBlock, classIds []int) {
+	g.tryContextStack = append(g.tryContextStack, &TryContext{
+		HandlerBlock: handlerBlock,
+		ClassIds:     classIds,
+	})
+}
+
+// popTryContext pops the current try context from the stack
+func (g *IRModule) popTryContext() {
+	if len(g.tryContextStack) > 0 {
+		g.tryContextStack = g.tryContextStack[:len(g.tryContextStack)-1]
+	}
+}
+
+// getCurrentTryContext returns the current try context or nil if not in a try block
+func (g *IRModule) getCurrentTryContext() *TryContext {
+	if len(g.tryContextStack) > 0 {
+		return g.tryContextStack[len(g.tryContextStack)-1]
+	}
+	return nil
+}
+
+// getClassIdFromType extracts the class ID from a type
+func (g *IRModule) getClassIdFromType(valueType zeus_value.ValueType) int {
+	switch t := valueType.(type) {
+	case zeus_value.ObjectType:
+		return t.Class.Id
+	case *zeus_value.ObjectType:
+		return t.Class.Id
+	default:
+		return 0
+	}
+}
+
+// VisitTryCatchStmt generates IR for try-catch statements
+func (g *IRModule) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
+	// 1. Create blocks for try body, handler (catch dispatch), and merge (after try-catch)
+	tryBodyBlock := g.irBuilder.BuildSuccessorBlock()
+	handlerBlock := g.irBuilder.BuildSuccessorBlock()
+	mergeBlock := g.irBuilder.BuildSuccessorBlock()
+
+	// 2. Collect class IDs from all catch clauses
+	classIds := []int{}
+	for _, clause := range stmt.CatchClauses {
+		// The type checker should have validated that this is an Error class or subclass
+		classId := g.getClassIdFromType(clause.ErrorType.ValueType)
+		classIds = append(classIds, classId)
+	}
+
+	// 3. Push handler at try block entry - this emits setjmp and conditional branch
+	// Will branch to tryBodyBlock if setjmp returns 0, handlerBlock if returns 1
+	g.irBuilder.BuildPushHandler(handlerBlock, tryBodyBlock, classIds, stmt.GetSpan())
+
+	// 4. Switch to try body block
+	g.irBuilder.SetInsertionBlock(tryBodyBlock)
+
+	// 5. Mark that we're in a try block (affects call generation)
+	g.pushTryContext(handlerBlock, classIds)
+
+	// 6. Generate try body
+	stmt.TryBody.Accept(g)
+
+	// 7. Pop handler and jump to merge block at end of try block (if no exception)
+	g.irBuilder.BuildPopHandler(stmt.GetSpan())
+	g.irBuilder.BuildJmp(mergeBlock, stmt.GetSpan())
+
+	// 7. Exit try context
+	g.popTryContext()
+
+	// 8. Generate exception handler block
+	g.irBuilder.SetInsertionBlock(handlerBlock)
+
+	// Generate catch clause matching logic
+	// For now, we only support a single catch clause per try block
+	// Multiple catch clauses would need proper instanceof checking
+	for i, clause := range stmt.CatchClauses {
+		classId := classIds[i]
+		_ = classId // Will be used for instanceof check in future
+
+		// Create block for this catch clause body
+		catchBodyBlock := g.irBuilder.BuildSuccessorBlock()
+
+		// For now, jump directly to the catch body
+		// TODO: Add instanceof check for multiple catch clauses
+		g.irBuilder.BuildJmp(catchBodyBlock, clause.GetSpan())
+
+		// Generate catch body
+		g.irBuilder.SetInsertionBlock(catchBodyBlock)
+
+		// Enter a new scope for the catch variable
+		g.symbolTable().EnterScope()
+
+		// Get the exception with the expected type
+		exception := g.irBuilder.BuildGetException(clause.ErrorType.ValueType, clause.GetSpan())
+
+		// Declare the catch variable (e.g., 'e' in catch (e: Error))
+		errorVar := zeus_value.NewVar(
+			clause.ErrorVar.Name.Value,
+			clause.ErrorType.ValueType,
+			true,
+			clause.GetSpan(),
+		)
+		g.symbolTable().DeclareSymbol(clause.ErrorVar.Name.Value, errorVar)
+
+		// Store the exception object in the catch variable
+		declInput := NewDeclareVarInstrInput(errorVar, exception, false)
+		g.irBuilder.pushInstr(&Instr{
+			Type:  InstrTypeDeclVar,
+			Input: declInput,
+			Span:  clause.GetSpan(),
+		})
+
+		// Clear the exception (it's been caught)
+		g.irBuilder.BuildClearException(clause.GetSpan())
+
+		// Generate catch body statements
+		clause.Body.Accept(g)
+
+		// Exit catch variable scope
+		g.symbolTable().ExitScope()
+
+		// Jump to merge block after catch body
+		g.irBuilder.BuildJmp(mergeBlock, clause.GetSpan())
+
+		// Note: For multiple catch clauses, we'd need instanceof checks here
+		// For now, we only support a single catch clause
+		break
+	}
+
+	// 9. Continue at merge block
+	g.irBuilder.SetInsertionBlock(mergeBlock)
+}
+
+// VisitThrowStmt generates IR for throw statements
+func (g *IRModule) VisitThrowStmt(stmt *ast.ThrowStmtNode) {
+	// Evaluate the exception expression (must be Error or subclass)
+	exceptionValue := stmt.Expr.Accept(g)
+
+	// Get the class ID from the evaluated value
+	// The type checker should have validated this is an Error class or subclass
+	classId := 0
+	if exceptionVar, ok := exceptionValue.(*zeus_value.Var); ok && exceptionVar.ValueType != nil {
+		classId = g.getClassIdFromType(exceptionVar.ValueType)
+	} else if _, ok := exceptionValue.(zeus_value.Object); ok {
+		// For new expressions, the result is an Object
+		objectValue := exceptionValue.(zeus_value.Object)
+		classId = objectValue.ValueType.Class.Id
+	}
+
+	// Build the THROW instruction
+	g.irBuilder.BuildThrow(classId, exceptionValue, g.modulePath, stmt.GetSpan())
 }
