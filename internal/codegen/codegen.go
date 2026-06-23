@@ -172,25 +172,6 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
 
-	// GC safepoint slow path function (external declaration)
-	gcSafepointSlowPathType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
-	gcSafepointSlowPathFunction := llvm.AddFunction(module, "zeus_gc_poll", gcSafepointSlowPathType)
-	gcSafepointSlowPathFunction.SetLinkage(llvm.InternalLinkage)
-	globalFunctions["zeus_gc_poll"] = GlobalLLVMFunction{gcSafepointSlowPathFunction, gcSafepointSlowPathType}
-
-	// GC safepoint poll function (defined function)
-	gcSafepointPollType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
-	gcSafepointPollFunction := llvm.AddFunction(module, "gc.safepoint_poll", gcSafepointPollType)
-	gcSafepointPollFunction.SetLinkage(llvm.InternalLinkage)
-	globalFunctions["gc.safepoint_poll"] = GlobalLLVMFunction{gcSafepointPollFunction, gcSafepointPollType}
-
-	// Create the body for gc.safepoint_poll
-	builder := c.cxt.NewBuilder()
-	entryBlock := c.cxt.AddBasicBlock(gcSafepointPollFunction, "entry")
-	builder.SetInsertPointAtEnd(entryBlock)
-	builder.CreateCall(gcSafepointSlowPathType, gcSafepointSlowPathFunction, []llvm.Value{}, "")
-	builder.CreateRetVoid()
-	builder.Dispose()
 
 	// Exception handling runtime functions
 
@@ -558,6 +539,11 @@ func (c *CodegenModule) toLLVMFunctionType(functionType zeus_value.FunctionType)
 	return llvm.FunctionType(c.toLLVMType(functionType.ReturnType), param_llvm_types, false)
 }
 
+func (c *CodegenModule) addFramePointerAttr(fn llvm.Value) {
+	attr := c.cxt.CreateStringAttribute("frame-pointer", "all")
+	fn.AddFunctionAttr(attr)
+}
+
 func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 	llvmFunc := llvm.AddFunction(c.module, function.Name, c.toLLVMFunctionType(zeus_value.ToFunctionType(function)))
 	funcParams := function.Params
@@ -566,8 +552,7 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 		c.symbolTable.DeclareSymbol(funcParams[index].Name, param)
 	}
 
-	// Set GC strategy for functions that might allocate memory
-	llvmFunc.SetGC("statepoint-example")
+	c.addFramePointerAttr(llvmFunc)
 
 	c.symbolTable.DeclareGlobalSymbol(function.Name, llvmFunc)
 
@@ -720,7 +705,19 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 	case zeus_value.FloatType:
 		switch rightType.(type) {
 		case zeus_value.FloatType:
-			return floatFloat(c.toLLVMValue(left), c.toLLVMValue(right), opName)
+			leftVal := c.toLLVMValue(left)
+			rightVal := c.toLLVMValue(right)
+			// Promote to the wider type if widths differ
+			if leftVal.Type() != rightVal.Type() {
+				f64Type := c.cxt.DoubleType()
+				if leftVal.Type() != f64Type {
+					leftVal = c.builder.CreateFPExt(leftVal, f64Type, "fpext")
+				}
+				if rightVal.Type() != f64Type {
+					rightVal = c.builder.CreateFPExt(rightVal, f64Type, "fpext")
+				}
+			}
+			return floatFloat(leftVal, rightVal, opName)
 		}
 	case zeus_value.ObjectType:
 		// Object comparison (pointer comparison)
@@ -876,8 +873,7 @@ func (c *CodegenModule) genImportedClass(class zeus_value.Class, modulePath stri
 		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
 			constructorMethod := method.Method
 			constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
-			// Set GC strategy for imported constructor methods
-			constructorFunc.SetGC("statepoint-example")
+			c.addFramePointerAttr(constructorFunc)
 			llvmConstructorMethod = &constructorFunc
 			break
 		}
@@ -894,8 +890,7 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	switch importedValue := importedValue.(type) {
 	case *zeus_value.Function:
 		importedFunc := llvm.AddFunction(c.module, module.GetModuleScopedName(input.ModulePath, importedValue.Name), c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
-		// Set GC strategy for imported functions
-		importedFunc.SetGC("statepoint-example")
+		c.addFramePointerAttr(importedFunc)
 		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
 	case *zeus_value.Class:
 		c.genImportedClass(*importedValue, input.ModulePath)
@@ -944,19 +939,9 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	// create object header struct
 	objectHeaderStructName := GetObjectHeaderStructName(class.Name)
 
-	gcOffsetsCount := 0
-
-	for _, property := range class.Properties {
-		if zeus_value.IsObjectType(property.Property.ValueType) {
-			gcOffsetsCount += 1
-		}
-	}
-
 	objectHeaderElementTypes := []llvm.Type{
-		llvm.PointerType(vtableStructType, 0),         // vtable
-		llvm.PointerType(c.zeusObjectTypeInfoType, 0), // object type info
-		c.cxt.Int8Type(), // gc offsets count
-		llvm.ArrayType(c.cxt.Int8Type(), gcOffsetsCount), // gc offsets
+		llvm.PointerType(vtableStructType, 0),
+		llvm.PointerType(c.zeusObjectTypeInfoType, 0),
 	}
 
 	objectHeaderStructType := c.cxt.StructCreateNamed(objectHeaderStructName)
@@ -1044,24 +1029,8 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
-	gcOffsetsArray := []llvm.Value{}
-
-	// Calculate GC offsets using LLVM's actual struct layout
-	// We use ElementOffset to get the exact byte offset LLVM calculated for each field
-	// This accounts for all padding and alignment that LLVM adds to the struct
-	for propertyIndex, property := range class.Properties {
-		if zeus_value.IsObjectType(property.Property.ValueType) {
-			// propertyIndex + 1 because index 0 in the struct is the obj_header pointer
-			actualOffset := c.targetDataLayout.ElementOffset(llvmStructType, propertyIndex+1)
-			gcOffsetsArray = append(gcOffsetsArray, llvm.ConstInt(c.cxt.Int8Type(), actualOffset, false))
-		}
-	}
 	llvmObjectHeader.SetInitializer(llvm.ConstStruct(
-		[]llvm.Value{
-			llvmVTable,
-			llvmObjectTypeInfo,
-			llvm.ConstInt(c.cxt.Int8Type(), uint64(len(gcOffsetsArray)), false),
-			llvm.ConstArray(c.cxt.Int8Type(), gcOffsetsArray)},
+		[]llvm.Value{llvmVTable, llvmObjectTypeInfo},
 		false))
 	// initialize the llvm methods array
 	// Count only non-constructor, non-lowered methods for vtable

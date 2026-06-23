@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const abi = @import("abi.zig");
-const gc_runtime = @import("gc_runtime.zig");
+const gc_runtime = @import("gc_runtime_boehm.zig");
 
 // Default object type info for generic Zeus objects
 // This is used for wrapper objects that don't belong to a specific class
@@ -21,7 +21,6 @@ var default_vtable: u8 = 0;
 var default_object_header: abi.ZeusObjectHeader = abi.ZeusObjectHeader{
     .vtable = @ptrCast(&default_vtable),
     .object_type_info = @ptrCast(&default_object_type_info),
-    .gc_offsets_count = 0,
 };
 
 /// Allocates memory for a return value following Zeus object ABI

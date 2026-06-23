@@ -161,42 +161,23 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	}, nil
 }
 
-// RunOptimizationPasses runs LLVM optimization passes on the modules, specifically
-// PlaceSafepoints and RewriteStatepointsForGC for garbage collection support
 func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
-	noGc := os.Getenv("ZEUS_NO_GC") == "true"
 	for _, sourceFile := range sourceFiles {
 		if sourceFile.Module == nil {
 			continue
 		}
 
-		// Get the LLVM module
 		llvmModule := sourceFile.Module.GetModule()
 
-		// Create PassBuilder options
 		options := llvm.NewPassBuilderOptions()
 		defer options.Dispose()
 
-		// Enable debug logging for pass execution (optional)
 		options.SetDebugLogging(debug.IsDebug())
-		options.SetVerifyEach(false) // Verify after each pass for debugging
+		options.SetVerifyEach(false)
 
-		passes := []string{"mem2reg"}
-
-		if !noGc {
-			passes = append(passes, "place-safepoints", "rewrite-statepoints-for-gc")
-		}
-
-		// Run GC-related passes using the new PassBuilder system
-		// PlaceSafepoints: Inserts safepoint polls at function entries and loop backedges
-		// RewriteStatepointsForGC: Transforms calls to explicit statepoint relocations
-
-		// Run the passes on the module
-		for _, pass := range passes {
-			err := llvmModule.RunPasses(pass, c.targetMachine, options)
-			if err != nil {
-				return fmt.Errorf("failed to run optimization pass %s on module %s: %v", pass, sourceFile.Path, err)
-			}
+		err := llvmModule.RunPasses("mem2reg", c.targetMachine, options)
+		if err != nil {
+			return fmt.Errorf("failed to run optimization pass mem2reg on module %s: %v", sourceFile.Path, err)
 		}
 	}
 
@@ -546,6 +527,7 @@ func LinkObjFiles(objDir string, outputPath string) error {
 			}
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
+		linkerArgs = append(linkerArgs, "-L/opt/homebrew/opt/bdw-gc/lib", "-lgc")
 		linkerArgs = append(linkerArgs, "-o", outputPath)
 		linkerCmd = exec.Command(linker, linkerArgs...)
 		linkerCmd.Stdout = os.Stdout

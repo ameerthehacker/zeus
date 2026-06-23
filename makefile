@@ -28,8 +28,7 @@ test-e2e: build-runtime
 test-runtime:
 	cd runtime && zig build test
 
-ZIG_SDK ?= /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
-ZIG_FLAGS ?= --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -lc -lunwind
+ZIG_FLAGS = --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -I$(BOEHM_GC_INCLUDE) -lc -lunwind -L$(BOEHM_GC_LIB) -lgc
 
 build-runtime:
 	@mkdir -p runtime/zig-out/out

@@ -234,7 +234,6 @@ fn captureStackTrace() ?*StackTrace {
     // Get current context
     const ctx_result = c.unw_getcontext(&context);
     if (ctx_result != 0) {
-        // Failed to get context, return empty trace
         trace.* = StackTrace{
             .frames = frames.toOwnedSlice() catch &[_]StackFrame{},
             .alloc = allocator,
@@ -269,16 +268,16 @@ fn captureStackTrace() ?*StackTrace {
             break;
         }
 
+        // Subtract 1 from IP to get the actual call instruction (not return address)
+        const lookup_ip: usize = if (ip > 0) @intCast(ip - 1) else @intCast(ip);
+
         // Get function name using dladdr
         var info: c.Dl_info = undefined;
         var func_name: ?[]const u8 = null;
         var file_path: ?[]const u8 = null;
         var line_num: u32 = 0;
 
-        // Subtract 1 from IP to get the actual call instruction (not return address)
-        const lookup_ip: usize = if (ip > 0) @intCast(ip - 1) else @intCast(ip);
-
-        if (c.dladdr(@ptrFromInt(ip), &info) != 0) {
+        if (c.dladdr(@ptrFromInt(lookup_ip), &info) != 0) {
             // Get function name
             if (info.dli_sname != null) {
                 const name_len = std.mem.len(info.dli_sname);
