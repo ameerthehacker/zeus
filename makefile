@@ -8,6 +8,8 @@ clean:
 always:
 	rm -rf playground/debug
 	mkdir -p playground/debug playground/debug/out
+	cmake -B build -DCMAKE_BUILD_TYPE=Release
+	make -C build
 
 GO_BUILD_TAGS := -tags llvm19
 
@@ -23,7 +25,7 @@ test-go:
 	go test $(GO_BUILD_TAGS) ./test/...
 
 test-e2e: build-runtime
-	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out go test $(GO_BUILD_TAGS) ./test/e2e/... -v -count=1
+	ZEUS_HOME=$(CURDIR) go test $(GO_BUILD_TAGS) ./test/e2e/... -v -count=1
 
 test-runtime:
 	cd runtime && zig build test
@@ -54,21 +56,21 @@ build-runtime-release: always
 
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 	else \
-		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi
 
 compile-release: always
 	cd runtime && zig build -Doptimize=ReleaseSmall
-	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
+	ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
 
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 		ZEUS_GC_DEBUG=true ./playground/debug/$(file); \
 	else \
-		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 		./playground/debug/$(file); \
 	fi
 

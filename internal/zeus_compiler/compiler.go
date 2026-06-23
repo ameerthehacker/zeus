@@ -83,7 +83,7 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 	llvm.InitializeAllAsmParsers()
 	llvm.InitializeAllAsmPrinters()
 	targetTriple := llvm.DefaultTargetTriple()
-	
+
 	// Set minimum macOS deployment target to match runtime build
 	if runtime.GOOS == "darwin" {
 		// Parse the triple and update the OS version
@@ -94,7 +94,7 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 			targetTriple = parts[0] + "-" + parts[1] + "-macosx12.0.0"
 		}
 	}
-	
+
 	target, err := llvm.GetTargetFromTriple(targetTriple)
 
 	if err != nil {
@@ -243,7 +243,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		logger.Log(zeus_error.ErrorSeverityError, err.Error())
 		os.Exit(1)
 	}
-	
+
 	entryPointSourceFile.IsEntryPoint = true
 	// parse and collect dependencies
 	sourceFiles := c.CollectDependencies(entryPointSourceFile)
@@ -288,7 +288,7 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 		os.Exit(1)
 	}
 
-	linkError := LinkObjFiles(objDir, outputPath)
+	linkError := linkObjFiles(objDir, outputPath)
 	if linkError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
 		os.Exit(1)
@@ -457,15 +457,15 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
 	return objDir, nil
 }
 
-func GetRuntimeDir() string {
-	runtimeDir := os.Getenv(module.ZeusHomeEnvVar)
-	if runtimeDir == "" {
+func getZeusHomeDir() string {
+	zeusHome := os.Getenv(module.ZeusHomeEnvVar)
+	if zeusHome == "" {
+		// Resolve symlinks to get the actual binary location
 		execPath, err := os.Executable()
 		if err != nil {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to get zeus executable path: %s", err.Error()))
 			os.Exit(1)
 		}
-		// Resolve symlinks to get the actual binary location
 		execPath, err = filepath.EvalSymlinks(execPath)
 		if err != nil {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to resolve symlinks: %s", err.Error()))
@@ -474,22 +474,34 @@ func GetRuntimeDir() string {
 		binDir := filepath.Dir(execPath)
 		// Check if we're in a bin/ directory structure (e.g., Homebrew installation)
 		if filepath.Base(binDir) == "bin" {
-			runtimeDir = filepath.Dir(binDir)
+			zeusHome = filepath.Dir(binDir)
 		} else {
-			// Otherwise, the binary is directly in the zeus home directory
-			runtimeDir = binDir
+			zeusHome = binDir
 		}
-		return filepath.Join(runtimeDir, "runtime", "zig-out", "out")
 	}
-	return runtimeDir
+
+	return zeusHome
 }
 
-func LinkObjFiles(objDir string, outputPath string) error {
+func getRuntimeDir() string {
+	zeusHome := getZeusHomeDir()
+	// Runtime objects always live at <zeus_home>/runtime/zig-out/out, whether ZEUS_HOME
+	// is derived from the executable path or set explicitly via the env var.
+	return filepath.Join(zeusHome, "runtime", "zig-out", "out")
+}
+
+func getBDWGCLibDir() string {
+	zeusHome := getZeusHomeDir()
+
+	return filepath.Join(zeusHome, "third_party", "bdwgc", "lib")
+}
+
+func linkObjFiles(objDir string, outputPath string) error {
 	objFiles, err := filepath.Glob(fmt.Sprintf("%s/zeus-*.o", objDir))
 	if err != nil {
 		return err
 	}
-	runtimeDir := GetRuntimeDir()
+	runtimeDir := getRuntimeDir()
 	runtimeObjFiles, err := filepath.Glob(fmt.Sprintf("%s/*.o", runtimeDir))
 	if err != nil {
 		return err
@@ -527,7 +539,7 @@ func LinkObjFiles(objDir string, outputPath string) error {
 			}
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
-		linkerArgs = append(linkerArgs, "-L/opt/homebrew/opt/bdw-gc/lib", "-lgc")
+		linkerArgs = append(linkerArgs, "-L"+getBDWGCLibDir(), "-lgc")
 		linkerArgs = append(linkerArgs, "-o", outputPath)
 		linkerCmd = exec.Command(linker, linkerArgs...)
 		linkerCmd.Stdout = os.Stdout

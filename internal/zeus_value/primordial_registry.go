@@ -18,6 +18,10 @@ type PrimordialRegistry struct {
 	// Parameterized array classes (u8[], i32[], Point[], etc.)
 	arrayClasses map[string]*Class
 
+	// classOrder maintains insertion order so GetAllClasses returns classes in
+	// dependency-safe order regardless of Go map iteration randomness.
+	classOrder []string
+
 	// Primordial functions (log, etc.)
 	functions map[string]*Function
 
@@ -34,6 +38,7 @@ func newPrimordialRegistry() *PrimordialRegistry {
 	r := &PrimordialRegistry{
 		classes:      make(map[string]*Class),
 		arrayClasses: make(map[string]*Class),
+		classOrder:   make([]string, 0),
 		functions:    make(map[string]*Function),
 		defaultSpan:  defaultSpan,
 	}
@@ -54,9 +59,11 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 
 	// string class - reuse the existing definition
 	r.classes[ZEUS_PRIMORDIAL_STRING] = GetStringPrimordialClassDefinition(r.defaultSpan)
+	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_STRING)
 
 	// Error class - base class for all exceptions (must be registered before any Error subclasses)
 	r.classes[ZEUS_PRIMORDIAL_ERROR] = GetErrorPrimordialClassDefinition(r.defaultSpan)
+	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_ERROR)
 }
 
 func (r *PrimordialRegistry) registerFunctions() {
@@ -78,13 +85,14 @@ func (r *PrimordialRegistry) getOrCreateArrayClassUnsafe(arrayType ArrayType) *C
 		return class
 	}
 
-	// Handle nested array types
+	// Handle nested array types: ensure the element array class exists first
 	if elementArrayType, ok := arrayType.ElementType.(ArrayType); ok {
 		r.getOrCreateArrayClassUnsafe(elementArrayType)
 	}
 
 	class := GetArrayPrimordialClassDefinition(arrayType)
 	r.arrayClasses[className] = class
+	r.classOrder = append(r.classOrder, className)
 	return class
 }
 
@@ -106,22 +114,24 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 
 	class := GetArrayPrimordialClassDefinition(arrayType)
 	r.arrayClasses[className] = class
+	r.classOrder = append(r.classOrder, className)
 	return class
 }
 
-// GetAllClasses returns all registered primordial classes (fixed + array)
-// Array classes are returned first since other classes (like string) may depend on them
+// GetAllClasses returns all registered primordial classes in dependency-safe insertion order.
+// Array classes come before fixed classes (e.g. u8[] before string before Error) because
+// the registry appends them to classOrder in that exact sequence.
 func (r *PrimordialRegistry) GetAllClasses() []*Class {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	result := make([]*Class, 0, len(r.classes)+len(r.arrayClasses))
-	// Array classes first - other classes (like string) may depend on u8[]
-	for _, class := range r.arrayClasses {
-		result = append(result, class)
-	}
-	for _, class := range r.classes {
-		result = append(result, class)
+	result := make([]*Class, 0, len(r.classOrder))
+	for _, name := range r.classOrder {
+		if class, ok := r.arrayClasses[name]; ok {
+			result = append(result, class)
+		} else if class, ok := r.classes[name]; ok {
+			result = append(result, class)
+		}
 	}
 	return result
 }

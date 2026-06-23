@@ -80,6 +80,12 @@ func ResolveFilePath(sourcePath string, importPath string) string {
 	stat, err := os.Stat(resolvedPath)
 	if err == nil && stat.IsDir() {
 		resolvedPath = filepath.Join(resolvedPath, modZeusFile)
+	} else if err != nil {
+		// Path doesn't exist as-is — try appending the .zs extension
+		withExt := resolvedPath + ".zs"
+		if _, err2 := os.Stat(withExt); err2 == nil {
+			resolvedPath = withExt
+		}
 	}
 
 	return resolvedPath

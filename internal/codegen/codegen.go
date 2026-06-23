@@ -172,15 +172,14 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	memAllocFunction := llvm.AddFunction(module, MemAllocFunctionName, memAllocFunctionType)
 	globalFunctions[MemAllocFunctionName] = GlobalLLVMFunction{memAllocFunction, memAllocFunctionType}
 
-
 	// Exception handling runtime functions
 
 	// zeus_throw(class_id: i32, object_ptr: ptr, source_file: ptr, source_line: i32) - throws an exception (noreturn)
 	zeusThrowType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{
-		c.cxt.Int32Type(),                       // class_id
-		llvm.PointerType(c.cxt.VoidType(), 0),   // object_ptr
-		llvm.PointerType(c.cxt.Int8Type(), 0),   // source_file (char*)
-		c.cxt.Int32Type(),                       // source_line
+		c.cxt.Int32Type(),                     // class_id
+		llvm.PointerType(c.cxt.VoidType(), 0), // object_ptr
+		llvm.PointerType(c.cxt.Int8Type(), 0), // source_file (char*)
+		c.cxt.Int32Type(),                     // source_line
 	}, false)
 	zeusThrowFunc := llvm.AddFunction(module, "zeus_throw", zeusThrowType)
 	zeusThrowFunc.AddFunctionAttr(c.cxt.CreateEnumAttribute(llvm.AttributeKindID("noreturn"), 0))
@@ -189,7 +188,7 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	// zeus_try_begin(jmp_buf: ptr, class_ids: ptr, num_classes: i32) -> i32 - begin try block with setjmp
 	// Returns 0 for normal execution, 1 when exception is caught
 	zeusTryBeginType := llvm.FunctionType(c.cxt.Int32Type(), []llvm.Type{
-		llvm.PointerType(c.cxt.VoidType(), 0), // jmp_buf pointer
+		llvm.PointerType(c.cxt.VoidType(), 0),  // jmp_buf pointer
 		llvm.PointerType(c.cxt.Int32Type(), 0), // class_ids array
 		c.cxt.Int32Type(),                      // num_classes
 	}, false)
@@ -882,6 +881,8 @@ func (c *CodegenModule) genImportedClass(class zeus_value.Class, modulePath stri
 	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
 	// track the struct info for the imported class
 	c.importedClasses[class.Name] = NewZeusClassModule(modulePath, class)
+	// declare the factory function as an external so new ImportedClass() can be used
+	c.declareFactoryFunction(class)
 }
 
 func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
@@ -1007,11 +1008,24 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	}
 
 	llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(class)
+
+	// Primordial classes (string, u8[], Error, …) are emitted identically into every compilation
+	// unit. Use InternalLinkage so the linker sees only one definition per TU instead of
+	// reporting duplicate-symbol errors. User-defined classes keep ExternalLinkage so they
+	// can be referenced after export (genExport renames them to a module-scoped symbol).
+	isPrimordial := class.PrimordialName != ""
+	globalLinkage := llvm.ExternalLinkage
+	if isPrimordial {
+		globalLinkage = llvm.InternalLinkage
+	}
+
 	// create the vtable global
 	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(structName))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
+	llvmVTable.SetLinkage(globalLinkage)
 	// create the object type info global
 	llvmObjectTypeInfo := llvm.AddGlobal(c.module, c.zeusObjectTypeInfoType, GetObjectTypeInfoStructPtrName(structName))
+	llvmObjectTypeInfo.SetLinkage(globalLinkage)
 	zeusRuntimeObjectType := ZeusRuntimeObjectTypeObject
 	zeusRuntimeArrayElementType := ZeusRuntimeTypeNull
 
@@ -1029,6 +1043,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
+	llvmObjectHeader.SetLinkage(globalLinkage)
 	llvmObjectHeader.SetInitializer(llvm.ConstStruct(
 		[]llvm.Value{llvmVTable, llvmObjectTypeInfo},
 		false))
@@ -1146,7 +1161,16 @@ func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Valu
 	returnType := llvm.PointerType(c.cxt.VoidType(), 0)
 	factoryFunctionType := llvm.FunctionType(returnType, paramTypes, false)
 	factoryFunction := llvm.AddFunction(c.module, factoryFunctionName, factoryFunctionType)
-	factoryFunction.SetLinkage(llvm.ExternalLinkage)
+	// Primordial factory functions are emitted identically into every compilation unit.
+	// LinkOnceODRLinkage tells the linker to keep exactly one copy (all are identical per
+	// the One Definition Rule) while keeping the symbol externally visible so the Zig
+	// runtime can call zeus_new_string / zeus_new_u8_array etc.
+	// User-defined class factories use ExternalLinkage so importing modules can link to them.
+	if class.PrimordialName != "" {
+		factoryFunction.SetLinkage(llvm.LinkOnceODRLinkage)
+	} else {
+		factoryFunction.SetLinkage(llvm.ExternalLinkage)
+	}
 
 	// Store factory function reference
 	structInfo := c.zeusClassLLVMStructMap[class.Name]
@@ -1269,6 +1293,10 @@ func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_va
 		function.SetSubprogram(diFunc)
 		c.diCurrentFunction = diFunc
 	}
+
+	// Class methods are always dispatched through vtable pointers, never called by symbol name
+	// across module boundaries — InternalLinkage prevents duplicate-symbol errors at link time.
+	function.SetLinkage(llvm.InternalLinkage)
 
 	if !isConstructor {
 		// update the vtable global initializer
@@ -1534,9 +1562,12 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		c.builder.SetInsertPointAtEnd(basicBlock)
 	})
 
-	// Phase 3: Generate factory function bodies for all classes
-	// This must happen after all class methods (including constructors) are processed
+	// Phase 3: Generate factory function bodies for locally-defined classes only.
+	// Imported classes already have their factory bodies in the exporting module.
 	for _, structInfo := range c.zeusClassLLVMStructMap {
+		if _, isImported := c.importedClasses[structInfo.ZeusClass.Name]; isImported {
+			continue
+		}
 		c.genFactoryFunctionBody(structInfo.ZeusClass)
 	}
 

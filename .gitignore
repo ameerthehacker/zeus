@@ -152,3 +152,7 @@ public
 .yarn/install-state.gz
 .pnp.*
 .astro
+
+# CMake
+build
+third_party

@@ -20,6 +20,7 @@ type TestSpec struct {
 	Stderr         string   `json:"stderr,omitempty"`          // Expected exact stderr output
 	StderrContains []string `json:"stderr_contains,omitempty"` // Strings that must be present in stderr
 	NoColor        bool     `json:"no_color,omitempty"`        // Run with NO_COLOR=1
+	CompileError   bool     `json:"compile_error,omitempty"`   // Expect compilation to fail
 }
 
 // buildCompiler builds the Zeus compiler and runtime, placing the compiler in the project root
@@ -114,8 +115,22 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 	// Compile the Zeus file - run from project root
 	compileCmd := exec.Command(compilerPath, "build", filepath.Join(rootDir, "test/e2e", entryFile), "-o", filepath.Join(rootDir, "test/e2e", outputFile))
 	compileCmd.Dir = rootDir
-	if output, err := compileCmd.CombinedOutput(); err != nil {
-		t.Errorf("Failed to compile %s: %v\nOutput: %s", entryFile, err, output)
+	compileOutput, compileErr := compileCmd.CombinedOutput()
+	if spec.CompileError {
+		if compileErr == nil {
+			t.Errorf("Test '%s': expected compile error but compilation succeeded", spec.Name)
+			return
+		}
+		for _, expected := range spec.StderrContains {
+			if !strings.Contains(string(compileOutput), expected) {
+				t.Errorf("Test '%s': compiler output does not contain %q\nActual output:\n%s",
+					spec.Name, expected, compileOutput)
+			}
+		}
+		return
+	}
+	if compileErr != nil {
+		t.Errorf("Failed to compile %s: %v\nOutput: %s", entryFile, compileErr, compileOutput)
 		return
 	}
 

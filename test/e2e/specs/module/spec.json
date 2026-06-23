@@ -1,0 +1,53 @@
+[
+    {
+        "name": "Import and call an exported function",
+        "exit": "42",
+        "entry": "func-main.zs"
+    },
+    {
+        "name": "Import multiple exported functions from same module",
+        "exit": "42",
+        "entry": "func-multi-main.zs"
+    },
+    {
+        "name": "Import and instantiate an exported class with property access",
+        "exit": "42",
+        "entry": "class-main.zs"
+    },
+    {
+        "name": "Import and call a method on an exported class",
+        "exit": "42",
+        "entry": "class-method-main.zs"
+    },
+    {
+        "name": "Import non-existent symbol produces compile error",
+        "exit": "1",
+        "entry": "bad-import.zs",
+        "compile_error": true,
+        "stderr_contains": ["does not export"]
+    },
+    {
+        "name": "Import from non-existent module produces compile error",
+        "exit": "1",
+        "entry": "missing-module.zs",
+        "compile_error": true,
+        "stderr_contains": ["module not found"]
+    },
+    {
+        "name": "Import from a folder resolves to index.zs",
+        "exit": "42",
+        "entry": "folder-main.zs"
+    },
+    {
+        "name": "Circular dependency produces compile error",
+        "exit": "1",
+        "entry": "circular-main.zs",
+        "compile_error": true,
+        "stderr_contains": ["circular dependency detected"]
+    },
+    {
+        "name": "Import from stdlib using @ prefix",
+        "exit": "42",
+        "entry": "stdlib-main.zs"
+    }
+]
