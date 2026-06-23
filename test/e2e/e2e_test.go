@@ -35,7 +35,7 @@ func buildCompiler(t *testing.T) string {
 	compilerPath := filepath.Join(rootDir, "zeus")
 
 	// Build the compiler
-	cmd := exec.Command("go", "build", "-o", compilerPath, "zeus.go")
+	cmd := exec.Command("go", "build", "-tags", "llvm19", "-o", compilerPath, "zeus.go")
 	cmd.Dir = rootDir
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("Failed to build compiler: %v\nOutput: %s", err, output)

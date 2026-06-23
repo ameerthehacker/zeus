@@ -9,32 +9,42 @@ always:
 	rm -rf playground/debug
 	mkdir -p playground/debug playground/debug/out
 
+GO_BUILD_TAGS := -tags llvm19
+
 test-verbose:
-	go test ./test/... -v
+	go test $(GO_BUILD_TAGS) ./test/... -v
 
 test-race:
-	go test ./test/... -race
+	go test $(GO_BUILD_TAGS) ./test/... -race
 
 test: test-go test-runtime
 
 test-go:
-	go test ./test/...
+	go test $(GO_BUILD_TAGS) ./test/...
 
 test-e2e: build-runtime
-	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out go test ./test/e2e/... -v -count=1
+	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out go test $(GO_BUILD_TAGS) ./test/e2e/... -v -count=1
 
 test-runtime:
 	cd runtime && zig build test
 
+ZIG_SDK ?= /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
+ZIG_FLAGS ?= --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -lc -lunwind
+
 build-runtime:
+	@mkdir -p runtime/zig-out/out
 	@if [ "$(release)" = "true" ]; then \
-		cd runtime && zig build -Doptimize=ReleaseSmall; \
+		cd runtime && zig build-lib main.zig -O ReleaseSmall -static --name zeus-runtime $(ZIG_FLAGS) && \
+		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o; \
 	else \
-		cd runtime && zig build; \
+		cd runtime && zig build-lib main.zig -O ReleaseFast -static --name zeus-runtime $(ZIG_FLAGS) && \
+		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o; \
 	fi
 
 build-runtime-debug:
-	cd runtime && zig build
+	@mkdir -p runtime/zig-out/out
+	cd runtime && zig build-lib main.zig -O Debug -static --name zeus-runtime $(ZIG_FLAGS) && \
+		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o
 
 build-zeus-vscode:
 	mkdir -p zeus-vscode/vsix
@@ -45,26 +55,26 @@ build-runtime-release: always
 
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 	else \
-		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi
 
 compile-release: always
 	cd runtime && zig build -Doptimize=ReleaseSmall
-	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
+	ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
 
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
 		ZEUS_GC_DEBUG=true ./playground/debug/$(file); \
 	else \
-		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
+		ZEUS_HOME=$(CURDIR)/runtime/zig-out/out $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 		./playground/debug/$(file); \
 	fi
 
 build:
-	go build -o zeus zeus.go
+	CGO_ENABLED=1 go build $(GO_BUILD_TAGS) -o zeus zeus.go
 
 lsp: build
 	./zeus lsp --stdio

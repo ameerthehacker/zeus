@@ -314,7 +314,7 @@ fn captureStackTrace() ?*StackTrace {
             if (di.getModuleForAddress(lookup_ip)) |module| {
                 const symbol = module.getSymbolAtAddress(allocator, lookup_ip) catch null;
                 if (symbol) |sym| {
-                    if (sym.source_location) |loc| {
+                    if (sym.line_info) |loc| {
                         if (loc.file_name.len > 0) {
                             const path_buf = allocator.alloc(u8, loc.file_name.len) catch null;
                             if (path_buf) |buf| {
