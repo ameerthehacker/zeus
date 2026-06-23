@@ -1,6 +1,8 @@
 package zeus_compiler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -288,14 +290,14 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	}
 
 	// emit llvm object files
-	objDir, emitError := c.EmitObjFiles(sourceFiles)
+	objFiles, emitError := c.EmitObjFiles(sourceFiles)
 
 	if emitError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object files: %s", emitError.Error()))
 		os.Exit(1)
 	}
 
-	linkError := linkObjFiles(objDir, outputPath)
+	linkError := linkObjFiles(objFiles, outputPath)
 	if linkError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
 		os.Exit(1)
@@ -423,45 +425,49 @@ func (c *Compiler) CompileFile(input *SourceFile) *SourceFile {
 	return input
 }
 
-func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) (string, error) {
-	objDir, err := os.MkdirTemp(c.outputDir, "zeus-obj-*")
-	llDir, llDirErr := os.MkdirTemp(c.outputDir, "zeus-ll-*")
-	if err != nil {
-		return "", err
+func sourceFileHash(sourceFile *SourceFile) string {
+	h := sha256.New()
+	h.Write([]byte(sourceFile.Path))
+	h.Write([]byte("\n"))
+	h.Write([]byte(sourceFile.Source))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) ([]string, error) {
+	if err := os.MkdirAll(c.outputDir, 0755); err != nil {
+		return nil, err
 	}
 
-	for _, sourceFile := range sourceFiles {
-		// generate temp object file
-		tempFile, err := os.CreateTemp(objDir, "zeus-*.o")
+	objFiles := []string{}
 
-		if err != nil {
-			return "", err
+	for _, sourceFile := range sourceFiles {
+		hash := sourceFileHash(sourceFile)
+		objPath := filepath.Join(c.outputDir, hash+".o")
+
+		if _, err := os.Stat(objPath); err == nil {
+			// cache hit — reuse existing object file
+			objFiles = append(objFiles, objPath)
+			continue
 		}
 
-		defer tempFile.Close()
-
-		// write buffer to temp file
+		// cache miss — compile and write object file
 		zeus_error.Assert(sourceFile.Module != nil, "source file module is nil")
 		buffer, err := c.targetMachine.EmitToMemoryBuffer(sourceFile.Module.GetModule(), llvm.ObjectFile)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		_, err = tempFile.Write(buffer.Bytes())
-		if err != nil {
-			return "", err
+		if err := os.WriteFile(objPath, buffer.Bytes(), 0644); err != nil {
+			return nil, err
 		}
-		// write llvm ir to temp file
-		if debug.IsDebug() && llDirErr == nil {
-			tempLLFile, err := os.CreateTemp(llDir, "zeus-*.ll")
-			if err != nil {
-				continue
-			}
-			tempLLFile.Write([]byte(sourceFile.Module.String()))
-			defer tempLLFile.Close()
+		objFiles = append(objFiles, objPath)
+
+		if debug.IsDebug() {
+			llPath := filepath.Join(c.outputDir, hash+".ll")
+			_ = os.WriteFile(llPath, []byte(sourceFile.Module.String()), 0644)
 		}
 	}
 
-	return objDir, nil
+	return objFiles, nil
 }
 
 func getZeusHomeDir() string {
@@ -503,10 +509,9 @@ func getBDWGCLibDir() string {
 	return filepath.Join(zeusHome, "third_party", "bdwgc", "lib")
 }
 
-func linkObjFiles(objDir string, outputPath string) error {
-	objFiles, err := filepath.Glob(fmt.Sprintf("%s/zeus-*.o", objDir))
-	if err != nil {
-		return err
+func linkObjFiles(objFiles []string, outputPath string) error {
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 	runtimeDir := getRuntimeDir()
 	runtimeObjFiles, err := filepath.Glob(fmt.Sprintf("%s/*.o", runtimeDir))

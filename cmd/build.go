@@ -43,18 +43,20 @@ func buildCmd() *cobra.Command {
 			}
 			outputFileName := getOutputFileNameWithExtension(zeus_compiler.EmitFileTypeEXE)
 
+			targetBase := folderPath
+			if cmd.Flag(FlagTargetDir).Changed {
+				targetBase = cmd.Flag(FlagTargetDir).Value.String()
+			}
+			objDir := filepath.Join(targetBase, "target", "debug", "obj")
+
 			var outputPath string
-			targetDir := os.TempDir()
 			if cmd.Flag(FlagOutputPath).Changed {
 				outputPath = cmd.Flag(FlagOutputPath).Value.String()
 			} else {
-				outputPath = filepath.Join(folderPath, outputFileName)
-			}
-			if cmd.Flag(FlagTargetDir).Changed {
-				targetDir = cmd.Flag(FlagTargetDir).Value.String()
+				outputPath = filepath.Join(targetBase, "target", "debug", "bin", outputFileName)
 			}
 
-			compiler, err := zeus_compiler.NewCompiler(targetDir)
+			compiler, err := zeus_compiler.NewCompiler(objDir)
 			if err != nil {
 				logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to initialize compiler: %s", err.Error()))
 				os.Exit(1)
@@ -64,7 +66,7 @@ func buildCmd() *cobra.Command {
 	}
 
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
-	buildCmd.Flags().String(FlagTargetDir, "", "the directory to store the output files")
+	buildCmd.Flags().String(FlagTargetDir, "", "the directory where the target/ folder is created (default: current directory)")
 
 	return buildCmd
 }

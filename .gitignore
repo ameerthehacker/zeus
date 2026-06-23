@@ -36,6 +36,9 @@ zig-out
 # zeus binary
 zeus
 
+# build cache
+target/
+
 # e2e
 e2e/out
 
