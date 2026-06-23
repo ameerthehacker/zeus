@@ -3,7 +3,10 @@
 clean:
 	rm -rf playground/debug
 	rm -rf zeus-vscode/vsix
-	cd runtime && zig build clean
+	rm -rf build
+	rm -rf third_party
+	rm -rf runtime/.zig-cache
+	rm -rf runtime/zig-out
 
 always:
 	rm -rf playground/debug

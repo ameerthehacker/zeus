@@ -17,6 +17,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"tinygo.org/x/go-llvm"
@@ -89,9 +90,15 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 		// Parse the triple and update the OS version
 		// Format: arch-vendor-os-version
 		parts := strings.Split(targetTriple, "-")
+		macosVersion, err := util.GetMacOSVersion()
+
+		if err != nil {
+			return nil, err
+		}
+
 		if len(parts) >= 3 {
 			// Replace or add the version to match our deployment target
-			targetTriple = parts[0] + "-" + parts[1] + "-macosx12.0.0"
+			targetTriple = parts[0] + "-" + parts[1] + "-macosx" + macosVersion
 		}
 	}
 
@@ -514,9 +521,15 @@ func linkObjFiles(objDir string, outputPath string) error {
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		linker := "gcc"
 		if runtime.GOOS == "darwin" {
+			macosVersion, err := util.GetMacOSVersion()
+
+			if err != nil {
+				return err
+			}
+
 			linker = "clang"
 			// Set minimum macOS deployment target to match runtime build
-			linkerArgs = append(linkerArgs, "-mmacosx-version-min=12.0")
+			linkerArgs = append(linkerArgs, "-mmacosx-version-min="+macosVersion)
 			// Get the correct SDK path
 			sdkPathCmd := exec.Command("xcrun", "--show-sdk-path")
 			sdkPathOutput, err := sdkPathCmd.Output()

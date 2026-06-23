@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(Build_BDWGC_Only C)
 
+set(CMAKE_WARN_DEPRECATED OFF CACHE BOOL "" FORCE)
 # -----------------------------------------------------------------------------
 # 1. Output Directories
 # This organizes the compiled libraries and binaries directly into third_party/bdwgc/
