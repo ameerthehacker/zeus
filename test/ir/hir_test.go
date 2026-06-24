@@ -268,25 +268,25 @@ func TestUnaryNot(t *testing.T) {
 }
 
 func TestLogicalAnd(t *testing.T) {
+	// && is short-circuit: emits COND_JMP on the left operand, right is only evaluated in the true branch
 	_, instrs := generateHIR(t, `let r: boolean = true && false`)
-	ands := findInstrs(filterUserInstrs(instrs), ir.InstrTypeAnd)
-	if len(ands) != 1 {
-		t.Fatalf("expected 1 AND instruction, got %d", len(ands))
+	condJmps := findInstrs(filterUserInstrs(instrs), ir.InstrTypeCondJmp)
+	if len(condJmps) != 1 {
+		t.Fatalf("expected 1 COND_JMP for short-circuit &&, got %d", len(condJmps))
 	}
-	input := ir.AsBinaryOpInstrInput(ands[0].Input)
-	mustConstant(t, input.Left, "true")
-	mustConstant(t, input.Right, "false")
+	input := ir.AsCondJmpInstrInput(condJmps[0].Input)
+	mustConstant(t, input.Condition, "true") // condition is the left operand
 }
 
 func TestLogicalOr(t *testing.T) {
+	// || is short-circuit: emits COND_JMP on the left operand, right is only evaluated in the false branch
 	_, instrs := generateHIR(t, `let r: boolean = true || false`)
-	ors := findInstrs(filterUserInstrs(instrs), ir.InstrTypeOr)
-	if len(ors) != 1 {
-		t.Fatalf("expected 1 OR instruction, got %d", len(ors))
+	condJmps := findInstrs(filterUserInstrs(instrs), ir.InstrTypeCondJmp)
+	if len(condJmps) != 1 {
+		t.Fatalf("expected 1 COND_JMP for short-circuit ||, got %d", len(condJmps))
 	}
-	input := ir.AsBinaryOpInstrInput(ors[0].Input)
-	mustConstant(t, input.Left, "true")
-	mustConstant(t, input.Right, "false")
+	input := ir.AsCondJmpInstrInput(condJmps[0].Input)
+	mustConstant(t, input.Condition, "true") // condition is the left operand
 }
 
 // ---- Load and Store Tests ----

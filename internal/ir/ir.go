@@ -267,6 +267,42 @@ func (g *IRModule) getCompoundAssignmentOp(tokenType token.TokenType) InstrType 
 	}
 }
 
+func (g *IRModule) emitShortCircuitAnd(left zeus_value.Value, expr *ast.BinaryExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("sc_and", zeus_value.BoolType{Span: span}, false, nil, span))
+	g.irBuilder.BuildStore(resultVar, left, span)
+
+	evalRight := g.irBuilder.BuildSuccessorBlock()
+	merge := g.irBuilder.BuildSuccessorBlock()
+	g.irBuilder.BuildCondJmp(evalRight, merge, left, span)
+
+	g.irBuilder.SetInsertionBlock(evalRight)
+	right := expr.Right.Accept(g)
+	g.irBuilder.BuildStore(resultVar, right, span)
+	g.irBuilder.BuildJmp(merge, nil)
+
+	g.irBuilder.SetInsertionBlock(merge)
+	return g.irBuilder.BuildLoad(resultVar, span)
+}
+
+func (g *IRModule) emitShortCircuitOr(left zeus_value.Value, expr *ast.BinaryExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("sc_or", zeus_value.BoolType{Span: span}, false, nil, span))
+	g.irBuilder.BuildStore(resultVar, left, span)
+
+	evalRight := g.irBuilder.BuildSuccessorBlock()
+	merge := g.irBuilder.BuildSuccessorBlock()
+	g.irBuilder.BuildCondJmp(merge, evalRight, left, span)
+
+	g.irBuilder.SetInsertionBlock(evalRight)
+	right := expr.Right.Accept(g)
+	g.irBuilder.BuildStore(resultVar, right, span)
+	g.irBuilder.BuildJmp(merge, nil)
+
+	g.irBuilder.SetInsertionBlock(merge)
+	return g.irBuilder.BuildLoad(resultVar, span)
+}
+
 func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	// Handle compound assignments (+=, -=, etc.)
 	if g.isCompoundAssignment(expr.Operator.Type) {
@@ -319,6 +355,14 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	g.isLValueExpr = expr.Operator.Type == token.TokenTypeEqual
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
+
+	switch expr.Operator.Type {
+	case token.TokenTypeAmpAmp:
+		return g.emitShortCircuitAnd(left, expr)
+	case token.TokenTypePipePipe:
+		return g.emitShortCircuitOr(left, expr)
+	}
+
 	right := expr.Right.Accept(g)
 
 	switch expr.Operator.Type {
@@ -359,10 +403,6 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThan, expr.GetSpan())
 	case token.TokenTypeGreaterThanEqual:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeGreaterThanEq, expr.GetSpan())
-	case token.TokenTypeAmpAmp:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeAnd, expr.GetSpan())
-	case token.TokenTypePipePipe:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeOr, expr.GetSpan())
 	case token.TokenTypeEqual:
 		// Check if this is an array element assignment (array[0][1] = expr)
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {

@@ -3,17 +3,11 @@ function insertionSort(arr: i32[]): void {
     for (let i: i32 = 1; i < n; i++) {
         let key: i32 = arr[i];
         let j: i32 = i - 1;
-        let insertPos: i32 = 0;
-        while (j >= 0) {
-            if (arr[j] > key) {
-                arr[j + 1] = arr[j];
-                j = j - 1;
-            } else {
-                insertPos = j + 1;
-                j = -1;
-            }
+        while (j >= 0 && arr[j] > key) {
+            arr[j + 1] = arr[j];
+            j = j - 1;
         }
-        arr[insertPos] = key;
+        arr[j + 1] = key;
     }
 }
 
