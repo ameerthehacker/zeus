@@ -554,9 +554,10 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 		// Load current value
 		currentValue := g.irBuilder.BuildLoad(addr, expr.Operator.Span)
 
-		// Create constant 1 with same type as the address variable
-		// We use addr.ValueType because currentValue's type is not yet set (set by type checker)
-		one := zeus_value.NewConstant("1", addr.ValueType, expr.Operator.Span)
+		// Use u8 for the constant so it is implicitly promoted to whatever numeric type
+		// the operand has (int or float). addr.ValueType is nil for class field pointers
+		// at IR generation time (resolved later by tcObjectPropertyAccess).
+		one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
 
 		// Apply increment/decrement
 		var newValue zeus_value.Value
@@ -599,9 +600,10 @@ func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value 
 	// Load current value (this is what we'll return)
 	currentValue := g.irBuilder.BuildLoad(addr, expr.Operator.Span)
 
-	// Create constant 1 with same type as the address variable
-	// We use addr.ValueType because currentValue's type is not yet set (set by type checker)
-	one := zeus_value.NewConstant("1", addr.ValueType, expr.Operator.Span)
+	// Use u8 for the constant so it is implicitly promoted to whatever numeric type
+	// the operand has (int or float). addr.ValueType is nil for class field pointers
+	// at IR generation time (resolved later by tcObjectPropertyAccess).
+	one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
 
 	// Apply increment/decrement
 	var newValue zeus_value.Value

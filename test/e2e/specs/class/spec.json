@@ -3,5 +3,10 @@
         "name": "Basic class with constructors",
         "exit": "10",
         "entry": "basic.zs"
+    },
+    {
+        "name": "++/-- operators on class fields",
+        "exit": "2",
+        "entry": "increment.zs"
     }
 ]

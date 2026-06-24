@@ -1,0 +1,12 @@
+[
+  { "name": "Stack: push, pop, peek, size, underflow", "entry": "stack.zs", "exit": "0" },
+  { "name": "Queue: enqueue, dequeue, front, FIFO order, underflow", "entry": "queue.zs", "exit": "0" },
+  { "name": "Singly-linked list: append, prepend, remove, contains, length", "entry": "linked-list.zs", "exit": "0" },
+  { "name": "BST: insert, contains, in-order sum, height", "entry": "bst.zs", "exit": "0" },
+  { "name": "Insertion sort and binary search", "entry": "sort-search.zs", "exit": "0" },
+  { "name": "Sieve of Eratosthenes: primes up to 30", "entry": "primes.zs", "exit": "0" },
+  { "name": "Matrix multiply: 2x2 identity and known product", "entry": "matrix.zs", "exit": "0" },
+  { "name": "BFS: shortest hop distances on adjacency-list graph", "entry": "bfs.zs", "exit": "0" },
+  { "name": "String ops: palindrome check and reversal", "entry": "strings.zs", "exit": "0" },
+  { "name": "Tower of Hanoi: move count for n=0..4", "entry": "hanoi.zs", "exit": "0" }
+]
