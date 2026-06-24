@@ -231,7 +231,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
 			expr := parser.parseExprOfPrecedence(0, false)
-			closeParen := parser.consumeToken(token.TokenTypeRightParen)
+			closeParen := parser.consumeToken(token.TokenTypeRightParen, "to close grouped expression")
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
 		},
 		token.TokenTypeChar: func(parser *Parser, charToken *token.Token) ast.ExprNode {
@@ -372,14 +372,14 @@ func (p *Parser) consumeIndexingMetadata() *ast.IndexingMeta {
 	// Allow optional expression for empty brackets in type expressions (e.g., new u8[10][])
 	indexExpr := p.parseExprOfPrecedence(0, true)
 	arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
-	p.consumeToken(token.TokenTypeRightBracket)
-	
+	p.consumeToken(token.TokenTypeRightBracket, "to close array index")
+
 	// Handle multi-dimensional array indexing (e.g., arr[0][1] or u8[][])
 	for p.peek().Type == token.TokenTypeLeftBracket {
 		p.consumeToken(token.TokenTypeLeftBracket)
 		indexExpr := p.parseExprOfPrecedence(0, true) // optional for type expressions
 		arrayMetadata.IndexingExprs = append(arrayMetadata.IndexingExprs, indexExpr)
-		p.consumeToken(token.TokenTypeRightBracket)
+		p.consumeToken(token.TokenTypeRightBracket, "to close array index")
 	}
 
 	return arrayMetadata
@@ -488,7 +488,7 @@ func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
 
 func (p *Parser) parseBlockStmt() *ast.BlockStmtNode {
 	stmts := []ast.StmtNode{}
-	openBrace := p.consumeToken(token.TokenTypeLeftBrace)
+	openBrace := p.consumeToken(token.TokenTypeLeftBrace, "to begin block")
 
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightBrace {
 		stmt := p.ParseStmt()
@@ -497,7 +497,7 @@ func (p *Parser) parseBlockStmt() *ast.BlockStmtNode {
 		}
 	}
 
-	closeBrace := p.consumeToken(token.TokenTypeRightBrace)
+	closeBrace := p.consumeToken(token.TokenTypeRightBrace, "to close block")
 	span := &token.Span{Start: openBrace.Span.Start, End: closeBrace.Span.End}
 
 	return &ast.BlockStmtNode{Statements: stmts, Span: span}
@@ -526,10 +526,16 @@ func (p *Parser) parseIfStmt() *ast.IfStmtNode {
 	p.consumeToken(token.TokenTypeRightParen, "after if condition")
 
 	thenStmt := p.ParseStmt()
+	if thenStmt == nil {
+		return nil
+	}
 
 	if p.peek().Type == token.TokenTypeElse {
 		p.consume()
 		elseStmt := p.ParseStmt()
+		if elseStmt == nil {
+			return nil
+		}
 		span := &token.Span{Start: ifKeyword.Span.Start, End: elseStmt.GetSpan().End}
 		return &ast.IfStmtNode{Condition: condition, ThenStmt: thenStmt, ElseStmt: elseStmt, Span: span}
 	}
@@ -543,6 +549,9 @@ func (p *Parser) parseWhileStmt() *ast.WhileStmtNode {
 	whileKeyword := p.consumeToken(token.TokenTypeWhile)
 	condition := p.parseExprOfPrecedence(0, false, "in while condition")
 	body := p.ParseStmt()
+	if body == nil {
+		return nil
+	}
 	span := &token.Span{Start: whileKeyword.Span.Start, End: body.GetSpan().End}
 
 	return &ast.WhileStmtNode{Condition: condition, Body: body, Span: span}
@@ -593,6 +602,9 @@ func (p *Parser) parseForStmt() *ast.ForStmtNode {
 
 	// Parse body
 	body := p.ParseStmt()
+	if body == nil {
+		return nil
+	}
 	span := &token.Span{Start: forKeyword.Span.Start, End: body.GetSpan().End}
 
 	return &ast.ForStmtNode{Init: init, Condition: condition, Update: update, Body: body, Span: span}
@@ -616,7 +628,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	}
 
 	if len(decls) == 0 {
-		p.expectedError("atleast one variable declaration")
+		p.expectedError("at least one variable declaration")
 	}
 
 	p.consumeSemicolon()
@@ -662,7 +674,7 @@ func (p *Parser) parseArgumentList() ([]ast.ExprNode, *token.Token) {
 		p.consume()
 	}
 
-	closeParen := p.consumeToken(token.TokenTypeRightParen)
+	closeParen := p.consumeToken(token.TokenTypeRightParen, "after function call arguments")
 	return params, closeParen
 }
 

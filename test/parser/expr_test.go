@@ -149,7 +149,7 @@ func TestParseExpression(t *testing.T) {
 			name:  "parser error on unclosed parenthesis",
 			input: "(1 + 2",
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected )", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected ) to close grouped expression", token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 7})),
 			},
 		},
 		{
@@ -261,7 +261,7 @@ func TestParseExpression(t *testing.T) {
 			input:    "function name(a: i8): i8",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected {", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected { to begin block", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
 			},
 		},
 		{
@@ -269,7 +269,7 @@ func TestParseExpression(t *testing.T) {
 			input:    "function name(a: i8): i8 {",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected }", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected } to close block", token.NewSpan(token.Position{Line: 1, Column: 27}, token.Position{Line: 1, Column: 27})),
 			},
 		},
 	}

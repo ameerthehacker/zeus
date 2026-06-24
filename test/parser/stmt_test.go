@@ -126,7 +126,7 @@ func TestParserStmt(t *testing.T) {
 			input: "let;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "expected atleast one variable declaration",
+					Message: "expected at least one variable declaration",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 4},
 						End:   token.Position{Line: 1, Column: 4},
