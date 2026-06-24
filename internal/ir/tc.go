@@ -950,9 +950,11 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 			}
 		}
 	case zeus_value.NullType:
-		switch targetType.(type) {
+		switch targetType := targetType.(type) {
 		case zeus_value.ObjectType:
-			return value, true
+			// Promote the null constant to the target object type so the codegen
+			// can emit a ConstPointerNull of the correct address-space pointer type.
+			return zeus_value.NewConstant(zeus_value.NULL_CONSTANT_VALUE, targetType, value.GetSpan()), true
 		}
 	}
 

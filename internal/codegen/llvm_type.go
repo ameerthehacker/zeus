@@ -130,6 +130,12 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 		}
 	case zeus_value.NullType:
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	case zeus_value.ObjectType:
+		// A null constant promoted to a concrete object type by the type checker.
+		if value.Value == zeus_value.NULL_CONSTANT_VALUE {
+			return llvm.ConstPointerNull(c.toLLVMType(value.ValueType))
+		}
+		panic(fmt.Sprintf("cannot convert non-null object constant to llvm constant: %v", value))
 	default:
 		panic(fmt.Sprintf("cannot convert constant to llvm constant: %T", value))
 	}

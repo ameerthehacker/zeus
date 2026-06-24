@@ -96,15 +96,3 @@ function hanoi(n: i32, src: i32, dst: i32, aux: i32): i32 { ... }
 ```
 
 ---
-
-## 5. `null` cannot be explicitly assigned
-
-**Observation:** Zeus does not expose `null` as a keyword you can write in source. Uninitialized class-typed fields are `null` at runtime, and comparing them with `== null` compiles and works correctly.
-
-```zeus
-// WORKS at runtime — null comparison is valid
-if (this.head == null) { ... }
-while (current.next != null) { ... }
-```
-
-However, there is no way to explicitly assign `null` to reset a reference. Use a sentinel value or boolean flag instead.

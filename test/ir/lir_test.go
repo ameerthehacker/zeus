@@ -5,6 +5,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
+	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
 // generateLIR runs HIR generation, type checking, and lowering, returning the
@@ -304,6 +305,108 @@ function test(s: string): u8[] {
 	copyAccess := findPropertyAccess(all, "copy")
 	if len(copyAccess) == 0 {
 		t.Error("expected OBJECT_PROPERTY_ACCESS('copy') for data copy during string→u8[] lowering")
+	}
+}
+
+// TestNullAssignment verifies that assigning null to an object variable passes
+// type checking and that the stored value is an ObjectType constant (not raw NullType),
+// so the codegen can emit a correctly-typed null pointer.
+func TestNullAssignment(t *testing.T) {
+	builder, _ := generateLIR(t, `
+class Node {
+  public value: i32;
+}
+function test(): void {
+  let n: Node = new Node()
+  n = null
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	all := allBlockInstrs(entry)
+
+	stores := findInstrs(all, ir.InstrTypeStore)
+	var nullStore *ir.Instr
+	for _, s := range stores {
+		input := ir.AsStoreInstrInput(s.Input)
+		if c := zeus_value.AsConstant(input.Value); c != nil && c.Value == "null" {
+			nullStore = s
+			break
+		}
+	}
+	if nullStore == nil {
+		t.Fatal("expected a STORE instruction with null value")
+	}
+	input := ir.AsStoreInstrInput(nullStore.Input)
+	c := zeus_value.AsConstant(input.Value)
+	if _, ok := c.ValueType.(zeus_value.ObjectType); !ok {
+		t.Errorf("expected null constant to have ObjectType after TC, got %T", c.ValueType)
+	}
+}
+
+// TestNullDeclaration verifies that initialising an object variable with null
+// passes type checking and the initializer constant is promoted to ObjectType.
+func TestNullDeclaration(t *testing.T) {
+	builder, _ := generateLIR(t, `
+class Node {
+  public value: i32;
+}
+function test(): void {
+  let n: Node = null
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	all := allBlockInstrs(entry)
+
+	decls := findInstrs(all, ir.InstrTypeDeclVar)
+	var nullDecl *ir.Instr
+	for _, d := range decls {
+		input := ir.AsDeclVarInstrInput(d.Input)
+		if c := zeus_value.AsConstant(input.Initializer); c != nil && c.Value == "null" {
+			nullDecl = d
+			break
+		}
+	}
+	if nullDecl == nil {
+		t.Fatal("expected a DECLARE_VAR with null initializer")
+	}
+	input := ir.AsDeclVarInstrInput(nullDecl.Input)
+	c := zeus_value.AsConstant(input.Initializer)
+	if _, ok := c.ValueType.(zeus_value.ObjectType); !ok {
+		t.Errorf("expected null initializer to have ObjectType after TC, got %T", c.ValueType)
+	}
+}
+
+// TestNullReturn verifies that returning null from an object-returning function
+// passes type checking and the return value constant is promoted to ObjectType.
+func TestNullReturn(t *testing.T) {
+	builder, _ := generateLIR(t, `
+class Node {
+  public value: i32;
+}
+function test(): Node {
+  return null
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	all := allBlockInstrs(entry)
+
+	returns := findInstrs(all, ir.InstrTypeReturn)
+	if len(returns) == 0 {
+		t.Fatal("expected a RETURN instruction")
+	}
+	input := ir.AsReturnInstrInput(returns[0].Input)
+	c := zeus_value.AsConstant(input.Value)
+	if c == nil || c.Value != "null" {
+		t.Fatal("expected return value to be null constant")
+	}
+	if _, ok := c.ValueType.(zeus_value.ObjectType); !ok {
+		t.Errorf("expected null return value to have ObjectType after TC, got %T", c.ValueType)
 	}
 }
 

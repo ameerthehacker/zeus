@@ -532,7 +532,7 @@ func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 
 func (g *IRModule) VisitNull(expr *ast.NullExprNode) zeus_value.Value {
 	return zeus_value.NewConstant(
-		"null",
+		zeus_value.NULL_CONSTANT_VALUE,
 		zeus_value.NullType{},
 		expr.GetSpan(),
 	)
@@ -914,7 +914,7 @@ func (g *IRModule) emitNullCheck(object zeus_value.Value, propertyName string, s
 	continueBlock := g.irBuilder.BuildSuccessorBlock()
 
 	// Create null constant for comparison
-	nullConst := zeus_value.NewConstant("null", zeus_value.NullType{Span: span}, span)
+	nullConst := zeus_value.NewConstant(zeus_value.NULL_CONSTANT_VALUE, zeus_value.NullType{Span: span}, span)
 
 	// Compare object with null (object == null)
 	isNull := g.irBuilder.BuildBinaryOp(object, nullConst, InstrTypeEqEq, span)

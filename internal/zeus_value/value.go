@@ -10,6 +10,7 @@ import (
 )
 
 const TEMP_VARIABLE_PREFIX = "%"
+const NULL_CONSTANT_VALUE = "null"
 // first 100 ids are reserved for primordial classes
 var classIdCounter = 100
 
