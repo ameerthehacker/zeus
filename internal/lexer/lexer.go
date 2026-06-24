@@ -9,12 +9,13 @@ import (
 )
 
 type Lexer struct {
-	source []rune
-	cursor int
-	tokens []*token.Token
-	errors []*zeus_error.ZeusError
-	line   int
-	column int
+	source    []rune
+	cursor    int
+	tokens    []*token.Token
+	errors    []*zeus_error.ZeusError
+	line      int
+	column    int
+	lastToken *token.Token
 }
 
 func NewLexer(source string) *Lexer {
@@ -35,8 +36,30 @@ func (l *Lexer) isEOF(offset int) bool {
 	return l.cursor+offset >= len(l.source)
 }
 
-func (l *Lexer) pushToken(token *token.Token) {
-	l.tokens = append(l.tokens, token)
+func (l *Lexer) pushToken(t *token.Token) {
+	l.tokens = append(l.tokens, t)
+	l.lastToken = t
+}
+
+func (l *Lexer) shouldInsertSemicolon() bool {
+	if l.lastToken == nil {
+		return false
+	}
+	switch l.lastToken.Type {
+	case token.TokenTypeIdentifier,
+		token.TokenTypeNumber,
+		token.TokenTypeString,
+		token.TokenTypeChar,
+		token.TokenTypeTrue,
+		token.TokenTypeFalse,
+		token.TokenTypeNull,
+		token.TokenTypeRightParen,
+		token.TokenTypeRightBracket,
+		token.TokenTypePlusPlus,
+		token.TokenTypeMinusMinus:
+		return true
+	}
+	return false
 }
 
 func (l *Lexer) isNewLine() bool {
@@ -244,6 +267,10 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 
 		switch {
 		case l.isNewLine():
+			if l.shouldInsertSemicolon() {
+				pos := l.lastToken.Span.End
+				l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(pos, pos)))
+			}
 			l.advance()
 			l.newLine()
 		case unicode.IsSpace(char):
@@ -419,6 +446,10 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 		}
 	}
 
+	if l.shouldInsertSemicolon() {
+		pos := l.lastToken.Span.End
+		l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(pos, pos)))
+	}
 	position := l.getCurrentPosition()
 	l.pushToken(token.NewToken(token.TokenTypeEOF, token.NewSpan(*position, *position)))
 

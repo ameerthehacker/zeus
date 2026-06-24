@@ -7,7 +7,7 @@ The Zeus parser converts a flat stream of tokens (produced by the lexer) into an
 ## Overview
 
 ```
-Lexer → []*token.Token → Parser → *ast.ProgramNode + []*zeus_error.ZeusError
+Source → Lexer (+ ASI) → []*token.Token → Parser → *ast.ProgramNode + []*zeus_error.ZeusError
 ```
 
 **Entry points:**
@@ -23,6 +23,67 @@ Lexer → []*token.Token → Parser → *ast.ProgramNode + []*zeus_error.ZeusErr
 - `internal/token` — `Token`, `TokenType`, `Span`, `Position`
 - `internal/ast` — all AST node types
 - `internal/zeus_error` — `ZeusError`, `ErrorSeverity`
+
+---
+
+## Automatic Semicolon Insertion (ASI)
+
+Semicolons are **optional**. The lexer inserts a virtual `TokenTypeSemicolon` into the token stream when a newline (or end-of-file) follows a token that can end a statement. The parser never sees the newline; it only sees the semicolon the lexer injected.
+
+### Trigger tokens
+
+A virtual semicolon is inserted after a newline or EOF when the last emitted token is one of:
+
+| Category | Tokens |
+|---|---|
+| Identifiers | `identifier` |
+| Literals | number, string, char, `true`, `false`, `null` |
+| Closers | `)`, `]` |
+| Postfix operators | `++`, `--` |
+
+`}` is **not** a trigger. Block-ending constructs (functions, classes, if, while, for, try) do not need a semicolon after their closing brace, so including `}` would insert spurious semicolons before subsequent statements.
+
+### Positioning
+
+The virtual semicolon is given the same span as the `End` position of the token that triggered it. This keeps error messages pointing at the end of the statement rather than at invisible whitespace.
+
+### Conventions
+
+Because `)` is a trigger token, a few style rules apply:
+
+- **`if`/`for` bodies**: the `{` (or any single-statement body) must start on the **same line** as the closing `)`. A newline after `)` inserts `;`, which the parser would then treat as the body.
+- **Multi-line expressions**: put the continuation operator at the **end** of the line, not the beginning of the next. `a +\nb` is fine; `a\n+ b` inserts `;` after `a`.
+- **Multi-line function call arguments**: put `,` at the end of each argument line. `,` is not a trigger, so the call continues on the next line.
+
+### Examples
+
+```
+// No explicit semicolons needed:
+let x: i8 = 5
+let y: i8 = x + 1
+
+function add(a: i32, b: i32): i32 {
+    return a + b
+}
+
+// Explicit semicolons still work:
+let z: i32 = 0;
+
+// Multi-line call — trailing comma prevents ASI:
+foo(
+    a,
+    b,
+)
+
+// This is TWO statements (ASI fires after `)` on line 1):
+if (x > 0)
+    return x    // ← WRONG: parsed as `if (x > 0);` then `return x;`
+
+// Correct multi-line if:
+if (x > 0) {
+    return x
+}
+```
 
 ---
 
@@ -260,7 +321,7 @@ func (p *Parser) synchronize() {
 **`stopAfterTokens`** — stop *after* consuming:
 `;`, `else`
 
-The rationale: stopping before keywords and braces lets the parser attempt to parse the next statement from a clean boundary. Consuming semicolons avoids re-entering a half-parsed statement.
+The rationale: stopping before keywords and braces lets the parser attempt to parse the next statement from a clean boundary. Consuming semicolons (both explicit and ASI-inserted) avoids re-entering a half-parsed statement.
 
 ### Same-line error deduplication
 
@@ -290,7 +351,7 @@ func (p *Parser) parseRepeatStmt() *ast.RepeatStmtNode {
     p.consumeToken(token.TokenTypeLeftParen, "after until")
     condition := p.parseExprOfPrecedence(0, false, "in until condition")
     p.consumeToken(token.TokenTypeRightParen, "after until condition")
-    p.consumeSemicolon()
+    p.consumeSemicolon()  // accepts both an explicit ';' and an ASI-inserted one
     span := &token.Span{Start: repeatKeyword.Span.Start, End: p.tokens[p.current-1].Span.End}
     return &ast.RepeatStmtNode{Body: body, Condition: condition, Span: span}
 }

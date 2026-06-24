@@ -50,10 +50,10 @@ func TestNegativeIfStatement(t *testing.T) {
 			errors: parseErr("expected ) after if condition, but found {", 1, 11, 11),
 		},
 		{
-			// At EOF the body parse produces "expected expression"; nil guard prevents crash.
+			// ASI inserts ; after ) before EOF, so the body parse finds ; instead of EOF.
 			name:   "missing body after if condition (EOF)",
 			input:  "if (x > 0) ",
-			errors: parseErr("expected expression", 1, 12, 12),
+			errors: parseErr("expected expression, but found ;", 1, 10, 10),
 		},
 		{
 			name:   "else without preceding if",
@@ -213,7 +213,7 @@ func TestNegativeFunctionDeclaration(t *testing.T) {
 		{
 			name:   "missing ( after function name",
 			input:  "function name",
-			errors: parseErr("expected ( after function name", 1, 14, 14),
+			errors: parseErr("expected ( after function name, but found ;", 1, 13, 13),
 		},
 		{
 			name:   "missing ) after function params",
@@ -271,10 +271,10 @@ func TestNegativeClassDeclaration(t *testing.T) {
 			errors: parseErr("expected identifier class name", 1, 6, 6),
 		},
 		{
-			// At EOF expectedButGotError delegates to expectedError (no "but found" suffix).
+			// ASI inserts ; after the class name identifier before EOF.
 			name:   "missing { after class name",
 			input:  "class Foo",
-			errors: parseErr("expected { after class name", 1, 10, 10),
+			errors: parseErr("expected { after class name, but found ;", 1, 9, 9),
 		},
 		{
 			// Class body close uses its own "after class members" context, not "to close block".
@@ -290,7 +290,7 @@ func TestNegativeClassDeclaration(t *testing.T) {
 		{
 			name:   "missing { after class name with extends",
 			input:  "class Foo extends Bar",
-			errors: parseErr("expected { after class name", 1, 22, 22),
+			errors: parseErr("expected { after class name, but found ;", 1, 21, 21),
 		},
 	}
 

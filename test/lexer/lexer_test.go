@@ -45,6 +45,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(*token.NewPosition(1, 2), *token.NewPosition(1, 2))),
 				token.NewToken(token.TokenTypeLeftBracket, token.NewSpan(*token.NewPosition(1, 3), *token.NewPosition(1, 3))),
 				token.NewToken(token.TokenTypeRightParen, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
 				token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
 				token.NewToken(token.TokenTypeRightBracket, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
 				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 3), *token.NewPosition(2, 3))),
@@ -84,6 +85,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewTokenWithValue(token.TokenTypeIdentifier, "_123", token.NewSpan(*token.NewPosition(1, 13), *token.NewPosition(1, 16))),
 				token.NewTokenWithValue(token.TokenTypeIdentifier, "$123", token.NewSpan(*token.NewPosition(1, 18), *token.NewPosition(1, 21))),
 				token.NewTokenWithValue(token.TokenTypeIdentifier, "hello_world$", token.NewSpan(*token.NewPosition(1, 23), *token.NewPosition(1, 34))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 34), *token.NewPosition(1, 34))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 35), *token.NewPosition(1, 35))),
 			},
 		},
@@ -146,6 +148,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "123",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeNumber, "123", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 3))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 3), *token.NewPosition(1, 3))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
 			},
 		},
@@ -154,6 +157,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "123.456",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeNumber, "123.456", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 7))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 7), *token.NewPosition(1, 7))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
 		},
@@ -162,6 +166,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "123_000_000",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeNumber, "123_000_000", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 11))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 11), *token.NewPosition(1, 11))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 12), *token.NewPosition(1, 12))),
 			},
 		},
@@ -170,6 +175,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "123_",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeNumber, "123_", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 5))),
 			},
 			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "numerical separator must be followed by a digit", token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4)))},
@@ -184,6 +190,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewTokenWithValue(token.TokenTypeNumber, "0B1010", token.NewSpan(*token.NewPosition(1, 20), *token.NewPosition(1, 25))),
 				token.NewTokenWithValue(token.TokenTypeNumber, "0O123", token.NewSpan(*token.NewPosition(1, 27), *token.NewPosition(1, 31))),
 				token.NewTokenWithValue(token.TokenTypeNumber, "0X123", token.NewSpan(*token.NewPosition(1, 33), *token.NewPosition(1, 37))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 37), *token.NewPosition(1, 37))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 38), *token.NewPosition(1, 38))),
 			},
 		},
@@ -201,6 +208,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "123.3.4",
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeNumber, "123.3.4", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 7))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 7), *token.NewPosition(1, 7))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
 			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "invalid decimal point", token.NewSpan(*token.NewPosition(1, 6), *token.NewPosition(1, 6)))},
@@ -210,6 +218,7 @@ func TestZeusLexer(t *testing.T) {
 			input: `"hello world"`,
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeString, "hello world", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 13))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 13), *token.NewPosition(1, 13))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 14), *token.NewPosition(1, 14))),
 			},
 		},
@@ -226,6 +235,7 @@ func TestZeusLexer(t *testing.T) {
 			input: `'A'`,
 			expected: []*token.Token{
 				token.NewTokenWithValue(token.TokenTypeChar, "A", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 3))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 3), *token.NewPosition(1, 3))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
 			},
 		},
@@ -236,6 +246,61 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 3), *token.NewPosition(1, 3))),
 			},
 			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated char literal", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
+		},
+		// ASI tests
+		{
+			name:  "ASI after number on newline",
+			input: "5\n3",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "5", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
+			},
+		},
+		{
+			name:  "ASI after identifier on newline",
+			input: "x\ny",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeIdentifier, "x", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeIdentifier, "y", token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
+			},
+		},
+		{
+			name:  "no ASI after operator on newline",
+			input: "+\n5",
+			expected: []*token.Token{
+				token.NewToken(token.TokenTypePlus, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeNumber, "5", token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
+			},
+		},
+		{
+			name:  "no ASI on blank line between tokens",
+			input: "5\n\n3",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "5", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(*token.NewPosition(3, 1), *token.NewPosition(3, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(3, 1), *token.NewPosition(3, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(3, 2), *token.NewPosition(3, 2))),
+			},
+		},
+		{
+			name:  "ASI after comment line",
+			input: "5 // comment\n3",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeNumber, "5", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
+			},
 		},
 	}
 

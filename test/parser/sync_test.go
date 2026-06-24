@@ -53,12 +53,11 @@ func TestSynchronizationRecovery(t *testing.T) {
 			stmtCount:  2,
 		},
 		{
-			// A missing semicolon on line 1 causes a recovery that stops at 'let',
-			// allowing line 2 to be parsed successfully.
-			name:       "missing semicolon recovery stops at let keyword",
+			// With ASI, the newline after `5` acts as a semicolon — both statements parse successfully.
+			name:       "newline after number literal is treated as semicolon",
 			input:      "let x: i8 = 5\nlet y: i8 = 3;",
-			errorCount: 1,
-			stmtCount:  1,
+			errorCount: 0,
+			stmtCount:  2,
 		},
 		{
 			// Else without if is an error; synchronize stops before `{`, so the block `{ }`
@@ -111,6 +110,53 @@ func TestSynchronizationRecovery(t *testing.T) {
 			input:      "export x;\nlet y: i8 = 1;",
 			errorCount: 1,
 			stmtCount:  1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runSyncTest(t, test)
+		})
+	}
+}
+
+func TestASI(t *testing.T) {
+	tests := []syncTest{
+		{
+			name:       "newline terminates var decl",
+			input:      "let x: i8 = 5\nlet y: i8 = 3",
+			errorCount: 0,
+			stmtCount:  2,
+		},
+		{
+			name:       "EOF without trailing newline or semicolon",
+			input:      "let x: i8 = 5",
+			errorCount: 0,
+			stmtCount:  1,
+		},
+		{
+			name:       "blank lines between statements",
+			input:      "let x: i8 = 5\n\nlet y: i8 = 3",
+			errorCount: 0,
+			stmtCount:  2,
+		},
+		{
+			name:       "mixed semicolons and newlines",
+			input:      "let x: i8 = 5;\nlet y: i8 = 3",
+			errorCount: 0,
+			stmtCount:  2,
+		},
+		{
+			name:       "newline terminates return statement",
+			input:      "function f(): i8 {\nreturn 5\n}",
+			errorCount: 0,
+			stmtCount:  1,
+		},
+		{
+			name:       "newline after postfix operator",
+			input:      "let x: i8 = 5\nx++\nlet y: i8 = x",
+			errorCount: 0,
+			stmtCount:  3,
 		},
 	}
 
