@@ -83,8 +83,18 @@ func NewCodegen() *Codegen {
 	return &Codegen{ctx}
 }
 
+// NewMergeTarget creates a bare LLVM module used as the destination for
+// llvm.LinkModules when building a single merged release module.
+func (c *Codegen) NewMergeTarget(dataLayout string, triple string) llvm.Module {
+	m := c.cxt.NewModule("zeus_program")
+	m.SetDataLayout(dataLayout)
+	m.SetTarget(triple)
+	return m
+}
+
 func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llvm.TargetData) *CodegenModule {
 	module := c.cxt.NewModule(name)
+	module.SetDataLayout(targetDataLayout.String())
 	builder := c.cxt.NewBuilder()
 	globalLLVMFunctions := c.setupGlobalLLVMFunctions(module)
 
@@ -624,9 +634,12 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 
 	if input.Initializer != nil {
 		c.builder.CreateStore(c.toLLVMValue(input.Initializer), variable)
-		// for primitive types we need to store the default value
 	} else if zeus_value.IsPrimitiveType(input.Variable.ValueType) {
 		c.builder.CreateStore(c.getDefaultLLVMValue(input.Variable.ValueType), variable)
+	} else if zeus_value.IsObjectType(input.Variable.ValueType) {
+		// uninitialized object variables must be explicitly null so that
+		// null-reference checks produce deterministic results (alloca is otherwise UB)
+		c.builder.CreateStore(llvm.ConstPointerNull(variableType), variable)
 	}
 
 	c.symbolTable.DeclareSymbol(input.Variable.Name, variable)

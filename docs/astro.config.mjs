@@ -135,6 +135,7 @@ export default defineConfig({
           label: 'Tooling',
           items: [
             { label: 'Language Server', slug: 'tooling/lsp' },
+            { label: 'Release Builds', slug: 'tooling/release-builds' },
           ],
         },
         {

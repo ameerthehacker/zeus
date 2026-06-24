@@ -16,6 +16,7 @@ import (
 const (
 	FlagOutputPath = "out"
 	FlagTargetDir  = "target-dir"
+	FlagRelease    = "release"
 )
 
 func buildCmd() *cobra.Command {
@@ -24,7 +25,6 @@ func buildCmd() *cobra.Command {
 		Short: "Build the zeus file",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			// identify the input file, output path and emit file type
 			filePath := args[0]
 			folderPath, err := os.Getwd()
 			if err != nil {
@@ -32,41 +32,41 @@ func buildCmd() *cobra.Command {
 				os.Exit(1)
 			}
 			fileName := filepath.Base(filePath)
-			fileNameWithoutExtension := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-			getOutputFileNameWithExtension := func(fileType zeus_compiler.EmitFileType) string {
-				switch fileType {
-				case zeus_compiler.EmitFileTypeObject:
-					return fileNameWithoutExtension + ".o"
-				default:
-					return fileNameWithoutExtension
-				}
+			outputFileName := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+
+			isRelease := cmd.Flag(FlagRelease).Changed
+			mode := zeus_compiler.BuildModeDebug
+			modeDir := "debug"
+			if isRelease {
+				mode = zeus_compiler.BuildModeRelease
+				modeDir = "release"
 			}
-			outputFileName := getOutputFileNameWithExtension(zeus_compiler.EmitFileTypeEXE)
 
 			targetBase := folderPath
 			if cmd.Flag(FlagTargetDir).Changed {
 				targetBase = cmd.Flag(FlagTargetDir).Value.String()
 			}
-			objDir := filepath.Join(targetBase, "target", "debug", "obj")
+			objDir := filepath.Join(targetBase, "target", modeDir, "obj")
 
 			var outputPath string
 			if cmd.Flag(FlagOutputPath).Changed {
 				outputPath = cmd.Flag(FlagOutputPath).Value.String()
 			} else {
-				outputPath = filepath.Join(targetBase, "target", "debug", "bin", outputFileName)
+				outputPath = filepath.Join(targetBase, "target", modeDir, "bin", outputFileName)
 			}
 
-			compiler, err := zeus_compiler.NewCompiler(objDir)
+			compiler, err := zeus_compiler.NewCompiler(objDir, mode)
 			if err != nil {
 				logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to initialize compiler: %s", err.Error()))
 				os.Exit(1)
 			}
-			compiler.Compile(filePath, zeus_compiler.EmitFileTypeEXE, outputPath)
+			compiler.Compile(filePath, outputPath)
 		},
 	}
 
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
 	buildCmd.Flags().String(FlagTargetDir, "", "the directory where the target/ folder is created (default: current directory)")
+	buildCmd.Flags().Bool(FlagRelease, false, "build an optimized release binary")
 
 	return buildCmd
 }

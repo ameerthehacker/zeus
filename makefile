@@ -31,8 +31,9 @@ test-e2e: build-runtime
 	ZEUS_HOME=$(CURDIR) go test $(GO_BUILD_TAGS) ./test/e2e/... -v -count=1
 
 test-runtime:
-	cd runtime && zig build test
+	cd runtime && zig build-lib main.zig -O Debug -static --name zeus-runtime-test $(ZIG_FLAGS) && rm -f libzeus-runtime-test.a libzeus-runtime-test.a.o
 
+ZIG_SDK ?= $(shell xcrun --show-sdk-path 2>/dev/null)
 ZIG_FLAGS = --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -I$(BOEHM_GC_INCLUDE) -lc -lunwind -L$(BOEHM_GC_LIB) -lgc
 
 build-runtime:

@@ -25,20 +25,20 @@ import (
 	"tinygo.org/x/go-llvm"
 )
 
+type BuildMode string
+
+const (
+	BuildModeDebug   BuildMode = "debug"
+	BuildModeRelease BuildMode = "release"
+)
+
 type Compiler struct {
 	codegen          *codegen.Codegen
 	outputDir        string
 	targetMachine    llvm.TargetMachine
 	targetDataLayout llvm.TargetData
+	mode             BuildMode
 }
-
-type EmitFileType string
-
-const (
-	// TODO: implement obj emit
-	EmitFileTypeObject EmitFileType = "obj"
-	EmitFileTypeEXE    EmitFileType = "exe"
-)
 
 type SourceFile struct {
 	Path         string
@@ -79,7 +79,7 @@ func (e *SourceFileError) Error() string {
 	return e.Message
 }
 
-func NewCompiler(outputDir string) (*Compiler, error) {
+func NewCompiler(outputDir string, mode BuildMode) (*Compiler, error) {
 	llvm.InitializeAllTargets()
 	llvm.InitializeAllTargetMCs()
 	llvm.InitializeAllTargetInfos()
@@ -110,11 +110,16 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 		return nil, err
 	}
 
+	codeGenLevel := llvm.CodeGenLevelDefault
+	if mode == BuildModeRelease {
+		codeGenLevel = llvm.CodeGenLevelAggressive
+	}
+
 	targetMachine := target.CreateTargetMachine(
 		targetTriple,
 		"generic",
 		"",
-		llvm.CodeGenLevelDefault,
+		codeGenLevel,
 		llvm.RelocDefault,
 		llvm.CodeModelDefault,
 	)
@@ -124,6 +129,7 @@ func NewCompiler(outputDir string) (*Compiler, error) {
 		outputDir:        outputDir,
 		targetMachine:    targetMachine,
 		targetDataLayout: targetDataLayout,
+		mode:             mode,
 	}, nil
 }
 
@@ -170,30 +176,36 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	}, nil
 }
 
-func (c *Compiler) RunOptimizationPasses(sourceFiles []*SourceFile) error {
-	for _, sourceFile := range sourceFiles {
-		if sourceFile.Module == nil {
-			continue
-		}
+func (c *Compiler) runReleasePasses(merged llvm.Module) error {
+	options := llvm.NewPassBuilderOptions()
+	defer options.Dispose()
 
-		llvmModule := sourceFile.Module.GetModule()
+	options.SetDebugLogging(debug.IsDebug())
+	options.SetVerifyEach(false)
 
-		options := llvm.NewPassBuilderOptions()
-		defer options.Dispose()
-
-		options.SetDebugLogging(debug.IsDebug())
-		options.SetVerifyEach(false)
-
-		err := llvmModule.RunPasses("mem2reg", c.targetMachine, options)
-		if err != nil {
-			return fmt.Errorf("failed to run optimization pass mem2reg on module %s: %v", sourceFile.Path, err)
-		}
+	if err := merged.RunPasses("default<O3>", c.targetMachine, options); err != nil {
+		return fmt.Errorf("failed to run release optimization passes: %v", err)
 	}
 
 	return nil
 }
 
-func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outputPath string) {
+func (c *Compiler) mergeModules(sourceFiles []*SourceFile) (llvm.Module, error) {
+	merged := c.codegen.NewMergeTarget(c.targetDataLayout.String(), c.targetMachine.Triple())
+
+	for _, sourceFile := range sourceFiles {
+		if sourceFile.Module == nil {
+			continue
+		}
+		if err := llvm.LinkModules(merged, sourceFile.Module.GetModule()); err != nil {
+			return llvm.Module{}, fmt.Errorf("failed to link module %s: %v", sourceFile.Path, err)
+		}
+	}
+
+	return merged, nil
+}
+
+func (c *Compiler) Compile(entryFilePath string, outputPath string) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
@@ -280,25 +292,63 @@ func (c *Compiler) Compile(entryFilePath string, emitFileType EmitFileType, outp
 	// generate llvm IR
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
-
 	checkSourceFilesWarnings(sourceFiles)
 
-	optimizationError := c.RunOptimizationPasses(sourceFiles)
-	if optimizationError != nil {
-		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to run optimization passes: %s", optimizationError.Error()))
-		os.Exit(1)
+	if c.mode == BuildModeRelease {
+		c.compileRelease(sourceFiles, outputPath)
+	} else {
+		c.compileDebug(sourceFiles, outputPath)
 	}
+}
 
-	// emit llvm object files
+func (c *Compiler) compileDebug(sourceFiles []*SourceFile, outputPath string) {
 	objFiles, emitError := c.EmitObjFiles(sourceFiles)
-
 	if emitError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object files: %s", emitError.Error()))
 		os.Exit(1)
 	}
 
-	linkError := linkObjFiles(objFiles, outputPath)
-	if linkError != nil {
+	if linkError := linkObjFiles(objFiles, outputPath); linkError != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
+		os.Exit(1)
+	}
+}
+
+func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputPath string) {
+	merged, mergeErr := c.mergeModules(sourceFiles)
+	if mergeErr != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to merge modules: %s", mergeErr.Error()))
+		os.Exit(1)
+	}
+
+	if passErr := c.runReleasePasses(merged); passErr != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to run optimization passes: %s", passErr.Error()))
+		os.Exit(1)
+	}
+
+	if err := os.MkdirAll(c.outputDir, 0755); err != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to create output dir: %s", err.Error()))
+		os.Exit(1)
+	}
+
+	if debug.IsDebug() {
+		llPath := filepath.Join(c.outputDir, "program.ll")
+		_ = os.WriteFile(llPath, []byte(merged.String()), 0644)
+	}
+
+	buffer, emitErr := c.targetMachine.EmitToMemoryBuffer(merged, llvm.ObjectFile)
+	if emitErr != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object file: %s", emitErr.Error()))
+		os.Exit(1)
+	}
+
+	objPath := filepath.Join(c.outputDir, "program.o")
+	if err := os.WriteFile(objPath, buffer.Bytes(), 0644); err != nil {
+		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write object file: %s", err.Error()))
+		os.Exit(1)
+	}
+
+	if linkError := linkObjFiles([]string{objPath}, outputPath); linkError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
 		os.Exit(1)
 	}
