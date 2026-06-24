@@ -8,19 +8,19 @@ class BSTNode {
     }
 }
 
-function nodeInsert(node: BSTNode, value: i32): BSTNode {
+function insert(node: BSTNode, value: i32): BSTNode {
     if (node == null) {
         return new BSTNode(value);
     }
     if (value < node.value) {
-        node.left = nodeInsert(node.left, value);
+        node.left = insert(node.left, value);
     } else if (value > node.value) {
-        node.right = nodeInsert(node.right, value);
+        node.right = insert(node.right, value);
     }
     return node;
 }
 
-function nodeContains(node: BSTNode, value: i32): boolean {
+function contains(node: BSTNode, value: i32): boolean {
     if (node == null) {
         return false;
     }
@@ -28,30 +28,30 @@ function nodeContains(node: BSTNode, value: i32): boolean {
         return true;
     }
     if (value < node.value) {
-        return nodeContains(node.left, value);
+        return contains(node.left, value);
     }
-    return nodeContains(node.right, value);
+    return contains(node.right, value);
 }
 
-function nodeSum(node: BSTNode): i32 {
+function inOrderSum(node: BSTNode): i32 {
     if (node == null) {
         return 0;
     }
-    return nodeSum(node.left) + node.value + nodeSum(node.right);
+    return inOrderSum(node.left) + node.value + inOrderSum(node.right);
 }
 
-function nodeMax(a: i32, b: i32): i32 {
+function max(a: i32, b: i32): i32 {
     if (a > b) {
         return a;
     }
     return b;
 }
 
-function nodeHeight(node: BSTNode): i32 {
+function height(node: BSTNode): i32 {
     if (node == null) {
         return 0;
     }
-    return 1 + nodeMax(nodeHeight(node.left), nodeHeight(node.right));
+    return 1 + max(height(node.left), height(node.right));
 }
 
 class BST {
@@ -61,19 +61,19 @@ class BST {
     }
 
     public insert(value: i32): void {
-        this.root = nodeInsert(this.root, value);
+        this.root = insert(this.root, value);
     }
 
     public contains(value: i32): boolean {
-        return nodeContains(this.root, value);
+        return contains(this.root, value);
     }
 
     public inOrderSum(): i32 {
-        return nodeSum(this.root);
+        return inOrderSum(this.root);
     }
 
     public height(): i32 {
-        return nodeHeight(this.root);
+        return height(this.root);
     }
 }
 

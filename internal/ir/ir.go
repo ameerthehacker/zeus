@@ -831,10 +831,13 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	}
 
 	methods := []*zeus_value.ClassMethod{}
+	seenMethods := map[string]bool{}
 	for _, method := range expr.Methods {
-		if g.isSymbolDeclared(method.Name.Name.Value, method.Name.GetSpan()) {
+		if seenMethods[method.Name.Name.Value] {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", method.Name.Name.Value), method.Name.GetSpan()))
 			continue
 		}
+		seenMethods[method.Name.Name.Value] = true
 
 		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
 			if !zeus_value.IsVoidType(method.ReturnType.ValueType) {
@@ -860,7 +863,6 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			function,
 			method.AccessModifier,
 		))
-		g.symbolTable().DeclareSymbol(method.Name.Name.Value, function)
 	}
 
 	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
