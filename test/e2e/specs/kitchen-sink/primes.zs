@@ -8,7 +8,7 @@ function sieve(limit: i32): i32[] {
             result.push(p);
             let j: i32 = p * p;
             while (j <= limit) {
-                composite.set(j, 1);
+                composite[j] = 1;
                 j = j + p;
             }
         }

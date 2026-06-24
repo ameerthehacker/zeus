@@ -62,19 +62,19 @@ func (g *IRModule) GetExportedSymbol(symbolName string) (zeus_value.Value, bool)
 // GetAllSymbols returns all symbols from the symbol table for code completion
 func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
 	symbols := make(map[string]zeus_value.Value)
-	
+
 	// Use the builder's symbol table to get all symbols
 	g.irBuilder.symbolTable.Walk(func(name string, value zeus_value.Value) {
 		symbols[name] = value
 	})
-	
+
 	return symbols
 }
 
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	// Note: IRBuilder already has a global scope created in NewIRBuilder()
 	// and primordial classes are already registered via initializePrimordials()
-	
+
 	// Emit DECL_PRIMORDIAL_FUNC instructions for primordial functions
 	// (they were registered in symbol table during NewIRBuilder, but we still need IR instructions)
 	for _, fn := range zeus_value.Registry.GetAllFunctions() {
@@ -284,14 +284,14 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			// 3. Store back: array.set(i, temp)
 			currentValue := g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_GET,
 				[]zeus_value.Value{arrayRef.Index},
-			nil, // type will be inferred
-			[]zeus_value.ValueType{zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}},
-			expr.GetSpan())
+				nil, // type will be inferred
+				[]zeus_value.ValueType{zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}},
+				expr.GetSpan())
 
-		op := g.getCompoundAssignmentOp(expr.Operator.Type)
-		newValue := g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+			op := g.getCompoundAssignmentOp(expr.Operator.Type)
+			newValue := g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
 
-		i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
+			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
 			valueType := zeus_value.GetValueType(newValue)
 			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
 				[]zeus_value.Value{arrayRef.Index, newValue},
@@ -364,11 +364,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypePipePipe:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeOr, expr.GetSpan())
 	case token.TokenTypeEqual:
-	// Check if this is an array element assignment (array[0][1] = expr)
-	if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
-		// Generate: arrayObject.set(index, value)
-		// Type checking will catch invalid assignments (e.g., to strings)
-		i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
+		// Check if this is an array element assignment (array[0][1] = expr)
+		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
+			// Generate: arrayObject.set(index, value)
+			// Type checking will catch invalid assignments (e.g., to strings)
+			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
 			valueType := zeus_value.GetValueType(right)
 			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
 				[]zeus_value.Value{arrayRef.Index, right},
@@ -625,12 +625,12 @@ func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value 
 // is emitted at the beginning of the instruction list.
 func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_value.Class {
 	arrayClassName := arrayType.String()
-	
+
 	// Check if already in symbol table (already processed)
 	if existingClass, ok := g.symbolTable().GetSymbol(arrayClassName); ok {
 		return existingClass.(*zeus_value.Class)
 	}
-	
+
 	// Get or create from registry (handles nested array types internally)
 	arrayClass := zeus_value.Registry.GetOrCreateArrayClass(arrayType)
 
@@ -639,7 +639,7 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 
 	// Emit DECL_CLASS at the beginning of the instruction list
 	g.irBuilder.EmitClassDeclAtStart(arrayClass)
-	
+
 	return arrayClass
 }
 
@@ -662,14 +662,12 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 	// Save and clear isLValueExpr flag temporarily to properly load the base array
 	// Otherwise, if array is a variable, VisitIdentifier would return it without loading
 	wasLValueExpr := g.isLValueExpr
+	// indices are always r value so while evaluating them consider them as rvalues
 	g.isLValueExpr = false
-	
+
 	// Start with the base array
 	currentValue := expr.Array.Accept(g)
-	
-	// Restore the flag
-	g.isLValueExpr = wasLValueExpr
-	
+
 	// Collect all indices
 	indices := []zeus_value.Value{}
 	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
@@ -689,7 +687,7 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 	// then return ArrayElementRef with the last index for the assignment handling
 	// Note: String immutability is enforced during type checking when .set() is called
 	// Note: Bounds checking is NOT done for writes - array.set() handles extension automatically
-	if g.isLValueExpr {
+	if wasLValueExpr {
 		// Process all indices except the last one with GET_INDEX
 		for i := 0; i < len(indices)-1; i++ {
 			currentValue = g.irBuilder.BuildGetIndex(currentValue, []zeus_value.Value{indices[i]}, expr.GetSpan())
@@ -730,14 +728,14 @@ func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
 
 func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	callee := expr.Callee
-	
+
 	// Check if callee is an IndexingExprNode (array creation)
 	if indexingExpr := ast.AsIndexingExpr(callee); indexingExpr != nil {
 		// Array creation: new u8[10][][] or new Point[10][]
-		
+
 		// 1. Extract the base element type from the indexing expression
 		var baseElementType zeus_value.ValueType
-		
+
 		// Handle primitive types (e.g., u8, i32, f32)
 		if valueTypeNode, ok := indexingExpr.Array.(*ast.ValueTypeNode); ok {
 			baseElementType = valueTypeNode.ValueType
@@ -751,7 +749,7 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "array base type must be a type name", indexingExpr.Array.GetSpan()))
 			return nil
 		}
-		
+
 		// 2. Build nested array type based on number of dimensions
 		// e.g., u8 with 2 dimensions -> u8[][]
 		numDimensions := len(indexingExpr.IndexingMeta.IndexingExprs)
@@ -759,7 +757,7 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 		for i := 0; i < numDimensions; i++ {
 			arrayType = zeus_value.NewArrayType(arrayType, indexingExpr.GetSpan())
 		}
-		
+
 		// 3. Validate: only the first dimension can have a capacity expression
 		// Capacity for first dimension is optional, but dimensions 2+ cannot have capacity
 		for i := 1; i < numDimensions; i++ {
@@ -767,32 +765,32 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "only the first dimension can specify capacity in array creation", indexingExpr.IndexingMeta.IndexingExprs[i].GetSpan()))
 			}
 		}
-		
+
 		// 4. Get or create the array primordial class for this type
 		arrayTypeValue := arrayType.(zeus_value.ArrayType)
 		arrayClass := g.getOrCreateArrayClass(arrayTypeValue)
-		
+
 		// 5. Evaluate capacity expression (only first dimension, if provided)
 		var capacity zeus_value.Value
-	if indexingExpr.IndexingMeta.IndexingExprs[0] != nil {
-		capacity = indexingExpr.IndexingMeta.IndexingExprs[0].Accept(g)
-	} else {
-		// No capacity provided, pass 0 as default (runtime will use default capacity)
-		capacity = zeus_value.NewConstant("0", zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: indexingExpr.GetSpan()}, indexingExpr.GetSpan())
-	}
+		if indexingExpr.IndexingMeta.IndexingExprs[0] != nil {
+			capacity = indexingExpr.IndexingMeta.IndexingExprs[0].Accept(g)
+		} else {
+			// No capacity provided, pass 0 as default (runtime will use default capacity)
+			capacity = zeus_value.NewConstant("0", zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: indexingExpr.GetSpan()}, indexingExpr.GetSpan())
+		}
 		args := []zeus_value.Value{capacity}
-		
+
 		// 6. Pass to BuildNewObj - it's just a class with constructor args!
 		return g.irBuilder.BuildNewObj(arrayClass, args, expr.GetSpan())
 	}
-	
+
 	// Class instantiation: new MyClass(args)
 	calleeValue := callee.Accept(g)
 	args := []zeus_value.Value{}
 	for _, arg := range expr.Args {
 		args = append(args, arg.Accept(g))
 	}
-	
+
 	return g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
 }
 
@@ -1051,15 +1049,15 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 
 func (g *IRModule) VisitChar(expr *ast.CharExprNode) zeus_value.Value {
 	zeus_error.Assert(utf8.RuneCount([]byte(expr.Value.Value)) == 1, "char literal must be a single character")
-	
+
 	firstRune, _ := utf8.DecodeRuneInString(expr.Value.Value)
 	u8Value := byte(firstRune)
 	u8ValueString := strconv.Itoa(int(u8Value))
-	
+
 	return zeus_value.NewConstant(
 		u8ValueString,
 		zeus_value.IntType{
-			Size: zeus_value.I8,
+			Size:   zeus_value.I8,
 			Signed: false,
 		},
 		expr.Value.Span,
@@ -1084,39 +1082,39 @@ func (g *IRModule) getOrCreateStringClass() *zeus_value.Class {
 func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_value.Value {
 	// Get or create the string class
 	stringClass := g.getOrCreateStringClass()
-	
+
 	// Get string bytes
 	stringBytes := []byte(expr.Value.Value)
 	stringLen := len(stringBytes)
-	
+
 	// Get or create u8[] array class
 	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
 	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
-	
+
 	// Create u8[] array with capacity = string length
 	capacity := zeus_value.NewConstant(fmt.Sprintf("%d", stringLen), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}, expr.GetSpan())
 	u8Array := g.irBuilder.BuildNewObj(u8ArrayClass, []zeus_value.Value{capacity}, expr.GetSpan())
-	
+
 	// Set each byte using array.set(index, byte)
 	for i, b := range stringBytes {
 		// Get the .set() method from the array object
 		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, expr.GetSpan())
 		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
-		
+
 		// Create index and byte constants
 		index := zeus_value.NewConstant(fmt.Sprintf("%d", i), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}, expr.GetSpan())
 		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
-		
+
 		// Call array.set(index, byte)
 		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{index, byteVal}, expr.GetSpan())
 	}
-	
+
 	// Create string object with the u8[] array
 	return g.irBuilder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, expr.GetSpan())
 }
 
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
-	zeus_error.Assert(false, "value type should not be emitted in the IR");
+	zeus_error.Assert(false, "value type should not be emitted in the IR")
 	return nil
 }
 

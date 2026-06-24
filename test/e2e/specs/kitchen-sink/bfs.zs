@@ -1,7 +1,7 @@
 function bfs(adj: i32[][], numNodes: i32, src: i32): i32[] {
     let dist: i32[] = new i32[numNodes];
     dist.fill(-1);
-    dist.set(src, 0);
+    dist[src] = 0;
 
     let queue: i32[] = new i32[];
     queue.push(src);
@@ -14,7 +14,7 @@ function bfs(adj: i32[][], numNodes: i32, src: i32): i32[] {
         for (let i: i32 = 0; i < neighbors.length; i++) {
             let neighbor: i32 = neighbors[i];
             if (dist[neighbor] == -1) {
-                dist.set(neighbor, dist[node] + 1);
+                dist[neighbor] = dist[node] + 1;
                 queue.push(neighbor);
             }
         }

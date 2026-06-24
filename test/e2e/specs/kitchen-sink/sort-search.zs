@@ -6,14 +6,14 @@ function insertionSort(arr: i32[]): void {
         let insertPos: i32 = 0;
         while (j >= 0) {
             if (arr[j] > key) {
-                arr.set(j + 1, arr[j]);
+                arr[j + 1] = arr[j];
                 j = j - 1;
             } else {
                 insertPos = j + 1;
                 j = -1;
             }
         }
-        arr.set(insertPos, key);
+        arr[insertPos] = key;
     }
 }
 
