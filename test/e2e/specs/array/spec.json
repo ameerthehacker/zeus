@@ -68,5 +68,10 @@
         "name": "Array find and findIndex",
         "exit": "60",
         "entry": "find.zs"
+    },
+    {
+        "name": "Variable-size array allocation",
+        "exit": "0",
+        "entry": "variable-size.zs"
     }
 ]

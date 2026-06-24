@@ -26,14 +26,14 @@ class LinkedList {
             }
             current.next = node;
         }
-        this.size = this.size + 1;
+        this.size++;
     }
 
     public prepend(value: i32): void {
         let node: Node = new Node(value);
         node.next = this.head;
         this.head = node;
-        this.size = this.size + 1;
+        this.size++;
     }
 
     public remove(value: i32): boolean {
@@ -42,14 +42,14 @@ class LinkedList {
         }
         if (this.head.value == value) {
             this.head = this.head.next;
-            this.size = this.size - 1;
+            this.size--;
             return true;
         }
         let current: Node = this.head;
         while (current.next != null) {
             if (current.next.value == value) {
                 current.next = current.next.next;
-                this.size = this.size - 1;
+                this.size--;
                 return true;
             }
             current = current.next;

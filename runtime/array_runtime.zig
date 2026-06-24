@@ -178,7 +178,6 @@ export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyo
     const capacity_ptr = @as(*u32, @ptrCast(@alignCast(initial_capacity_ptr)));
     const initial_capacity = capacity_ptr.*;
 
-    array_ptr.length = 0;
     array_ptr.capacity = initial_capacity;
 
     // Allocate initial data buffer
@@ -187,10 +186,14 @@ export fn zeus_array_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyo
 
     if (initial_capacity > 0 and array_ptr.data == null) {
         debug.log(allocator, "array_constructor", "failed to allocate memory for array data", .{});
+        array_ptr.length = 0;
         array_ptr.capacity = 0;
     } else if (initial_capacity > 0) {
-        // Initialize all capacity with default values
+        // All n pre-allocated slots are accessible immediately (like Java's new int[n])
+        array_ptr.length = initial_capacity;
         initializeWithDefaults(array_ptr, 0, initial_capacity);
+    } else {
+        array_ptr.length = 0;
     }
 }
 

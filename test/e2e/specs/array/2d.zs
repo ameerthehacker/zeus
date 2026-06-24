@@ -14,8 +14,8 @@ class Point {
 
 function main(): i32 {
   let _2dArray: Point[][] = new Point[][];
-  _2dArray.push(new Point[10]);
-  _2dArray.push(new Point[10]);
+  _2dArray.push(new Point[]);
+  _2dArray.push(new Point[]);
   _2dArray.get(0).push(new Point(1, 1));
   _2dArray.get(1).push(new Point(2, 2));
   _2dArray.get(1).push(new Point(3, 3));

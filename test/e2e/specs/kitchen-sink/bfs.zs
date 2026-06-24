@@ -1,8 +1,6 @@
 function bfs(adj: i32[][], numNodes: i32, src: i32): i32[] {
-    let dist: i32[] = new i32[];
-    for (let i: i32 = 0; i < numNodes; i++) {
-        dist.push(-1);
-    }
+    let dist: i32[] = new i32[numNodes];
+    dist.fill(-1);
     dist.set(src, 0);
 
     let queue: i32[] = new i32[];

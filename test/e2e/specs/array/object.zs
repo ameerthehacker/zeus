@@ -25,8 +25,8 @@ class X {
 }
 
 function main(): i32 {
-  let array1: Point[] = new Point[10];
-  const array2: X[] = new X[10];
+  let array1: Point[] = new Point[];
+  const array2: X[] = new X[];
 
   array1.push(new Point(1, 2));
   array1.push(new Point(3, 3));

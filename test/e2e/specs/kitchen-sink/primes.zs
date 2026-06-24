@@ -1,8 +1,5 @@
 function sieve(limit: i32): i32[] {
-    let composite: i32[] = new i32[];
-    for (let i: i32 = 0; i <= limit; i++) {
-        composite.push(0);
-    }
+    let composite: i32[] = new i32[limit + 1];
 
     let result: i32[] = new i32[];
 

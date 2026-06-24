@@ -14,8 +14,8 @@ class Point {
 
 function main(): i32 {
   let _2dArray: Point[][] = new Point[][];
-  _2dArray.push(new Point[10]);
-  _2dArray.push(new Point[10]);
+  _2dArray.push(new Point[]);
+  _2dArray.push(new Point[]);
 
   // Test 2D array assignment using bracket notation
   _2dArray[0][0] = new Point(1, 1);

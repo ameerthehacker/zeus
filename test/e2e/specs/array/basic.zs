@@ -1,5 +1,5 @@
 function main(): u32 {
-  let array: u8[] = new u8[10];
+  let array: u8[] = new u8[];
 
   array.push(127);
   array.push(125);

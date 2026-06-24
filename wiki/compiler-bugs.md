@@ -29,33 +29,7 @@ while (j >= 0) {
 
 ---
 
-## 2. `new T[variable]` does not produce readable/writable elements
-
-**Bug:** When the size argument to `new T[n]` is a variable or parameter (not a compile-time literal), the resulting array appears to have zero length. Reading or writing any index throws `IndexOutOfBoundsException` at runtime.
-
-```zeus
-// BROKEN — composite[p] throws IndexOutOfBoundsException even for p=2
-function sieve(limit: i32): i32[] {
-    let composite: i32[] = new i32[limit + 1];  // variable size
-    if (composite[2] == 0) { ... }              // crashes
-}
-```
-
-**Workaround:** Initialize the array with a push-loop.
-
-```zeus
-// WORKS
-let composite: i32[] = new i32[];
-for (let i: i32 = 0; i <= limit; i++) {
-    composite.push(0);
-}
-```
-
-> **Note:** `new T[n]` with a **literal** integer (e.g. `new u8[10]`) works correctly — elements are readable and writable by index. Only variable-size allocations are affected.
-
----
-
-## 3. Expression-index array writes are an invalid lvalue
+## 2. Expression-index array writes are an invalid lvalue
 
 **Bug:** Using an arithmetic expression as the index in an array write (`arr[expr] = value`) is rejected at compile time with `invalid lvalue in assignment`.
 
@@ -75,7 +49,7 @@ arr.set(j + 1, arr[j]);
 
 ---
 
-## 4. Free function names shadow class method names inside the class
+## 3. Free function names shadow class method names inside the class
 
 **Bug:** If a free function and a class method share the same name, calls to the free function inside the class body are resolved to the method instead, producing an argument-count error.
 
@@ -105,7 +79,7 @@ class BST {
 
 ---
 
-## 5. `from` is a reserved keyword
+## 4. `from` is a reserved keyword
 
 **Bug:** `from` cannot be used as a function parameter name. The parser rejects it with `expected identifier in function parameter, but found from`.
 
@@ -123,7 +97,7 @@ function hanoi(n: i32, src: i32, dst: i32, aux: i32): i32 { ... }
 
 ---
 
-## 6. `null` cannot be explicitly assigned
+## 5. `null` cannot be explicitly assigned
 
 **Observation:** Zeus does not expose `null` as a keyword you can write in source. Uninitialized class-typed fields are `null` at runtime, and comparing them with `== null` compiles and works correctly.
 
