@@ -15,7 +15,7 @@
         "entry": "logical.zs"
     },
     {
-        "name": "Compound assignment operators (+=, -=, *=, /=, %=, **=)",
+        "name": "Compound assignment operators (+=, -=, *=, /=, %=, **=, &=, |=, ^=, <<=, >>=)",
         "exit": "0",
         "entry": "compound.zs"
     },

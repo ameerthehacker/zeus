@@ -54,24 +54,34 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypePipePipe:         6,  // logical OR
 	token.TokenTypeQuestion:         3,  // ternary ?:
 	// Assignment operators (lowest precedence but > 0 so they get parsed)
-	token.TokenTypeEqual:            1,
-	token.TokenTypePlusEqual:        1,
-	token.TokenTypeMinusEqual:       1,
-	token.TokenTypeStarEqual:        1,
-	token.TokenTypeSlashEqual:       1,
-	token.TokenTypePercentEqual:     1,
-	token.TokenTypeDoubleStarEqual:  1,
+	token.TokenTypeEqual:             1,
+	token.TokenTypePlusEqual:         1,
+	token.TokenTypeMinusEqual:        1,
+	token.TokenTypeStarEqual:         1,
+	token.TokenTypeSlashEqual:        1,
+	token.TokenTypePercentEqual:      1,
+	token.TokenTypeDoubleStarEqual:   1,
+	token.TokenTypeBitwiseAndEqual:   1,
+	token.TokenTypeBitwiseOrEqual:    1,
+	token.TokenTypeBitwiseXorEqual:   1,
+	token.TokenTypeLeftShiftEqual:    1,
+	token.TokenTypeRightShiftEqual:   1,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
-	token.TokenTypeEqual:           true,
-	token.TokenTypePlusEqual:       true,
-	token.TokenTypeMinusEqual:      true,
-	token.TokenTypeStarEqual:       true,
-	token.TokenTypeSlashEqual:      true,
-	token.TokenTypePercentEqual:    true,
-	token.TokenTypeDoubleStarEqual: true,
-	token.TokenTypeDoubleStar:      true, // power is right associative: 2**3**4 = 2**(3**4)
+	token.TokenTypeEqual:             true,
+	token.TokenTypePlusEqual:         true,
+	token.TokenTypeMinusEqual:        true,
+	token.TokenTypeStarEqual:         true,
+	token.TokenTypeSlashEqual:        true,
+	token.TokenTypePercentEqual:      true,
+	token.TokenTypeDoubleStarEqual:   true,
+	token.TokenTypeDoubleStar:        true, // power is right associative: 2**3**4 = 2**(3**4)
+	token.TokenTypeBitwiseAndEqual:   true,
+	token.TokenTypeBitwiseOrEqual:    true,
+	token.TokenTypeBitwiseXorEqual:   true,
+	token.TokenTypeLeftShiftEqual:    true,
+	token.TokenTypeRightShiftEqual:   true,
 }
 
 func getPrecedence(token *token.Token) int {
@@ -317,7 +327,12 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeStarEqual:        binaryOperatorParseLet,
 		token.TokenTypeSlashEqual:       binaryOperatorParseLet,
 		token.TokenTypePercentEqual:     binaryOperatorParseLet,
-		token.TokenTypeDoubleStarEqual:  binaryOperatorParseLet,
+		token.TokenTypeDoubleStarEqual:   binaryOperatorParseLet,
+		token.TokenTypeBitwiseAndEqual:   binaryOperatorParseLet,
+		token.TokenTypeBitwiseOrEqual:    binaryOperatorParseLet,
+		token.TokenTypeBitwiseXorEqual:   binaryOperatorParseLet,
+		token.TokenTypeLeftShiftEqual:    binaryOperatorParseLet,
+		token.TokenTypeRightShiftEqual:   binaryOperatorParseLet,
 		token.TokenTypeBitwiseAnd:       binaryOperatorParseLet, // &
 		token.TokenTypeBitwiseOr:        binaryOperatorParseLet, // |
 		token.TokenTypeBitwiseXor:       binaryOperatorParseLet, // ^

@@ -63,5 +63,40 @@ function main(): i32 {
         return 9;
     }
 
+    // Test &=
+    let x: i32 = 0xFF;
+    x &= 0x0F;  // 255 & 15 = 15
+    if (x != 15) {
+        return 10;
+    }
+
+    // Test |=
+    let y: i32 = 0xF0;
+    y |= 0x0F;  // 240 | 15 = 255
+    if (y != 255) {
+        return 11;
+    }
+
+    // Test ^=
+    let z: i32 = 0xFF;
+    z ^= 0x0F;  // 255 ^ 15 = 240
+    if (z != 240) {
+        return 12;
+    }
+
+    // Test <<=
+    let s: i32 = 1;
+    s <<= 4;  // 1 << 4 = 16
+    if (s != 16) {
+        return 13;
+    }
+
+    // Test >>=
+    let r: i32 = 256;
+    r >>= 4;  // 256 >> 4 = 16
+    if (r != 16) {
+        return 14;
+    }
+
     return 0;
 }

@@ -265,7 +265,12 @@ func (g *IRModule) isCompoundAssignment(tokenType token.TokenType) bool {
 		tokenType == token.TokenTypeStarEqual ||
 		tokenType == token.TokenTypeSlashEqual ||
 		tokenType == token.TokenTypePercentEqual ||
-		tokenType == token.TokenTypeDoubleStarEqual
+		tokenType == token.TokenTypeDoubleStarEqual ||
+		tokenType == token.TokenTypeBitwiseAndEqual ||
+		tokenType == token.TokenTypeBitwiseOrEqual ||
+		tokenType == token.TokenTypeBitwiseXorEqual ||
+		tokenType == token.TokenTypeLeftShiftEqual ||
+		tokenType == token.TokenTypeRightShiftEqual
 }
 
 func (g *IRModule) getCompoundAssignmentOp(tokenType token.TokenType) InstrType {
@@ -282,6 +287,16 @@ func (g *IRModule) getCompoundAssignmentOp(tokenType token.TokenType) InstrType 
 		return InstrTypeMod
 	case token.TokenTypeDoubleStarEqual:
 		return InstrTypePower
+	case token.TokenTypeBitwiseAndEqual:
+		return InstrTypeBitAnd
+	case token.TokenTypeBitwiseOrEqual:
+		return InstrTypeBitOr
+	case token.TokenTypeBitwiseXorEqual:
+		return InstrTypeBitXor
+	case token.TokenTypeLeftShiftEqual:
+		return InstrTypeShl
+	case token.TokenTypeRightShiftEqual:
+		return InstrTypeShr
 	default:
 		panic(fmt.Sprintf("unknown compound assignment operator: %s", tokenType))
 	}

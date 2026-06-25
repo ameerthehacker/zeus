@@ -382,6 +382,11 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 				endPosition := l.getCurrentPosition()
 				l.pushToken(token.NewToken(token.TokenTypeAmpAmp, token.NewSpan(*startPosition, *endPosition)))
 				l.advance()
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeBitwiseAndEqual, token.NewSpan(*startPosition, *endPosition)))
+				l.advance()
 			} else {
 				l.pushToken(token.NewToken(token.TokenTypeBitwiseAnd, token.NewSpan(*startPosition, *startPosition)))
 				l.advance()
@@ -393,13 +398,24 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 				endPosition := l.getCurrentPosition()
 				l.pushToken(token.NewToken(token.TokenTypePipePipe, token.NewSpan(*startPosition, *endPosition)))
 				l.advance()
+			} else if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeBitwiseOrEqual, token.NewSpan(*startPosition, *endPosition)))
+				l.advance()
 			} else {
 				l.pushToken(token.NewToken(token.TokenTypeBitwiseOr, token.NewSpan(*startPosition, *startPosition)))
 				l.advance()
 			}
 		case char == '^':
 			startPosition := position
-			l.pushToken(token.NewToken(token.TokenTypeBitwiseXor, token.NewSpan(*startPosition, *startPosition)))
+			if l.matchNextRune('=') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeBitwiseXorEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypeBitwiseXor, token.NewSpan(*startPosition, *startPosition)))
+			}
 			l.advance()
 		case char == '~':
 			startPosition := position
@@ -438,8 +454,14 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			startPosition := position
 			if l.matchNextRune('>') {
 				l.advance()
-				endPosition := l.getCurrentPosition()
-				l.pushToken(token.NewToken(token.TokenTypeRightShift, token.NewSpan(*startPosition, *endPosition)))
+				if l.matchNextRune('=') {
+					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeRightShiftEqual, token.NewSpan(*startPosition, *endPosition)))
+				} else {
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeRightShift, token.NewSpan(*startPosition, *endPosition)))
+				}
 			} else if l.matchNextRune('=') {
 				l.advance()
 				endPosition := l.getCurrentPosition()
@@ -452,8 +474,14 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			startPosition := position
 			if l.matchNextRune('<') {
 				l.advance()
-				endPosition := l.getCurrentPosition()
-				l.pushToken(token.NewToken(token.TokenTypeLeftShift, token.NewSpan(*startPosition, *endPosition)))
+				if l.matchNextRune('=') {
+					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeLeftShiftEqual, token.NewSpan(*startPosition, *endPosition)))
+				} else {
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeLeftShift, token.NewSpan(*startPosition, *endPosition)))
+				}
 			} else if l.matchNextRune('=') {
 				l.advance()
 				endPosition := l.getCurrentPosition()

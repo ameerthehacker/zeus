@@ -48,13 +48,18 @@ const (
 	TokenTypeMinusMinus
 	TokenTypeDoubleStarEqual
 	// bitwise operators
-	TokenTypeBitwiseAnd    // &
-	TokenTypeBitwiseOr     // |
-	TokenTypeBitwiseXor    // ^
-	TokenTypeBitwiseNot    // ~
-	TokenTypeLeftShift     // <<
-	TokenTypeRightShift    // >>
-	TokenTypeQuestion      // ?
+	TokenTypeBitwiseAnd      // &
+	TokenTypeBitwiseOr       // |
+	TokenTypeBitwiseXor      // ^
+	TokenTypeBitwiseNot      // ~
+	TokenTypeLeftShift       // <<
+	TokenTypeRightShift      // >>
+	TokenTypeBitwiseAndEqual // &=
+	TokenTypeBitwiseOrEqual  // |=
+	TokenTypeBitwiseXorEqual // ^=
+	TokenTypeLeftShiftEqual  // <<=
+	TokenTypeRightShiftEqual // >>=
+	TokenTypeQuestion        // ?
 	operator_end
 	// literals
 	literal_beg
@@ -195,6 +200,16 @@ func (t TokenType) String() string {
 		return "<<"
 	case TokenTypeRightShift:
 		return ">>"
+	case TokenTypeBitwiseAndEqual:
+		return "&="
+	case TokenTypeBitwiseOrEqual:
+		return "|="
+	case TokenTypeBitwiseXorEqual:
+		return "^="
+	case TokenTypeLeftShiftEqual:
+		return "<<="
+	case TokenTypeRightShiftEqual:
+		return ">>="
 	case TokenTypeQuestion:
 		return "?"
 	case TokenTypeNumber:
