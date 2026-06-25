@@ -1,12 +1,9 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version number (e.g., 1.0.0)'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -18,12 +15,9 @@ jobs:
         include:
           - os: macos-15
             arch: arm64
-          # Uncomment below for x86_64 builds (requires paid larger runner)
-          # - os: macos-13-xlarge
-          #   arch: x86_64
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,6 +37,11 @@ jobs:
         with:
           version: 0.13.0
 
+      - name: Build Boehm GC
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          make -C build
+
       - name: Build Zig runtime
         run: |
           cd runtime
@@ -50,39 +49,34 @@ jobs:
 
       - name: Build Zeus binary
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           LLVM_CONFIG="${LLVM_PATH}/bin/llvm-config"
-          
+
           export CGO_ENABLED=1
           export CGO_CFLAGS="$($LLVM_CONFIG --cflags)"
           export CGO_CXXFLAGS="$($LLVM_CONFIG --cxxflags)"
           export CGO_LDFLAGS="$($LLVM_CONFIG --ldflags --libs all --system-libs)"
-          
+
           mkdir -p bin
-          go build -o bin/zeus zeus.go
+          go build -tags llvm19 \
+            -ldflags "-X 'github.com/ameerthehacker/zeus/cmd.Version=${VERSION}'" \
+            -o bin/zeus zeus.go
 
       - name: Create release package
         run: |
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${GITHUB_REF_NAME#v}"
           ARCH="${{ matrix.arch }}"
           PACKAGE_NAME="zeus-${VERSION}-darwin-${ARCH}"
-          
+
           mkdir -p "${PACKAGE_NAME}/bin"
           mkdir -p "${PACKAGE_NAME}/runtime/zig-out"
           mkdir -p "${PACKAGE_NAME}/lib"
-          
-          # Copy binary
+
           cp bin/zeus "${PACKAGE_NAME}/bin/"
-          
-          # Copy runtime (only zig-out and its children)
           cp -r runtime/zig-out "${PACKAGE_NAME}/runtime/"
-          
-          # Copy standard library
           cp -r lib/std "${PACKAGE_NAME}/lib/"
-          
-          # Create tarball
+
           tar -czvf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
-          
-          # Generate SHA256 checksum and save just the hash
           shasum -a 256 "${PACKAGE_NAME}.tar.gz" | awk '{print $1}' > "${PACKAGE_NAME}.sha256"
 
       - name: Upload artifacts
@@ -90,18 +84,16 @@ jobs:
         with:
           name: zeus-darwin-${{ matrix.arch }}
           path: |
-            zeus-${{ github.event.inputs.version }}-darwin-${{ matrix.arch }}.tar.gz
-            zeus-${{ github.event.inputs.version }}-darwin-${{ matrix.arch }}.sha256
+            zeus-*-darwin-${{ matrix.arch }}.tar.gz
+            zeus-*-darwin-${{ matrix.arch }}.sha256
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -109,61 +101,61 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Get SHA256 checksums
-        id: checksums
+      - name: Get version and checksums
+        id: meta
         run: |
-          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${GITHUB_REF_NAME#v}"
           ARM64_SHA256=$(cat "artifacts/zeus-${VERSION}-darwin-arm64.sha256")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "arm64_sha256=${ARM64_SHA256}" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew tap
+        uses: actions/checkout@v4
+        with:
+          repository: ameerthehacker/homebrew-zeus
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-zeus
 
       - name: Update Homebrew formula
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          ARM64_SHA256="${{ steps.checksums.outputs.arm64_sha256 }}"
-          
-          # Update version
+          VERSION="${{ steps.meta.outputs.version }}"
+          ARM64_SHA256="${{ steps.meta.outputs.arm64_sha256 }}"
+
+          cd homebrew-zeus
           sed -i "s/version \".*\"/version \"${VERSION}\"/" Formula/zeus.rb
-          
-          # Update all SHA256 placeholders with ARM64 hash (both on_arm and on_intel use ARM64 binary)
-          sed -i "s/sha256 \"PLACEHOLDER_ARM64_SHA256\"/sha256 \"${ARM64_SHA256}\"/g" Formula/zeus.rb
-          
-          # Update existing SHA256 hashes
           sed -i "/on_arm do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${ARM64_SHA256}\"/}" Formula/zeus.rb
           sed -i "/on_intel do/{n;n;s/sha256 \"[a-f0-9]*\"/sha256 \"${ARM64_SHA256}\"/}" Formula/zeus.rb
-
-      - name: Commit formula update
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git add Formula/zeus.rb
-          git commit -m "chore: update homebrew formula to v${{ github.event.inputs.version }}"
+          git commit -m "chore: update formula to v${VERSION}"
           git push
 
       - name: Generate release notes
         run: |
-          VERSION="${{ github.event.inputs.version }}"
-          ARM64_SHA256="${{ steps.checksums.outputs.arm64_sha256 }}"
-          
+          VERSION="${{ steps.meta.outputs.version }}"
+          ARM64_SHA256="${{ steps.meta.outputs.arm64_sha256 }}"
+
           cat << EOF > release_notes.md
           ## Zeus v${VERSION}
-          
+
           ### Installation
-          
+
           **Via Homebrew (recommended):**
           \`\`\`bash
-          brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
+          brew tap ameerthehacker/zeus
           brew install zeus
           \`\`\`
-          
+
           **Manual installation:**
           1. Download the archive for your Mac
           2. Extract: \`tar -xzf zeus-${VERSION}-darwin-arm64.tar.gz\`
           3. Add the \`bin\` directory to your PATH
-          
+
           > **Note:** Intel Macs can run the ARM64 binary via Rosetta 2.
-          
+
           ### Checksum
-          
+
           | Architecture | SHA256 |
           |--------------|--------|
           | arm64 | \`${ARM64_SHA256}\` |
@@ -172,10 +164,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.event.inputs.version }}
-          name: Zeus v${{ github.event.inputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: Zeus v${{ steps.meta.outputs.version }}
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(steps.meta.outputs.version, '-') }}
           files: |
             artifacts/*.tar.gz
           body_path: release_notes.md

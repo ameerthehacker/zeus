@@ -1,0 +1,75 @@
+name: Bump Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version component to bump'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      pre_release:
+        description: 'Pre-release suffix (e.g. alpha, beta) — leave empty for a stable release'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Compute next version and tag
+        run: |
+          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: ${LATEST}"
+
+          # Strip leading v and any pre-release suffix to get the numeric core
+          CORE=$(echo "${LATEST}" | sed 's/^v//' | cut -d- -f1)
+          MAJOR=$(echo "${CORE}" | cut -d. -f1)
+          MINOR=$(echo "${CORE}" | cut -d. -f2)
+          PATCH=$(echo "${CORE}" | cut -d. -f3)
+
+          case "${{ github.event.inputs.bump }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          PRE="${{ github.event.inputs.pre_release }}"
+          if [ -n "${PRE}" ]; then
+            NEXT="${NEXT}-${PRE}"
+          fi
+
+          TAG="v${NEXT}"
+          echo "New tag: ${TAG}"
+          echo "NEW_TAG=${TAG}" >> $GITHUB_ENV
+
+      - name: Create and push tag
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag "${NEW_TAG}"
+          git push origin "${NEW_TAG}"
+          echo "Tagged and pushed ${NEW_TAG} — release workflow will trigger automatically."

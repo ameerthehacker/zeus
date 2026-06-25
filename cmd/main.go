@@ -6,9 +6,11 @@ import (
 
 func Execute() {
 	rootCmd := &cobra.Command{
-		Use:   "zeus",
-		Short: "Zeus language compiler",
+		Use:     "zeus",
+		Short:   "Zeus language compiler",
+		Version: Version,
 	}
+	rootCmd.SetVersionTemplate("zeus {{.Version}}\n")
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(lspCmd())
 	rootCmd.Execute()
