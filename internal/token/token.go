@@ -88,10 +88,12 @@ const (
 	TokenTypePublic
 	TokenTypeProtected
 	TokenTypeNew     // new keyword
-	TokenTypeTry     // try keyword
-	TokenTypeCatch   // catch keyword
-	TokenTypeThrow   // throw keyword
-	TokenTypeExtends // extends keyword for class inheritance
+	TokenTypeTry      // try keyword
+	TokenTypeCatch    // catch keyword
+	TokenTypeThrow    // throw keyword
+	TokenTypeExtends  // extends keyword for class inheritance
+	TokenTypeBreak    // break keyword
+	TokenTypeContinue // continue keyword
 	keyword_end
 	// data types
 	datatype_beg
@@ -286,6 +288,10 @@ func (t TokenType) String() string {
 		return "throw"
 	case TokenTypeExtends:
 		return "extends"
+	case TokenTypeBreak:
+		return "break"
+	case TokenTypeContinue:
+		return "continue"
 	case TokenTypeNull:
 		return "null"
 	case TokenTypeChar:
@@ -320,6 +326,8 @@ var Keywords = map[string]TokenType{
 	TokenTypeThrow.String():     TokenTypeThrow,
 	TokenTypeExtends.String():   TokenTypeExtends,
 	TokenTypeNull.String():      TokenTypeNull,
+	TokenTypeBreak.String():     TokenTypeBreak,
+	TokenTypeContinue.String():  TokenTypeContinue,
 }
 
 var DataTypes = map[string]TokenType{

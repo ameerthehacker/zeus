@@ -555,6 +555,18 @@ func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 	return &ast.ReturnStmtNode{Expr: expr, Span: span}
 }
 
+func (p *Parser) parseBreakStmt() *ast.BreakStmtNode {
+	kw := p.consumeToken(token.TokenTypeBreak)
+	p.consumeSemicolon()
+	return &ast.BreakStmtNode{Span: kw.Span}
+}
+
+func (p *Parser) parseContinueStmt() *ast.ContinueStmtNode {
+	kw := p.consumeToken(token.TokenTypeContinue)
+	p.consumeSemicolon()
+	return &ast.ContinueStmtNode{Span: kw.Span}
+}
+
 func (p *Parser) parseIfStmt() *ast.IfStmtNode {
 	ifKeyword := p.consume()
 
@@ -920,6 +932,10 @@ func (p *Parser) ParseStmt() ast.StmtNode {
 		return p.parseTryCatchStmt()
 	case token.TokenTypeThrow:
 		return p.parseThrowStmt()
+	case token.TokenTypeBreak:
+		return p.parseBreakStmt()
+	case token.TokenTypeContinue:
+		return p.parseContinueStmt()
 	default:
 		return p.parseExprStmt()
 	}

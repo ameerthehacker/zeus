@@ -107,6 +107,14 @@ type ThrowStmtNode struct {
 	Span *token.Span
 }
 
+type BreakStmtNode struct {
+	Span *token.Span
+}
+
+type ContinueStmtNode struct {
+	Span *token.Span
+}
+
 type StmtVisitor interface {
 	VisitExprStmt(stmt *ExprStmtNode)
 	VisitVarDeclStmt(stmt *VarDeclStmtNode)
@@ -119,6 +127,8 @@ type StmtVisitor interface {
 	VisitExportStmt(stmt *ExportStmtNode)
 	VisitTryCatchStmt(stmt *TryCatchStmtNode)
 	VisitThrowStmt(stmt *ThrowStmtNode)
+	VisitBreakStmt(stmt *BreakStmtNode)
+	VisitContinueStmt(stmt *ContinueStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -418,3 +428,13 @@ func (t *ThrowStmtNode) GetSpan() *token.Span {
 func (t *ThrowStmtNode) Accept(visitor StmtVisitor) {
 	visitor.VisitThrowStmt(t)
 }
+
+func (b *BreakStmtNode) GetSpan() *token.Span    { return b.Span }
+func (b *BreakStmtNode) String() string           { return fmt.Sprintf("{ type: BreakStmtNode, Span: %s }", b.Span) }
+func (b *BreakStmtNode) PrettyString() string     { return "break" }
+func (b *BreakStmtNode) Accept(v StmtVisitor)     { v.VisitBreakStmt(b) }
+
+func (c *ContinueStmtNode) GetSpan() *token.Span  { return c.Span }
+func (c *ContinueStmtNode) String() string         { return fmt.Sprintf("{ type: ContinueStmtNode, Span: %s }", c.Span) }
+func (c *ContinueStmtNode) PrettyString() string   { return "continue" }
+func (c *ContinueStmtNode) Accept(v StmtVisitor)   { v.VisitContinueStmt(c) }

@@ -23,5 +23,49 @@
         "name": "for loop - compound operators",
         "exit": "0",
         "entry": "for-compound.zs"
+    },
+    {
+        "name": "break in while loop",
+        "exit": "0",
+        "entry": "break-while.zs"
+    },
+    {
+        "name": "break in for loop",
+        "exit": "0",
+        "entry": "break-for.zs"
+    },
+    {
+        "name": "continue in while loop",
+        "exit": "0",
+        "entry": "continue-while.zs"
+    },
+    {
+        "name": "continue in for loop",
+        "exit": "0",
+        "entry": "continue-for.zs"
+    },
+    {
+        "name": "break only exits innermost loop",
+        "exit": "0",
+        "entry": "break-nested.zs"
+    },
+    {
+        "name": "continue only affects innermost loop",
+        "exit": "0",
+        "entry": "continue-nested.zs"
+    },
+    {
+        "name": "break outside loop is a compile error",
+        "exit": "1",
+        "entry": "break-outside-loop.zs",
+        "compile_error": true,
+        "stderr_contains": ["break statement outside of loop"]
+    },
+    {
+        "name": "continue outside loop is a compile error",
+        "exit": "1",
+        "entry": "continue-outside-loop.zs",
+        "compile_error": true,
+        "stderr_contains": ["continue statement outside of loop"]
     }
 ]

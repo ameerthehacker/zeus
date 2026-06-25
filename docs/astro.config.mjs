@@ -8,7 +8,7 @@ const zeusGrammar = {
   patterns: [
     {
       name: 'keyword.control.zeus',
-      match: '\\b(if|else|return|while|new|class|private|protected|public|this|try|throw|catch|finally|constructor)\\b'
+      match: '\\b(if|else|for|while|break|continue|return|new|class|extends|private|protected|public|this|try|throw|catch|finally|constructor)\\b'
     },
     {
       name: 'storage.type.zeus',
@@ -118,17 +118,17 @@ export default defineConfig({
         {
           label: 'Language Guide',
           items: [
-            { label: 'Variables', slug: 'language/variables' },
+            { label: 'Variables & Constants', slug: 'language/variables' },
             { label: 'Types', slug: 'language/types' },
+            { label: 'Operators', slug: 'language/operators' },
+            { label: 'Control Flow', slug: 'language/control-flow' },
             { label: 'Functions', slug: 'language/functions' },
-            { label: 'Built-in Functions', slug: 'language/built-in-functions' },
             { label: 'Classes', slug: 'language/classes' },
             { label: 'Arrays', slug: 'language/arrays' },
             { label: 'Strings', slug: 'language/strings' },
-            { label: 'Control Flow', slug: 'language/control-flow' },
-            { label: 'Operators', slug: 'language/operators' },
-            { label: 'Exception Handling', slug: 'language/exception-handling' },
             { label: 'Modules', slug: 'language/modules' },
+            { label: 'Exception Handling', slug: 'language/exception-handling' },
+            { label: 'Built-in Functions', slug: 'language/built-in-functions' },
           ],
         },
         {
@@ -153,7 +153,7 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Coming Soon',
+          label: 'Roadmap',
           badge: { text: 'Planned', variant: 'note' },
           items: [
             { label: 'Inheritance', slug: 'coming-soon/inheritance' },

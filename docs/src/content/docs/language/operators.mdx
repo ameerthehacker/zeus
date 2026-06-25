@@ -1,79 +1,163 @@
 ---
 title: Operators
-description: Arithmetic, comparison, and logical operators in Zeus.
+description: Arithmetic, bitwise, comparison, logical, ternary, and assignment operators in Zeus.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Zeus provides a familiar set of operators for arithmetic, comparison, and logical operations.
+Zeus provides a complete set of operators covering arithmetic, bitwise, comparison, logical, ternary, and assignment operations.
 
 ## Arithmetic Operators
 
 | Operator | Description | Example |
 |----------|-------------|---------|
-| `+` | Addition (numbers) or concatenation (strings) | `5 + 3` → `8`, `"a" + "b"` → `"ab"` |
+| `+` | Addition / string concatenation | `5 + 3` → `8`, `"a" + "b"` → `"ab"` |
 | `-` | Subtraction | `5 - 3` → `2` |
 | `*` | Multiplication | `5 * 3` → `15` |
 | `/` | Division | `15 / 3` → `5` |
 | `%` | Modulo (remainder) | `7 % 3` → `1` |
-| `**` | Power (exponentiation) | `2.0 ** 3.0` → `8.0` |
-
-### Examples
+| `**` | Exponentiation (right-associative) | `2.0 ** 10.0` → `1024.0` |
 
 ```zeus
 function main(): i32 {
   let a: i32 = 10;
   let b: i32 = 3;
-  
-  let sum: i32 = a + b;      // 13
-  let diff: i32 = a - b;     // 7
+
+  let sum: i32     = a + b;  // 13
+  let diff: i32    = a - b;  // 7
   let product: i32 = a * b;  // 30
-  let quotient: i32 = a / b; // 3 (integer division)
-  
-  return sum + diff + product + quotient;
+  let quotient: i32 = a / b; // 3  (integer division)
+  let rem: i32     = a % b;  // 1
+
+  return 0;
 }
 ```
 
-### Integer Division
+### Integer vs Float Division
 
-Division between integers produces an integer result:
+Division between integers truncates toward zero:
 
 ```zeus
-let result: i32 = 7 / 2;  // 3, not 3.5
+let intDiv: i32 = 7 / 2;    // 3
+let floatDiv: f64 = 7.0 / 2.0; // 3.5
 ```
 
-For floating-point division, use float types:
+### Exponentiation
+
+`**` operates on `f64`. Both operands are cast to `f64` automatically:
 
 ```zeus
-let result: f64 = 7.0 / 2.0;  // 3.5
-```
-
-### Modulo Operator
-
-The modulo operator returns the remainder of division:
-
-```zeus
-let remainder: i32 = 17 % 5;  // 2
-let isEven: boolean = (10 % 2) == 0;  // true
-```
-
-### Power Operator
-
-The power operator performs exponentiation. Note that it currently works with floating-point numbers:
-
-```zeus
-let squared: f64 = 2.0 ** 2.0;  // 4.0
-let cubed: f64 = 2.0 ** 3.0;    // 8.0
+let squared: f64 = 2.0 ** 2.0;   // 4.0
+let cubed: f64   = 2.0 ** 3.0;   // 8.0
+let chained: f64 = 2.0 ** 3.0 ** 2.0; // 2.0 ** (3.0 ** 2.0) = 512.0  (right-associative)
 ```
 
 ### Unary Minus
 
-Negate a value:
+```zeus
+let x: i32 = 42;
+let neg: i32 = -x; // -42
+```
+
+---
+
+## Bitwise Operators
+
+Bitwise operators work on integer types (`i8`–`i64`, `u8`–`u64`) and treat the value as a sequence of bits.
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `&` | Bitwise AND | `0b1100 & 0b1010` → `0b1000` (8) |
+| `\|` | Bitwise OR | `0b1100 \| 0b1010` → `0b1110` (14) |
+| `^` | Bitwise XOR | `0b1100 ^ 0b1010` → `0b0110` (6) |
+| `~` | Bitwise NOT (unary) | `~0` → `-1` (all bits set) |
+| `<<` | Left shift | `1 << 3` → `8` |
+| `>>` | Right shift (arithmetic) | `16 >> 2` → `4` |
 
 ```zeus
-let positive: i32 = 42;
-let negative: i32 = -positive;  // -42
+function main(): i32 {
+  let a: i32 = 0b1100; // 12
+  let b: i32 = 0b1010; // 10
+
+  let andResult: i32 = a & b;  // 8  (0b1000)
+  let orResult: i32  = a | b;  // 14 (0b1110)
+  let xorResult: i32 = a ^ b;  // 6  (0b0110)
+  let notA: i32      = ~a;     // -13 (all bits flipped)
+
+  let shifted: i32 = 1 << 4;  // 16
+  let halved: i32  = 64 >> 2; // 16
+
+  return 0;
+}
 ```
+
+<Aside type="note">
+  Zeus supports binary (`0b`), hexadecimal (`0x`), and octal (`0o`) literals, making bitwise operations more readable.
+</Aside>
+
+### Common Bitwise Patterns
+
+```zeus
+// Check if a bit is set
+function isBitSet(value: i32, bit: i32): boolean {
+  return (value & (1 << bit)) != 0;
+}
+
+// Set a bit
+function setBit(value: i32, bit: i32): i32 {
+  return value | (1 << bit);
+}
+
+// Clear a bit
+function clearBit(value: i32, bit: i32): i32 {
+  return value & ~(1 << bit);
+}
+
+// Toggle a bit
+function toggleBit(value: i32, bit: i32): i32 {
+  return value ^ (1 << bit);
+}
+```
+
+---
+
+## Ternary Operator
+
+The ternary operator `?:` selects between two values based on a condition — a concise alternative to an if/else expression:
+
+```
+condition ? valueIfTrue : valueIfFalse
+```
+
+```zeus
+function abs(n: i32): i32 {
+  return n < 0 ? -n : n;
+}
+
+function main(): i32 {
+  let x: i32 = 10;
+  let y: i32 = 20;
+
+  let max: i32 = x > y ? x : y; // 20
+  let min: i32 = x < y ? x : y; // 10
+
+  return 0;
+}
+```
+
+Ternary expressions can be nested, though deeply nested ternaries reduce readability:
+
+```zeus
+function classify(n: i32): i32 {
+  return n < 0 ? -1 : n == 0 ? 0 : 1;
+}
+```
+
+<Aside type="tip">
+  The ternary operator is right-associative and has lower precedence than all arithmetic, bitwise, comparison, and logical operators, but higher precedence than assignment.
+</Aside>
+
+---
 
 ## Comparison Operators
 
@@ -86,106 +170,23 @@ let negative: i32 = -positive;  // -42
 | `>` | Greater than | `5 > 3` → `true` |
 | `>=` | Greater than or equal | `5 >= 5` → `true` |
 
-### Examples
-
 ```zeus
 function compare(a: i32, b: i32): i32 {
-  if (a == b) {
-    return 0;   // Equal
-  }
-  if (a < b) {
-    return -1;  // a is smaller
-  }
-  return 1;     // a is larger
-}
-
-function main(): i32 {
-  return compare(10, 5);  // Returns 1
+  if (a == b) { return 0; }
+  if (a < b)  { return -1; }
+  return 1;
 }
 ```
 
-### Comparing Different Types
-
-Comparison works between compatible types:
-
-```zeus
-let intVal: i32 = 5;
-let floatVal: f64 = 5.0;
-
-// This works because i32 can be implicitly converted to f64
-let equal: boolean = floatVal == intVal;  // true
-```
-
-## String Operators
-
-Zeus supports operators for string manipulation:
-
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `+` | Concatenation | `"Hello" + " World"` → `"Hello World"` |
-| `==` | Equal to | `"abc" == "abc"` → `true` |
-| `!=` | Not equal to | `"abc" != "xyz"` → `true` |
-| `<` | Lexicographically less | `"apple" < "banana"` → `true` |
-| `<=` | Less than or equal | `"abc" <= "abc"` → `true` |
-| `>` | Lexicographically greater | `"banana" > "apple"` → `true` |
-| `>=` | Greater than or equal | `"abc" >= "abc"` → `true` |
-
-### String Concatenation
-
-```zeus
-let greeting: string = "Hello" + " " + "World";
-log(greeting);  // "Hello World"
-```
-
-### String Comparison
-
-```zeus
-let a: string = "apple";
-let b: string = "banana";
-let c: string = "apple";
-
-if (a == c) {
-  log("a equals c");  // This executes
-}
-
-if (a < b) {
-  log("apple comes before banana");  // This executes
-}
-```
-
-<Aside type="note">
-  String comparison is byte-by-byte (lexicographic), which is case-sensitive. Uppercase letters come before lowercase letters in ASCII order.
-</Aside>
+---
 
 ## Logical Operators
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `!` | Logical NOT | `!true` → `false` |
-| `&&` | Logical AND | `true && false` → `false` |
-| `\|\|` | Logical OR | `true \|\| false` → `true` |
-
-### Examples
-
-```zeus
-function main(): i32 {
-  let a: boolean = true;
-  let b: boolean = false;
-  
-  let notA: boolean = !a;           // false
-  let andResult: boolean = a && b;  // false
-  let orResult: boolean = a || b;   // true
-  
-  // Short-circuit evaluation
-  if (a || expensiveCheck()) {
-    // expensiveCheck() may not be called if a is true
-  }
-  
-  return 0;
-}
-```
-
-### Combining Conditions
+| Operator | Description | Short-circuits |
+|----------|-------------|---------------|
+| `!` | Logical NOT | — |
+| `&&` | Logical AND | Yes — skips right side if left is `false` |
+| `\|\|` | Logical OR | Yes — skips right side if left is `true` |
 
 ```zeus
 function isInRange(x: i32, min: i32, max: i32): boolean {
@@ -193,170 +194,172 @@ function isInRange(x: i32, min: i32, max: i32): boolean {
 }
 
 function isValidInput(value: i32): boolean {
-  return value > 0 || value == -1;  // -1 is a special "any" value
+  return value > 0 || value == -1; // -1 is a sentinel "any" value
 }
 ```
 
-## Assignment Operators
+<Aside type="note">
+  `&&` and `||` use short-circuit evaluation. The right-hand operand is only evaluated if the left-hand result does not already determine the outcome. This is useful for guard checks like `ptr != null && ptr.value > 0`.
+</Aside>
 
-### Basic Assignment
+---
 
-The `=` operator assigns a value to a variable:
+## String Operators
 
-```zeus
-let x: i32 = 10;    // Initial assignment
-x = 20;             // Reassignment
-x = x + 5;          // Update based on current value
-```
-
-### Compound Assignment Operators
-
-Zeus supports compound assignment operators that combine arithmetic and assignment:
-
-| Operator | Description | Equivalent |
-|----------|-------------|------------|
-| `+=` | Add and assign | `x = x + y` |
-| `-=` | Subtract and assign | `x = x - y` |
-| `*=` | Multiply and assign | `x = x * y` |
-| `/=` | Divide and assign | `x = x / y` |
-| `%=` | Modulo and assign | `x = x % y` |
+| Operator | Description |
+|----------|-------------|
+| `+` | Concatenation |
+| `==` / `!=` | Content equality |
+| `<` / `<=` / `>` / `>=` | Lexicographic comparison |
 
 ```zeus
-function main(): i32 {
-  let x: i32 = 10;
-  
-  x += 5;   // x is now 15
-  x -= 3;   // x is now 12
-  x *= 2;   // x is now 24
-  x /= 4;   // x is now 6
-  x %= 4;   // x is now 2
-  
-  return x;
-}
+let greeting: string = "Hello" + ", " + "World!";
+
+let a: string = "apple";
+let b: string = "banana";
+
+if (a == "apple") { /* true */ }
+if (a < b)        { /* true — lexicographic order */ }
 ```
 
-## Increment and Decrement Operators
+<Aside type="note">
+  String comparison is byte-by-byte (UTF-8) and case-sensitive. Uppercase letters precede lowercase in ASCII order.
+</Aside>
 
-Zeus supports both prefix and postfix increment/decrement operators:
+---
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `++x` | Prefix increment (increment, then return new value) | `let y: i32 = ++x;` |
-| `x++` | Postfix increment (return old value, then increment) | `let y: i32 = x++;` |
-| `--x` | Prefix decrement (decrement, then return new value) | `let y: i32 = --x;` |
-| `x--` | Postfix decrement (return old value, then decrement) | `let y: i32 = x--;` |
+## Increment and Decrement
 
-### Prefix vs Postfix
+| Operator | Form | Behaviour |
+|----------|------|-----------|
+| `++x` | Prefix | Increment first, return new value |
+| `x++` | Postfix | Return old value, then increment |
+| `--x` | Prefix | Decrement first, return new value |
+| `x--` | Postfix | Return old value, then decrement |
 
 ```zeus
 function main(): i32 {
   let a: i32 = 5;
-  let b: i32 = ++a;  // a is 6, b is 6 (increment first)
-  
+  let b: i32 = ++a; // a → 6, b = 6
+
   let c: i32 = 5;
-  let d: i32 = c++;  // c is 6, d is 5 (return old value first)
-  
+  let d: i32 = c++; // d = 5, c → 6
+
   return 0;
-}
-```
-
-### Common Usage in Loops
-
-```zeus
-function main(): i32 {
-  let sum: i32 = 0;
-  
-  for (let i: i32 = 0; i < 10; i++) {
-    sum += i;
-  }
-  
-  return sum;  // 45
-}
-```
-
-## Operator Precedence
-
-Operators follow standard mathematical precedence:
-
-| Precedence | Operators | Description |
-|------------|-----------|-------------|
-| Highest | `++`, `--` (postfix) | Postfix increment/decrement |
-| | `.`, `[]` | Member access, indexing |
-| | `()` | Function call |
-| | `++`, `--` (prefix), `!`, `-` | Prefix increment/decrement, NOT, negation |
-| | `**` | Power (right-associative) |
-| | `*`, `/`, `%` | Multiplication, division, modulo |
-| | `+`, `-` | Addition, subtraction |
-| | `<`, `<=`, `>`, `>=` | Comparison |
-| | `==`, `!=` | Equality |
-| | `&&` | Logical AND |
-| | `\|\|` | Logical OR |
-| Lowest | `=`, `+=`, `-=`, `*=`, `/=`, `%=` | Assignment |
-
-### Examples
-
-```zeus
-let result: i32 = 2 + 3 * 4;      // 14 (not 20)
-let result2: i32 = (2 + 3) * 4;   // 20 (parentheses first)
-let result3: i32 = 10 - 5 - 2;    // 3 (left to right)
-```
-
-## Practical Examples
-
-### Absolute Value
-
-```zeus
-function abs(n: i32): i32 {
-  if (n < 0) {
-    return -n;
-  }
-  return n;
-}
-```
-
-### Distance Formula (simplified)
-
-```zeus
-function manhattanDistance(x1: i32, y1: i32, x2: i32, y2: i32): i32 {
-  let dx: i32 = x2 - x1;
-  let dy: i32 = y2 - y1;
-  
-  if (dx < 0) {
-    dx = -dx;
-  }
-  if (dy < 0) {
-    dy = -dy;
-  }
-  
-  return dx + dy;
-}
-```
-
-### Min and Max
-
-```zeus
-function min(a: i32, b: i32): i32 {
-  if (a < b) {
-    return a;
-  }
-  return b;
-}
-
-function max(a: i32, b: i32): i32 {
-  if (a > b) {
-    return a;
-  }
-  return b;
-}
-
-function clamp(value: i32, minVal: i32, maxVal: i32): i32 {
-  return max(minVal, min(value, maxVal));
 }
 ```
 
 ---
 
-## Next
+## Assignment Operators
 
-<a href="/language/modules/">Modules →</a>
+### Basic Assignment
 
+```zeus
+let x: i32 = 10;
+x = 20;
+x = x + 5;
+```
+
+### Compound Assignment
+
+Compound operators combine an operation with assignment. Zeus supports compound forms for all arithmetic and bitwise operators:
+
+| Operator | Equivalent | Category |
+|----------|------------|----------|
+| `+=` | `x = x + y` | Arithmetic |
+| `-=` | `x = x - y` | Arithmetic |
+| `*=` | `x = x * y` | Arithmetic |
+| `/=` | `x = x / y` | Arithmetic |
+| `%=` | `x = x % y` | Arithmetic |
+| `**=` | `x = x ** y` | Arithmetic |
+| `&=` | `x = x & y` | Bitwise |
+| `\|=` | `x = x \| y` | Bitwise |
+| `^=` | `x = x ^ y` | Bitwise |
+| `<<=` | `x = x << y` | Bitwise |
+| `>>=` | `x = x >> y` | Bitwise |
+
+```zeus
+function main(): i32 {
+  let x: i32 = 0b11110000; // 240
+
+  x &= 0b11001100;  // keep only matching bits  → 0b11000000 (192)
+  x |= 0b00001111;  // set lower nibble          → 0b11001111 (207)
+  x ^= 0b00110011;  // toggle bits               → 0b11111100 (252)
+  x >>= 2;          // shift right by 2          → 63
+  x <<= 1;          // shift left by 1           → 126
+
+  return 0;
+}
+```
+
+---
+
+## Operator Precedence
+
+Higher precedence operators bind more tightly. Operators on the same row have equal precedence and associate left-to-right unless marked otherwise.
+
+| Precedence | Operators | Notes |
+|------------|-----------|-------|
+| 20 (highest) | `.` `[]` | Member access, indexing |
+| 19 | `()` `new` | Function call, object construction |
+| 18 | `x++` `x--` | Postfix increment/decrement |
+| 17 | `-x` `!` `~` `++x` `--x` | Unary operators |
+| 16 | `**` | Exponentiation (right-associative) |
+| 15 | `*` `/` `%` | Multiplicative |
+| 14 | `+` `-` | Additive |
+| 13 | `<<` `>>` | Bit shifts |
+| 12 | `<` `<=` `>` `>=` | Relational |
+| 11 | `==` `!=` | Equality |
+| 10 | `&` | Bitwise AND |
+| 9 | `^` | Bitwise XOR |
+| 8 | `\|` | Bitwise OR |
+| 7 | `&&` | Logical AND |
+| 6 | `\|\|` | Logical OR |
+| 3 | `?:` | Ternary (right-associative) |
+| 1 (lowest) | `=` `+=` `-=` `*=` `/=` `%=` `**=` `&=` `\|=` `^=` `<<=` `>>=` | Assignment (right-associative) |
+
+```zeus
+// Precedence in action
+let a: i32 = 2 + 3 * 4;        // 14  (* before +)
+let b: i32 = (2 + 3) * 4;      // 20  (parentheses override)
+let c: i32 = 1 | 2 & 3;        // 3   (& before |: 1 | (2 & 3) = 1 | 2 = 3)
+let d: boolean = 1 < 2 && 3 > 0; // true (< and > before &&)
+let e: i32 = 4 > 3 ? 10 : 20;  // 10  (comparison before ternary)
+```
+
+---
+
+## Practical Examples
+
+### Packing flags into a bitmask
+
+```zeus
+const FLAG_READ: i32    = 1 << 0; // 1
+const FLAG_WRITE: i32   = 1 << 1; // 2
+const FLAG_EXECUTE: i32 = 1 << 2; // 4
+
+function makePermissions(read: boolean, write: boolean, execute: boolean): i32 {
+  let flags: i32 = 0;
+  if (read)    { flags |= FLAG_READ; }
+  if (write)   { flags |= FLAG_WRITE; }
+  if (execute) { flags |= FLAG_EXECUTE; }
+  return flags;
+}
+```
+
+### Clamping a value
+
+```zeus
+function clamp(value: i32, lo: i32, hi: i32): i32 {
+  return value < lo ? lo : value > hi ? hi : value;
+}
+```
+
+### Checking even / odd with bitwise AND
+
+```zeus
+function isEven(n: i32): boolean {
+  return (n & 1) == 0;
+}
+```

@@ -20,14 +20,21 @@ type TryContext struct {
 	ClassIds     []int       // Class IDs of catch clauses
 }
 
+// LoopContext holds the break/continue targets for the current loop
+type LoopContext struct {
+	BreakTarget    *BasicBlock // merge block — where break jumps
+	ContinueTarget *BasicBlock // condition block (while) or update block (for)
+}
+
 type IRModule struct {
-	irBuilder       *IRBuilder
-	isLValueExpr    bool
-	errors          []*zeus_error.ZeusError
-	modulePath      string
-	exportedSymbols map[string]zeus_value.Value
-	getModule       func(modulePath string) *IRModule
-	tryContextStack []*TryContext // Stack of try contexts for nested try blocks
+	irBuilder        *IRBuilder
+	isLValueExpr     bool
+	errors           []*zeus_error.ZeusError
+	modulePath       string
+	exportedSymbols  map[string]zeus_value.Value
+	getModule        func(modulePath string) *IRModule
+	tryContextStack  []*TryContext  // Stack of try contexts for nested try blocks
+	loopContextStack []*LoopContext // Stack of loop contexts for nested loops
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -47,6 +54,21 @@ func (g *IRModule) symbolTable() *symbol_table.SymbolTable[zeus_value.Value] {
 
 func (g *IRModule) pushError(err *zeus_error.ZeusError) {
 	g.errors = append(g.errors, err)
+}
+
+func (g *IRModule) pushLoopContext(brk, cont *BasicBlock) {
+	g.loopContextStack = append(g.loopContextStack, &LoopContext{BreakTarget: brk, ContinueTarget: cont})
+}
+
+func (g *IRModule) popLoopContext() {
+	g.loopContextStack = g.loopContextStack[:len(g.loopContextStack)-1]
+}
+
+func (g *IRModule) currentLoopContext() *LoopContext {
+	if len(g.loopContextStack) == 0 {
+		return nil
+	}
+	return g.loopContextStack[len(g.loopContextStack)-1]
 }
 
 func (g *IRModule) GetExportedSymbol(symbolName string) (zeus_value.Value, bool) {
@@ -191,7 +213,9 @@ func (g *IRModule) VisitWhileStmt(stmt *ast.WhileStmtNode) {
 
 	// generate the body block
 	g.irBuilder.SetInsertionBlock(body_block)
+	g.pushLoopContext(merge_block, condition_block)
 	stmt.Body.Accept(g)
+	g.popLoopContext()
 	g.irBuilder.BuildJmp(condition_block, nil)
 
 	// generate the merge block
@@ -226,7 +250,9 @@ func (g *IRModule) VisitForStmt(stmt *ast.ForStmtNode) {
 
 	// Generate the body block
 	g.irBuilder.SetInsertionBlock(body_block)
+	g.pushLoopContext(merge_block, update_block)
 	stmt.Body.Accept(g)
+	g.popLoopContext()
 	g.irBuilder.BuildJmp(update_block, nil)
 
 	// Generate the update block
@@ -240,6 +266,24 @@ func (g *IRModule) VisitForStmt(stmt *ast.ForStmtNode) {
 	g.irBuilder.SetInsertionBlock(merge_block)
 
 	g.symbolTable().ExitScope()
+}
+
+func (g *IRModule) VisitBreakStmt(stmt *ast.BreakStmtNode) {
+	ctx := g.currentLoopContext()
+	if ctx == nil {
+		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "break statement outside of loop", stmt.Span))
+		return
+	}
+	g.irBuilder.BuildJmp(ctx.BreakTarget, stmt.Span)
+}
+
+func (g *IRModule) VisitContinueStmt(stmt *ast.ContinueStmtNode) {
+	ctx := g.currentLoopContext()
+	if ctx == nil {
+		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "continue statement outside of loop", stmt.Span))
+		return
+	}
+	g.irBuilder.BuildJmp(ctx.ContinueTarget, stmt.Span)
 }
 
 // buildPowerOp casts both operands to f64, computes ** via InstrTypePower, and casts
