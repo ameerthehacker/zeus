@@ -44,21 +44,7 @@ jobs:
         run: make build-release VERSION="${GITHUB_REF_NAME#v}" LLVM_CONFIG="${LLVM_PATH}/bin/llvm-config"
 
       - name: Create release package
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          ARCH="${{ matrix.arch }}"
-          PACKAGE_NAME="zeus-${VERSION}-darwin-${ARCH}"
-
-          mkdir -p "${PACKAGE_NAME}/bin"
-          mkdir -p "${PACKAGE_NAME}/runtime/zig-out"
-          mkdir -p "${PACKAGE_NAME}/lib"
-
-          cp bin/zeus "${PACKAGE_NAME}/bin/"
-          cp -r runtime/zig-out "${PACKAGE_NAME}/runtime/"
-          cp -r lib/std "${PACKAGE_NAME}/lib/"
-
-          tar -czvf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}"
-          shasum -a 256 "${PACKAGE_NAME}.tar.gz" | awk '{print $1}' > "${PACKAGE_NAME}.sha256"
+        run: make package-release VERSION="${GITHUB_REF_NAME#v}" ARCH="${{ matrix.arch }}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

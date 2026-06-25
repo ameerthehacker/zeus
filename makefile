@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release clean compile run always build lsp
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run always build lsp
 
 clean:
 	rm -rf playground/debug
@@ -83,6 +83,22 @@ run: always build-runtime
 		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 		./playground/debug/$(file); \
 	fi
+
+ARCH ?= arm64
+
+package-release:
+	$(eval PACKAGE_NAME := zeus-$(VERSION)-darwin-$(ARCH))
+	mkdir -p $(PACKAGE_NAME)/bin
+	mkdir -p $(PACKAGE_NAME)/runtime
+	mkdir -p $(PACKAGE_NAME)/lib
+	mkdir -p $(PACKAGE_NAME)/third_party/bdwgc
+	cp bin/zeus $(PACKAGE_NAME)/bin/
+	cp -r runtime/zig-out $(PACKAGE_NAME)/runtime/
+	cp -r lib/std $(PACKAGE_NAME)/lib/
+	cp -r third_party/bdwgc/lib $(PACKAGE_NAME)/third_party/bdwgc/
+	tar -czvf $(PACKAGE_NAME).tar.gz $(PACKAGE_NAME)
+	shasum -a 256 $(PACKAGE_NAME).tar.gz | awk '{print $$1}' > $(PACKAGE_NAME).sha256
+	rm -rf $(PACKAGE_NAME)
 
 build-release:
 	mkdir -p bin
