@@ -20,51 +20,58 @@ type Parser struct {
 }
 
 const (
-	// Unary operators need precedence LOWER than member access (14), function call (13), and postfix (12)
-	// so that !arr.isEmpty() parses as !(arr.isEmpty()) not (!arr).isEmpty()
-	// but HIGHER than power (10) so -5 ** 2 is (-5) ** 2
-	UnaryOperatorPrecedence = 11
-	NewOperatorPrecedence   = 13 // Equal to function call to allow new Type() but below indexing (14) to allow new Type[size]
+	// Unary operators: above power (16), below postfix (18) and member access (20).
+	// ~, !, -, prefix ++/-- all share this level.
+	UnaryOperatorPrecedence = 17
+	NewOperatorPrecedence   = 19 // Equal to function call; below indexing (20) to allow new Type[size]
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeDot:              14, // member access (highest)
-	token.TokenTypeLeftBracket:      14, // array indexing
-	token.TokenTypeLeftParen:        13, // function call
-	token.TokenTypePlusPlus:         12, // postfix ++/--
-	token.TokenTypeMinusMinus:       12,
-	// UnaryOperatorPrecedence = 11 (prefix !, -, ++, --)
-	token.TokenTypeDoubleStar:       10, // power (right associative)
-	token.TokenTypeStar:             9,
-	token.TokenTypeSlash:            9,
-	token.TokenTypePercent:          9,
-	token.TokenTypePlus:             8,
-	token.TokenTypeMinus:            8,
-	token.TokenTypeGreaterThan:      7,
-	token.TokenTypeGreaterThanEqual: 7,
-	token.TokenTypeLessThan:         7,
-	token.TokenTypeLessThanEqual:    7,
-	token.TokenTypeEqualEqual:       6,
-	token.TokenTypeBangEqual:        6,
-	token.TokenTypeAmpAmp:           5, // logical AND
-	token.TokenTypePipePipe:         4, // logical OR
+	token.TokenTypeDot:              20, // member access (highest)
+	token.TokenTypeLeftBracket:      20, // array indexing
+	token.TokenTypeLeftParen:        19, // function call
+	token.TokenTypePlusPlus:         18, // postfix ++/--
+	token.TokenTypeMinusMinus:       18,
+	// UnaryOperatorPrecedence = 17 (prefix ~, !, -, ++, --)
+	token.TokenTypeDoubleStar:       16, // ** (right-associative)
+	token.TokenTypeStar:             15,
+	token.TokenTypeSlash:            15,
+	token.TokenTypePercent:          15,
+	token.TokenTypePlus:             14,
+	token.TokenTypeMinus:            14,
+	token.TokenTypeLeftShift:        13, // <<
+	token.TokenTypeRightShift:       13, // >>
+	token.TokenTypeGreaterThan:      12,
+	token.TokenTypeGreaterThanEqual: 12,
+	token.TokenTypeLessThan:         12,
+	token.TokenTypeLessThanEqual:    12,
+	token.TokenTypeEqualEqual:       11,
+	token.TokenTypeBangEqual:        11,
+	token.TokenTypeBitwiseAnd:       10, // & (bitwise AND)
+	token.TokenTypeBitwiseXor:       9,  // ^ (bitwise XOR)
+	token.TokenTypeBitwiseOr:        8,  // | (bitwise OR)
+	token.TokenTypeAmpAmp:           7,  // logical AND
+	token.TokenTypePipePipe:         6,  // logical OR
+	token.TokenTypeQuestion:         3,  // ternary ?:
 	// Assignment operators (lowest precedence but > 0 so they get parsed)
-	token.TokenTypeEqual:        1,
-	token.TokenTypePlusEqual:    1,
-	token.TokenTypeMinusEqual:   1,
-	token.TokenTypeStarEqual:    1,
-	token.TokenTypeSlashEqual:   1,
-	token.TokenTypePercentEqual: 1,
+	token.TokenTypeEqual:            1,
+	token.TokenTypePlusEqual:        1,
+	token.TokenTypeMinusEqual:       1,
+	token.TokenTypeStarEqual:        1,
+	token.TokenTypeSlashEqual:       1,
+	token.TokenTypePercentEqual:     1,
+	token.TokenTypeDoubleStarEqual:  1,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
-	token.TokenTypeEqual:        true,
-	token.TokenTypePlusEqual:    true,
-	token.TokenTypeMinusEqual:   true,
-	token.TokenTypeStarEqual:    true,
-	token.TokenTypeSlashEqual:   true,
-	token.TokenTypePercentEqual: true,
-	token.TokenTypeDoubleStar:   true, // power is right associative: 2**3**4 = 2**(3**4)
+	token.TokenTypeEqual:           true,
+	token.TokenTypePlusEqual:       true,
+	token.TokenTypeMinusEqual:      true,
+	token.TokenTypeStarEqual:       true,
+	token.TokenTypeSlashEqual:      true,
+	token.TokenTypePercentEqual:    true,
+	token.TokenTypeDoubleStarEqual: true,
+	token.TokenTypeDoubleStar:      true, // power is right associative: 2**3**4 = 2**(3**4)
 }
 
 func getPrecedence(token *token.Token) int {
@@ -260,8 +267,9 @@ func NewParser(tokens []*token.Token) *Parser {
 			}
 		},
 		token.TokenTypeFunction:   functionParselet,
-		token.TokenTypeMinus:      unaryOperatorParseLet,
-		token.TokenTypeBang:       unaryOperatorParseLet, // logical NOT
+		token.TokenTypeMinus:       unaryOperatorParseLet,
+		token.TokenTypeBang:        unaryOperatorParseLet, // logical NOT
+		token.TokenTypeBitwiseNot: unaryOperatorParseLet, // bitwise NOT (~)
 		token.TokenTypePlusPlus:   prefixIncrementParseLet,
 		token.TokenTypeMinusMinus: prefixIncrementParseLet,
 		token.TokenTypeClass:      classParselet,
@@ -309,11 +317,25 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeStarEqual:        binaryOperatorParseLet,
 		token.TokenTypeSlashEqual:       binaryOperatorParseLet,
 		token.TokenTypePercentEqual:     binaryOperatorParseLet,
+		token.TokenTypeDoubleStarEqual:  binaryOperatorParseLet,
+		token.TokenTypeBitwiseAnd:       binaryOperatorParseLet, // &
+		token.TokenTypeBitwiseOr:        binaryOperatorParseLet, // |
+		token.TokenTypeBitwiseXor:       binaryOperatorParseLet, // ^
+		token.TokenTypeLeftShift:        binaryOperatorParseLet, // <<
+		token.TokenTypeRightShift:       binaryOperatorParseLet, // >>
 		token.TokenTypeLeftParen:        functionCallParseLet,
 		token.TokenTypeDot:              objectPropertyAccessParseLet,
 		token.TokenTypeLeftBracket:      indexingExpressionParseLet,
 		token.TokenTypePlusPlus:         postfixIncrementParseLet, // postfix ++
 		token.TokenTypeMinusMinus:       postfixIncrementParseLet, // postfix --
+		// ternary: cond ? then : else (right-associative, prec 3)
+		token.TokenTypeQuestion: func(parser *Parser, condition ast.ExprNode, questionMark *token.Token) ast.ExprNode {
+			thenExpr := parser.parseExprOfPrecedence(0, false)
+			parser.consumeToken(token.TokenTypeColon, "after then-branch of ternary expression")
+			elseExpr := parser.parseExprOfPrecedence(2, false) // prec 2 = right-assoc at level 3
+			span := &token.Span{Start: condition.GetSpan().Start, End: elseExpr.GetSpan().End}
+			return &ast.TernaryExprNode{Condition: condition, Then: thenExpr, Else: elseExpr, Span: span}
+		},
 	}
 
 	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}

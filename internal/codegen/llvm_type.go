@@ -112,7 +112,7 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 	switch value.ValueType.(type) {
 	case zeus_value.IntType:
 		intType := value.ValueType.(zeus_value.IntType)
-		intValue, err := strconv.ParseInt(value.Value, 10, 64)
+		intValue, err := strconv.ParseInt(value.Value, 0, 64)
 		zeus_error.Assert(err == nil, fmt.Sprintf("cannot convert int constant string to int: %d", intValue))
 
 		return llvm.ConstInt(c.toLLVMIntType(intType), uint64(intValue), intType.Signed)

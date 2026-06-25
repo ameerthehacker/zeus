@@ -349,7 +349,7 @@ func AsConstant(value Value) *Constant {
 }
 
 func GetSignedIntSize(number string) IntSize {
-	value, err := strconv.ParseInt(number, 10, 64)
+	value, err := strconv.ParseInt(number, 0, 64)
 
 	zeus_error.Assert(err == nil, fmt.Sprintf("failed to parse int: %s", err))
 

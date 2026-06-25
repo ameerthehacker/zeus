@@ -798,6 +798,17 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 	case ir.InstrTypeOr:
 		// Logical OR (bool || bool)
 		result = c.builder.CreateOr(c.toLLVMValue(input.Left), c.toLLVMValue(input.Right), "or")
+	case ir.InstrTypeBitAnd:
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "band", c.builder.CreateAnd, c.builder.CreateAnd, nil)
+	case ir.InstrTypeBitOr:
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "bor", c.builder.CreateOr, c.builder.CreateOr, nil)
+	case ir.InstrTypeBitXor:
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "bxor", c.builder.CreateXor, c.builder.CreateXor, nil)
+	case ir.InstrTypeShl:
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "shl", c.builder.CreateShl, c.builder.CreateShl, nil)
+	case ir.InstrTypeShr:
+		// arithmetic right shift for signed integers, logical for unsigned
+		result = c.genLLVMBinaryOp(input.Left, input.Right, "shr", c.builder.CreateAShr, c.builder.CreateLShr, nil)
 	}
 
 	c.symbolTable.DeclareSymbol(output.Name, result)
@@ -841,6 +852,8 @@ func (c *CodegenModule) genUnaryOp(instr *ir.Instr, input ir.UnaryOpInstrInput, 
 		}
 	case ir.InstrTypeNot:
 		result = c.builder.CreateNot(llvmValue, "not")
+	case ir.InstrTypeBitNot:
+		result = c.builder.CreateNot(llvmValue, "bitnot")
 	}
 
 	c.symbolTable.DeclareSymbol(output.Name, result)
@@ -937,7 +950,18 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 			panic(castErrorMsg)
 		}
 	case zeus_value.FloatType:
-		result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+		switch castType := input.CastType.(type) {
+		case zeus_value.IntType:
+			if castType.Signed {
+				result = c.builder.CreateFPToSI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			} else {
+				result = c.builder.CreateFPToUI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			}
+		case zeus_value.FloatType:
+			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+		default:
+			panic(castErrorMsg)
+		}
 	default:
 		panic(castErrorMsg)
 	}
@@ -1524,11 +1548,23 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeAnd:
 			fallthrough
 		case ir.InstrTypeOr:
+			fallthrough
+		case ir.InstrTypeBitAnd:
+			fallthrough
+		case ir.InstrTypeBitOr:
+			fallthrough
+		case ir.InstrTypeBitXor:
+			fallthrough
+		case ir.InstrTypeShl:
+			fallthrough
+		case ir.InstrTypeShr:
 			c.setDebugLocation(instr.Span)
 			c.genBinaryOp(instr, *ir.AsBinaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeNeg:
 			fallthrough
 		case ir.InstrTypeNot:
+			fallthrough
+		case ir.InstrTypeBitNot:
 			c.setDebugLocation(instr.Span)
 			c.genUnaryOp(instr, *ir.AsUnaryOpInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeCast:

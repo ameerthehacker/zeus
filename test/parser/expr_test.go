@@ -20,18 +20,28 @@ type testCase struct {
 	errors   []*zeus_error.ZeusError
 }
 
+// BinaryOperatorPrecedence reflects the parser's actual relative precedence ordering.
+// Values are relative only — what matters is their ordering, not the exact numbers.
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeStar:             4,
-	token.TokenTypeSlash:            4,
-	token.TokenTypePlus:             3,
-	token.TokenTypeMinus:            3,
-	token.TokenTypeGreaterThan:      3,
-	token.TokenTypeGreaterThanEqual: 3,
-	token.TokenTypeLessThan:         3,
-	token.TokenTypeLessThanEqual:    3,
-	token.TokenTypeEqualEqual:       2,
-	token.TokenTypeBangEqual:        2,
-	token.TokenTypeEqual:            1,
+	token.TokenTypeDoubleStar:       12, // ** (highest binary, right-associative)
+	token.TokenTypeStar:             11,
+	token.TokenTypeSlash:            11,
+	token.TokenTypePercent:          11,
+	token.TokenTypePlus:             10,
+	token.TokenTypeMinus:            10,
+	token.TokenTypeLeftShift:        9, // <<
+	token.TokenTypeRightShift:       9, // >>
+	token.TokenTypeGreaterThan:      8,
+	token.TokenTypeGreaterThanEqual: 8,
+	token.TokenTypeLessThan:         8,
+	token.TokenTypeLessThanEqual:    8,
+	token.TokenTypeEqualEqual:       7,
+	token.TokenTypeBangEqual:        7,
+	token.TokenTypeBitwiseAnd:       6, // &
+	token.TokenTypeBitwiseXor:       5, // ^
+	token.TokenTypeBitwiseOr:        4, // |
+	token.TokenTypeAmpAmp:           3, // &&
+	token.TokenTypePipePipe:         2, // ||
 }
 
 // getHigherPrecedenceOperatorTestCase generates an AST node representing a binary expression
@@ -274,7 +284,16 @@ func TestParseExpression(t *testing.T) {
 		},
 	}
 
-	leftAssociativeOperators := []token.TokenType{token.TokenTypePlus, token.TokenTypeMinus, token.TokenTypeStar, token.TokenTypeSlash, token.TokenTypeEqualEqual, token.TokenTypeBangEqual, token.TokenTypeGreaterThan, token.TokenTypeGreaterThanEqual, token.TokenTypeLessThan, token.TokenTypeLessThanEqual}
+	leftAssociativeOperators := []token.TokenType{
+		token.TokenTypePlus, token.TokenTypeMinus,
+		token.TokenTypeStar, token.TokenTypeSlash, token.TokenTypePercent,
+		token.TokenTypeEqualEqual, token.TokenTypeBangEqual,
+		token.TokenTypeGreaterThan, token.TokenTypeGreaterThanEqual,
+		token.TokenTypeLessThan, token.TokenTypeLessThanEqual,
+		token.TokenTypeAmpAmp, token.TokenTypePipePipe,
+		token.TokenTypeBitwiseAnd, token.TokenTypeBitwiseOr, token.TokenTypeBitwiseXor,
+		token.TokenTypeLeftShift, token.TokenTypeRightShift,
+	}
 
 	for _, operator := range leftAssociativeOperators {
 		input := fmt.Sprintf("1 %s 2 %s 3", operator, operator)
@@ -295,7 +314,7 @@ func TestParseExpression(t *testing.T) {
 		})
 	}
 
-	rightAssociativeOperators := []token.TokenType{token.TokenTypeEqual}
+	rightAssociativeOperators := []token.TokenType{token.TokenTypeEqual, token.TokenTypeDoubleStar}
 
 	for _, operator := range rightAssociativeOperators {
 		input := fmt.Sprintf("1 %s 2 %s 3", operator, operator)

@@ -524,6 +524,10 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 
 func (p *ToKnownTypesPass) resolveVarDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclVarInstrInput(instr.Input)
+	if input.Variable.ValueType == nil {
+		// Type will be inferred from stores (e.g. ternary result variable).
+		return
+	}
 	input.Variable.ValueType = p.resolveValueType(tc, input.Variable.ValueType, false)
 }
 
@@ -734,6 +738,24 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		}, func(a, b zeus_value.ValueType) bool {
 			return zeus_value.IsBoolType(a) && zeus_value.IsBoolType(b)
 		})
+	case InstrTypeBitAnd:
+		fallthrough
+	case InstrTypeBitOr:
+		fallthrough
+	case InstrTypeBitXor:
+		fallthrough
+	case InstrTypeShl:
+		fallthrough
+	case InstrTypeShr:
+		// Bitwise ops: both operands must be integers, result is the bigger int type
+		p.tcBinaryOp(tc, instr, zeus_value.GetBiggerType, func(a, b zeus_value.ValueType) bool {
+			return zeus_value.IsIntType(a) && zeus_value.IsIntType(b)
+		})
+	case InstrTypeBitNot:
+		// Bitwise NOT: operand must be integer, result is same type
+		p.tcUnaryOp(tc, instr, func(operandType zeus_value.ValueType) zeus_value.ValueType {
+			return operandType
+		}, zeus_value.IsIntType)
 	case InstrTypeNeg:
 		p.tcUnaryOp(tc, instr, func(operandType zeus_value.ValueType) zeus_value.ValueType {
 			switch operandType := operandType.(type) {
@@ -1136,6 +1158,12 @@ func (p *TypeCheckingPass) tcStore(tc *TypeChecker, instr *Instr) {
 			Message: fmt.Sprintf("cannot assign to constant '%s'", input.Addr.Name),
 			Span:    instr.Span,
 		})
+	}
+
+	// If the variable has no declared type (e.g. ternary result var), infer from stored value.
+	if input.Addr.ValueType == nil {
+		input.Addr.ValueType = tc.getValueType(input.Value)
+		return
 	}
 
 	input.Value = p.cmpValueWithImplicitCast(tc, instr, input.Addr.ValueType, input.Value)
@@ -1549,9 +1577,10 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleLoad(instr)
 	case InstrTypeAdd, InstrTypeSub, InstrTypeMul, InstrTypeDiv, InstrTypeMod, InstrTypePower,
 		InstrTypeEqEq, InstrTypeNotEq, InstrTypeLessThan, InstrTypeGreaterThan,
-		InstrTypeLessThanEq, InstrTypeGreaterThanEq, InstrTypeAnd, InstrTypeOr:
+		InstrTypeLessThanEq, InstrTypeGreaterThanEq, InstrTypeAnd, InstrTypeOr,
+		InstrTypeBitAnd, InstrTypeBitOr, InstrTypeBitXor, InstrTypeShl, InstrTypeShr:
 		p.handleBinaryOp(instr)
-	case InstrTypeNot, InstrTypeNeg:
+	case InstrTypeNot, InstrTypeNeg, InstrTypeBitNot:
 		p.handleUnaryOp(instr)
 	case InstrTypeCallFunc:
 		p.handleCallFunc(instr)

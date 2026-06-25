@@ -711,6 +711,13 @@ const (
 	InstrTypeNot
 	InstrTypeAnd // logical AND (&&)
 	InstrTypeOr  // logical OR (||)
+	// bitwise operations
+	InstrTypeBitAnd // &
+	InstrTypeBitOr  // |
+	InstrTypeBitXor // ^
+	InstrTypeBitNot // ~ (unary)
+	InstrTypeShl    // <<
+	InstrTypeShr    // >> (arithmetic for signed, logical for unsigned)
 	// variable declaration
 	InstrTypeDeclVar
 	// mem management
@@ -779,6 +786,18 @@ func (i InstrType) String() string {
 		return "AND"
 	case InstrTypeOr:
 		return "OR"
+	case InstrTypeBitAnd:
+		return "BIT_AND"
+	case InstrTypeBitOr:
+		return "BIT_OR"
+	case InstrTypeBitXor:
+		return "BIT_XOR"
+	case InstrTypeBitNot:
+		return "BIT_NOT"
+	case InstrTypeShl:
+		return "SHL"
+	case InstrTypeShr:
+		return "SHR"
 	case InstrTypeDeclVar:
 		return "DECLARE_VAR"
 	case InstrTypeDeclFunc:

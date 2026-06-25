@@ -46,6 +46,15 @@ const (
 	TokenTypePercentEqual
 	TokenTypePlusPlus
 	TokenTypeMinusMinus
+	TokenTypeDoubleStarEqual
+	// bitwise operators
+	TokenTypeBitwiseAnd    // &
+	TokenTypeBitwiseOr     // |
+	TokenTypeBitwiseXor    // ^
+	TokenTypeBitwiseNot    // ~
+	TokenTypeLeftShift     // <<
+	TokenTypeRightShift    // >>
+	TokenTypeQuestion      // ?
 	operator_end
 	// literals
 	literal_beg
@@ -172,6 +181,22 @@ func (t TokenType) String() string {
 		return "++"
 	case TokenTypeMinusMinus:
 		return "--"
+	case TokenTypeDoubleStarEqual:
+		return "**="
+	case TokenTypeBitwiseAnd:
+		return "&"
+	case TokenTypeBitwiseOr:
+		return "|"
+	case TokenTypeBitwiseXor:
+		return "^"
+	case TokenTypeBitwiseNot:
+		return "~"
+	case TokenTypeLeftShift:
+		return "<<"
+	case TokenTypeRightShift:
+		return ">>"
+	case TokenTypeQuestion:
+		return "?"
 	case TokenTypeNumber:
 		return "number"
 	case TokenTypeString:

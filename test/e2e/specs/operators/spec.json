@@ -15,7 +15,7 @@
         "entry": "logical.zs"
     },
     {
-        "name": "Compound assignment operators (+=, -=, *=, /=, %=)",
+        "name": "Compound assignment operators (+=, -=, *=, /=, %=, **=)",
         "exit": "0",
         "entry": "compound.zs"
     },
@@ -23,5 +23,15 @@
         "name": "Increment/Decrement operators (++, --)",
         "exit": "0",
         "entry": "increment.zs"
+    },
+    {
+        "name": "Bitwise operators (&, |, ^, ~, <<, >>)",
+        "exit": "0",
+        "entry": "bitwise.zs"
+    },
+    {
+        "name": "Ternary operator (?:)",
+        "exit": "0",
+        "entry": "ternary.zs"
     }
 ]

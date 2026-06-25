@@ -504,6 +504,30 @@ func (s *StringConstantExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) z
 	return visitor.VisitStringConstant(s)
 }
 
+// TernaryExprNode represents the ternary conditional: cond ? then : else
+type TernaryExprNode struct {
+	Condition ExprNode
+	Then      ExprNode
+	Else      ExprNode
+	Span      *token.Span
+}
+
+func (t *TernaryExprNode) GetSpan() *token.Span {
+	return t.Span
+}
+
+func (t *TernaryExprNode) PrettyString() string {
+	return fmt.Sprintf("(%s ? %s : %s)", t.Condition.PrettyString(), t.Then.PrettyString(), t.Else.PrettyString())
+}
+
+func (t *TernaryExprNode) String() string {
+	return fmt.Sprintf("{ type: TernaryExprNode, Condition: %s, Then: %s, Else: %s, Span: %s }", t.Condition.String(), t.Then.String(), t.Else.String(), t.Span)
+}
+
+func (t *TernaryExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitTernaryExpr(t)
+}
+
 // ExprVisitor interface
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
@@ -523,4 +547,5 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitNull(node *NullExprNode) T
 	VisitStringConstant(node *StringConstantExprNode) T
 	VisitValueType(node *ValueTypeNode) T
+	VisitTernaryExpr(node *TernaryExprNode) T
 }

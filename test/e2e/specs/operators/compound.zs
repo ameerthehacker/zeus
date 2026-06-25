@@ -55,6 +55,13 @@ function main(): i32 {
     if (d != 5) {
         return 8;
     }
-    
+
+    // Test **=
+    let p: i32 = 2;
+    p **= 10;  // 2 ** 10 = 1024
+    if (p != 1024) {
+        return 9;
+    }
+
     return 0;
 }
