@@ -12,9 +12,14 @@ on:
           - minor
           - major
       pre_release:
-        description: 'Pre-release suffix (e.g. alpha, beta) — leave empty for a stable release'
-        required: false
-        type: string
+        description: 'Pre-release suffix (none = stable release)'
+        required: true
+        type: choice
+        options:
+          - none
+          - alpha
+          - beta
+          - rc
 
 permissions:
   contents: write
@@ -58,7 +63,7 @@ jobs:
 
           NEXT="${MAJOR}.${MINOR}.${PATCH}"
           PRE="${{ github.event.inputs.pre_release }}"
-          if [ -n "${PRE}" ]; then
+          if [ "${PRE}" != "none" ]; then
             NEXT="${NEXT}-${PRE}"
           fi
 

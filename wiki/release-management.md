@@ -34,14 +34,14 @@ This document describes how Zeus releases are built, versioned, and published.
 2. Click **Run workflow**
 3. Choose:
    - **bump**: `patch` / `minor` / `major` (which part of `X.Y.Z` to increment)
-   - **pre_release** *(optional)*: a suffix like `alpha` or `beta`; leave blank for a stable release
+   - **pre_release**: `none` (stable) / `alpha` / `beta` / `rc`
 
 **Examples:**
 
 | Current tag | bump | pre_release | Result |
 |-------------|------|-------------|--------|
 | `v0.0.7-alpha` | `patch` | `alpha` | `v0.0.8-alpha` |
-| `v0.0.7-alpha` | `minor` | *(empty)* | `v0.1.0` |
+| `v0.0.7-alpha` | `minor` | `none` | `v0.1.0` |
 | `v1.2.3` | `major` | `beta` | `v2.0.0-beta` |
 
 The bump workflow creates and pushes the tag. The release workflow fires automatically — no further action required.
