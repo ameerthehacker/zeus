@@ -341,7 +341,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		// Regular variable compound assignment
 		addr := zeus_value.AsVar(left)
 		if addr == nil {
-			panic(fmt.Sprintf("invalid lvalue for compound assignment: %s", left))
+			g.pushError(&zeus_error.ZeusError{
+				Message: "invalid lvalue in compound assignment",
+				Span:    expr.GetSpan(),
+			})
+			return nil
 		}
 
 		// Load current value, apply operation, store back
@@ -423,7 +427,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		// Regular variable assignment
 		addr := zeus_value.AsVar(left)
 		if addr == nil {
-			panic(fmt.Sprintf("invalid lvalue: %s", left))
+			g.pushError(&zeus_error.ZeusError{
+				Message: "invalid lvalue in assignment",
+				Span:    expr.GetSpan(),
+			})
+			return nil
 		}
 
 		g.irBuilder.BuildStore(addr, right, expr.GetSpan())
@@ -588,7 +596,11 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 
 		addr := zeus_value.AsVar(target)
 		if addr == nil {
-			panic(fmt.Sprintf("invalid target for prefix %s: %s", expr.Operator.Type, target))
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("invalid operand for prefix '%s': expression is not assignable", expr.Operator.Type),
+				Span:    expr.Operator.Span,
+			})
+			return nil
 		}
 
 		// Load current value
@@ -634,7 +646,11 @@ func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value 
 
 	addr := zeus_value.AsVar(target)
 	if addr == nil {
-		panic(fmt.Sprintf("invalid target for postfix %s: %s", expr.Operator.Type, target))
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("invalid operand for postfix '%s': expression is not assignable", expr.Operator.Type),
+			Span:    expr.Operator.Span,
+		})
+		return nil
 	}
 
 	// Load current value (this is what we'll return)
@@ -1074,7 +1090,14 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	absoluteModulePath := module.ResolveFilePath(g.modulePath, stmt.Source.Value)
 	irModule := g.getModule(absoluteModulePath)
 
-	zeus_error.Assert(irModule != nil, fmt.Sprintf("IR module %s not found", absoluteModulePath))
+	if irModule == nil {
+		g.pushError(zeus_error.NewZeusError(
+			zeus_error.ErrorSeverityError,
+			fmt.Sprintf("module '%s' not found", stmt.Source.Value),
+			stmt.Source.Span,
+		))
+		return
+	}
 
 	for _, _import := range stmt.Imports {
 		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)

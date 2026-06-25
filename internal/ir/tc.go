@@ -130,12 +130,19 @@ func (tc *TypeChecker) getBuiltInValueType(value zeus_value.Value) zeus_value.Va
 	case *zeus_value.Class:
 		return zeus_value.NewObjectType(*value)
 	default:
+		if value == nil {
+			return zeus_value.UndefinedType{}
+		}
 		return zeus_value.UndefinedType{Span: value.GetSpan()}
 	}
 }
 
 // getValueType returns the value type of a value
 func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType {
+	if value == nil {
+		return zeus_value.UndefinedType{}
+	}
+
 	valueType := tc.getBuiltInValueType(value)
 
 	if valueType == nil {
@@ -584,6 +591,7 @@ func (p *ToKnownTypesPass) resolveClassMethodDecl(tc *TypeChecker, instr *Instr)
 // This pass does the actual type checking
 type TypeCheckingPass struct {
 	hasMainFunction bool
+	firstUserSpan   *token.Span
 }
 
 func NewTypeCheckingPass() *TypeCheckingPass {
@@ -600,12 +608,17 @@ func (p *TypeCheckingPass) Finalize(tc *TypeChecker) {
 	if !p.hasMainFunction && tc.IsEntryPoint {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "main function not found",
-			Span:    nil,
+			Span:    p.firstUserSpan,
 		})
 	}
 }
 
 func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
+	// Track the first span from user-written code (skip primordial declarations)
+	if p.firstUserSpan == nil && instr.Span != nil && instr.Type != InstrTypeDeclPrimordialFunc {
+		p.firstUserSpan = instr.Span
+	}
+
 	switch instr.Type {
 	// jmp requires no type checking
 	case InstrTypeJmp:
@@ -1149,7 +1162,7 @@ func (p *TypeCheckingPass) tcReturn(tc *TypeChecker, instr *Instr) {
 		})
 	} else if !zeus_value.IsVoidType(returnType) && input.Value == nil {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("return value of type '%s' is expected", tc.getValueType(input.Value)),
+			Message: fmt.Sprintf("function must return a value of type '%s'", returnType),
 			Span:    instr.Span,
 		})
 	} else if zeus_value.IsVoidType(returnType) && input.Value == nil {

@@ -367,11 +367,14 @@ func (s *Server) convertToLSPDiagnostics(errors []*zeus_error.ZeusError) []proto
 		// Zeus uses INCLUSIVE end positions (End points to last char)
 		// LSP uses EXCLUSIVE end positions (End points after last char)
 		// So for End, we don't subtract 1, making it exclusive
-		startLine := uint32(err.Span.Start.Line - 1)
-		startChar := uint32(err.Span.Start.Column - 1)
-		endLine := uint32(err.Span.End.Line - 1)
-		endChar := uint32(err.Span.End.Column) // No -1: converts inclusive to exclusive
-		
+		var startLine, startChar, endLine, endChar uint32
+		if err.Span != nil {
+			startLine = uint32(err.Span.Start.Line - 1)
+			startChar = uint32(err.Span.Start.Column - 1)
+			endLine = uint32(err.Span.End.Line - 1)
+			endChar = uint32(err.Span.End.Column) // No -1: converts inclusive to exclusive
+		}
+
 		diagnostic := protocol.Diagnostic{
 			Range: protocol.Range{
 				Start: protocol.Position{
