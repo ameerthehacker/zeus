@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime clean compile run always build lsp
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release clean compile run always build lsp
 
 clean:
 	rm -rf playground/debug
@@ -34,6 +34,10 @@ test-runtime:
 	cd runtime && zig build-lib main.zig -O Debug -static --name zeus-runtime-test $(ZIG_FLAGS) && rm -f libzeus-runtime-test.a libzeus-runtime-test.a.o
 
 ZIG_SDK ?= $(shell xcrun --show-sdk-path 2>/dev/null)
+BOEHM_GC_INCLUDE ?= $(CURDIR)/third_party/bdwgc/include
+BOEHM_GC_LIB ?= $(CURDIR)/third_party/bdwgc/lib
+LLVM_CONFIG ?= $(shell brew --prefix llvm@19 2>/dev/null)/bin/llvm-config
+VERSION ?= dev
 ZIG_FLAGS = --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -I$(BOEHM_GC_INCLUDE) -lc -lunwind -L$(BOEHM_GC_LIB) -lgc
 
 build-runtime:
@@ -56,7 +60,9 @@ build-zeus-vscode:
 	cd zeus-vscode && npm run package &&npm run vsix 
 
 build-runtime-release: always
-	cd runtime && zig build -Doptimize=ReleaseSmall
+	@mkdir -p runtime/zig-out/out
+	cd runtime && zig build-lib main.zig -O ReleaseSmall -static --name zeus-runtime $(ZIG_FLAGS) && \
+		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o
 
 compile: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
@@ -77,6 +83,16 @@ run: always build-runtime
 		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 		./playground/debug/$(file); \
 	fi
+
+build-release:
+	mkdir -p bin
+	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(shell $(LLVM_CONFIG) --cflags)" \
+	CGO_CXXFLAGS="$(shell $(LLVM_CONFIG) --cxxflags)" \
+	CGO_LDFLAGS="$(shell $(LLVM_CONFIG) --ldflags --libs all --system-libs)" \
+	go build $(GO_BUILD_TAGS) \
+		-ldflags "-X 'github.com/ameerthehacker/zeus/cmd.Version=$(VERSION)'" \
+		-o bin/zeus zeus.go
 
 build:
 	CGO_ENABLED=1 go build $(GO_BUILD_TAGS) -o zeus zeus.go
