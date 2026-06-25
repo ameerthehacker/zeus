@@ -16,10 +16,10 @@ on:
         required: true
         type: choice
         options:
-          - none
           - alpha
           - beta
           - rc
+          - none
 
 permissions:
   contents: write
