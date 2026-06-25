@@ -532,10 +532,11 @@ func isBinaryOp(instrType InstrType) bool {
 // =============================================================================
 
 type arrayMethodToLower struct {
-	callInstr        *Instr                      // INDIRECT_FUNC_CALL instruction
-	callInput        *IndirectFuncCallInstrInput // Its input
-	propAccessInstr  *Instr                      // OBJECT_PROPERTY_ACCESS instruction
-	loadInstr        *Instr                      // LOAD instruction
+	callInstr        *Instr                      // CALL_METHOD or INDIRECT_FUNC_CALL instruction
+	callInput        *IndirectFuncCallInstrInput // Its input (nil for CALL_METHOD path)
+	args             []zeus_value.Value          // Call arguments (unified for both paths)
+	propAccessInstr  *Instr                      // OBJECT_PROPERTY_ACCESS instruction (nil for CALL_METHOD path)
+	loadInstr        *Instr                      // LOAD instruction (nil for CALL_METHOD path)
 	block            *BasicBlock                 // Block for call instruction
 	propAccessBlock  *BasicBlock                 // Block for property access instruction
 	loadBlock        *BasicBlock                 // Block for load instruction
@@ -626,7 +627,7 @@ func (p *ArrayMethodLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
 		return
 	}
 
-	// Look for INDIRECT_FUNC_CALL that uses our tracked methods
+	// Look for INDIRECT_FUNC_CALL that uses our tracked methods (old path, retained for safety)
 	if instr.Type == InstrTypeIndirectFuncCall {
 		input := AsIndirectFuncCallInstrInput(instr.Input)
 		if input == nil {
@@ -643,6 +644,7 @@ func (p *ArrayMethodLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
 			p.methodsToLower = append(p.methodsToLower, arrayMethodToLower{
 				callInstr:       instr,
 				callInput:       input,
+				args:            input.Args,
 				propAccessInstr: propInfo.propAccessInstr,
 				loadInstr:       propInfo.loadInstr,
 				block:           l.GetCurrentBlock(),
@@ -652,6 +654,32 @@ func (p *ArrayMethodLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
 				arrayObj:        propInfo.object,
 			})
 		}
+		return
+	}
+
+	// CALL_METHOD path: directly detect concat/slice/reverse on array objects
+	if instr.Type == InstrTypeMethodCall {
+		input := AsMethodCallInstrInput(instr.Input)
+		if input == nil {
+			return
+		}
+
+		if input.MethodName != zeus_value.ARRAY_METHOD_CONCAT && input.MethodName != zeus_value.ARRAY_METHOD_SLICE && input.MethodName != zeus_value.ARRAY_METHOD_REVERSE {
+			return
+		}
+
+		objType := zeus_value.AsObjectType(zeus_value.GetValueType(input.Object))
+		if objType == nil || objType.Class.PrimordialName != zeus_value.ZEUS_PRIMORDIAL_ARRAY {
+			return
+		}
+
+		p.methodsToLower = append(p.methodsToLower, arrayMethodToLower{
+			callInstr:  instr,
+			args:       input.Args,
+			block:      l.GetCurrentBlock(),
+			methodName: input.MethodName,
+			arrayObj:   input.Object,
+		})
 	}
 }
 
@@ -684,7 +712,7 @@ func (p *ArrayMethodLoweringPass) lowerArrayConcat(l *Lowerer, method arrayMetho
 	setInsertionPoint(builder, method.block, method.callInstr)
 
 	arr1 := method.arrayObj
-	arr2 := method.callInput.Args[0]
+	arr2 := method.args[0]
 	arrayClass := getArrayClassFromValue(arr1)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
 	arrayObjType := zeus_value.NewObjectType(*arrayClass)
@@ -730,8 +758,8 @@ func (p *ArrayMethodLoweringPass) lowerArraySlice(l *Lowerer, method arrayMethod
 	setInsertionPoint(builder, method.block, method.callInstr)
 
 	arr := method.arrayObj
-	startArg := method.callInput.Args[0]
-	endArg := method.callInput.Args[1]
+	startArg := method.args[0]
+	endArg := method.args[1]
 	arrayClass := getArrayClassFromValue(arr)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
 	arrayObjType := zeus_value.NewObjectType(*arrayClass)

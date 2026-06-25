@@ -1378,7 +1378,6 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
 	functionVar := zeus_value.AsVar(input.Function)
 	zeus_error.Assert(functionVar != nil, fmt.Sprintf("function %s is not a variable", input.Function))
-	cxt := functionVar.Cxt
 	function := c.toLLVMValue(input.Function)
 	functionType := zeus_value.AsFunctionType(zeus_value.GetValueType(input.Function))
 	functionArgs := []llvm.Value{}
@@ -1387,15 +1386,51 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 		functionArgs = append(functionArgs, c.toLLVMValue(arg))
 	}
 
-	if cxt != nil {
-		llvmObject := c.toLLVMValue(*cxt)
-		functionArgs = append(functionArgs, llvmObject)
-		objectType := zeus_value.AsObjectType(c.getValueType(*cxt))
-		zeus_error.Assert(objectType != nil, fmt.Sprintf("cxt is not an object %s", *cxt))
-		functionType.ParamTypes = append(functionType.ParamTypes, zeus_value.NewObjectType(objectType.Class))
+	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
+	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+}
+
+func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
+	objectType := c.getValueType(input.Object)
+	llvmObject := c.toLLVMValue(input.Object)
+	objectClass := zeus_value.AsObjectType(objectType)
+	zeus_error.Assert(objectClass != nil, fmt.Sprintf("CALL_METHOD receiver is not an object: %s", input.Object))
+
+	methodIndex := util.GetMethodIndex(objectClass.Class, input.MethodName)
+	zeus_error.Assert(methodIndex != -1, fmt.Sprintf("method %s not found in class %s", input.MethodName, objectClass.Class.Name))
+
+	llvmObjHeaderPtr := c.builder.CreateStructGEP(c.toLLVMStructType(objectType), llvmObject, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
+	llvmObjHeader := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(objectClass.Class.Name), 0), llvmObjHeaderPtr, "objHeader")
+	llvmVTablePtr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(objectClass.Class.Name), llvmObjHeader, VTABLE_STRUCT_INDEX, "vTablePtr")
+	llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
+	methodPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.MethodName)
+
+	functionArgs := []llvm.Value{}
+	for _, arg := range input.Args {
+		functionArgs = append(functionArgs, c.toLLVMValue(arg))
+	}
+	functionArgs = append(functionArgs, llvmObject)
+
+	var foundMethod *zeus_value.Function
+	for _, m := range objectClass.Class.Methods {
+		if m.Method.Name == input.MethodName {
+			foundMethod = m.Method
+			break
+		}
+	}
+	zeus_error.Assert(foundMethod != nil, fmt.Sprintf("method %s not found in class %s for codegen", input.MethodName, objectClass.Class.Name))
+
+	paramTypes := make([]zeus_value.ValueType, len(foundMethod.Params))
+	for i, p := range foundMethod.Params {
+		paramTypes[i] = p.ValueType
+	}
+	paramTypes = append(paramTypes, zeus_value.NewObjectType(objectClass.Class))
+	fullFunctionType := zeus_value.FunctionType{
+		ReturnType: foundMethod.ReturnType,
+		ParamTypes: paramTypes,
 	}
 
-	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
+	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(fullFunctionType), methodPtr, functionArgs, fmt.Sprintf("%s_result", input.MethodName))
 	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
 }
 
@@ -1585,6 +1620,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeIndirectFuncCall:
 			c.setDebugLocation(instr.Span)
 			c.genIndirectFuncCall(*ir.AsIndirectFuncCallInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeMethodCall:
+			c.setDebugLocation(instr.Span)
+			c.genMethodCall(*ir.AsMethodCallInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeDeclPrimordialFunc:
 			c.genDeclPrimordialFunc(*ir.AsDeclPrimordialFuncInstrInput(instr.Input))
 		// Exception handling instructions

@@ -66,7 +66,6 @@ func (o Object) String() string {
 type Var struct {
 	Name      string
 	ValueType ValueType
-	Cxt       *Value
 	IsPtr     bool
 	IsConst   bool
 	Span      *token.Span

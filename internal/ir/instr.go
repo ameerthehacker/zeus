@@ -486,6 +486,39 @@ func (i ObjectPropertyAccessInstrInput) String() string {
 	return fmt.Sprintf("%s, %s", i.Object, i.Property)
 }
 
+type MethodCallInstrInput struct {
+	Object     zeus_value.Value
+	MethodName string
+	Args       []zeus_value.Value
+}
+
+func NewMethodCallInstrInput(object zeus_value.Value, methodName string, args []zeus_value.Value) *MethodCallInstrInput {
+	return &MethodCallInstrInput{
+		Object:     object,
+		MethodName: methodName,
+		Args:       args,
+	}
+}
+
+func AsMethodCallInstrInput(input InstrInput) *MethodCallInstrInput {
+	switch input := input.(type) {
+	case *MethodCallInstrInput:
+		return input
+	default:
+		panicInvalidInputType("MethodCallInstrInput", input)
+	}
+
+	return nil
+}
+
+func (i MethodCallInstrInput) String() string {
+	args := []string{}
+	for _, arg := range i.Args {
+		args = append(args, arg.String())
+	}
+	return fmt.Sprintf("%s, %q, [%s]", i.Object, i.MethodName, strings.Join(args, ", "))
+}
+
 type IndirectFuncCallInstrInput struct {
 	Function zeus_value.Value
 	Args     []zeus_value.Value
@@ -741,6 +774,8 @@ const (
 	InstrTypeNewObj
 	// object property access
 	InstrTypeObjectPropertyAccess
+	// object method call (explicit receiver + method name + args)
+	InstrTypeMethodCall
 	// array indexing (HIR - lowered before codegen)
 	InstrTypeGetIndex
 	// exception handling
@@ -830,6 +865,8 @@ func (i InstrType) String() string {
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:
 		return "OBJECT_PROPERTY_ACCESS"
+	case InstrTypeMethodCall:
+		return "CALL_METHOD"
 	case InstrTypeDeclClassMethod:
 		return "DECLARE_CLASS_METHOD"
 	case InstrTypeGetIndex:

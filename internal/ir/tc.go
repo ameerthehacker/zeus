@@ -790,6 +790,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcNewObj(tc, instr)
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
+	case InstrTypeMethodCall:
+		p.tcMethodCall(tc, instr)
 	case InstrTypeDeclClassMethod:
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
@@ -1396,6 +1398,65 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	}
 }
 
+func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
+	input := AsMethodCallInstrInput(instr.Input)
+
+	// Skip if output type is already set (lowering-pass emitted instructions)
+	if instr.Output.ValueType != nil {
+		return
+	}
+
+	valueType := tc.getValueType(input.Object)
+
+	if !zeus_value.IsObjectType(valueType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot call method %s on non-object type '%s'", input.MethodName, valueType),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+
+	class := zeus_value.AsObjectType(valueType).Class
+	var foundMethod *zeus_value.ClassMethod
+
+	for i := range class.Methods {
+		if class.Methods[i].Method.Name == input.MethodName {
+			foundMethod = class.Methods[i]
+			break
+		}
+	}
+
+	if foundMethod == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("property %s not found in class %s", input.MethodName, class.Name),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+
+	if input.MethodName == token.CONSTRUCTOR_METHOD_NAME {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "cannot access constructor method of a class",
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+
+	propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
+	if foundMethod.AccessModifier != nil && foundMethod.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("property %s is not accessible in class %s", input.MethodName, class.Name),
+			Span:    instr.Output.Span,
+		})
+	}
+
+	functionType := zeus_value.ToFunctionType(*foundMethod.Method)
+	input.Args = p.tcFunctionCall(tc, instr, functionType, input.Args, instr.Output.Span)
+	instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
+
+	instr.Output.ValueType = foundMethod.Method.ReturnType
+}
+
 func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
 	input := AsGetIndexInstrInput(instr.Input)
 	output := instr.Output
@@ -1594,6 +1655,8 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleNewObj(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.handleObjectPropertyAccess(tc, instr)
+	case InstrTypeMethodCall:
+		p.handleMethodCall(tc, instr)
 	case InstrTypeDeclPrimordialFunc:
 		p.handleDeclPrimordialFunc(instr)
 	case InstrTypeExport:
@@ -1687,6 +1750,25 @@ func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
 		class.IsUsed = true
 	}
 	markValuesAsUsed(input.Args)
+}
+
+// handleMethodCall processes method calls and marks the receiver, args, and method as used
+func (p *UnusedWarningPass) handleMethodCall(tc *TypeChecker, instr *Instr) {
+	input := AsMethodCallInstrInput(instr.Input)
+
+	markValueAsUsed(input.Object)
+	markValuesAsUsed(input.Args)
+
+	objectType := tc.getValueType(input.Object)
+	if zeus_value.IsObjectType(objectType) {
+		class := zeus_value.AsObjectType(objectType).Class
+		for _, classMethod := range class.Methods {
+			if classMethod.Method.Name == input.MethodName {
+				classMethod.Method.IsUsed = true
+				return
+			}
+		}
+	}
 }
 
 // handleObjectPropertyAccess processes object property accesses and marks the object as used

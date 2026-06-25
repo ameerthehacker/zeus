@@ -50,16 +50,10 @@ function test(a: string, b: string): string {
 		t.Errorf("expected 0 ADD instructions after string concat lowering, got %d", len(adds))
 	}
 
-	// .concat() method access must be emitted
-	concats := findPropertyAccess(all, "concat")
+	// .concat() must be called via CALL_METHOD
+	concats := findMethodCalls(all, "concat")
 	if len(concats) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('concat') after lowering string +")
-	}
-
-	// The method must be called via CALL_INDIRECT_FUNC
-	calls := findInstrs(all, ir.InstrTypeIndirectFuncCall)
-	if len(calls) == 0 {
-		t.Error("expected CALL_INDIRECT_FUNC for concat method call")
+		t.Error("expected CALL_METHOD('concat') after lowering string +")
 	}
 }
 
@@ -81,15 +75,10 @@ function test(a: string, b: string): boolean {
 		t.Errorf("expected 0 EQ_EQ instructions after string eq lowering, got %d", len(eqs))
 	}
 
-	// .equals() method access must be emitted
-	equalsAccess := findPropertyAccess(all, "equals")
+	// .equals() must be called via CALL_METHOD
+	equalsAccess := findMethodCalls(all, "equals")
 	if len(equalsAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('equals') after lowering string ==")
-	}
-
-	calls := findInstrs(all, ir.InstrTypeIndirectFuncCall)
-	if len(calls) == 0 {
-		t.Error("expected CALL_INDIRECT_FUNC for equals() call")
+		t.Error("expected CALL_METHOD('equals') after lowering string ==")
 	}
 }
 
@@ -111,10 +100,10 @@ function test(a: string, b: string): boolean {
 		t.Errorf("expected 0 NOT_EQ instructions after string neq lowering, got %d", len(neqs))
 	}
 
-	// .equals() is called and its result is negated with NOT
-	equalsAccess := findPropertyAccess(all, "equals")
+	// .equals() is called via CALL_METHOD and its result is negated with NOT
+	equalsAccess := findMethodCalls(all, "equals")
 	if len(equalsAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('equals') for string !=")
+		t.Error("expected CALL_METHOD('equals') for string !=")
 	}
 	nots := findInstrs(all, ir.InstrTypeNot)
 	if len(nots) == 0 {
@@ -136,9 +125,9 @@ function test(a: string, b: string): boolean {
 
 	// The original LESS_THAN on string objects is replaced, but a new LESS_THAN
 	// comparing compare()'s i32 return value against 0 must appear.
-	compareAccess := findPropertyAccess(all, "compare")
+	compareAccess := findMethodCalls(all, "compare")
 	if len(compareAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('compare') for string <")
+		t.Error("expected CALL_METHOD('compare') for string <")
 	}
 	lts := findInstrs(all, ir.InstrTypeLessThan)
 	if len(lts) == 0 {
@@ -157,9 +146,9 @@ function test(a: string, b: string): boolean {
 		t.Fatal("function 'test' not found")
 	}
 	all := allBlockInstrs(entry)
-	compareAccess := findPropertyAccess(all, "compare")
+	compareAccess := findMethodCalls(all, "compare")
 	if len(compareAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('compare') for string <=")
+		t.Error("expected CALL_METHOD('compare') for string <=")
 	}
 	ltes := findInstrs(all, ir.InstrTypeLessThanEq)
 	if len(ltes) == 0 {
@@ -178,9 +167,9 @@ function test(a: string, b: string): boolean {
 		t.Fatal("function 'test' not found")
 	}
 	all := allBlockInstrs(entry)
-	compareAccess := findPropertyAccess(all, "compare")
+	compareAccess := findMethodCalls(all, "compare")
 	if len(compareAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('compare') for string >")
+		t.Error("expected CALL_METHOD('compare') for string >")
 	}
 	gts := findInstrs(all, ir.InstrTypeGreaterThan)
 	if len(gts) == 0 {
@@ -199,9 +188,9 @@ function test(a: string, b: string): boolean {
 		t.Fatal("function 'test' not found")
 	}
 	all := allBlockInstrs(entry)
-	compareAccess := findPropertyAccess(all, "compare")
+	compareAccess := findMethodCalls(all, "compare")
 	if len(compareAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('compare') for string >=")
+		t.Error("expected CALL_METHOD('compare') for string >=")
 	}
 	gtes := findInstrs(all, ir.InstrTypeGreaterThanEq)
 	if len(gtes) == 0 {
@@ -229,15 +218,10 @@ function test(arr: i32[]): i32 {
 		t.Errorf("expected 0 GET_INDEX instructions after lowering, got %d", len(gets))
 	}
 
-	// .get() method access must be emitted
-	getAccess := findPropertyAccess(all, "get")
+	// .get() must be called via CALL_METHOD
+	getAccess := findMethodCalls(all, "get")
 	if len(getAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('get') for lowered array indexing")
-	}
-
-	calls := findInstrs(all, ir.InstrTypeIndirectFuncCall)
-	if len(calls) == 0 {
-		t.Error("expected CALL_INDIRECT_FUNC for .get() call")
+		t.Error("expected CALL_METHOD('get') for lowered array indexing")
 	}
 }
 
@@ -259,15 +243,10 @@ function test(arr: i32[][]): i32 {
 		t.Errorf("expected 0 GET_INDEX after lowering nested index, got %d", len(gets))
 	}
 
-	// Two separate .get() accesses should be emitted (one per dimension)
-	getAccess := findPropertyAccess(all, "get")
+	// Two separate .get() CALL_METHOD instructions should be emitted (one per dimension)
+	getAccess := findMethodCalls(all, "get")
 	if len(getAccess) < 2 {
-		t.Errorf("expected at least 2 OBJECT_PROPERTY_ACCESS('get') for arr[i][j], got %d", len(getAccess))
-	}
-
-	calls := findInstrs(all, ir.InstrTypeIndirectFuncCall)
-	if len(calls) < 2 {
-		t.Errorf("expected at least 2 CALL_INDIRECT_FUNC for nested .get() calls, got %d", len(calls))
+		t.Errorf("expected at least 2 CALL_METHOD('get') for arr[i][j], got %d", len(getAccess))
 	}
 }
 
@@ -301,10 +280,10 @@ function test(s: string): u8[] {
 		t.Error("expected NEW_OBJ for u8[] allocation during string→u8[] lowering")
 	}
 
-	// The data must be copied via a .copy() method call
-	copyAccess := findPropertyAccess(all, "copy")
+	// The data must be copied via a .copy() CALL_METHOD
+	copyAccess := findMethodCalls(all, "copy")
 	if len(copyAccess) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS('copy') for data copy during string→u8[] lowering")
+		t.Error("expected CALL_METHOD('copy') for data copy during string→u8[] lowering")
 	}
 }
 

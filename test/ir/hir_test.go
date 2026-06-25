@@ -110,6 +110,20 @@ func findPropertyAccess(instrs []*ir.Instr, propertyName string) []*ir.Instr {
 	return result
 }
 
+// findMethodCalls finds CALL_METHOD instructions for the given method name.
+func findMethodCalls(instrs []*ir.Instr, methodName string) []*ir.Instr {
+	var result []*ir.Instr
+	for _, instr := range instrs {
+		if instr.Type == ir.InstrTypeMethodCall {
+			input := ir.AsMethodCallInstrInput(instr.Input)
+			if input.MethodName == methodName {
+				result = append(result, instr)
+			}
+		}
+	}
+	return result
+}
+
 // mustConstant asserts that v is a Constant with the given value string.
 func mustConstant(t *testing.T, v zeus_value.Value, want string) {
 	t.Helper()
@@ -749,18 +763,10 @@ function test(g: Greeter): void {
 		t.Fatal("function 'test' not found")
 	}
 	all := allBlockInstrs(entry)
-	// Method call = OBJECT_PROPERTY_ACCESS + LOAD + CALL_INDIRECT_FUNC
-	accesses := findPropertyAccess(all, "greet")
-	if len(accesses) == 0 {
-		t.Error("expected OBJECT_PROPERTY_ACCESS for 'greet'")
-	}
-	loads := findInstrs(all, ir.InstrTypeLoad)
-	if len(loads) == 0 {
-		t.Error("expected LOAD instruction to load method pointer")
-	}
-	calls := findInstrs(all, ir.InstrTypeIndirectFuncCall)
+	// Method call is now a single CALL_METHOD instruction
+	calls := findMethodCalls(all, "greet")
 	if len(calls) == 0 {
-		t.Error("expected CALL_INDIRECT_FUNC instruction for method invocation")
+		t.Error("expected CALL_METHOD instruction for 'greet' invocation")
 	}
 }
 

@@ -241,7 +241,6 @@ func (b *IRBuilder) BuildExport(modulePath string, value zeus_value.Value, span 
 
 func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(addr.Span)
-	result.Cxt = addr.Cxt
 
 	b.pushInstr(&Instr{
 		Type:   InstrTypeLoad,
@@ -594,7 +593,6 @@ func (b *IRBuilder) optimizeBlocks(blocks []*BasicBlock) {
 func (b *IRBuilder) BuildObjectPropertyAccess(object zeus_value.Value, property string, isLValue bool, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 	result.IsPtr = true
-	result.Cxt = &object
 
 	b.pushInstr(&Instr{
 		Type:   InstrTypeObjectPropertyAccess,
@@ -622,31 +620,21 @@ func (b *IRBuilder) BuildLoadProperty(object zeus_value.Value, propertyName stri
 	return propValue
 }
 
-// BuildMethodCall calls a method on an object and returns the result.
-// This is a convenience method that combines:
-// 1. BuildObjectPropertyAccess to get the method
-// 2. BuildLoad to load the method pointer
-// 3. BuildIndirectFuncCall to call the method
-// All intermediate variables are properly typed.
+// BuildMethodCall calls a method on an object, emitting a single CALL_METHOD instruction.
+// returnType is set on the result when non-nil (lowering-pass callers supply it;
+// TC pass infers it for IR-gen callers where nil is passed).
 func (b *IRBuilder) BuildMethodCall(object zeus_value.Value, methodName string, args []zeus_value.Value, returnType zeus_value.ValueType, argTypes []zeus_value.ValueType, span *token.Span) zeus_value.Value {
-	// Create method function type
-	methodType := zeus_value.NewFunctionType(returnType, argTypes)
-
-	// Get method pointer
-	methodPtr := b.BuildObjectPropertyAccess(object, methodName, false, span)
-	methodPtrVar := zeus_value.AsVar(methodPtr)
-	methodPtrVar.ValueType = methodType
-
-	// Load the method
-	method := b.BuildLoad(methodPtrVar, span)
-	methodVar := zeus_value.AsVar(method)
-	methodVar.ValueType = methodType
-
-	// Call the method
-	result := b.BuildIndirectFuncCall(method, args, span)
-	if resultVar := zeus_value.AsVar(result); resultVar != nil {
-		resultVar.ValueType = returnType
+	result := b.createTempVariable(span)
+	if returnType != nil {
+		result.ValueType = returnType
 	}
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeMethodCall,
+		Output: result,
+		Input:  NewMethodCallInstrInput(object, methodName, args),
+		Span:   span,
+	})
 
 	return result
 }

@@ -570,6 +570,23 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 }
 
 func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
+	// Detect method call: callee is obj.method — emit a single CALL_METHOD instead of the
+	// OBJECT_PROPERTY_ACCESS + LOAD + CALL_INDIRECT_FUNC chain.
+	if propAccess, ok := expr.Callee.(*ast.ObjectPropertyAccessExprNode); ok {
+		object := propAccess.Object.Accept(g)
+		if asVar := zeus_value.AsVar(object); asVar != nil && asVar.IsPtr {
+			object = g.irBuilder.BuildLoad(asVar, propAccess.GetSpan())
+		}
+		if !g.isThisExpression(propAccess.Object) {
+			g.emitNullCheck(object, propAccess.Property.Name.Value, propAccess.GetSpan())
+		}
+		args := []zeus_value.Value{}
+		for _, param := range expr.Params {
+			args = append(args, param.Accept(g))
+		}
+		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, nil, nil, expr.GetSpan())
+	}
+
 	callee := expr.Callee.Accept(g)
 	params := []zeus_value.Value{}
 	for _, arg := range expr.Params {
@@ -1200,11 +1217,9 @@ func (g *IRModule) createStringObject(str string, stringClass *zeus_value.Class,
 
 	// Set each byte in the array
 	for i, b := range stringBytes {
-		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, span)
-		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), span)
 		idx := zeus_value.NewConstant(fmt.Sprintf("%d", i), i32Type, span)
 		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
-		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{idx, byteVal}, span)
+		g.irBuilder.BuildMethodCall(u8Array, zeus_value.ARRAY_METHOD_SET, []zeus_value.Value{idx, byteVal}, nil, nil, span)
 	}
 
 	// Create string object from u8[] array
@@ -1287,16 +1302,9 @@ func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_va
 
 	// Set each byte using array.set(index, byte)
 	for i, b := range stringBytes {
-		// Get the .set() method from the array object
-		setMethodPtr := g.irBuilder.BuildObjectPropertyAccess(u8Array, zeus_value.ARRAY_METHOD_SET, false, expr.GetSpan())
-		setMethod := g.irBuilder.BuildLoad(zeus_value.AsVar(setMethodPtr), expr.GetSpan())
-
-		// Create index and byte constants
 		index := zeus_value.NewConstant(fmt.Sprintf("%d", i), zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}, expr.GetSpan())
 		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.GetSpan()}, expr.GetSpan())
-
-		// Call array.set(index, byte)
-		g.irBuilder.BuildIndirectFuncCall(setMethod, []zeus_value.Value{index, byteVal}, expr.GetSpan())
+		g.irBuilder.BuildMethodCall(u8Array, zeus_value.ARRAY_METHOD_SET, []zeus_value.Value{index, byteVal}, nil, nil, expr.GetSpan())
 	}
 
 	// Create string object with the u8[] array
