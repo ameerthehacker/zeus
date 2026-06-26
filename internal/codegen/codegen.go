@@ -1158,12 +1158,17 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
 }
 
+// FactoryFunctionPrefix is the naming prefix for all primordial factory functions.
+// The Zig runtime calls these by name (e.g. zeus_new_string), so this prefix must
+// stay in sync with the runtime's extern declarations.
+const FactoryFunctionPrefix = "zeus_new_"
+
 // getFactoryFunctionName returns the factory function name for a class
 // e.g., "u8[]" -> "zeus_new_u8_array", "string" -> "zeus_new_string", "MyClass" -> "zeus_new_MyClass"
 func getFactoryFunctionName(className string) string {
 	// Replace [] with _array for array types
 	mangledName := strings.ReplaceAll(className, "[]", "_array")
-	return fmt.Sprintf("zeus_new_%s", mangledName)
+	return FactoryFunctionPrefix + mangledName
 }
 
 // declareFactoryFunction declares the factory function signature for a class
