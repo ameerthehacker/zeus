@@ -1,9 +1,13 @@
 ---
-title: Compiler Architecture
+title: Compiler Internals
 description: Deep dive into the Zeus compiler internals, including lexer, parser, IR, type checking, code generation, and runtime.
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+<Aside type="note">
+This page describes the internal implementation of the Zeus compiler. It is intended for **contributors to Zeus itself**, not language users. If you want to use Zeus, start with the [Language Guide](/language/variables).
+</Aside>
 
 Zeus is a statically-typed, compiled programming language with automatic garbage collection. The compiler is written in Go and uses LLVM for code generation. The runtime is implemented in Zig and provides garbage collection with precise stack scanning via LLVM statepoints.
 
@@ -396,32 +400,76 @@ Arrays in Zeus are implemented as **primordial classes** - first-class objects w
 
 ## Module System
 
-**Import/Export Mechanism**:
+**Location**: `internal/module/module.go`, `internal/zeus_compiler/compiler.go`
 
-1. **Module Resolution** (`internal/module/module.go`):
-   - Resolves relative paths
-   - Handles standard library (`@std/...`)
-   - Circular dependency detection
+Zeus uses a file-based module system similar to JavaScript/TypeScript. The import path is the module identity — there are no separate package declarations.
 
-2. **Dependency Graph**:
-   - BFS traversal of import tree
-   - Topological ordering for compilation
-   - Each source file maintains its own IR and symbols
+### Path Resolution
 
-3. **Symbol Scoping**:
-   - Exported symbols have module-scoped names
-   - Private symbols use internal linkage
-   - Import/export tracked in IR
+`ResolveFilePath(sourcePath, importPath)` resolves every import at compile time:
 
-**Compilation Order**:
+| Import form | Resolves to |
+|---|---|
+| `"./math"` | `<dir>/math.zs` (auto-appends `.zs`) |
+| `"./utils"` | `<dir>/utils/index.zs` (directory → `index.zs`) |
+| `"./math.zs"` | `<dir>/math.zs` (explicit extension) |
+| `"@std/math"` | `$ZEUS_HOME/lib/std/math/index.zs` |
+
+`ZEUS_HOME` points to the Zeus installation root — the repo root in development, auto-detected from the executable path in a Homebrew install.
+
+### Compilation Pipeline
+
+**1. Dependency collection** (`CollectDependencies`):
+BFS from the entry file. Each file is lexed, parsed, and its imports resolved. Circular dependencies are detected by tracking an `inProgress` set. Result: a `sourceFiles` slice ordered **deepest dependencies first** (topological order).
+
+**2. Zeus IR generation** (`GenerateZeusIR`):
+Files are processed in dependency order. When `VisitImportStmt` runs, the imported module's `IRModule` is already in `irModuleFilePathMap` (guaranteed by ordering). `GetExportedSymbol` retrieves the symbol and `BuildImport` emits an `IMPORT` IR instruction into the current module.
+
+**3. Type checking and IR lowering**:
+Standard passes. Import/export instructions are validated — only functions and classes may be exported, not variables.
+
+**4. LLVM codegen** (`GenerateLLVMIR`):
+Each source file gets its own LLVM module, compiled independently.
+
+- **Export** (`genExport`): The function or class is renamed to a module-scoped symbol with `ExternalLinkage`. Example:
+  ```
+  "add"  →  "$_Users_alice_project_math_zs_add"  (ExternalLinkage)
+  ```
+- **Import** (`genImport`): An external declaration with the module-scoped name is created, then registered in the local symbol table under the original name so call sites just write `add(...)`.
+
+**5. Object file emission and linking**:
+Each module is optimized and emitted as a `.o` file independently, then linked together with the Zig runtime.
+
+### Module-Scoped Naming
+
+`module.GetModuleScopedName` converts the absolute file path to a valid symbol name by replacing every non-alphanumeric character with `_` and prefixing with `$`:
+
 ```
-Entry File (main.zs)
-  ↓ imports
-Module A
-  ↓ imports
-Module B
+/home/alice/project/math.zs  →  $__home_alice_project_math_zs
+symbol "add"                 →  $__home_alice_project_math_zs_add
 ```
-Compiled in reverse order: B → A → main
+
+This guarantees globally unique LLVM symbol names for every export regardless of how many modules are linked.
+
+### Primordial Class Linkage
+
+Every compilation unit independently generates infrastructure for the built-in (primordial) classes — `string`, `u8[]`, `Error`. To avoid duplicate-symbol linker errors, different linkage is used for different symbol kinds:
+
+| Symbol | Linkage | Reason |
+|---|---|---|
+| Primordial globals (vtable, header, typeinfo) | `InternalLinkage` | Each TU has its own identical copy; runtime uses integer class IDs, not pointer identity |
+| Primordial factory functions (`zeus_new_string`, etc.) | `LinkOnceODRLinkage` | Must be externally visible (Zig runtime calls them); linker deduplicates identical definitions |
+| Primordial method wrappers (`string.concat`, etc.) | `InternalLinkage` | Dispatched via vtable; each TU has its own thin wrapper |
+| User-defined class globals | `ExternalLinkage` | Must be reachable cross-module after export renaming |
+| User-defined class factory (`zeus_new_MyClass`) | `ExternalLinkage` | Importing modules resolve `new MyClass()` to this symbol at link time |
+
+### Known Limitations
+
+- No wildcard imports (`import * as math from "./math"`)
+- No re-exports (`export { add } from "./math"`)
+- No variable exports — only functions and classes
+- No import aliases (`import { add as sum }`)
+- Class name uniqueness across modules — two modules exporting a class with the same name will have conflicting factory function symbols at link time
 
 ---
 
@@ -519,6 +567,22 @@ error: type 'f32' is not assignable to type 'i32'
 5. **Standard Library**: Expanded built-ins
 6. **Incremental Compilation**: Faster builds
 7. **JIT Compilation**: LLVM ORC JIT integration
+
+---
+
+## More in the Wiki
+
+The [`wiki/` folder in this repository](https://github.com/ameerthehacker/zeus/tree/main/wiki) contains deeper implementation notes that go beyond what fits here:
+
+| Page | Contents |
+|---|---|
+| [`module-system.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/module-system.md) | Full module system walkthrough: path resolution, IR generation, LLVM export/import mechanics, ZEUS_HOME layout, stdlib |
+| [`ir.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/ir.md) | Zeus IR instruction set, HIR→LIR lowering, IRBuilder patterns |
+| [`parser.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/parser.md) | Pratt parser design, full precedence table, parselet implementations |
+| [`release-compilation.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/release-compilation.md) | Whole-program optimization pipeline internals |
+| [`incremental-compilation.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/incremental-compilation.md) | Debug build incremental cache design |
+| [`release-management.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/release-management.md) | Release versioning and publishing workflow |
+| [`compiler-bugs.md`](https://github.com/ameerthehacker/zeus/blob/main/wiki/compiler-bugs.md) | Known compiler bugs and workarounds |
 
 ---
 

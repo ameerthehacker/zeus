@@ -1,13 +1,17 @@
 ---
-title: Release Builds
-description: Build optimized release binaries with zeus build --release.
+title: Compiling Programs
+description: Build your Zeus program for development or production.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-By default, `zeus build` produces a **debug build** — fast to compile, easy to inspect. When you're ready to ship, add `--release` to produce a fully optimized binary.
+`zeus build` compiles your program into a native binary. By default it produces a **debug build** — fast to compile, easy to inspect. When you're ready to ship, add `--release` to produce a fully optimized binary.
 
 ```bash
+# Debug build (default)
+zeus build main.zs
+
+# Release build
 zeus build main.zs --release
 ```
 
@@ -18,7 +22,7 @@ zeus build main.zs --release
 | | Debug | Release |
 |---|---|---|
 | Compile time | Fast | Slower |
-| Optimization | None | Full (O3) |
+| Optimization | None | Full |
 | Binary size | Larger | Smaller |
 | Incremental cache | Yes | No (full rebuild) |
 | Output directory | `target/debug/` | `target/release/` |
@@ -64,28 +68,11 @@ zeus build main.zs --release --target-dir /workspace
 
 ## How Release Compilation Works
 
-Release mode applies whole-program optimization by merging all source files into a single LLVM module before optimizing — similar in spirit to link-time optimization (LTO).
+Release mode applies whole-program optimization by merging all source files into a single compilation unit before optimizing — similar in spirit to link-time optimization (LTO).
 
-### Compilation pipeline
+### Why a single unit?
 
-```
-Source files (.zs)
-       ↓
-Lexing → Parsing → Zeus IR → Type Checking → LLVM IR
-       ↓
-  [Debug]                        [Release]
-Per-file object files     Merge all modules into one
-       ↓                         ↓
-  Link                      O3 optimization
-                                 ↓
-                          Single object file
-                                 ↓
-                             Link
-```
-
-### Why a single module?
-
-When all source files live in one LLVM module, the optimizer can inline across file boundaries, eliminate dead code from imported modules, and vectorize across previously opaque call sites. This produces binaries that are typically both smaller and faster than per-file compilation at the same optimization level.
+When all source files are compiled together, the optimizer can inline across file boundaries, eliminate dead code from imported modules, and apply deeper optimizations. This produces binaries that are typically both smaller and faster than per-file compilation at the same optimization level.
 
 <Aside type="caution">
 Release builds always recompile everything. The per-file incremental cache used by debug builds does not apply in release mode because the whole-program merge must see every file fresh.
@@ -93,9 +80,9 @@ Release builds always recompile everything. The per-file incremental cache used 
 
 ---
 
-## Inspecting the Optimized IR
+## Inspecting Compiler Output
 
-Set the `ZEUS_DEBUG` environment variable to dump the merged, optimized LLVM IR alongside the object file:
+Set the `ZEUS_DEBUG` environment variable to dump the low-level compiler output alongside the object file:
 
 ```bash
 ZEUS_DEBUG=1 zeus build main.zs --release
@@ -105,7 +92,7 @@ This writes two files to `target/release/obj/`:
 
 ```
 target/release/obj/program.o    ← object file
-target/release/obj/program.ll   ← optimized LLVM IR
+target/release/obj/program.ll   ← low-level compiler output
 ```
 
-The `.ll` file shows exactly what the optimizer produced — useful for understanding inlining decisions, dead code removal, and vectorization.
+The `.ll` file shows exactly what the optimizer produced — useful for understanding inlining decisions and dead code removal.

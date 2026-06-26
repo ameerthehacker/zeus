@@ -107,7 +107,7 @@ export default defineConfig({
       },
       sidebar: [
         {
-          label: 'Start Here',
+          label: 'Introduction',
           items: [
             { label: 'Why Zeus?', slug: 'why-zeus' },
             { label: 'Installation', slug: 'getting-started/installation' },
@@ -132,10 +132,15 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Tooling',
+          label: 'Building Programs',
+          items: [
+            { label: 'Compiling Programs', slug: 'tooling/release-builds' },
+          ],
+        },
+        {
+          label: 'Development Tools',
           items: [
             { label: 'Language Server', slug: 'tooling/lsp' },
-            { label: 'Release Builds', slug: 'tooling/release-builds' },
           ],
         },
         {
@@ -146,19 +151,19 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Developer',
-          items: [
-            { label: 'Building from Source', slug: 'developer/building-from-source' },
-            { label: 'Compiler Architecture', slug: 'developer/compiler-architecture' },
-          ],
-        },
-        {
-          label: 'Roadmap',
+          label: 'Planned Features',
           badge: { text: 'Planned', variant: 'note' },
           items: [
             { label: 'Inheritance', slug: 'coming-soon/inheritance' },
             { label: 'Interfaces', slug: 'coming-soon/interfaces' },
             { label: 'Closures', slug: 'coming-soon/closures' },
+          ],
+        },
+        {
+          label: 'Contributing',
+          items: [
+            { label: 'Building from Source', slug: 'developer/building-from-source' },
+            { label: 'Compiler Internals', slug: 'developer/compiler-architecture' },
           ],
         },
       ],
