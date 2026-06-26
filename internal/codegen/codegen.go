@@ -1367,7 +1367,8 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 		llvmObjHeader := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(objectClass.Class.Name), 0), llvmObjHeaderPtr, "objHeader")
 		llvmVTablePtr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(objectClass.Class.Name), llvmObjHeader, VTABLE_STRUCT_INDEX, "vTablePtr")
 		llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
-		classMethodPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.Property)
+		classMethodSlotPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.Property)
+		classMethodPtr := c.builder.CreateLoad(llvm.PointerType(c.cxt.VoidType(), 0), classMethodSlotPtr, input.Property+"_fn_ptr")
 		c.symbolTable.DeclareSymbol(output.Name, classMethodPtr)
 		return
 	}
@@ -1403,7 +1404,8 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	llvmObjHeader := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(objectClass.Class.Name), 0), llvmObjHeaderPtr, "objHeader")
 	llvmVTablePtr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(objectClass.Class.Name), llvmObjHeader, VTABLE_STRUCT_INDEX, "vTablePtr")
 	llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
-	methodPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.MethodName)
+	methodSlotPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.MethodName)
+	methodPtr := c.builder.CreateLoad(llvm.PointerType(c.cxt.VoidType(), 0), methodSlotPtr, input.MethodName+"_fn_ptr")
 
 	functionArgs := []llvm.Value{}
 	for _, arg := range input.Args {

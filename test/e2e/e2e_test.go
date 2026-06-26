@@ -203,6 +203,20 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 	}
 }
 
+// TestMain clears the object cache before running any e2e tests to ensure fresh builds.
+func TestMain(m *testing.M) {
+	rootDir, err := filepath.Abs("../..")
+	if err == nil {
+		for _, cacheDir := range []string{
+			filepath.Join(rootDir, "target", "debug", "obj"),
+			filepath.Join(rootDir, "target", "release", "obj"),
+		} {
+			_ = os.RemoveAll(cacheDir)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 // TestE2E is the main e2e test function
 func TestE2E(t *testing.T) {
 	// Build the compiler

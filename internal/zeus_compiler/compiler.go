@@ -176,6 +176,46 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 	}, nil
 }
 
+// isPrimordialFactoryFunction reports whether fn is a primordial factory function.
+// Primordial factory functions are always named "zeus_new_<ClassName>" and are the
+// only functions that use LinkOnceODRLinkage (each compilation unit emits an identical
+// copy and the linker keeps exactly one). Detecting by name is more explicit than
+// relying solely on linkage type.
+func isPrimordialFactoryFunction(fn llvm.Value) bool {
+	return strings.HasPrefix(fn.Name(), "zeus_new_") &&
+		fn.Linkage() == llvm.LinkOnceODRLinkage &&
+		!fn.IsDeclaration()
+}
+
+// pinPrimordialFactoryFunctions promotes primordial factory function definitions to
+// ExternalLinkage and adds them to @llvm.used inside the module so llvm.LinkModules
+// keeps them even when they have no intra-module callers.
+// Without this, llvm.LinkModules silently drops LinkOnceODR functions that look
+// unreferenced, making zeus_new_string / zeus_new_u8_array disappear from the merged
+// release module and causing linker failures against the Zig runtime.
+func pinPrimordialFactoryFunctions(mod llvm.Module) {
+	var fns []llvm.Value
+	for fn := mod.FirstFunction(); !fn.IsNil(); fn = llvm.NextFunction(fn) {
+		if isPrimordialFactoryFunction(fn) {
+			fn.SetLinkage(llvm.ExternalLinkage)
+			fns = append(fns, fn)
+		}
+	}
+	if len(fns) == 0 {
+		return
+	}
+	ptrType := llvm.PointerType(mod.Context().VoidType(), 0)
+	vals := make([]llvm.Value, len(fns))
+	for i, fn := range fns {
+		vals[i] = fn
+	}
+	usedArray := llvm.ConstArray(ptrType, vals)
+	usedGlobal := llvm.AddGlobal(mod, usedArray.Type(), "llvm.used")
+	usedGlobal.SetInitializer(usedArray)
+	usedGlobal.SetLinkage(llvm.AppendingLinkage)
+	usedGlobal.SetSection("llvm.metadata")
+}
+
 func (c *Compiler) runReleasePasses(merged llvm.Module) error {
 	options := llvm.NewPassBuilderOptions()
 	defer options.Dispose()
@@ -197,6 +237,12 @@ func (c *Compiler) mergeModules(sourceFiles []*SourceFile) (llvm.Module, error) 
 		if sourceFile.Module == nil {
 			continue
 		}
+		// Promote primordial factory functions (zeus_new_string, zeus_new_u8_array, …)
+		// to ExternalLinkage and pin them via @llvm.used before merging.
+		// llvm.LinkModules silently drops LinkOnceODR functions that appear unreferenced
+		// in the source module, so without this they'd be absent from the merged module
+		// and the Zig runtime can't resolve them at link time.
+		pinPrimordialFactoryFunctions(sourceFile.Module.GetModule())
 		if err := llvm.LinkModules(merged, sourceFile.Module.GetModule()); err != nil {
 			return llvm.Module{}, fmt.Errorf("failed to link module %s: %v", sourceFile.Path, err)
 		}
