@@ -14,7 +14,7 @@ Official VS Code extension for the [Zeus programming language](https://zeus-lang
 ### 1. Install Zeus
 
 ```bash
-brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
+brew tap ameerthehacker/zeus
 brew install zeus
 ```
 

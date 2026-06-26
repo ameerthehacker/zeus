@@ -22,7 +22,7 @@ Zeus is a modern programming language that combines TypeScript's familiar syntax
 ## Installation
 
 ```bash
-brew tap ameerthehacker/zeus https://github.com/ameerthehacker/zeus
+brew tap ameerthehacker/zeus
 brew install zeus
 ```
 
