@@ -1,11 +1,47 @@
 ---
 title: Compiling Programs
-description: Build your Zeus program for development or production.
+description: Build, run, and check your Zeus programs.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-`zeus build` compiles your program into a native binary. By default it produces a **debug build** — fast to compile, easy to inspect. When you're ready to ship, add `--release` to produce a fully optimized binary.
+Zeus ships three commands for working with source files:
+
+| Command | What it does |
+|---------|-------------|
+| `zeus run [file]` | Compile and immediately execute (no binary left behind) |
+| `zeus check [file]` | Check for errors without producing any output |
+| `zeus build [file]` | Compile to a binary you keep |
+
+---
+
+## `zeus run`
+
+The fastest way to execute a Zeus program during development. Compiles in debug mode to a temporary file, runs it, then discards the binary.
+
+```bash
+zeus run main.zs
+```
+
+Use this while iterating — no build artifacts to clean up, one command instead of two.
+
+---
+
+## `zeus check`
+
+Runs all compilation passes (parsing, type checking, IR lowering) and reports any errors, but stops before generating a binary. Useful for catching mistakes quickly without waiting for code generation.
+
+```bash
+zeus check main.zs
+```
+
+This is also what the [language server](/tooling/lsp/) uses under the hood to provide inline diagnostics.
+
+---
+
+## `zeus build`
+
+Compiles your program into a binary you can distribute or run repeatedly. By default it produces a **debug build** — fast to compile, easy to inspect. Add `--release` for a fully optimized binary.
 
 ```bash
 # Debug build (default)
@@ -15,9 +51,7 @@ zeus build main.zs
 zeus build main.zs --release
 ```
 
----
-
-## Debug vs Release
+### Debug vs Release
 
 | | Debug | Release |
 |---|---|---|
@@ -27,9 +61,7 @@ zeus build main.zs --release
 | Incremental cache | Yes | No (full rebuild) |
 | Output directory | `target/debug/` | `target/release/` |
 
----
-
-## Output Layout
+### Output Layout
 
 <Tabs>
   <TabItem label="Debug">
@@ -50,18 +82,17 @@ target/
   </TabItem>
 </Tabs>
 
----
-
-## Flags
-
-All standard build flags work in both modes:
+### Flags
 
 ```bash
-# custom output path
-zeus build main.zs --release -o /usr/local/bin/myapp
+# Custom output path
+zeus build main.zs -o /usr/local/bin/myapp
 
-# custom target directory
-zeus build main.zs --release --target-dir /workspace
+# Custom target directory
+zeus build main.zs --target-dir /workspace
+
+# Release build with custom output
+zeus build main.zs --release -o /usr/local/bin/myapp
 ```
 
 ---

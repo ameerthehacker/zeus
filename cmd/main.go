@@ -12,6 +12,8 @@ func Execute() {
 	}
 	rootCmd.SetVersionTemplate("zeus {{.Version}}\n")
 	rootCmd.AddCommand(buildCmd())
+	rootCmd.AddCommand(runCmd())
+	rootCmd.AddCommand(checkCmd())
 	rootCmd.AddCommand(lspCmd())
 	rootCmd.Execute()
 }

@@ -34,7 +34,6 @@ const (
 
 type Compiler struct {
 	codegen          *codegen.Codegen
-	outputDir        string
 	targetMachine    llvm.TargetMachine
 	targetDataLayout llvm.TargetData
 	mode             BuildMode
@@ -68,6 +67,15 @@ type SourceFileError struct {
 	Message string
 }
 
+// if any internal compiler exception happens we need to let the user know
+func TrapCompilerException() {
+	if r := recover(); r != nil {
+		logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
+		fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
+		panic(r)
+	}
+}
+
 func NewSourceFileError(t SourceFileErrorType, message string) *SourceFileError {
 	return &SourceFileError{
 		Type:    t,
@@ -79,7 +87,7 @@ func (e *SourceFileError) Error() string {
 	return e.Message
 }
 
-func NewCompiler(outputDir string, mode BuildMode) (*Compiler, error) {
+func NewCompiler(mode BuildMode) (*Compiler, error) {
 	llvm.InitializeAllTargets()
 	llvm.InitializeAllTargetMCs()
 	llvm.InitializeAllTargetInfos()
@@ -126,7 +134,6 @@ func NewCompiler(outputDir string, mode BuildMode) (*Compiler, error) {
 	targetDataLayout := targetMachine.CreateTargetData()
 	return &Compiler{
 		codegen:          codegen.NewCodegen(),
-		outputDir:        outputDir,
 		targetMachine:    targetMachine,
 		targetDataLayout: targetDataLayout,
 		mode:             mode,
@@ -253,14 +260,8 @@ func (c *Compiler) mergeModules(sourceFiles []*SourceFile) (llvm.Module, error) 
 	return merged, nil
 }
 
-func (c *Compiler) Compile(entryFilePath string, outputPath string) {
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Log(zeus_error.ErrorSeverityError, "an internal compiler error occured")
-			fmt.Fprintln(os.Stderr, "Please create an issue on the github repo with the following information:")
-			panic(r)
-		}
-	}()
+func (c *Compiler) Check(entryFilePath string) []*SourceFile {
+	defer TrapCompilerException()
 
 	checkSourceFilesWarnings := func(sourceFiles []*SourceFile) {
 		for _, sourceFile := range sourceFiles {
@@ -317,17 +318,6 @@ func (c *Compiler) Compile(entryFilePath string, outputPath string) {
 	// parse and collect dependencies
 	sourceFiles := c.CollectDependencies(entryPointSourceFile)
 
-	defer func() {
-		if debug.IsDebug() {
-			for _, sourceFile := range sourceFiles {
-				if sourceFile.IRBuilder != nil {
-					fmt.Printf("---:Zeus IR [%s]:---\n", sourceFile.Path)
-					sourceFile.IRBuilder.Print()
-				}
-			}
-		}
-	}()
-
 	checkSourceFilesErrors(sourceFiles)
 	// generate zeus IR
 	sourceFiles = c.GenerateZeusIR(sourceFiles)
@@ -342,15 +332,20 @@ func (c *Compiler) Compile(entryFilePath string, outputPath string) {
 	checkSourceFilesErrors(sourceFiles)
 	checkSourceFilesWarnings(sourceFiles)
 
+	return sourceFiles
+}
+
+func (c *Compiler) Compile(entryFilePath string, outDir string, outputPath string) {
+	sourceFiles := c.Check(entryFilePath)
 	if c.mode == BuildModeRelease {
-		c.compileRelease(sourceFiles, outputPath)
+		c.compileRelease(sourceFiles, outDir, outputPath)
 	} else {
-		c.compileDebug(sourceFiles, outputPath)
+		c.compileDebug(sourceFiles, outDir, outputPath)
 	}
 }
 
-func (c *Compiler) compileDebug(sourceFiles []*SourceFile, outputPath string) {
-	objFiles, emitError := c.EmitObjFiles(sourceFiles)
+func (c *Compiler) compileDebug(sourceFiles []*SourceFile, outDir string, outputPath string) {
+	objFiles, emitError := c.EmitObjFiles(sourceFiles, outDir)
 	if emitError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit object files: %s", emitError.Error()))
 		os.Exit(1)
@@ -362,7 +357,7 @@ func (c *Compiler) compileDebug(sourceFiles []*SourceFile, outputPath string) {
 	}
 }
 
-func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputPath string) {
+func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputDir string, outputPath string) {
 	merged, mergeErr := c.mergeModules(sourceFiles)
 	if mergeErr != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to merge modules: %s", mergeErr.Error()))
@@ -374,13 +369,13 @@ func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputPath string) 
 		os.Exit(1)
 	}
 
-	if err := os.MkdirAll(c.outputDir, 0755); err != nil {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to create output dir: %s", err.Error()))
 		os.Exit(1)
 	}
 
 	if debug.IsDebug() {
-		llPath := filepath.Join(c.outputDir, "program.ll")
+		llPath := filepath.Join(outputDir, "program.ll")
 		_ = os.WriteFile(llPath, []byte(merged.String()), 0644)
 	}
 
@@ -390,7 +385,7 @@ func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputPath string) 
 		os.Exit(1)
 	}
 
-	objPath := filepath.Join(c.outputDir, "program.o")
+	objPath := filepath.Join(outputDir, "program.o")
 	if err := os.WriteFile(objPath, buffer.Bytes(), 0644); err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write object file: %s", err.Error()))
 		os.Exit(1)
@@ -531,8 +526,8 @@ func sourceFileHash(sourceFile *SourceFile) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) ([]string, error) {
-	if err := os.MkdirAll(c.outputDir, 0755); err != nil {
+func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile, outputDir string) ([]string, error) {
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return nil, err
 	}
 
@@ -540,7 +535,7 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) ([]string, error) {
 
 	for _, sourceFile := range sourceFiles {
 		hash := sourceFileHash(sourceFile)
-		objPath := filepath.Join(c.outputDir, hash+".o")
+		objPath := filepath.Join(outputDir, hash+".o")
 
 		if _, err := os.Stat(objPath); err == nil {
 			// cache hit — reuse existing object file
@@ -560,7 +555,7 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile) ([]string, error) {
 		objFiles = append(objFiles, objPath)
 
 		if debug.IsDebug() {
-			llPath := filepath.Join(c.outputDir, hash+".ll")
+			llPath := filepath.Join(outputDir, hash+".ll")
 			_ = os.WriteFile(llPath, []byte(sourceFile.Module.String()), 0644)
 		}
 	}

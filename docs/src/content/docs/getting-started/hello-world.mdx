@@ -33,12 +33,18 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
    }
    ```
 
-3. **Compile and run**
+3. **Run it**
+
+   ```bash
+   zeus run hello.zs
+   # Output: Hello, World 👋
+   ```
+
+   That's it — `zeus run` compiles and executes in one step. When you want to keep the binary, use `zeus build` instead:
 
    ```bash
    zeus build hello.zs -o hello
    ./hello
-   # Output: Hello, World 👋
    ```
 
 </Steps>
@@ -106,8 +112,7 @@ function main(): i32 {
 Save this as `greeter.zs` and run:
 
 ```bash
-zeus build greeter.zs -o greeter
-./greeter
+zeus run greeter.zs
 echo $?
 # Output: 5
 ```
@@ -139,8 +144,7 @@ function main(): i32 {
 Save as `arrays.zs` and run:
 
 ```bash
-zeus build arrays.zs -o arrays
-./arrays
+zeus run arrays.zs
 echo $?
 # Output: 30
 ```
