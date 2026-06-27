@@ -14,7 +14,7 @@ Zeus provides built-in functions that are available globally without any imports
 Prints a string to standard output, followed by a newline.
 
 ```zeus
-log(message: string): void
+log(message: string)
 ```
 
 **Parameters:**
@@ -23,7 +23,7 @@ log(message: string): void
 **Example:**
 
 ```zeus
-function main(): void {
+function main() {
   log("Hello, World!");
   log("Zeus supports UTF-8 🚀");
   
@@ -48,7 +48,7 @@ Welcome to Zeus!
 Since `u8[]` can be implicitly converted to `string`, you can log byte arrays by first converting them:
 
 ```zeus
-function main(): void {
+function main() {
   let bytes: u8[] = new u8[];
   bytes[0] = 'H';
   bytes[1] = 'i';

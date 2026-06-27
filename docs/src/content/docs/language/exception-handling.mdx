@@ -48,7 +48,7 @@ function main(): i32 {
 Use `throw` to raise an exception:
 
 ```zeus
-function validateAge(age: i32): void {
+function validateAge(age: i32) {
   if (age < 0) {
     throw new Error("ValidationError", "Age cannot be negative");
   }

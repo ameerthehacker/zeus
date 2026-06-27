@@ -26,7 +26,7 @@ class Animal {
     this.name = name;
   }
 
-  public speak(): void {
+  public speak() {
     // Default implementation
   }
 }
@@ -36,11 +36,11 @@ class Dog extends Animal {
     super(name);
   }
 
-  public speak(): void {
+  public speak() {
     // Dog-specific implementation
   }
 
-  public fetch(): void {
+  public fetch() {
     // Dog-specific method
   }
 }
@@ -103,7 +103,7 @@ class Circle extends Shape {
 Use parent type references for child instances:
 
 ```zeus
-function printArea(shape: Shape): void {
+function printArea(shape: Shape) {
   let a: f64 = shape.area();
   // Works with Rectangle, Circle, or any Shape subclass
 }
@@ -142,7 +142,7 @@ class NetworkError extends Error {
   }
 }
 
-function validate(value: i32): void {
+function validate(value: i32) {
   if (value < 0) {
     throw new ValidationError("Value must be positive", "value");
   }

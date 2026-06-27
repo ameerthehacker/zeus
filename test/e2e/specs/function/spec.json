@@ -15,6 +15,11 @@
         "entry": "void-return.zs"
     },
     {
+        "name": "Void return type annotation is optional for functions and methods",
+        "exit": "0",
+        "entry": "void-optional.zs"
+    },
+    {
         "name": "Can call a function declared after the call site (forward call)",
         "exit": "10",
         "entry": "forward-call.zs"

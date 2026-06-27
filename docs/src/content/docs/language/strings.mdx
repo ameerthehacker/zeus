@@ -34,7 +34,7 @@ String literals support escape sequences for special characters:
 | `\0` | Null character |
 
 ```zeus
-function main(): void {
+function main() {
   log("Line 1\nLine 2");     // Two lines
   log("Col1\tCol2\tCol3");   // Tab-separated
   log("Say \"Hello\"");      // Embedded quotes
@@ -304,7 +304,7 @@ let text: string = bytes;  // Creates immutable string "Hi"
 Since strings are UTF-8 encoded, you can work with individual bytes through `u8[]`:
 
 ```zeus
-function main(): void {
+function main() {
   let greeting: string = "Hi!";
   
   // Convert to mutable bytes

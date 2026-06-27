@@ -29,29 +29,13 @@ brew install zeus
 ## Quick Example
 
 ```typescript
-class Point {
-  public x: i32;
-  public y: i32;
-
-  constructor(x: i32, y: i32) {
-    this.x = x;
-    this.y = y;
-  }
-
-  public sum(): i32 {
-    return this.x + this.y;
-  }
-}
-
-function main(): i32 {
-  let p: Point = new Point(10, 20);
-  return p.sum();  // Returns 30
+function main() {
+  log("Hello World 👋!")
 }
 ```
 
 ```bash
-zeus build main.zs -o main
-./main
+zeus run hello.zs
 ```
 
 ## Documentation
