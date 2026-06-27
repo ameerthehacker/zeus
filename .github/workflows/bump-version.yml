@@ -36,6 +36,20 @@ jobs:
           fetch-tags: true
           fetch-depth: 0
 
+      - name: Verify CI is passing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "Checking CI status for commit ${SHA}..."
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
+            --jq '[.check_runs[] | select(.name == "test")] | sort_by(.completed_at) | last | .conclusion // "not_found"')
+          echo "CI conclusion: ${CONCLUSION}"
+          if [ "${CONCLUSION}" != "success" ]; then
+            echo "::error::CI check 'test' did not pass on main (status: ${CONCLUSION}). Aborting version bump."
+            exit 1
+          fi
+
       - name: Compute next version and tag
         run: |
           LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")

@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache: true
+
+      - name: Install LLVM
+        run: |
+          brew install llvm@19
+          echo "LLVM_PATH=$(brew --prefix llvm@19)" >> $GITHUB_ENV
+
+      - name: Install Zig
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Cache bdwgc
+        uses: actions/cache@v4
+        with:
+          path: third_party/bdwgc
+          key: bdwgc-${{ runner.os }}-v8.2.12
+
+      - name: Build bdwgc
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release && make -C build
+
+      - name: Set CGO environment
+        run: |
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=$(${LLVM_PATH}/bin/llvm-config --cflags)" >> $GITHUB_ENV
+          echo "CGO_CXXFLAGS=$(${LLVM_PATH}/bin/llvm-config --cxxflags)" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=$(${LLVM_PATH}/bin/llvm-config --ldflags --libs all --system-libs)" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: make test
