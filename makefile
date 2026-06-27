@@ -22,7 +22,7 @@ test-verbose:
 test-race:
 	go test $(GO_BUILD_TAGS) ./test/... -race
 
-test: test-go test-runtime
+test: build-runtime test-go test-runtime
 
 test-go:
 	go test $(GO_BUILD_TAGS) ./test/...
