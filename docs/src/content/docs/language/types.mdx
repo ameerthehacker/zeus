@@ -5,7 +5,7 @@ description: Complete reference for Zeus's type system.
 
 import { Aside } from '@astrojs/starlight/components';
 
-Zeus is a statically typed language. Every variable, parameter, and return value has a type known at compile time.
+Zeus is a statically typed language. Every variable, parameter, and return value has a type known at compile time. For local variables, the type is usually inferred from the initializer — you only need to write it explicitly when it matters.
 
 ## Primitive Types
 
@@ -25,10 +25,10 @@ Zeus provides signed and unsigned integers of various sizes:
 | `u64` | 64-bit | 0 to 1.8×10¹⁹ |
 
 ```zeus
-let small: i8 = 127;
-let normal: i32 = 1000000;
-let big: i64 = 9223372036854775807;
-let positive: u32 = 4000000000;
+let small = 127;                      // inferred: u8
+let normal = 1000000;                 // inferred: i32
+let big: i64 = 9223372036854775807;   // explicit: value requires i64
+let positive: u32 = 4000000000;       // explicit: need unsigned u32
 ```
 
 ### Floating-Point Types
@@ -39,8 +39,8 @@ let positive: u32 = 4000000000;
 | `f64` | 64-bit | ~15 decimal digits |
 
 ```zeus
-let pi: f32 = 3.14159;
-let precise: f64 = 3.141592653589793;
+let pi = 3.14159;                     // inferred: f64
+let precise: f32 = 3.14159;           // explicit: want f32 precision
 ```
 
 ### Boolean Type
@@ -48,8 +48,8 @@ let precise: f64 = 3.141592653589793;
 The `boolean` type has two values: `true` and `false`.
 
 ```zeus
-let isReady: boolean = true;
-let hasError: boolean = false;
+let isReady = true;
+let hasError = false;
 ```
 
 ### Void Type
@@ -83,24 +83,24 @@ let p: Point = null;
 Zeus supports multiple number bases:
 
 ```zeus
-let decimal: i32 = 42;
-let binary: i32 = 0b101010;    // 42 in binary
-let octal: i32 = 0o52;         // 42 in octal
-let hex: i32 = 0x2A;           // 42 in hexadecimal
+let decimal = 42;
+let binary = 0b101010;    // 42 in binary
+let octal = 0o52;         // 42 in octal
+let hex = 0x2A;           // 42 in hexadecimal
 ```
 
 Use underscores for readability:
 
 ```zeus
-let million: i32 = 1_000_000;
-let binary: i32 = 0b1111_0000;
+let million = 1_000_000;
+let mask = 0b1111_0000;
 ```
 
 ### Floating-Point Literals
 
 ```zeus
-let simple: f64 = 3.14;
-let scientific: f64 = 6.022e23;  // Scientific notation
+let simple = 3.14;
+let scientific = 6.022e23;  // Scientific notation
 ```
 
 ---
@@ -113,9 +113,9 @@ Zeus performs automatic widening conversions:
 
 ```zeus
 let small: i8 = 10;
-let big: i32 = small;  // OK: i8 → i32
+let big: i32 = small;   // OK: i8 → i32
 
-let integer: i32 = 42;
+let integer = 42;
 let floating: f64 = integer;  // OK: i32 → f64
 ```
 
@@ -150,8 +150,8 @@ let flag: boolean = num;  // Error: cannot convert i32 to boolean
 The `string` type represents immutable UTF-8 text:
 
 ```zeus
-let greeting: string = "Hello, World!";
-let emoji: string = "Zeus 🚀";
+let greeting = "Hello, World!";
+let emoji = "Zeus 🚀";
 ```
 
 Strings can be implicitly converted to `u8[]` (mutable byte array) and vice versa:
@@ -215,7 +215,7 @@ function process(value: i32): boolean {
 }
 
 function main(): i32 {
-  let result: boolean = process(42);  // OK
+  let result = process(42);  // inferred: boolean
   
   // let wrong: i32 = process(42);  // Error: boolean not assignable to i32
   // process("hello");              // Error: string not assignable to i32

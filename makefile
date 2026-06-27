@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run always build lsp
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run always build lsp fmt
 
 clean:
 	rm -rf playground/debug
@@ -115,3 +115,6 @@ build:
 
 lsp: build
 	./zeus lsp --stdio
+
+fmt:
+	gofmt -w $(shell find . -name '*.go' -not -path './vendor/*')

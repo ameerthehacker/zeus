@@ -96,14 +96,14 @@ type CatchClause struct {
 
 // TryCatchStmtNode represents a try { } catch (e: Type) { } statement
 type TryCatchStmtNode struct {
-	TryBody      *BlockStmtNode  // The try block
-	CatchClauses []*CatchClause  // One or more catch clauses
+	TryBody      *BlockStmtNode // The try block
+	CatchClauses []*CatchClause // One or more catch clauses
 	Span         *token.Span
 }
 
 // ThrowStmtNode represents a throw expression; statement
 type ThrowStmtNode struct {
-	Expr ExprNode    // The expression to throw (must be Error or subclass instance)
+	Expr ExprNode // The expression to throw (must be Error or subclass instance)
 	Span *token.Span
 }
 
@@ -169,7 +169,11 @@ func (v *VarDeclNode) PrettyString() string {
 
 func (v *VarDeclNode) GetSpan() *token.Span {
 	startPosition := v.Identifier.GetSpan().Start
-	endPosition := v.ValueType.Span.End
+	endPosition := startPosition
+
+	if v.ValueType != nil {
+		endPosition = v.ValueType.Span.End
+	}
 
 	if v.Initializer != nil {
 		endPosition = v.Initializer.GetSpan().End
@@ -429,12 +433,16 @@ func (t *ThrowStmtNode) Accept(visitor StmtVisitor) {
 	visitor.VisitThrowStmt(t)
 }
 
-func (b *BreakStmtNode) GetSpan() *token.Span    { return b.Span }
-func (b *BreakStmtNode) String() string           { return fmt.Sprintf("{ type: BreakStmtNode, Span: %s }", b.Span) }
-func (b *BreakStmtNode) PrettyString() string     { return "break" }
-func (b *BreakStmtNode) Accept(v StmtVisitor)     { v.VisitBreakStmt(b) }
+func (b *BreakStmtNode) GetSpan() *token.Span { return b.Span }
+func (b *BreakStmtNode) String() string {
+	return fmt.Sprintf("{ type: BreakStmtNode, Span: %s }", b.Span)
+}
+func (b *BreakStmtNode) PrettyString() string { return "break" }
+func (b *BreakStmtNode) Accept(v StmtVisitor) { v.VisitBreakStmt(b) }
 
-func (c *ContinueStmtNode) GetSpan() *token.Span  { return c.Span }
-func (c *ContinueStmtNode) String() string         { return fmt.Sprintf("{ type: ContinueStmtNode, Span: %s }", c.Span) }
-func (c *ContinueStmtNode) PrettyString() string   { return "continue" }
-func (c *ContinueStmtNode) Accept(v StmtVisitor)   { v.VisitContinueStmt(c) }
+func (c *ContinueStmtNode) GetSpan() *token.Span { return c.Span }
+func (c *ContinueStmtNode) String() string {
+	return fmt.Sprintf("{ type: ContinueStmtNode, Span: %s }", c.Span)
+}
+func (c *ContinueStmtNode) PrettyString() string { return "continue" }
+func (c *ContinueStmtNode) Accept(v StmtVisitor) { v.VisitContinueStmt(c) }

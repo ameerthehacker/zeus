@@ -6,6 +6,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
@@ -181,6 +182,115 @@ func TestVarDeclWithoutInit(t *testing.T) {
 	}
 	if input.Initializer != nil {
 		t.Errorf("expected nil initializer, got %v", input.Initializer)
+	}
+}
+
+func TestVarDeclNoTypeNoInitializerIsError(t *testing.T) {
+	builder, _ := generateHIR(t, `
+function f(): void {
+    let x;
+}`)
+	tc := ir.NewTypeChecker(builder, false)
+	tcErrors := tc.TypeCheck()
+	for _, err := range tcErrors {
+		if err.Severity == zeus_error.ErrorSeverityError && err.Message != "" {
+			return
+		}
+	}
+	t.Error("expected a TC error for 'let x;' with no type annotation and no initializer")
+}
+
+// ---- Type Inference Tests ----
+
+// runTC generates HIR, runs all TC passes (without lowering), and returns the builder.
+func runTC(t *testing.T, source string) *ir.IRBuilder {
+	t.Helper()
+	builder, _ := generateHIR(t, source)
+	tc := ir.NewTypeChecker(builder, false)
+	tcErrors := tc.TypeCheck()
+	for _, err := range tcErrors {
+		if err.Severity == zeus_error.ErrorSeverityError {
+			t.Fatalf("type check error: %v", err)
+		}
+	}
+	return builder
+}
+
+// findDeclVar returns the DECLARE_VAR instruction for the named variable inside a function body.
+func findDeclVar(t *testing.T, builder *ir.IRBuilder, funcName, varName string) *ir.Instr {
+	t.Helper()
+	block := getFuncEntryBlock(builder, funcName)
+	if block == nil {
+		t.Fatalf("function '%s' not found", funcName)
+	}
+	for _, instr := range allBlockInstrs(block) {
+		if instr.Type == ir.InstrTypeDeclVar {
+			if ir.AsDeclVarInstrInput(instr.Input).Variable.Name == varName {
+				return instr
+			}
+		}
+	}
+	t.Fatalf("DECLARE_VAR for '%s' not found in '%s'", varName, funcName)
+	return nil
+}
+
+func TestVarDeclInferredTypeFromInt(t *testing.T) {
+	builder := runTC(t, `
+function f(): void {
+    let x = 5
+}`)
+	instr := findDeclVar(t, builder, "f", "x")
+	varDecl := ir.AsDeclVarInstrInput(instr.Input)
+	intType, ok := varDecl.Variable.ValueType.(zeus_value.IntType)
+	if !ok {
+		t.Fatalf("expected IntType after inference, got %T", varDecl.Variable.ValueType)
+	}
+	if intType.Signed {
+		t.Error("expected unsigned int inferred from literal 5")
+	}
+}
+
+func TestVarDeclExplicitTypeRespected(t *testing.T) {
+	builder := runTC(t, `
+function f(): void {
+    let x: i64 = 5
+}`)
+	instr := findDeclVar(t, builder, "f", "x")
+	varDecl := ir.AsDeclVarInstrInput(instr.Input)
+	intType, ok := varDecl.Variable.ValueType.(zeus_value.IntType)
+	if !ok {
+		t.Fatalf("expected IntType, got %T", varDecl.Variable.ValueType)
+	}
+	if intType.Size != zeus_value.I64 || !intType.Signed {
+		t.Errorf("expected i64, got size=%v signed=%v", intType.Size, intType.Signed)
+	}
+}
+
+func TestVarDeclInferredTypeFromFloat(t *testing.T) {
+	builder := runTC(t, `
+function f(): void {
+    let x = 3.14
+}`)
+	instr := findDeclVar(t, builder, "f", "x")
+	varDecl := ir.AsDeclVarInstrInput(instr.Input)
+	floatType, ok := varDecl.Variable.ValueType.(zeus_value.FloatType)
+	if !ok {
+		t.Fatalf("expected FloatType after inference, got %T", varDecl.Variable.ValueType)
+	}
+	if floatType.Size != zeus_value.F64 {
+		t.Errorf("expected f64, got %v", floatType.Size)
+	}
+}
+
+func TestVarDeclInferredTypeFromBool(t *testing.T) {
+	builder := runTC(t, `
+function f(): void {
+    let x = true
+}`)
+	instr := findDeclVar(t, builder, "f", "x")
+	varDecl := ir.AsDeclVarInstrInput(instr.Input)
+	if _, ok := varDecl.Variable.ValueType.(zeus_value.BoolType); !ok {
+		t.Fatalf("expected BoolType after inference, got %T", varDecl.Variable.ValueType)
 	}
 }
 

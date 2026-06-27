@@ -11,6 +11,7 @@ import (
 
 const TEMP_VARIABLE_PREFIX = "%"
 const NULL_CONSTANT_VALUE = "null"
+
 // first 100 ids are reserved for primordial classes
 var classIdCounter = 100
 
@@ -372,8 +373,8 @@ func IsFloat(number string) bool {
 // It stores the array object (after navigating all but the last index) and the last index
 // This is used when handling array[0][1] = expr to generate temp1.set(lastIndex, expr)
 type ArrayElementRef struct {
-	ArrayObject Value      // The array object (could be the result of array.get(0) for multi-dimensional)
-	Index       Value      // The last index
+	ArrayObject Value // The array object (could be the result of array.get(0) for multi-dimensional)
+	Index       Value // The last index
 	Span        *token.Span
 }
 

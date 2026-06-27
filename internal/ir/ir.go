@@ -145,9 +145,17 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			isConst = true
 		}
 
+		var valueType zeus_value.ValueType
+
+		if decl.ValueType != nil {
+			valueType = decl.ValueType.ValueType
+		} else {
+			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
+		}
+
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
 			decl.Identifier.Name.Value,
-			decl.ValueType.ValueType,
+			valueType,
 			isConst,
 			initializer,
 			decl.GetSpan(),
@@ -550,7 +558,7 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 
 	// Return to parentBlock to declare the result variable and emit the conditional jump.
 	g.irBuilder.SetInsertionBlock(parentBlock)
-	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", nil, false, nil, span))
+	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", zeus_value.UndefinedType{Span: span}, false, nil, span))
 	g.irBuilder.BuildCondJmp(thenBlock, elseBlock, condition, span)
 
 	// Finish the then-block: store the then-value and jump to merge.

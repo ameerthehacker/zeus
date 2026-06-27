@@ -532,16 +532,16 @@ func isBinaryOp(instrType InstrType) bool {
 // =============================================================================
 
 type arrayMethodToLower struct {
-	callInstr        *Instr                      // CALL_METHOD or INDIRECT_FUNC_CALL instruction
-	callInput        *IndirectFuncCallInstrInput // Its input (nil for CALL_METHOD path)
-	args             []zeus_value.Value          // Call arguments (unified for both paths)
-	propAccessInstr  *Instr                      // OBJECT_PROPERTY_ACCESS instruction (nil for CALL_METHOD path)
-	loadInstr        *Instr                      // LOAD instruction (nil for CALL_METHOD path)
-	block            *BasicBlock                 // Block for call instruction
-	propAccessBlock  *BasicBlock                 // Block for property access instruction
-	loadBlock        *BasicBlock                 // Block for load instruction
-	methodName       string
-	arrayObj         zeus_value.Value // The array object the method is called on
+	callInstr       *Instr                      // CALL_METHOD or INDIRECT_FUNC_CALL instruction
+	callInput       *IndirectFuncCallInstrInput // Its input (nil for CALL_METHOD path)
+	args            []zeus_value.Value          // Call arguments (unified for both paths)
+	propAccessInstr *Instr                      // OBJECT_PROPERTY_ACCESS instruction (nil for CALL_METHOD path)
+	loadInstr       *Instr                      // LOAD instruction (nil for CALL_METHOD path)
+	block           *BasicBlock                 // Block for call instruction
+	propAccessBlock *BasicBlock                 // Block for property access instruction
+	loadBlock       *BasicBlock                 // Block for load instruction
+	methodName      string
+	arrayObj        zeus_value.Value // The array object the method is called on
 }
 
 // deleteAllInstrs deletes all related instructions (call, load, property access)
@@ -560,8 +560,8 @@ type ArrayMethodLoweringPass struct {
 }
 
 type propAccessInfo struct {
-	propAccessInstr *Instr           // OBJECT_PROPERTY_ACCESS instruction
-	loadInstr       *Instr           // LOAD instruction (if any)
+	propAccessInstr *Instr // OBJECT_PROPERTY_ACCESS instruction
+	loadInstr       *Instr // LOAD instruction (if any)
 	object          zeus_value.Value
 	methodName      string
 	propAccessBlock *BasicBlock
@@ -699,13 +699,14 @@ func (p *ArrayMethodLoweringPass) Finalize(l *Lowerer) {
 
 // lowerArrayConcat lowers arr1.concat(arr2) to use factory function
 // Generates:
-//   len1 = arr1.length
-//   len2 = arr2.length
-//   totalLen = len1 + len2
-//   newArr = new T[totalLen]
-//   newArr.copyRange(arr1, 0, 0, len1)
-//   newArr.copyRange(arr2, 0, len1, len2)
-//   result = newArr
+//
+//	len1 = arr1.length
+//	len2 = arr2.length
+//	totalLen = len1 + len2
+//	newArr = new T[totalLen]
+//	newArr.copyRange(arr1, 0, 0, len1)
+//	newArr.copyRange(arr2, 0, len1, len2)
+//	result = newArr
 func (p *ArrayMethodLoweringPass) lowerArrayConcat(l *Lowerer, method arrayMethodToLower) {
 	span := method.callInstr.Span
 	builder := l.GetBuilder()

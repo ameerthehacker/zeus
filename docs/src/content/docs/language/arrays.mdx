@@ -10,14 +10,14 @@ Zeus provides dynamic arrays that can grow and shrink at runtime.
 ## Creating Arrays
 
 ```zeus
-let numbers: i32[] = new i32[];           // Empty array
-let preallocated: i32[] = new i32[100];   // Pre-allocate capacity
+let numbers = new i32[];           // Empty array
+let preallocated = new i32[100];   // Pre-allocate capacity
 ```
 
 ## Basic Operations
 
 ```zeus
-let arr: i32[] = new i32[];
+let arr = new i32[];
 
 // Add elements
 arr.push(10);
@@ -25,18 +25,18 @@ arr.push(20);
 arr.push(30);        // arr = [10, 20, 30]
 
 // Access elements (bracket notation or .get())
-let first: i32 = arr[0];       // 10
-let second: i32 = arr.get(1);  // 20
+let first = arr[0];       // 10
+let second = arr.get(1);  // 20
 
 // Modify elements (bracket notation or .set())
 arr[0] = 100;
 arr.set(1, 200);     // arr = [100, 200, 30]
 
 // Remove last element
-let last: i32 = arr.pop();  // Returns 30, arr = [100, 200]
+let last = arr.pop();  // Returns 30, arr = [100, 200]
 
 // Check length
-let len: i32 = arr.length;  // 2
+let len = arr.length;  // 2
 ```
 
 ## Method Reference
@@ -80,24 +80,24 @@ These return **new arrays** without modifying the original:
 ## Non-Mutating Operations
 
 ```zeus
-let arr: i32[] = new i32[];
+let arr = new i32[];
 arr.push(1); arr.push(2); arr.push(3);
 
 // concat - combine arrays
-let other: i32[] = new i32[];
+let other = new i32[];
 other.push(4); other.push(5);
-let combined: i32[] = arr.concat(other);  // [1, 2, 3, 4, 5]
+let combined = arr.concat(other);  // [1, 2, 3, 4, 5]
 // arr is still [1, 2, 3]
 
 // slice - extract portion (start inclusive, end exclusive)
-let middle: i32[] = combined.slice(1, 4);  // [2, 3, 4]
+let middle = combined.slice(1, 4);  // [2, 3, 4]
 
 // reverse - reverse order
-let reversed: i32[] = arr.reverse();  // [3, 2, 1]
+let reversed = arr.reverse();  // [3, 2, 1]
 // arr is still [1, 2, 3]
 
 // Chain operations
-let result: i32[] = arr.reverse().slice(0, 2);  // [3, 2]
+let result = arr.reverse().slice(0, 2);  // [3, 2]
 ```
 
 ## Searching
@@ -122,20 +122,20 @@ arr.isEmpty();        // false
 
 ```zeus
 // 2D array
-let matrix: i32[][] = new i32[][];
+let matrix = new i32[][];
 matrix.push(new i32[]);
 matrix.push(new i32[]);
 matrix[0].push(1); matrix[0].push(2);
 matrix[1].push(3); matrix[1].push(4);
 
-let value: i32 = matrix[0][1];  // 2
+let value = matrix[0][1];  // 2
 
 // 3D array
-let cube: i32[][][] = new i32[][][];
+let cube = new i32[][][];
 cube.push(new i32[][]);
 cube[0].push(new i32[]);
 cube[0][0].push(42);
-let v: i32 = cube[0][0][0];  // 42
+let v = cube[0][0][0];  // 42
 ```
 
 ## Object Arrays
@@ -150,12 +150,12 @@ class Point {
   }
 }
 
-let points: Point[] = new Point[];
+let points = new Point[];
 points.push(new Point(1, 2));
 points.push(new Point(3, 4));
 
-let p: Point = points[0];
-let sum: i32 = p.x + p.y;  // 3
+let p = points[0];
+let sum = p.x + p.y;  // 3
 ```
 
 ## Practical Examples
@@ -164,7 +164,7 @@ let sum: i32 = p.x + p.y;  // 3
 
 ```zeus
 function sumArray(arr: i32[]): i32 {
-  let sum: i32 = 0;
+  let sum = 0;
   for (let i: i32 = 0; i < arr.length; i++) {
     sum += arr[i];
   }
@@ -214,9 +214,9 @@ let arr: i32[] = new i32[];
 arr.push(10);
 arr.push(20);
 
-let safe: i32 = arr[0];    // 10 - valid
-let also_safe: i32 = arr[1];  // 20 - valid
-let oob: i32 = arr[5];     // Throws IndexOutOfBoundsException!
+let safe = arr[0];      // 10 - valid
+let also_safe = arr[1]; // 20 - valid
+let oob = arr[5];       // Throws IndexOutOfBoundsException!
 ```
 
 <Aside type="caution">

@@ -68,7 +68,7 @@ class Task {
 
 function main(): i32 {
   // Create a dynamic array of tasks
-  let tasks: Task[] = new Task[];
+  let tasks = new Task[];
   
   // Add tasks to the array
   tasks.push(new Task(1, 10));
@@ -76,7 +76,7 @@ function main(): i32 {
   tasks.push(new Task(3, 15));
   
   // Access elements
-  let highPriority: Task = tasks.get(2);
+  let highPriority = tasks.get(2);
   
   return highPriority.priority;  // Returns 15
 }

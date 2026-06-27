@@ -3,5 +3,10 @@
     "name": "Default values of variables",
     "exit": "0",
     "entry": "default-value.zs"
+  },
+  {
+    "name": "Type inference — literals, function calls, arrays, objects, strings",
+    "exit": "0",
+    "entry": "type-infer.zs"
   }
 ]

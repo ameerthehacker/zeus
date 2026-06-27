@@ -581,7 +581,7 @@ func AsDeclClassMethodInstrInput(input InstrInput) *DeclClassMethodInstrInput {
 
 type GetIndexInstrInput struct {
 	Array   zeus_value.Value
-	Indices   []zeus_value.Value
+	Indices []zeus_value.Value
 }
 
 func (i GetIndexInstrInput) String() string {
@@ -637,10 +637,10 @@ func AsDeclPrimordialFuncInstrInput(input InstrInput) *DeclPrimordialFuncInstrIn
 
 // ThrowInstrInput is the input for THROW instruction
 type ThrowInstrInput struct {
-	ClassId    int               // Class ID of the exception type
-	ObjectPtr  zeus_value.Value  // Pointer to the Error object
-	SourceFile string            // Source file where throw occurred
-	SourceLine int               // Line number where throw occurred
+	ClassId    int              // Class ID of the exception type
+	ObjectPtr  zeus_value.Value // Pointer to the Error object
+	SourceFile string           // Source file where throw occurred
+	SourceLine int              // Line number where throw occurred
 }
 
 func NewThrowInstrInput(classId int, objectPtr zeus_value.Value, sourceFile string, sourceLine int) *ThrowInstrInput {
@@ -668,9 +668,9 @@ func AsThrowInstrInput(input InstrInput) *ThrowInstrInput {
 
 // PushHandlerInstrInput is the input for PUSH_HANDLER instruction
 type PushHandlerInstrInput struct {
-	HandlerBlock  *BasicBlock // The block to jump to when exception is caught
-	TryBodyBlock  *BasicBlock // The block containing the try body
-	ClassIds      []int       // Class IDs this handler catches (in order of catch clauses)
+	HandlerBlock *BasicBlock // The block to jump to when exception is caught
+	TryBodyBlock *BasicBlock // The block containing the try body
+	ClassIds     []int       // Class IDs this handler catches (in order of catch clauses)
 }
 
 func NewPushHandlerInstrInput(handlerBlock *BasicBlock, tryBodyBlock *BasicBlock, classIds []int) *PushHandlerInstrInput {
@@ -697,7 +697,7 @@ func AsPushHandlerInstrInput(input InstrInput) *PushHandlerInstrInput {
 
 // CheckExceptionInstrInput is the input for CHECK_EXCEPTION instruction
 type CheckExceptionInstrInput struct {
-	HandlerBlock *BasicBlock  // Block to jump to if exception is pending
+	HandlerBlock  *BasicBlock // Block to jump to if exception is pending
 	ContinueBlock *BasicBlock // Block to jump to if no exception
 }
 
@@ -893,7 +893,7 @@ func IsControlFlowInstr(instrType InstrType) bool {
 }
 
 func IsFunctionDeclInstr(instrType InstrType) bool {
-	return instrType == InstrTypeDeclFunc 
+	return instrType == InstrTypeDeclFunc
 }
 
 func IsPrimordialFunctionDeclInstr(instrType InstrType) bool {

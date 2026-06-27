@@ -32,23 +32,23 @@ func runSyncTest(t *testing.T, test syncTest) {
 func TestSynchronizationRecovery(t *testing.T) {
 	tests := []syncTest{
 		{
-			// One bad line (missing :), parser recovers and parses the next valid statement.
+			// One bad line (colon but missing data type), parser recovers and parses the next valid statement.
 			name:       "recovery after var decl error",
-			input:      "let x = 1;\nlet y: i8 = 2;",
+			input:      "let x: = 1;\nlet y: i8 = 2;",
 			errorCount: 1,
 			stmtCount:  1,
 		},
 		{
 			// Two independent bad lines each produce exactly one error.
 			name:       "two independent errors on different lines",
-			input:      "let x = 1;\nlet z = 2;",
+			input:      "let x: = 1;\nlet z: = 2;",
 			errorCount: 2,
 			stmtCount:  0,
 		},
 		{
 			// One error followed by two valid statements.
 			name:       "error then two valid statements",
-			input:      "let x = 1;\nlet a: i8 = 2;\nlet b: i16 = 3;",
+			input:      "let x: = 1;\nlet a: i8 = 2;\nlet b: i16 = 3;",
 			errorCount: 1,
 			stmtCount:  2,
 		},
@@ -77,7 +77,7 @@ func TestSynchronizationRecovery(t *testing.T) {
 		{
 			// Error in the middle: good stmt, bad stmt, good stmt.
 			name:       "error sandwiched between valid statements",
-			input:      "let a: i8 = 1;\nlet b = 2;\nlet c: i8 = 3;",
+			input:      "let a: i8 = 1;\nlet b: = 2;\nlet c: i8 = 3;",
 			errorCount: 1,
 			stmtCount:  2,
 		},

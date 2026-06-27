@@ -26,7 +26,7 @@ function add(a: i32, b: i32): i32 {
 }
 
 function main(): i32 {
-  let result: i32 = add(10, 20);
+  let result = add(10, 20);
   return result;  // Returns 30
 }
 ```
@@ -73,12 +73,12 @@ Use `void` for functions that don't return a value:
 
 ```zeus
 function doSomething(): void {
-  let x: i32 = 10;
+  let x = 10;
   // No return statement needed
 }
 
 function process(value: i32): void {
-  let doubled: i32 = value * 2;
+  let doubled = value * 2;
   return;  // Optional explicit return
 }
 ```
@@ -111,9 +111,9 @@ function multiply(a: i32, b: i32): i32 {
 }
 
 function main(): i32 {
-  let x: i32 = multiply(6, 7);       // x = 42
-  let y: i32 = multiply(x, 2);       // y = 84
-  let z: i32 = multiply(multiply(2, 3), 4);  // z = 24
+  let x = multiply(6, 7);             // x = 42
+  let y = multiply(x, 2);             // y = 84
+  let z = multiply(multiply(2, 3), 4);  // z = 24
   
   return z;
 }
@@ -160,9 +160,9 @@ function addPoints(p1: Point, p2: Point): Point {
 }
 
 function main(): i32 {
-  let a: Point = createPoint(1, 2);
-  let b: Point = createPoint(3, 4);
-  let c: Point = addPoints(a, b);
+  let a = createPoint(1, 2);
+  let b = createPoint(3, 4);
+  let c = addPoints(a, b);
   
   return c.x + c.y;  // Returns 10
 }
@@ -183,10 +183,10 @@ function subtract(a: i32, b: i32): i32 {
 
 function main(): i32 {
   let op: function(i32, i32): i32 = add;
-  let result1: i32 = op(10, 5);  // 15
+  let result1 = op(10, 5);  // 15
   
   op = subtract;
-  let result2: i32 = op(10, 5);  // 5
+  let result2 = op(10, 5);  // 5
   
   return result1 + result2;  // 20
 }

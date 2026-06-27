@@ -10,6 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}/zeus.go",
+            "buildFlags": "-tags llvm19",
             "args": [
                 "build",
                 "${workspaceFolder}/playground/main.zs",

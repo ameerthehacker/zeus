@@ -12,9 +12,9 @@ Zeus provides a first-class `string` type for working with text. Strings are **i
 String literals are enclosed in double quotes and create `string` objects:
 
 ```zeus
-let greeting: string = "Hello, Zeus!";
-let emoji: string = "Welcome 👋";
-let japanese: string = "こんにちは";
+let greeting = "Hello, Zeus!";
+let emoji = "Welcome 👋";
+let japanese = "こんにちは";
 ```
 
 String literals fully support UTF-8, including multi-byte characters and emojis.
@@ -98,11 +98,11 @@ log(modified);  // "hello"
 Returns the length of the string in bytes (not characters).
 
 ```zeus
-let text: string = "Hello";
-let len: i32 = text.length;  // 5
+let text = "Hello";
+let len = text.length;  // 5
 
-let emoji: string = "👋";
-let emojiLen: i32 = emoji.length;  // 4 (UTF-8 bytes)
+let emoji = "👋";
+let emojiLen = emoji.length;  // 4 (UTF-8 bytes)
 ```
 
 <Aside type="caution">
@@ -125,13 +125,13 @@ compare(other: string): i8
 - `1` if this string comes after `other`
 
 ```zeus
-let a: string = "apple";
-let b: string = "banana";
-let c: string = "apple";
+let a = "apple";
+let b = "banana";
+let c = "apple";
 
-let cmp1: i8 = a.compare(b);  // -1 (apple < banana)
-let cmp2: i8 = b.compare(a);  // 1  (banana > apple)
-let cmp3: i8 = a.compare(c);  // 0  (apple == apple)
+let cmp1 = a.compare(b);  // -1 (apple < banana)
+let cmp2 = b.compare(a);  // 1  (banana > apple)
+let cmp3 = a.compare(c);  // 0  (apple == apple)
 ```
 
 ### equals
@@ -169,10 +169,10 @@ concat(other: string): string
 **Returns:** A new string containing both strings joined together.
 
 ```zeus
-let hello: string = "Hello";
-let world: string = "World";
+let hello = "Hello";
+let world = "World";
 
-let greeting: string = hello.concat(" ").concat(world);
+let greeting = hello.concat(" ").concat(world);
 log(greeting);  // "Hello World"
 ```
 
@@ -189,9 +189,9 @@ Zeus supports operators for string manipulation and comparison:
 The `+` operator concatenates two strings:
 
 ```zeus
-let first: string = "Hello";
-let second: string = "World";
-let result: string = first + " " + second;
+let first = "Hello";
+let second = "World";
+let result = first + " " + second;
 log(result);  // "Hello World"
 ```
 
@@ -200,9 +200,9 @@ log(result);  // "Hello World"
 Compare strings for equality or inequality:
 
 ```zeus
-let a: string = "hello";
-let b: string = "hello";
-let c: string = "world";
+let a = "hello";
+let b = "hello";
+let c = "world";
 
 if (a == b) {
   log("a equals b");  // This executes
@@ -218,8 +218,8 @@ if (a != c) {
 Compare strings lexicographically (dictionary order):
 
 ```zeus
-let apple: string = "apple";
-let banana: string = "banana";
+let apple = "apple";
+let banana = "banana";
 
 if (apple < banana) {
   log("apple comes before banana");  // This executes
@@ -229,8 +229,8 @@ if (banana > apple) {
   log("banana comes after apple");  // This executes
 }
 
-let a: string = "hello";
-let b: string = "hello";
+let a = "hello";
+let b = "hello";
 
 if (a <= b) {
   log("a <= b");  // This executes (they're equal)
@@ -336,11 +336,11 @@ Strings use UTF-8 encoding, where characters can be 1-4 bytes:
 | Emoji | 4 bytes | `'👋'` |
 
 ```zeus
-let ascii: string = "A";
-let asciiLen: i32 = ascii.length;  // 1
+let ascii = "A";
+let asciiLen = ascii.length;  // 1
 
-let emoji: string = "👋";
-let emojiLen: i32 = emoji.length;  // 4
+let emoji = "👋";
+let emojiLen = emoji.length;  // 4
 ```
 
 ## Future Features

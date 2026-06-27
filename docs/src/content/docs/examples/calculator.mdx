@@ -32,13 +32,13 @@ function divide(a: i32, b: i32): i32 {
 }
 
 function main(): i32 {
-  let a: i32 = 20;
-  let b: i32 = 5;
+  let a = 20;
+  let b = 5;
   
-  let sum: i32 = add(a, b);        // 25
-  let diff: i32 = subtract(a, b);  // 15
-  let prod: i32 = multiply(a, b);  // 100
-  let quot: i32 = divide(a, b);    // 4
+  let sum = add(a, b);        // 25
+  let diff = subtract(a, b);  // 15
+  let prod = multiply(a, b);  // 100
+  let quot = divide(a, b);    // 4
   
   return sum + diff + prod + quot;  // 144
 }
@@ -88,7 +88,7 @@ class Calculator {
 }
 
 function main(): i32 {
-  let calc: Calculator = new Calculator();
+  let calc = new Calculator();
   
   calc.add(100);      // result = 100
   calc.subtract(20);  // result = 80
@@ -139,7 +139,7 @@ class FloatCalculator {
 }
 
 function main(): i32 {
-  let calc: FloatCalculator = new FloatCalculator();
+  let calc = new FloatCalculator();
   
   calc.add(10.5);
   calc.multiply(2.0);  // 21.0
@@ -246,8 +246,8 @@ function power(base: i32, exp: i32): i32 {
     return 1;
   }
   
-  let result: i32 = 1;
-  let i: i32 = 0;
+  let result = 1;
+  let i = 0;
   
   while (i < exp) {
     result = result * base;
@@ -258,10 +258,10 @@ function power(base: i32, exp: i32): i32 {
 }
 
 function main(): i32 {
-  let a: i32 = abs(-42);     // 42
-  let b: i32 = max(10, 20);  // 20
-  let c: i32 = min(10, 20);  // 10
-  let d: i32 = power(2, 8);  // 256
+  let a = abs(-42);     // 42
+  let b = max(10, 20);  // 20
+  let c = min(10, 20);  // 10
+  let d = power(2, 8);  // 256
   
   return a + b + c + d;  // 328
 }
@@ -320,7 +320,7 @@ class Calculator {
 }
 
 function main(): i32 {
-  let calc: Calculator = new Calculator();
+  let calc = new Calculator();
   
   // Calculate: ((10 + 5) * 3 - 15) / 3
   calc.set(10);

@@ -13,7 +13,7 @@ type ZeusRuntimeObjectType int
 
 const (
 	ZeusRuntimeObjectTypeObject ZeusRuntimeObjectType = 0
-	ZeusRuntimeObjectTypeArray ZeusRuntimeObjectType = 1
+	ZeusRuntimeObjectTypeArray  ZeusRuntimeObjectType = 1
 )
 
 type ZeusRuntimeType int

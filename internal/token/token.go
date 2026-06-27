@@ -87,7 +87,7 @@ const (
 	TokenTypePrivate
 	TokenTypePublic
 	TokenTypeProtected
-	TokenTypeNew     // new keyword
+	TokenTypeNew      // new keyword
 	TokenTypeTry      // try keyword
 	TokenTypeCatch    // catch keyword
 	TokenTypeThrow    // throw keyword

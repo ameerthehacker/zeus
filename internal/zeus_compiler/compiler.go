@@ -267,10 +267,16 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 		for _, sourceFile := range sourceFiles {
 			if len(sourceFile.Errors) > 0 {
 				warningSeverityErrors := []*zeus_error.ZeusError{}
+				lastWarningLine := -1
 				for _, err := range sourceFile.Errors {
-					if err.Severity == zeus_error.ErrorSeverityWarning {
-						warningSeverityErrors = append(warningSeverityErrors, err)
+					if err.Severity != zeus_error.ErrorSeverityWarning {
+						continue
 					}
+					if lastWarningLine == err.Span.Start.Line {
+						continue
+					}
+					warningSeverityErrors = append(warningSeverityErrors, err)
+					lastWarningLine = err.Span.Start.Line
 				}
 
 				if len(warningSeverityErrors) > 0 {
@@ -287,10 +293,16 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 			if len(sourceFile.Errors) > 0 {
 				// Filter errors to only include severity Error
 				errorSeverityErrors := []*zeus_error.ZeusError{}
+				lastErrorLine := -1
 				for _, err := range sourceFile.Errors {
-					if err.Severity == zeus_error.ErrorSeverityError {
-						errorSeverityErrors = append(errorSeverityErrors, err)
+					if err.Severity != zeus_error.ErrorSeverityError {
+						continue
 					}
+					if lastErrorLine == err.Span.Start.Line {
+						continue
+					}
+					errorSeverityErrors = append(errorSeverityErrors, err)
+					lastErrorLine = err.Span.Start.Line
 				}
 
 				if len(errorSeverityErrors) > 0 {

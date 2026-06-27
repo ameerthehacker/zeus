@@ -5,45 +5,61 @@ description: Learn how to declare and use variables in Zeus.
 
 import { Aside } from '@astrojs/starlight/components';
 
-Variables in Zeus are statically typed and must be declared with explicit type annotations.
+Variables in Zeus are statically typed. The type can either be written explicitly or inferred by the compiler from the initializer.
 
 ## Declaration
 
 Use the `let` keyword to declare mutable variables:
 
 ```zeus
-let age: i32 = 25;
-let temperature: f64 = 98.6;
-let isActive: boolean = true;
+let age = 25;
+let temperature = 98.6;
+let isActive = true;
 ```
 
 Use `const` for immutable values:
 
 ```zeus
-const PI: f64 = 3.14159;
-const MAX_SIZE: i32 = 100;
+const PI = 3.14159;
+const MAX_SIZE = 100;
 ```
 
 <Aside type="caution">
   Variables declared with `const` cannot be reassigned after initialization.
 </Aside>
 
-## Type Annotations
+## Type Inference
 
-Every variable requires a type annotation:
+When you provide an initializer, Zeus infers the type automatically:
 
 ```zeus
-let name: string = "Zeus";
-let count: i32 = 42;
-let ratio: f64 = 0.5;
-let flag: boolean = false;
+let name = "Zeus";      // inferred: string
+let count = 42;         // inferred: u8 (smallest unsigned type that fits)
+let ratio = 0.5;        // inferred: f64
+let flag = false;       // inferred: boolean
+```
+
+This is the preferred style for local variables — it keeps code concise without sacrificing safety. The type is still checked at compile time; you just don't have to write it.
+
+## Explicit Type Annotations
+
+When you need a specific type — a larger integer size, a signed type, or you're declaring without an initializer — add the annotation after a colon:
+
+```zeus
+let small: i8 = 127;          // explicit signed 8-bit
+let big: i64 = 100000000000;  // explicit 64-bit
+let x: i32;                   // no initializer — annotation required
 ```
 
 The syntax is: `let variableName: Type = value;`
 
+<Aside type="note">
+  Type annotations are **required** when declaring a variable without an initializer. They are also required for function parameters and class properties.
+</Aside>
+
 ## Default Values
 
-Variables can be declared without an initial value. They receive type-appropriate defaults:
+Variables declared without an initializer receive type-appropriate defaults:
 
 ```zeus
 function main(): i32 {
@@ -68,13 +84,13 @@ function main(): i32 {
 Variables declared with `let` can be reassigned:
 
 ```zeus
-let counter: i32 = 0;
+let counter = 0;
 counter = 1;
 counter = counter + 1;  // counter is now 2
 ```
 
 <Aside type="note">
-  You cannot change the type of a variable after declaration. `counter = 3.14` would be a type error.
+  You cannot change the type of a variable after declaration. `counter = 3.14` would be a type error if `counter` was inferred as an integer.
 </Aside>
 
 ## Naming Conventions
@@ -86,14 +102,14 @@ Variable names must:
 
 ```zeus
 // Valid names
-let userName: i32 = 1;
-let _private: i32 = 2;
-let count2: i32 = 3;
+let userName = 1;
+let _private = 2;
+let count2 = 3;
 
 // Invalid names
-// let 2count: i32 = 4;   // Cannot start with digit
-// let my-var: i32 = 5;   // Hyphens not allowed
-// let let: i32 = 6;      // Reserved keyword
+// let 2count = 4;   // Cannot start with digit
+// let my-var = 5;   // Hyphens not allowed
+// let let = 6;      // Reserved keyword
 ```
 
 ## Scope
@@ -102,10 +118,10 @@ Variables are scoped to the block they're declared in:
 
 ```zeus
 function main(): i32 {
-  let outer: i32 = 10;
+  let outer = 10;
   
   if (outer > 5) {
-    let inner: i32 = 20;
+    let inner = 20;
     // Both outer and inner are accessible here
   }
   
@@ -118,7 +134,7 @@ function main(): i32 {
 
 ## Object Variables
 
-When declaring object variables, you must use the class name as the type:
+When declaring object variables, the type is inferred from `new`:
 
 ```zeus
 class Point {
@@ -127,7 +143,7 @@ class Point {
 }
 
 function main(): i32 {
-  let p: Point = new Point();
+  let p = new Point();
   p.x = 10;
   p.y = 20;
   
@@ -135,7 +151,7 @@ function main(): i32 {
 }
 ```
 
-Object variables can be assigned `null`:
+Object variables can be assigned `null` (explicit type annotation required in that case):
 
 ```zeus
 let p: Point = null;
@@ -146,4 +162,3 @@ let p: Point = null;
 ## Next
 
 <a href="/language/types/">Types →</a>
-

@@ -140,7 +140,7 @@ type OpaqueType struct {
 }
 
 func (o OpaqueType) GetSpan() *token.Span {
-	return o.Span 
+	return o.Span
 }
 
 func (o OpaqueType) String() string {
@@ -214,7 +214,7 @@ func AsObjectType(value ValueType) *ObjectType {
 }
 
 func IsObjectType(value ValueType) bool {
-	return AsObjectType(value) != nil 
+	return AsObjectType(value) != nil
 }
 
 func IsOpaqueType(value ValueType) bool {
@@ -275,7 +275,7 @@ func IsClassType(value ValueType) bool {
 
 type ArrayType struct {
 	ElementType ValueType
-	Span *token.Span
+	Span        *token.Span
 }
 
 func NewArrayType(elementType ValueType, span *token.Span) ArrayType {

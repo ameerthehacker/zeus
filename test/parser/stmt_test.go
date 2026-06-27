@@ -136,15 +136,27 @@ func TestParserStmt(t *testing.T) {
 			},
 		},
 		{
-			input: "let x = 1;",
-			errors: []*zeus_error.ZeusError{
-				{
-					Message: "expected : after identifier in variable declaration, but found =",
-					Span: &token.Span{
-						Start: token.Position{Line: 1, Column: 7},
-						End:   token.Position{Line: 1, Column: 7},
+			// Type can be omitted in let/const declarations; it is inferred from the initializer.
+			input:  "let x = 1;",
+			errors: []*zeus_error.ZeusError{},
+			expected: &ast.VarDeclStmtNode{
+				Decls: []ast.VarDeclNode{
+					{
+						Identifier: &ast.IdentifierExprNode{Name: &token.Token{Type: token.TokenTypeIdentifier, Value: "x", Span: &token.Span{
+							Start: token.Position{Line: 1, Column: 5},
+							End:   token.Position{Line: 1, Column: 5},
+						}}},
+						ValueType:   nil,
+						DeclType:    ast.VarDeclTypeLet,
+						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1", Span: &token.Span{
+							Start: token.Position{Line: 1, Column: 9},
+							End:   token.Position{Line: 1, Column: 9},
+						}}},
 					},
-					Severity: zeus_error.ErrorSeverityError,
+				},
+				Span: &token.Span{
+					Start: token.Position{Line: 1, Column: 1},
+					End:   token.Position{Line: 1, Column: 9},
 				},
 			},
 		},

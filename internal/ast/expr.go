@@ -279,9 +279,9 @@ func (i *IndexingMeta) String() string {
 }
 
 type IndexingExprNode struct {
-	Array ExprNode
+	Array        ExprNode
 	IndexingMeta IndexingMeta
-	Span *token.Span
+	Span         *token.Span
 }
 
 func (t *IndexingExprNode) GetSpan() *token.Span {
@@ -485,7 +485,7 @@ func (c *CharExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.
 }
 
 type StringConstantExprNode struct {
-	Value * token.Token;
+	Value *token.Token
 }
 
 func (s *StringConstantExprNode) PrettyString() string {

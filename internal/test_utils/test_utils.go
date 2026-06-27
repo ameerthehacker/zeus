@@ -165,7 +165,12 @@ func CompareVarDecl(t *testing.T, decl ast.VarDeclNode, expected ast.VarDeclNode
 	if decl.DeclType != expected.DeclType {
 		t.Errorf("expected %s declaration type, got %s", expected.DeclType, decl.DeclType)
 	}
-	if !zeus_value.CmpValueType(decl.ValueType.ValueType, expected.ValueType.ValueType) {
+	switch {
+	case decl.ValueType == nil && expected.ValueType == nil:
+		// both inferred — ok
+	case decl.ValueType == nil || expected.ValueType == nil:
+		t.Errorf("expected value type %v, got %v", expected.ValueType, decl.ValueType)
+	case !zeus_value.CmpValueType(decl.ValueType.ValueType, expected.ValueType.ValueType):
 		t.Errorf("expected value type %s, got %s", expected.ValueType.ValueType, decl.ValueType.ValueType)
 	}
 	CompareExprNodes(t, decl.Initializer, expected.Initializer)

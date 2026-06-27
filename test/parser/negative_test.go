@@ -166,29 +166,24 @@ func TestNegativeVarDecl(t *testing.T) {
 			errors: parseErr("expected at least one variable declaration", 1, 4, 4),
 		},
 		{
-			name:   "missing : after identifier",
-			input:  "let x = 1;",
-			errors: parseErr("expected : after identifier in variable declaration, but found =", 1, 7, 7),
-		},
-		{
-			name:   "missing data type",
+			name:   "missing data type after colon",
 			input:  "let x: = 1;",
 			errors: parseErr("expected data type in variable declaration, but found =", 1, 8, 8),
 		},
 		{
-			name:   "missing initializer expression",
+			name:   "missing initializer expression with explicit type",
 			input:  "let x: i8 =;",
 			errors: parseErr("expected expression for variable initializer, but found ;", 1, 12, 12),
+		},
+		{
+			name:   "missing initializer expression without type",
+			input:  "let x =;",
+			errors: parseErr("expected expression for variable initializer, but found ;", 1, 8, 8),
 		},
 		{
 			name:   "const with no declarations",
 			input:  "const;",
 			errors: parseErr("expected at least one variable declaration", 1, 6, 6),
-		},
-		{
-			name:   "missing : in const declaration",
-			input:  "const x = 5;",
-			errors: parseErr("expected : after identifier in variable declaration, but found =", 1, 9, 9),
 		},
 	}
 

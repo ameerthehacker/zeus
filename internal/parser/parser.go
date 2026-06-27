@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
@@ -27,11 +28,11 @@ const (
 )
 
 var BinaryOperatorPrecedence = map[token.TokenType]int{
-	token.TokenTypeDot:              20, // member access (highest)
-	token.TokenTypeLeftBracket:      20, // array indexing
-	token.TokenTypeLeftParen:        19, // function call
-	token.TokenTypePlusPlus:         18, // postfix ++/--
-	token.TokenTypeMinusMinus:       18,
+	token.TokenTypeDot:         20, // member access (highest)
+	token.TokenTypeLeftBracket: 20, // array indexing
+	token.TokenTypeLeftParen:   19, // function call
+	token.TokenTypePlusPlus:    18, // postfix ++/--
+	token.TokenTypeMinusMinus:  18,
 	// UnaryOperatorPrecedence = 17 (prefix ~, !, -, ++, --)
 	token.TokenTypeDoubleStar:       16, // ** (right-associative)
 	token.TokenTypeStar:             15,
@@ -54,34 +55,34 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypePipePipe:         6,  // logical OR
 	token.TokenTypeQuestion:         3,  // ternary ?:
 	// Assignment operators (lowest precedence but > 0 so they get parsed)
-	token.TokenTypeEqual:             1,
-	token.TokenTypePlusEqual:         1,
-	token.TokenTypeMinusEqual:        1,
-	token.TokenTypeStarEqual:         1,
-	token.TokenTypeSlashEqual:        1,
-	token.TokenTypePercentEqual:      1,
-	token.TokenTypeDoubleStarEqual:   1,
-	token.TokenTypeBitwiseAndEqual:   1,
-	token.TokenTypeBitwiseOrEqual:    1,
-	token.TokenTypeBitwiseXorEqual:   1,
-	token.TokenTypeLeftShiftEqual:    1,
-	token.TokenTypeRightShiftEqual:   1,
+	token.TokenTypeEqual:           1,
+	token.TokenTypePlusEqual:       1,
+	token.TokenTypeMinusEqual:      1,
+	token.TokenTypeStarEqual:       1,
+	token.TokenTypeSlashEqual:      1,
+	token.TokenTypePercentEqual:    1,
+	token.TokenTypeDoubleStarEqual: 1,
+	token.TokenTypeBitwiseAndEqual: 1,
+	token.TokenTypeBitwiseOrEqual:  1,
+	token.TokenTypeBitwiseXorEqual: 1,
+	token.TokenTypeLeftShiftEqual:  1,
+	token.TokenTypeRightShiftEqual: 1,
 }
 
 var RightAssociativeOperators = map[token.TokenType]bool{
-	token.TokenTypeEqual:             true,
-	token.TokenTypePlusEqual:         true,
-	token.TokenTypeMinusEqual:        true,
-	token.TokenTypeStarEqual:         true,
-	token.TokenTypeSlashEqual:        true,
-	token.TokenTypePercentEqual:      true,
-	token.TokenTypeDoubleStarEqual:   true,
-	token.TokenTypeDoubleStar:        true, // power is right associative: 2**3**4 = 2**(3**4)
-	token.TokenTypeBitwiseAndEqual:   true,
-	token.TokenTypeBitwiseOrEqual:    true,
-	token.TokenTypeBitwiseXorEqual:   true,
-	token.TokenTypeLeftShiftEqual:    true,
-	token.TokenTypeRightShiftEqual:   true,
+	token.TokenTypeEqual:           true,
+	token.TokenTypePlusEqual:       true,
+	token.TokenTypeMinusEqual:      true,
+	token.TokenTypeStarEqual:       true,
+	token.TokenTypeSlashEqual:      true,
+	token.TokenTypePercentEqual:    true,
+	token.TokenTypeDoubleStarEqual: true,
+	token.TokenTypeDoubleStar:      true, // power is right associative: 2**3**4 = 2**(3**4)
+	token.TokenTypeBitwiseAndEqual: true,
+	token.TokenTypeBitwiseOrEqual:  true,
+	token.TokenTypeBitwiseXorEqual: true,
+	token.TokenTypeLeftShiftEqual:  true,
+	token.TokenTypeRightShiftEqual: true,
 }
 
 func getPrecedence(token *token.Token) int {
@@ -104,7 +105,7 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
 	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: functionName.GetSpan()}
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
-		param := p.parseVarDecl(false, ast.VarDeclTypeLet, "function parameter")
+		param := p.parseVarDecl(false, false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
@@ -195,7 +196,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 				})
 			} else {
-				property := parser.parseVarDecl(false, ast.VarDeclTypeLet, "class property")
+				property := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "class property")
 				spanStart := property.Identifier.GetSpan().Start
 				if accessModifier != nil {
 					spanStart = accessModifier.Span.Start
@@ -277,8 +278,8 @@ func NewParser(tokens []*token.Token) *Parser {
 			}
 		},
 		token.TokenTypeFunction:   functionParselet,
-		token.TokenTypeMinus:       unaryOperatorParseLet,
-		token.TokenTypeBang:        unaryOperatorParseLet, // logical NOT
+		token.TokenTypeMinus:      unaryOperatorParseLet,
+		token.TokenTypeBang:       unaryOperatorParseLet, // logical NOT
 		token.TokenTypeBitwiseNot: unaryOperatorParseLet, // bitwise NOT (~)
 		token.TokenTypePlusPlus:   prefixIncrementParseLet,
 		token.TokenTypeMinusMinus: prefixIncrementParseLet,
@@ -327,12 +328,12 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeStarEqual:        binaryOperatorParseLet,
 		token.TokenTypeSlashEqual:       binaryOperatorParseLet,
 		token.TokenTypePercentEqual:     binaryOperatorParseLet,
-		token.TokenTypeDoubleStarEqual:   binaryOperatorParseLet,
-		token.TokenTypeBitwiseAndEqual:   binaryOperatorParseLet,
-		token.TokenTypeBitwiseOrEqual:    binaryOperatorParseLet,
-		token.TokenTypeBitwiseXorEqual:   binaryOperatorParseLet,
-		token.TokenTypeLeftShiftEqual:    binaryOperatorParseLet,
-		token.TokenTypeRightShiftEqual:   binaryOperatorParseLet,
+		token.TokenTypeDoubleStarEqual:  binaryOperatorParseLet,
+		token.TokenTypeBitwiseAndEqual:  binaryOperatorParseLet,
+		token.TokenTypeBitwiseOrEqual:   binaryOperatorParseLet,
+		token.TokenTypeBitwiseXorEqual:  binaryOperatorParseLet,
+		token.TokenTypeLeftShiftEqual:   binaryOperatorParseLet,
+		token.TokenTypeRightShiftEqual:  binaryOperatorParseLet,
 		token.TokenTypeBitwiseAnd:       binaryOperatorParseLet, // &
 		token.TokenTypeBitwiseOr:        binaryOperatorParseLet, // |
 		token.TokenTypeBitwiseXor:       binaryOperatorParseLet, // ^
@@ -385,10 +386,8 @@ func (p *Parser) lookahead(n int, tokenType token.TokenType) bool {
 func (p *Parser) consumeAccessModifier() *token.Token {
 	accessModifierTokens := []token.TokenType{token.TokenTypePublic, token.TokenTypePrivate, token.TokenTypeProtected}
 
-	for _, tokenType := range accessModifierTokens {
-		if p.peek().Type == tokenType {
-			return p.consume()
-		}
+	if slices.Contains(accessModifierTokens, p.peek().Type) {
+		return p.consume()
 	}
 
 	return nil
@@ -404,7 +403,7 @@ func (p *Parser) consumeIndexingMetadata() *ast.IndexingMeta {
 	arrayMetadata := &ast.IndexingMeta{
 		IndexingExprs: []ast.ExprNode{},
 	}
-	
+
 	// Parse the first index expression (the '[' has already been consumed by the infix parselet)
 	// Allow optional expression for empty brackets in type expressions (e.g., new u8[10][])
 	indexExpr := p.parseExprOfPrecedence(0, true)
@@ -622,7 +621,7 @@ func (p *Parser) parseForStmt() *ast.ForStmtNode {
 			}
 			decls := []ast.VarDeclNode{}
 			for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
-				decl := p.parseVarDecl(true, varDeclType, "for loop initializer")
+				decl := p.parseVarDecl(true, false, varDeclType, "for loop initializer")
 				decls = append(decls, *decl)
 				p.consumeOptionalToken(token.TokenTypeComma)
 			}
@@ -671,7 +670,7 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	decls := []ast.VarDeclNode{}
 
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
-		decl := p.parseVarDecl(true, varDeclType, "variable declaration")
+		decl := p.parseVarDecl(true, true, varDeclType, "variable declaration")
 		decls = append(decls, *decl)
 		p.consumeOptionalToken(token.TokenTypeComma)
 	}
@@ -691,13 +690,15 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	return &ast.VarDeclStmtNode{Decls: decls, Span: span}
 }
 
-func (p *Parser) parseVarDecl(allowInitializer bool, declType ast.VarDeclType, cxt string) *ast.VarDeclNode {
+func (p *Parser) parseVarDecl(allowInitializer bool, optionalDataType bool, declType ast.VarDeclType, cxt string) *ast.VarDeclNode {
 	var initializer ast.ExprNode
 
 	identifier := p.consumeIdentifier(fmt.Sprintf("in %s", cxt))
-	// parse the datatype
-	p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier in %s", cxt))
-	dataType := p.consumeDataType("data type", cxt)
+	var dataType *ast.ValueTypeNode
+	if !optionalDataType || p.peek().Type == token.TokenTypeColon {
+		p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after identifier in %s", cxt))
+		dataType = p.consumeDataType("data type", cxt)
+	}
 
 	// check if the declaration has an initializer
 	if allowInitializer && p.peek().Type == token.TokenTypeEqual {

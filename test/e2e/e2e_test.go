@@ -136,7 +136,7 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 
 	// Execute the compiled program and capture stdout/stderr
 	execCmd := exec.Command(outputFile)
-	
+
 	// Set NO_COLOR environment variable if specified
 	if spec.NoColor {
 		execCmd.Env = append(os.Environ(), "NO_COLOR=1")

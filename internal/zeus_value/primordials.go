@@ -304,4 +304,3 @@ func IsErrorClass(class *Class) bool {
 	}
 	return false
 }
-

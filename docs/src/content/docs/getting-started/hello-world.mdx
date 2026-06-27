@@ -104,7 +104,7 @@ class Greeter {
 }
 
 function main(): i32 {
-  let greeter: Greeter = new Greeter(5);
+  let greeter = new Greeter(5);
   return greeter.greetCount();
 }
 ```
@@ -126,7 +126,7 @@ Here's an example using dynamic arrays:
 ```zeus
 function main(): i32 {
   // Create an array of integers
-  let numbers: i32[] = new i32[];
+  let numbers = new i32[];
   
   // Add some numbers
   numbers.push(10);
@@ -134,8 +134,8 @@ function main(): i32 {
   numbers.push(30);
   
   // Access by index
-  let first: i32 = numbers.get(0);
-  let second: i32 = numbers.get(1);
+  let first = numbers.get(0);
+  let second = numbers.get(1);
   
   return first + second;  // Returns 30
 }

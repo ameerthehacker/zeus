@@ -441,7 +441,7 @@ func getKeywordDescription(keyword string) string {
 		"new":       "Object instantiation",
 		"null":      "Null value",
 	}
-	
+
 	if desc, ok := descriptions[keyword]; ok {
 		return desc
 	}
@@ -465,7 +465,7 @@ func getDataTypeDescription(typeName string) string {
 		"boolean": "Boolean type",
 		"null":    "Null type",
 	}
-	
+
 	if desc, ok := descriptions[typeName]; ok {
 		return desc
 	}
@@ -475,7 +475,7 @@ func getDataTypeDescription(typeName string) string {
 // getCompletions returns completion items for the given document at a specific position
 func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Position) *protocol.CompletionList {
 	items := []protocol.CompletionItem{}
-	
+
 	// Add Zeus keywords from the token package
 	for keyword := range token.Keywords {
 		items = append(items, protocol.CompletionItem{
@@ -484,7 +484,7 @@ func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Posi
 			Detail: getKeywordDescription(keyword),
 		})
 	}
-	
+
 	// Add type keywords from the token package
 	for dataType := range token.DataTypes {
 		items = append(items, protocol.CompletionItem{
@@ -493,14 +493,14 @@ func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Posi
 			Detail: getDataTypeDescription(dataType),
 		})
 	}
-	
+
 	// Get document-specific completions from symbol table
 	docInfo, ok := s.documents[string(uri)]
 	if ok && docInfo.IRModule != nil {
 		symbolItems := s.getSymbolCompletions(docInfo.IRModule, position)
 		items = append(items, symbolItems...)
 	}
-	
+
 	return &protocol.CompletionList{
 		IsIncomplete: false,
 		Items:        items,
@@ -512,25 +512,25 @@ func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Posi
 func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition protocol.Position) []protocol.CompletionItem {
 	items := []protocol.CompletionItem{}
 	seen := make(map[string]bool)
-	
+
 	// Get all symbols from the IR module
 	symbols := irModule.GetAllSymbols()
-	
+
 	// Convert cursor position to 1-based for comparison with Zeus spans
 	cursorLine := int(cursorPosition.Line) + 1
 	cursorColumn := int(cursorPosition.Character) + 1
-	
+
 	for name, value := range symbols {
 		// Skip if we've already seen this symbol (duplicates in different scopes)
 		if seen[name] {
 			continue
 		}
-		
+
 		// Skip temporary variables (they start with '%')
 		if asVar := zeus_value.AsVar(value); asVar != nil && asVar.IsTempVariable() {
 			continue
 		}
-		
+
 		// Check if the symbol is declared before the cursor position
 		var symbolSpan *token.Span
 		if asVar := zeus_value.AsVar(value); asVar != nil {
@@ -540,7 +540,7 @@ func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition prot
 		} else if asClass := zeus_value.AsClass(value); asClass != nil {
 			symbolSpan = asClass.Span
 		}
-		
+
 		// Skip symbols declared after the cursor
 		if symbolSpan != nil {
 			// If the symbol starts after the cursor line, skip it
@@ -552,14 +552,14 @@ func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition prot
 				continue
 			}
 		}
-		
+
 		seen[name] = true
-		
+
 		// Determine the completion item kind and detail based on the symbol type
 		var kind protocol.CompletionItemKind
 		var detail string
 		var documentation string
-		
+
 		if asVar := zeus_value.AsVar(value); asVar != nil {
 			kind = protocol.CompletionItemKindVariable
 			if asVar.ValueType != nil {
@@ -593,7 +593,7 @@ func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition prot
 			// Unknown symbol type, skip it
 			continue
 		}
-		
+
 		items = append(items, protocol.CompletionItem{
 			Label:         name,
 			Kind:          kind,
@@ -601,25 +601,25 @@ func (s *Server) getSymbolCompletions(irModule *ir.IRModule, cursorPosition prot
 			Documentation: documentation,
 		})
 	}
-	
+
 	return items
 }
 
 // validateDocument parses a document and sends diagnostics
 func (s *Server) validateDocument(uri protocol.DocumentURI, content string) error {
 	irModule, errors := s.parseDocument(content)
-	
+
 	// Store the document info
 	s.documents[string(uri)] = &DocumentInfo{
 		Content:  content,
 		IRModule: irModule,
 		Errors:   errors,
 	}
-	
+
 	diagnostics := s.convertToLSPDiagnostics(errors)
-	
+
 	// Log diagnostics for debugging
 	fmt.Fprintf(os.Stderr, "Generated %d diagnostics for %s\n", len(diagnostics), uri)
-	
+
 	return s.sendDiagnostics(uri, diagnostics)
 }
