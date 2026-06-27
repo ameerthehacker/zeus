@@ -17,6 +17,11 @@ jobs:
         with:
           go-version: '1.23'
           cache: true
+      
+      - name: Install LLVM
+        run: |
+          brew install llvm@19
+          echo "LLVM_PATH=$(brew --prefix llvm@19)" >> $GITHUB_ENV
 
       - name: Install Zig
         uses: goto-bus-stop/setup-zig@v2
