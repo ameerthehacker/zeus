@@ -1,7 +1,7 @@
 .PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run always build lsp fmt
 
 clean:
-	rm -rf playground/debug
+	rm -rf playground/target
 	rm -rf zeus-vscode/vsix
 	rm -rf build
 	rm -rf third_party
@@ -9,8 +9,6 @@ clean:
 	rm -rf runtime/zig-out
 
 always:
-	rm -rf playground/debug
-	mkdir -p playground/debug playground/debug/out
 	cmake -B build -DCMAKE_BUILD_TYPE=Release
 	make -C build
 
@@ -77,11 +75,11 @@ compile-release: always
 
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build --target-dir ./playground/debug/out ./playground/$(file).zs -o ./playground/debug/$(file); \
-		ZEUS_GC_DEBUG=true ./playground/debug/$(file); \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --internal-emit-ir --target-dir ./playground && \
+		ZEUS_GC_DEBUG=true ./playground/target/debug/bin/$(file); \
 	else \
-		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
-		./playground/debug/$(file); \
+		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --target-dir ./playground && \
+		./playground/target/debug/bin/$(file); \
 	fi
 
 ARCH ?= arm64

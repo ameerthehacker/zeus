@@ -7,7 +7,6 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/module"
-	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -59,7 +58,7 @@ type CodegenModule struct {
 	module                 llvm.Module
 	builder                llvm.Builder
 	cxt                    llvm.Context
-	symbolTable            *symbol_table.SymbolTable[llvm.Value]
+	llvmValues             map[string]llvm.Value
 	basicBlocks            map[int]llvm.BasicBlock
 	isEntryPoint           bool
 	exportedClasses        map[string]ZeusClassModule
@@ -157,7 +156,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		module:                 module,
 		builder:                builder,
 		cxt:                    c.cxt,
-		symbolTable:            symbol_table.NewSymbolTable[llvm.Value](),
+		llvmValues:             make(map[string]llvm.Value),
 		basicBlocks:            make(map[int]llvm.BasicBlock),
 		isEntryPoint:           isEntryPoint,
 		exportedClasses:        make(map[string]ZeusClassModule),
@@ -247,11 +246,11 @@ func (c *CodegenModule) callGlobalLLVMFunction(name string, args ...llvm.Value) 
 }
 
 func (c *CodegenModule) getSymbol(name string) llvm.Value {
-	symbol, ok := c.symbolTable.GetSymbol(name)
+	v, ok := c.llvmValues[name]
 	if !ok {
-		panic(fmt.Sprintf("symbol %s not found in symbol table", name))
+		panic(fmt.Sprintf("symbol %s not found", name))
 	}
-	return symbol
+	return v
 }
 
 func (c *CodegenModule) getSizeOfClass(class zeus_value.Class) uint64 {
@@ -554,16 +553,26 @@ func (c *CodegenModule) addFramePointerAttr(fn llvm.Value) {
 }
 
 func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
+	// If the function was already pre-declared (by the forward-declaration phase),
+	// return the existing LLVM value — calling AddFunction again would cause LLVM
+	// to rename the second call to "name.1", producing a body-less stub.
+	if existing, ok := c.llvmValues[function.Name]; ok {
+		for index, param := range existing.Params() {
+			c.llvmValues[function.Params[index].Name] = param
+		}
+		return existing
+	}
+
 	llvmFunc := llvm.AddFunction(c.module, function.Name, c.toLLVMFunctionType(zeus_value.ToFunctionType(function)))
 	funcParams := function.Params
 
 	for index, param := range llvmFunc.Params() {
-		c.symbolTable.DeclareSymbol(funcParams[index].Name, param)
+		c.llvmValues[funcParams[index].Name] = param
 	}
 
 	c.addFramePointerAttr(llvmFunc)
 
-	c.symbolTable.DeclareGlobalSymbol(function.Name, llvmFunc)
+	c.llvmValues[function.Name] = llvmFunc
 
 	return llvmFunc
 }
@@ -642,26 +651,16 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 		c.builder.CreateStore(llvm.ConstPointerNull(variableType), variable)
 	}
 
-	c.symbolTable.DeclareSymbol(input.Variable.Name, variable)
+	c.llvmValues[input.Variable.Name] = variable
 }
 
 func (c *CodegenModule) genStore(input ir.StoreInstrInput) {
-	addr, ok := c.symbolTable.GetSymbol(input.Addr.Name)
-
-	if !ok {
-		panic(fmt.Sprintf("symbol %s not found in symbol table", input.Addr.Name))
-	}
-
-	c.builder.CreateStore(c.toLLVMValue(input.Value), addr)
+	c.builder.CreateStore(c.toLLVMValue(input.Value), c.getSymbol(input.Addr.Name))
 }
 
 func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output zeus_value.Var) {
-	addr, ok := c.symbolTable.GetSymbol(input.Addr.Name)
-	if !ok {
-		panic(fmt.Sprintf("symbol %s not found in symbol table", input.Addr.Name))
-	}
-	llvmValue := c.builder.CreateLoad(c.toLLVMType(input.Addr.ValueType), addr, input.Addr.Name)
-	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+	llvmValue := c.builder.CreateLoad(c.toLLVMType(input.Addr.ValueType), c.getSymbol(input.Addr.Name), input.Addr.Name)
+	c.llvmValues[output.Name] = llvmValue
 }
 
 func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_value.Var) {
@@ -675,7 +674,7 @@ func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_val
 	}
 
 	llvmValue := c.builder.CreateCall(llvmFunctionType, function, args, fmt.Sprintf("%s_call_result", function.Name()))
-	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+	c.llvmValues[output.Name] = llvmValue
 }
 
 func (c *CodegenModule) genJmp(input ir.JmpInstrInput) {
@@ -811,7 +810,7 @@ func (c *CodegenModule) genBinaryOp(instr *ir.Instr, input ir.BinaryOpInstrInput
 		result = c.genLLVMBinaryOp(input.Left, input.Right, "shr", c.builder.CreateAShr, c.builder.CreateLShr, nil)
 	}
 
-	c.symbolTable.DeclareSymbol(output.Name, result)
+	c.llvmValues[output.Name] = result
 }
 
 // genPowerOp generates LLVM code for the power operation (a ** b)
@@ -856,7 +855,7 @@ func (c *CodegenModule) genUnaryOp(instr *ir.Instr, input ir.UnaryOpInstrInput, 
 		result = c.builder.CreateNot(llvmValue, "bitnot")
 	}
 
-	c.symbolTable.DeclareSymbol(output.Name, result)
+	c.llvmValues[output.Name] = result
 }
 
 func (c *CodegenModule) genExport(input ir.ExportInstrInput) {
@@ -918,7 +917,7 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	case *zeus_value.Function:
 		importedFunc := llvm.AddFunction(c.module, module.GetModuleScopedName(input.ModulePath, importedValue.Name), c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
 		c.addFramePointerAttr(importedFunc)
-		c.symbolTable.DeclareGlobalSymbol(importedValue.Name, importedFunc)
+		c.llvmValues[importedValue.Name] = importedFunc
 	case *zeus_value.Class:
 		c.genImportedClass(*importedValue, input.ModulePath)
 	default:
@@ -966,7 +965,7 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 		panic(castErrorMsg)
 	}
 
-	c.symbolTable.DeclareSymbol(output.Name, result)
+	c.llvmValues[output.Name] = result
 }
 
 func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Type, llvm.Type, llvm.Type, string) {
@@ -1155,7 +1154,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 
 	// Call the factory function
 	llvmStruct := c.builder.CreateCall(factoryFunctionType, factoryFunc, factoryArgs, factoryFunctionName)
-	c.symbolTable.DeclareSymbol(output.Name, llvmStruct)
+	c.llvmValues[output.Name] = llvmStruct
 }
 
 // FactoryFunctionPrefix is the naming prefix for all primordial factory functions.
@@ -1374,11 +1373,11 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 		llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
 		classMethodSlotPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.Property)
 		classMethodPtr := c.builder.CreateLoad(llvm.PointerType(c.cxt.VoidType(), 0), classMethodSlotPtr, input.Property+"_fn_ptr")
-		c.symbolTable.DeclareSymbol(output.Name, classMethodPtr)
+		c.llvmValues[output.Name] = classMethodPtr
 		return
 	}
 	llvmValue = c.builder.CreateStructGEP(c.toLLVMStructType(objectType), llvmValue, propertyIndex, input.Property)
-	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+	c.llvmValues[output.Name] = llvmValue
 }
 
 func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
@@ -1393,7 +1392,7 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 	}
 
 	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
-	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+	c.llvmValues[output.Name] = llvmValue
 }
 
 func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
@@ -1438,7 +1437,7 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	}
 
 	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(fullFunctionType), methodPtr, functionArgs, fmt.Sprintf("%s_result", input.MethodName))
-	c.symbolTable.DeclareSymbol(output.Name, llvmValue)
+	c.llvmValues[output.Name] = llvmValue
 }
 
 func (c *CodegenModule) genDeclPrimordialFunc(input ir.DeclPrimordialFuncInstrInput) {
@@ -1508,8 +1507,6 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	var currentFunction llvm.Value
 
-	c.symbolTable.EnterScope()
-
 	// Phase 1: Process all DECL_CLASS instructions first
 	// This ensures all LLVM struct types are created before they're used
 	processedClassIds := make(map[int]bool)
@@ -1520,7 +1517,21 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		}
 	}
 
-	// Phase 2: Process all other instructions
+	// Phase 2: Pre-declare all user functions and class methods so forward calls resolve.
+	// Walk processes each function's body immediately after its DECL_FUNC, so without this
+	// a call to a later-declared function would not find an LLVM value.
+	for _, instr := range irBuilder.GetInstrs() {
+		switch instr.Type {
+		case ir.InstrTypeDeclFunc:
+			input := ir.AsDeclFuncInstrInput(instr.Input)
+			c.genFunc(*input.Function)
+		case ir.InstrTypeDeclClassMethod:
+			input := ir.AsDeclClassMethodInstrInput(instr.Input)
+			c.genFunc(c.appendThisParamToFunction(*input.Method, *input.Class))
+		}
+	}
+
+	// Phase 3: Process all other instructions
 	irBuilder.Walk(func(instr *ir.Instr) {
 		// Skip already processed DECL_CLASS instructions
 		if processedClassIds[instr.Id] {
@@ -1530,12 +1541,6 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeDeclFunc:
 			fallthrough
 		case ir.InstrTypeDeclClassMethod:
-			// maintain function level scoping
-			if !c.symbolTable.IsGlobalScope() {
-				c.symbolTable.ExitScope()
-			} else {
-				c.symbolTable.EnterScope()
-			}
 			if instr.Type == ir.InstrTypeDeclClassMethod {
 				currentFunction = c.genDeclClassMethod(*ir.AsDeclClassMethodInstrInput(instr.Input))
 			} else {
@@ -1669,8 +1674,6 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	if c.diBuilder != nil {
 		c.diBuilder.Finalize()
 	}
-
-	c.symbolTable.ExitScope()
 }
 
 // DumpIR returns the LLVM IR as a string for debugging
@@ -1800,7 +1803,7 @@ func (c *CodegenModule) genGetException(output zeus_value.Var) {
 	errorObj := c.callGlobalLLVMFunction("zeus_get_exception_object", exc)
 
 	// Store in output variable
-	c.symbolTable.DeclareSymbol(output.Name, errorObj)
+	c.llvmValues[output.Name] = errorObj
 }
 
 // genClearException generates LLVM code for clearing the current exception

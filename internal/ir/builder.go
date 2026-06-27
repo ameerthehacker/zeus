@@ -301,6 +301,14 @@ func (b *IRBuilder) BuildDeclPrimordialFunc(fn *zeus_value.Function, span *token
 }
 
 func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, class *zeus_value.Class, span *token.Span) *zeus_value.Function {
+	// If a stub was pre-hoisted for this name, reuse the same Function object so that
+	// any forward-call references already captured in CALL_FUNC instructions stay valid
+	// and share the same IsUsed pointer as the DECL_FUNC instruction.
+	var existingStub *zeus_value.Function
+	if existing, ok := b.symbolTable.GetSymbol(name); ok {
+		existingStub = zeus_value.AsFunction(existing)
+	}
+
 	b.symbolTable.EnterScope()
 	params := []*zeus_value.Var{}
 	for _, arg := range args {
@@ -310,12 +318,15 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 		params = append(params, variable)
 	}
 
-	fn := zeus_value.NewFunction(
-		name,
-		params,
-		return_type,
-		span,
-	)
+	var fn *zeus_value.Function
+	if existingStub != nil {
+		// Update stub in place so forward-call references remain valid
+		existingStub.Params = params
+		existingStub.ReturnType = return_type
+		fn = existingStub
+	} else {
+		fn = zeus_value.NewFunction(name, params, return_type, span)
+	}
 	// functions are global
 	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
 
@@ -446,7 +457,6 @@ func (b *IRBuilder) BuildClassMethodDecl(method *zeus_value.Function, body *Basi
 
 func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) string {
 	result := b.createTempVariable(span)
-	class.Name = b.generateUniqueSymbolName(class.Name)
 
 	b.pushInstr(&Instr{
 		Type:   InstrTypeDeclClass,

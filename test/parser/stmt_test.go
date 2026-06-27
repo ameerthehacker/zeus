@@ -146,8 +146,8 @@ func TestParserStmt(t *testing.T) {
 							Start: token.Position{Line: 1, Column: 5},
 							End:   token.Position{Line: 1, Column: 5},
 						}}},
-						ValueType:   nil,
-						DeclType:    ast.VarDeclTypeLet,
+						ValueType: nil,
+						DeclType:  ast.VarDeclTypeLet,
 						Initializer: &ast.NumberExprNode{Value: &token.Token{Type: token.TokenTypeNumber, Value: "1", Span: &token.Span{
 							Start: token.Position{Line: 1, Column: 9},
 							End:   token.Position{Line: 1, Column: 9},

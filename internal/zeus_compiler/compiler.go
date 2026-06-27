@@ -37,6 +37,9 @@ type Compiler struct {
 	targetMachine    llvm.TargetMachine
 	targetDataLayout llvm.TargetData
 	mode             BuildMode
+	emitIR           bool
+	irDir            string
+	cwd              string
 }
 
 type SourceFile struct {
@@ -48,6 +51,8 @@ type SourceFile struct {
 	IRBuilder    *ir.IRBuilder
 	Exports      []*zeus_value.Value
 	IsEntryPoint bool
+	HIRText      string // captured after TypeCheck, before LowerIR
+	LIRText      string // captured after LowerIR, before GenerateLLVMIR
 }
 
 type SourceFileDependency struct {
@@ -138,6 +143,12 @@ func NewCompiler(mode BuildMode) (*Compiler, error) {
 		targetDataLayout: targetDataLayout,
 		mode:             mode,
 	}, nil
+}
+
+func (c *Compiler) EnableIREmission(irDir string, cwd string) {
+	c.emitIR = true
+	c.irDir = irDir
+	c.cwd = cwd
 }
 
 func (c *Compiler) GetDependencies(program *ast.ProgramNode, sourcePath string) ([]*SourceFileDependency, []*zeus_error.ZeusError) {
@@ -337,8 +348,24 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 	// type check the zeus IR
 	sourceFiles = c.TypeCheck(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
+	// snapshot HIR before lowering
+	if c.emitIR {
+		for _, sf := range sourceFiles {
+			if sf.IRBuilder != nil {
+				sf.HIRText = formatZeusIR(sf.IRBuilder, "HIR", sf.Path)
+			}
+		}
+	}
 	// lower high-level IR constructs (e.g., string<->u8[] casts)
 	sourceFiles = c.LowerIR(sourceFiles)
+	// snapshot LIR after lowering
+	if c.emitIR {
+		for _, sf := range sourceFiles {
+			if sf.IRBuilder != nil {
+				sf.LIRText = formatZeusIR(sf.IRBuilder, "LIR", sf.Path)
+			}
+		}
+	}
 	// generate llvm IR
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
@@ -349,6 +376,12 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 
 func (c *Compiler) Compile(entryFilePath string, outDir string, outputPath string) {
 	sourceFiles := c.Check(entryFilePath)
+	if c.emitIR {
+		if err := c.emitIRFiles(sourceFiles); err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit IR files: %s", err.Error()))
+			os.Exit(1)
+		}
+	}
 	if c.mode == BuildModeRelease {
 		c.compileRelease(sourceFiles, outDir, outputPath)
 	} else {
@@ -384,11 +417,6 @@ func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputDir string, o
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to create output dir: %s", err.Error()))
 		os.Exit(1)
-	}
-
-	if debug.IsDebug() {
-		llPath := filepath.Join(outputDir, "program.ll")
-		_ = os.WriteFile(llPath, []byte(merged.String()), 0644)
 	}
 
 	buffer, emitErr := c.targetMachine.EmitToMemoryBuffer(merged, llvm.ObjectFile)
@@ -565,14 +593,44 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile, outputDir string) ([]
 			return nil, err
 		}
 		objFiles = append(objFiles, objPath)
-
-		if debug.IsDebug() {
-			llPath := filepath.Join(outputDir, hash+".ll")
-			_ = os.WriteFile(llPath, []byte(sourceFile.Module.String()), 0644)
-		}
 	}
 
 	return objFiles, nil
+}
+
+func formatZeusIR(b *ir.IRBuilder, phase string, filePath string) string {
+	var sb strings.Builder
+	sb.WriteString("; Zeus " + phase + "\n")
+	sb.WriteString("; source: " + filePath + "\n\n")
+	sb.WriteString(b.String())
+	return sb.String()
+}
+
+func (c *Compiler) emitIRFiles(sourceFiles []*SourceFile) error {
+	for _, sf := range sourceFiles {
+		relPath, err := filepath.Rel(c.cwd, sf.Path)
+		if err != nil {
+			relPath = filepath.Base(sf.Path)
+		}
+		relBase := strings.TrimSuffix(relPath, filepath.Ext(relPath))
+		outBase := filepath.Join(c.irDir, relBase)
+
+		if err := os.MkdirAll(filepath.Dir(outBase), 0755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(outBase+".zhir", []byte(sf.HIRText), 0644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(outBase+".zlir", []byte(sf.LIRText), 0644); err != nil {
+			return err
+		}
+		if sf.Module != nil {
+			if err := os.WriteFile(outBase+".ll", []byte(sf.Module.GetModule().String()), 0644); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func getZeusHomeDir() string {

@@ -13,5 +13,20 @@
         "name": "Optional return statement in void functions",
         "exit": "0",
         "entry": "void-return.zs"
+    },
+    {
+        "name": "Can call a function declared after the call site (forward call)",
+        "exit": "10",
+        "entry": "forward-call.zs"
+    },
+    {
+        "name": "Mutual recursion across forward-declared functions",
+        "exit": "1",
+        "entry": "mutual-recursion.zs"
+    },
+    {
+        "name": "Forward call chain across multiple functions",
+        "exit": "42",
+        "entry": "forward-call-chain.zs"
     }
 ]
