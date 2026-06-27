@@ -283,6 +283,15 @@ func (p *PrimordialClassGenPass) Finalize(tc *TypeChecker) {
 	emittedClasses = make(map[string]bool)
 	primordialInsertionIndex = 0
 
+	// Pre-populate emittedClasses with classes already declared by IRBuilder.initializePrimordials
+	// so we don't emit duplicate DECL_CLASS instructions for the same types
+	for _, instr := range tc.builder.instrs {
+		if instr.Type == InstrTypeDeclClass {
+			class := AsDeclClassInstrInput(instr.Input).Class
+			emittedClasses[class.Name] = true
+		}
+	}
+
 	// Generate class declarations for all collected array types first
 	// We need to sort them by depth (simpler types first) to ensure dependencies are resolved
 	sortedTypes := p.sortArrayTypesByDepth()

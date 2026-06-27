@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/debug"
 	"github.com/ameerthehacker/zeus/internal/zeus_compiler"
 
 	"github.com/spf13/cobra"
@@ -13,6 +14,7 @@ const (
 	FlagOutputPath = "out"
 	FlagTargetDir  = "target-dir"
 	FlagRelease    = "release"
+	FlagEmitIR     = "internal-emit-ir"
 )
 
 func buildCmd() *cobra.Command {
@@ -46,6 +48,14 @@ func buildCmd() *cobra.Command {
 			}
 
 			compiler := mustNewCompiler(mode)
+
+			if debug.IsDebug() {
+				if f := cmd.Flags().Lookup(FlagEmitIR); f != nil && f.Changed {
+					irDir := getModeDir(targetBase, mode, IR_DIR_NAME)
+					compiler.EnableIREmission(irDir, folderPath)
+				}
+			}
+
 			compiler.Compile(filePath, objDir, outputPath)
 		},
 	}
@@ -53,6 +63,9 @@ func buildCmd() *cobra.Command {
 	buildCmd.Flags().StringP(FlagOutputPath, "o", "", "the output path")
 	buildCmd.Flags().String(FlagTargetDir, "", "the directory where the target/ folder is created (default: current directory)")
 	buildCmd.Flags().Bool(FlagRelease, false, "build an optimized release binary")
+	if debug.IsDebug() {
+		buildCmd.Flags().Bool(FlagEmitIR, false, "emit .zhir/.zlir/.ll IR files for debugging")
+	}
 
 	return buildCmd
 }
