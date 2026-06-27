@@ -103,12 +103,67 @@ func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
 	}
 
+	// Hoist all top-level function and class signatures so definition order
+	// does not matter — forward calls and forward references are resolved here.
+	g.hoistTopLevelDeclarations(program)
+
 	for _, stmt := range program.Statements {
 		stmt.Accept(g)
 	}
 	g.irBuilder.Optimize()
 
 	return g.errors
+}
+
+// hoistTopLevelDeclarations pre-registers all top-level function and class
+// signatures in the symbol table before any body is compiled, so callers can
+// reference them regardless of definition order.
+func (g *IRModule) hoistTopLevelDeclarations(program *ast.ProgramNode) {
+	seen := map[string]bool{}
+	for _, stmt := range program.Statements {
+		exprStmt, ok := stmt.(*ast.ExprStmtNode)
+		if !ok {
+			continue
+		}
+		switch expr := exprStmt.Expr.(type) {
+		case *ast.FunctionDeclExprNode:
+			name := expr.Name.Name.Value
+			if seen[name] {
+				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), expr.Name.GetSpan()))
+				continue
+			}
+			seen[name] = true
+			params := []*zeus_value.Var{}
+			for _, p := range expr.Params {
+				params = append(params, zeus_value.NewVar(p.Identifier.Name.Value, p.ValueType.ValueType, false, p.Identifier.Name.Span))
+			}
+			fn := zeus_value.NewFunction(name, params, expr.ReturnType.ValueType, expr.Name.Name.Span)
+			g.symbolTable().DeclareGlobalSymbol(name, fn)
+		case *ast.ClassDeclExprNode:
+			name := expr.Name.Name.Value
+			if seen[name] {
+				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), expr.Name.GetSpan()))
+				continue
+			}
+			seen[name] = true
+			properties := []*zeus_value.ClassProperty{}
+			for _, prop := range expr.Properties {
+				v := zeus_value.NewVar(prop.Name.Name.Value, prop.ValueType.ValueType, false, prop.Name.GetSpan())
+				properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier))
+			}
+			methods := []*zeus_value.ClassMethod{}
+			for _, method := range expr.Methods {
+				params := []*zeus_value.Var{}
+				for _, p := range method.Params {
+					params = append(params, zeus_value.NewVar(p.Identifier.Name.Value, p.ValueType.ValueType, false, p.Identifier.Name.Span))
+				}
+				fn := zeus_value.NewFunction(method.Name.Name.Value, params, method.ReturnType.ValueType, method.Name.Name.Span)
+				methods = append(methods, zeus_value.NewClassMethod(fn, method.AccessModifier))
+			}
+			class := zeus_value.NewClass(name, properties, methods, "", nil, expr.GetSpan())
+			g.symbolTable().DeclareGlobalSymbol(name, class)
+		}
+	}
 }
 
 func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
@@ -840,8 +895,8 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 	// Get or create from registry (handles nested array types internally)
 	arrayClass := zeus_value.Registry.GetOrCreateArrayClass(arrayType)
 
-	// Register in symbol table
-	g.symbolTable().DeclareSymbol(arrayClassName, arrayClass)
+	// Register in global scope so the type checker can find it regardless of call site
+	g.symbolTable().DeclareGlobalSymbol(arrayClassName, arrayClass)
 
 	// Emit DECL_CLASS at the beginning of the instruction list
 	g.irBuilder.EmitClassDeclAtStart(arrayClass)
@@ -1021,19 +1076,15 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 }
 
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
-	if g.isSymbolDeclared(expr.Name.Name.Value, expr.Name.GetSpan()) {
-		return nil
-	}
-
 	g.symbolTable().EnterScope()
 	properties := []*zeus_value.ClassProperty{}
 	for _, property := range expr.Properties {
 		if g.isSymbolDeclared(property.Name.Name.Value, property.Name.GetSpan()) {
 			continue
 		}
-		g.symbolTable().DeclareSymbol(property.Name.Name.Value, zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()))
-
-		properties = append(properties, zeus_value.NewClassProperty(zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan()), property.AccessModifier))
+		propVar := zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan())
+		g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
+		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier))
 	}
 
 	methods := []*zeus_value.ClassMethod{}
@@ -1337,14 +1388,6 @@ func (g *IRModule) popTryContext() {
 	if len(g.tryContextStack) > 0 {
 		g.tryContextStack = g.tryContextStack[:len(g.tryContextStack)-1]
 	}
-}
-
-// getCurrentTryContext returns the current try context or nil if not in a try block
-func (g *IRModule) getCurrentTryContext() *TryContext {
-	if len(g.tryContextStack) > 0 {
-		return g.tryContextStack[len(g.tryContextStack)-1]
-	}
-	return nil
 }
 
 // getClassIdFromType extracts the class ID from a type
