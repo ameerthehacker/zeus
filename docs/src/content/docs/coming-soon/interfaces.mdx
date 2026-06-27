@@ -20,7 +20,7 @@ Define contracts that classes must implement:
 
 ```zeus
 interface Printable {
-  print(): void;
+  print();
 }
 
 interface Comparable {
@@ -63,19 +63,19 @@ A class can implement multiple interfaces:
 
 ```zeus
 interface Drawable {
-  draw(): void;
+  draw();
 }
 
 interface Clickable {
-  onClick(): void;
+  onClick();
 }
 
 class Button implements Drawable, Clickable {
-  public draw(): void {
+  public draw() {
     // Render the button
   }
 
-  public onClick(): void {
+  public onClick() {
     // Handle click
   }
 }
@@ -105,17 +105,17 @@ function calculateTotalArea(shapes: Shape[]): f64 {
 
 ```zeus
 interface Logger {
-  log(message: string): void;
+  log(message: string);
 }
 
 class ConsoleLogger implements Logger {
-  public log(message: string): void {
+  public log(message: string) {
     // Print to console
   }
 }
 
 class FileLogger implements Logger {
-  public log(message: string): void {
+  public log(message: string) {
     // Write to file
   }
 }
@@ -134,10 +134,10 @@ class Application {
 ```zeus
 interface Plugin {
   getName(): string;
-  execute(): void;
+  execute();
 }
 
-function runPlugins(plugins: Plugin[]): void {
+function runPlugins(plugins: Plugin[]) {
   let i: i32 = 0;
   while (i < plugins.length()) {
     plugins.get(i).execute();

@@ -195,9 +195,11 @@ The expression is optional (`return;` is valid for void functions).
 ### Function Declaration
 
 ```
-FunctionDecl ::= 'function' identifier '(' ParamList ')' ':' DataType BlockStmt
+FunctionDecl ::= 'function' identifier '(' ParamList ')' (':' DataType)? BlockStmt
 ParamList    ::= (VarDecl (',' VarDecl)*)?
 ```
+
+The return type annotation is optional — omitting it defaults to `void`. Providing `: void` explicitly is also valid.
 
 Example: `function add(x: i32, y: i32): i32 { return x + y; }`
 
@@ -218,7 +220,7 @@ Example:
 class Point extends Shape {
   public x: i32;
   public y: i32;
-  constructor(): void { }
+  constructor() { }
   distance(other: Point): f64 { ... }
 }
 ```

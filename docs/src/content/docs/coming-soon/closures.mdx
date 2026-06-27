@@ -95,7 +95,7 @@ function main(): i32 {
 Use closures for event handling and callbacks:
 
 ```zeus
-function processAsync(callback: function(i32): void): void {
+function processAsync(callback: function(i32)) {
   let result: i32 = 42;
   callback(result);
 }
@@ -103,7 +103,7 @@ function processAsync(callback: function(i32): void): void {
 function main(): i32 {
   let received: i32 = 0;
   
-  processAsync((value: i32): void => {
+  processAsync((value: i32) => {
     received = value;
   });
   

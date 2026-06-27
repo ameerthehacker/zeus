@@ -716,7 +716,14 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 }
 
 func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
-	return g.emitFunction(expr.Name.Name.Value, expr.Params, expr.ReturnType.ValueType, expr.Body, nil, expr.Name.Name.Span)
+	var returnType zeus_value.ValueType
+	returnType = zeus_value.VoidType{Span: expr.GetSpan()}
+
+	if expr.ReturnType != nil {
+		returnType = expr.ReturnType.ValueType
+	}
+
+	return g.emitFunction(expr.Name.Name.Value, expr.Params, returnType, expr.Body, nil, expr.Name.Name.Span)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -913,7 +920,14 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 
 	// Emit method bodies if AST nodes are provided (user-defined classes)
 	for _, method := range methodASTs {
-		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, method.ReturnType.ValueType, method.Body, class, method.Name.Name.Span)
+		var returnType zeus_value.ValueType
+		returnType = zeus_value.VoidType{Span: method.Name.GetSpan()}
+
+		if method.ReturnType != nil {
+			returnType = method.ReturnType.ValueType
+		}
+
+		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, returnType, method.Body, class, method.Name.Name.Span)
 	}
 
 	return irClassName

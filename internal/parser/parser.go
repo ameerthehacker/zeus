@@ -117,7 +117,7 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 		if colon != nil {
 			dataType = p.consumeDataType("return type", fmt.Sprintf("%s declaration", fnType))
 		}
-	} else {
+	} else if p.peek().Type == token.TokenTypeColon {
 		p.consumeToken(token.TokenTypeColon, fmt.Sprintf("after %s parameters", fnType))
 		// consume the return type
 		dataType = p.consumeDataType("return type", fmt.Sprintf("%s declaration", fnType))

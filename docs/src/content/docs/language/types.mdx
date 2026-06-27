@@ -54,11 +54,16 @@ let hasError = false;
 
 ### Void Type
 
-`void` is used only as a function return type to indicate no value is returned:
+`void` indicates a function returns no value. The annotation is **optional** — omitting the return type is equivalent to writing `: void`:
 
 ```zeus
-function logMessage(): void {
+function logMessage() {
   // No return statement needed
+}
+
+// Explicit : void means the same thing
+function reset(): void {
+  // ...
 }
 ```
 

@@ -93,11 +93,11 @@ class Counter {
     this.value = start;
   }
 
-  public increment(): void {
+  public increment() {
     this.value = this.value + 1;
   }
 
-  public add(amount: i32): void {
+  public add(amount: i32) {
     this.value = this.value + amount;
   }
 
@@ -121,7 +121,7 @@ class BankAccount {
     this.balance = initialBalance;
   }
 
-  public deposit(amount: i32): void {
+  public deposit(amount: i32) {
     this.balance = this.balance + amount;
   }
 
@@ -193,7 +193,7 @@ class Box {
   }
 }
 
-function modifyBox(box: Box): void {
+function modifyBox(box: Box) {
   box.value = 999;
 }
 
@@ -305,7 +305,7 @@ class Team {
     this.scores = new i32[];
   }
 
-  public addScore(score: i32): void {
+  public addScore(score: i32) {
     this.scores.push(score);
   }
 

@@ -69,17 +69,22 @@ function getPi(): f64 {
 
 ## Void Functions
 
-Use `void` for functions that don't return a value:
+Functions that don't return a value can omit the return type annotation entirely — it defaults to `void`. You can also write `: void` explicitly if you prefer to be clear:
 
 ```zeus
-function doSomething(): void {
+function doSomething() {
   let x = 10;
   // No return statement needed
 }
 
-function process(value: i32): void {
+function process(value: i32) {
   let doubled = value * 2;
   return;  // Optional explicit return
+}
+
+// Explicit : void is also valid and means the same thing
+function reset(): void {
+  // ...
 }
 ```
 

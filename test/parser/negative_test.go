@@ -226,11 +226,6 @@ func TestNegativeFunctionDeclaration(t *testing.T) {
 			errors: parseErr("expected data type in function parameter, but found )", 1, 17, 17),
 		},
 		{
-			name:   "missing : after parameters for return type",
-			input:  "function name(a: i8) {}",
-			errors: parseErr("expected : after function parameters, but found {", 1, 22, 22),
-		},
-		{
 			name:   "missing return type after :",
 			input:  "function name(a: i8): {}",
 			errors: parseErr("expected return type in function declaration, but found {", 1, 23, 23),
