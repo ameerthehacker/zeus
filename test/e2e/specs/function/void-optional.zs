@@ -14,7 +14,7 @@ class Counter {
   }
 }
 
-function main(): i8 {
+function main(): i32 {
   greet("Zeus");
   let c: Counter = new Counter(0);
   c.increment();
