@@ -256,6 +256,7 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 	unique_name := b.generateUniqueSymbolName(v.Name)
 
 	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
+	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
 
 	b.symbolTable.DeclareSymbol(unique_name, variable)
