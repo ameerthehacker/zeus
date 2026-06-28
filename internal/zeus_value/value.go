@@ -65,12 +65,13 @@ func (o Object) String() string {
 }
 
 type Var struct {
-	Name      string
-	ValueType ValueType
-	IsPtr     bool
-	IsConst   bool
-	Span      *token.Span
-	IsUsed    bool
+	Name         string
+	OriginalName string
+	ValueType    ValueType
+	IsPtr        bool
+	IsConst      bool
+	Span         *token.Span
+	IsUsed       bool
 }
 
 func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span) *Var {

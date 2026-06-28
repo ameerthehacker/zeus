@@ -1857,9 +1857,13 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 		if variable := zeus_value.AsVar(value); variable != nil {
 			// Skip temporary variables as they shouldn't generate warnings
 			if !variable.IsTempVariable() && !variable.IsUsed {
+				displayName := variable.OriginalName
+				if displayName == "" {
+					displayName = variable.Name
+				}
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
-					Message:  fmt.Sprintf("identifier '%s' is declared but not used", variable.Name),
+					Message:  fmt.Sprintf("identifier '%s' is declared but not used", displayName),
 					Span:     variable.Span,
 				})
 			}

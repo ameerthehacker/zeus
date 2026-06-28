@@ -1,10 +1,9 @@
 module github.com/ameerthehacker/zeus
 
-go 1.23.0
-
-toolchain go1.24.4
+go 1.25
 
 require (
+	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/fatih/color v1.18.0
 	github.com/spf13/cobra v1.9.1
 	go.lsp.dev/protocol v0.12.0
@@ -12,6 +11,7 @@ require (
 )
 
 require (
+	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
