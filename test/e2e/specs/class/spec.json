@@ -8,5 +8,10 @@
         "name": "++/-- operators on class fields",
         "exit": "2",
         "entry": "increment.zs"
+    },
+    {
+        "name": "Class declared inside function body",
+        "exit": "10",
+        "entry": "nested.zs"
     }
 ]

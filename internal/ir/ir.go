@@ -915,7 +915,10 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 // For user-defined classes, pass methodASTs to emit method bodies
 // For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
 func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMethod) string {
+	savedBlock := g.irBuilder.GetInsertionBlock()
+	g.irBuilder.SetInsertionBlock(nil)
 	irClassName := g.irBuilder.BuildClassDecl(class, class.GetSpan())
+	g.irBuilder.SetInsertionBlock(savedBlock)
 	g.symbolTable().DeclareSymbol(class.Name, class)
 
 	// Emit method bodies if AST nodes are provided (user-defined classes)

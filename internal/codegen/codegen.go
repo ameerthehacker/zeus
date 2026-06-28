@@ -1539,14 +1539,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		}
 		switch instr.Type {
 		case ir.InstrTypeDeclFunc:
-			fallthrough
+			currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
 		case ir.InstrTypeDeclClassMethod:
-			if instr.Type == ir.InstrTypeDeclClassMethod {
-				currentFunction = c.genDeclClassMethod(*ir.AsDeclClassMethodInstrInput(instr.Input))
-			} else {
-				currentFunction = c.genDeclFunc(*ir.AsDeclFuncInstrInput(instr.Input))
-			}
-			// Don't set debug location for function declaration itself
+			currentFunction = c.genDeclClassMethod(*ir.AsDeclClassMethodInstrInput(instr.Input))
 		case ir.InstrTypeDeclVar:
 			c.setDebugLocation(instr.Span)
 			c.genDeclVar(*ir.AsDeclVarInstrInput(instr.Input))
