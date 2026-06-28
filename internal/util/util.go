@@ -26,14 +26,14 @@ func GetPropertyIndex(class zeus_value.Class, propertyName string) int {
 func GetMethodIndex(class zeus_value.Class, methodName string) int {
 	methodIndex := 0
 	for _, method := range class.Methods {
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		// Skip lowered methods - they are not in the vtable
 		if method.IsLowered {
 			continue
 		}
-		if method.Method.Name == methodName {
+		if method.Method.SourceName() == methodName {
 			return methodIndex
 		}
 		methodIndex += 1

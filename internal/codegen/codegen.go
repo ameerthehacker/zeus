@@ -310,16 +310,15 @@ func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
 			continue
 		}
 
-		// update the method name to include the class name prefix
-		scopedClassMethod := zeus_value.NewClassMethod(
-			zeus_value.NewFunction(
-				util.GetClassMethodName(class.Name, method.Method.Name),
-				method.Method.Params,
-				method.Method.ReturnType,
-				method.Method.Span,
-			),
-			method.AccessModifier,
+		// Build the LLVM function using class-prefixed name; set OriginalName for constructor detection.
+		scopedFn := zeus_value.NewFunction(
+			util.GetClassMethodName(class.Name, method.Method.Name),
+			method.Method.Params,
+			method.Method.ReturnType,
+			method.Method.Span,
 		)
+		scopedFn.OriginalName = method.Method.Name
+		scopedClassMethod := zeus_value.NewClassMethod(scopedFn, method.AccessModifier)
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
 
 		// Mark primordial wrappers as alwaysinline to eliminate them from binary
@@ -892,11 +891,9 @@ func (c *CodegenModule) genImportedClass(class zeus_value.Class, modulePath stri
 	var llvmConstructorMethod *llvm.Value = nil
 	// declare the external constructor method
 	for _, method := range class.Methods {
-		constructorMethodName := util.GetClassMethodName(class.Name, token.CONSTRUCTOR_METHOD_NAME)
-		scopedConstructorName := module.GetModuleScopedName(modulePath, constructorMethodName)
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod := method.Method
-			constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*constructorMethod)))
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			scopedConstructorName := module.GetModuleScopedName(modulePath, method.Method.Name)
+			constructorFunc := llvm.AddFunction(c.module, scopedConstructorName, c.toLLVMFunctionType(zeus_value.ToFunctionType(*method.Method)))
 			c.addFramePointerAttr(constructorFunc)
 			llvmConstructorMethod = &constructorFunc
 			break
@@ -1006,7 +1003,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	vtableElementTypes := []llvm.Type{}
 	for _, method := range class.Methods {
 		// constructor method is not part of the vtable
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
@@ -1087,7 +1084,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// Count only non-constructor, non-lowered methods for vtable
 	methodCount := 0
 	for _, method := range class.Methods {
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		if method.IsLowered {
@@ -1184,7 +1181,7 @@ func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Valu
 	// Find constructor method to get parameter types
 	var constructorMethod *zeus_value.Function
 	for _, method := range class.Methods {
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			constructorMethod = method.Method
 			break
 		}
@@ -1232,7 +1229,7 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	// Find constructor method to get parameter types
 	var constructorMethod *zeus_value.Function
 	for _, method := range class.Methods {
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			constructorMethod = method.Method
 			break
 		}
@@ -1306,7 +1303,7 @@ func (c *CodegenModule) appendThisParamToFunction(method zeus_value.Function, cl
 // genClassMethod generates LLVM code for a class method given the method body and class
 func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_value.Class) llvm.Value {
 	methodWithThisParam := c.appendThisParamToFunction(method, class)
-	isConstructor := methodWithThisParam.Name == util.GetClassMethodName(class.Name, token.CONSTRUCTOR_METHOD_NAME)
+	isConstructor := methodWithThisParam.SourceName() == token.CONSTRUCTOR_METHOD_NAME
 	function := c.genFunc(methodWithThisParam)
 
 	// Create debug info for method
@@ -1419,7 +1416,7 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 
 	var foundMethod *zeus_value.Function
 	for _, m := range objectClass.Class.Methods {
-		if m.Method.Name == input.MethodName {
+		if m.Method.SourceName() == input.MethodName {
 			foundMethod = m.Method
 			break
 		}

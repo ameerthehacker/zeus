@@ -1306,7 +1306,7 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 	var constructorAccessModifier token.TokenType = token.TokenTypePublic
 
 	for _, method := range class.Methods {
-		if method.Method.Name == token.CONSTRUCTOR_METHOD_NAME {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			constructorMethod = method.Method
 			if method.AccessModifier != nil {
 				constructorAccessModifier = method.AccessModifier.Type
@@ -1366,7 +1366,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		}
 
 		for _, method := range methods {
-			if method.Method.Name == input.Property {
+			if method.Method.SourceName() == input.Property {
 				isFound = true
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
@@ -1384,7 +1384,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 				})
 			} else {
 				tc.pushError(&zeus_error.ZeusError{
-					Message: fmt.Sprintf("property %s not found in class %s", input.Property, class.Name),
+					Message: fmt.Sprintf("property %s not found in class %s", input.Property, class.SourceName()),
 					Span:    output.Span,
 				})
 			}
@@ -1399,7 +1399,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
 			if !isAccessible && !propertyOfSameClass {
 				tc.pushError(&zeus_error.ZeusError{
-					Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.Name),
+					Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.SourceName()),
 					Span:    output.Span,
 				})
 			}
@@ -1434,7 +1434,7 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	var foundMethod *zeus_value.ClassMethod
 
 	for i := range class.Methods {
-		if class.Methods[i].Method.Name == input.MethodName {
+		if class.Methods[i].Method.SourceName() == input.MethodName {
 			foundMethod = class.Methods[i]
 			break
 		}
@@ -1442,7 +1442,7 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 
 	if foundMethod == nil {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("property %s not found in class %s", input.MethodName, class.Name),
+			Message: fmt.Sprintf("property %s not found in class %s", input.MethodName, class.SourceName()),
 			Span:    instr.Output.Span,
 		})
 		return
@@ -1459,7 +1459,7 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
 	if foundMethod.AccessModifier != nil && foundMethod.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("property %s is not accessible in class %s", input.MethodName, class.Name),
+			Message: fmt.Sprintf("property %s is not accessible in class %s", input.MethodName, class.SourceName()),
 			Span:    instr.Output.Span,
 		})
 	}
@@ -1610,7 +1610,7 @@ func (p *TypeCheckingPass) tcThrow(tc *TypeChecker, instr *Instr) {
 
 	if !zeus_value.IsErrorClass(&objectType.Class) {
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found class '%s'", objectType.Class.Name),
+			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found class '%s'", objectType.Class.SourceName()),
 			Span:    instr.Span,
 		})
 	}
@@ -1776,7 +1776,7 @@ func (p *UnusedWarningPass) handleMethodCall(tc *TypeChecker, instr *Instr) {
 	if zeus_value.IsObjectType(objectType) {
 		class := zeus_value.AsObjectType(objectType).Class
 		for _, classMethod := range class.Methods {
-			if classMethod.Method.Name == input.MethodName {
+			if classMethod.Method.SourceName() == input.MethodName {
 				classMethod.Method.IsUsed = true
 				return
 			}
@@ -1802,7 +1802,7 @@ func (p *UnusedWarningPass) handleObjectPropertyAccess(tc *TypeChecker, instr *I
 		class := zeus_value.AsObjectType(objectType).Class
 		// Look for a method with the matching name
 		for _, classMethod := range class.Methods {
-			if classMethod.Method.Name == input.Property {
+			if classMethod.Method.SourceName() == input.Property {
 				// Mark the method as used
 				classMethod.Method.IsUsed = true
 				return
@@ -1888,7 +1888,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			if !class.IsUsed && class.PrimordialName == "" {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
-					Message:  fmt.Sprintf("class '%s' is declared but not used", class.Name),
+					Message:  fmt.Sprintf("class '%s' is declared but not used", class.SourceName()),
 					Span:     class.Span,
 				})
 			} else {
@@ -1898,7 +1898,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					method := classMethod.Method
 
 					// Skip constructor methods as they're implicitly used
-					if method.Name == token.CONSTRUCTOR_METHOD_NAME {
+					if method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 						continue
 					}
 
@@ -1906,7 +1906,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					if !method.IsUsed && class.PrimordialName == "" {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
-							Message:  fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.Name, class.Name),
+							Message:  fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.SourceName(), class.SourceName()),
 							Span:     method.Span,
 						})
 					}
@@ -1920,7 +1920,7 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					if !property.IsUsed && class.PrimordialName == "" {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
-							Message:  fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.Name),
+							Message:  fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.SourceName()),
 							Span:     property.Span,
 						})
 					}
