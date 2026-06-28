@@ -169,7 +169,7 @@ func (v *VarDeclNode) PrettyString() string {
 
 func (v *VarDeclNode) GetSpan() *token.Span {
 	startPosition := v.Identifier.GetSpan().Start
-	endPosition := startPosition
+	endPosition := v.Identifier.GetSpan().End
 
 	if v.ValueType != nil {
 		endPosition = v.ValueType.Span.End

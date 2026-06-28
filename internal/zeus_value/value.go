@@ -100,11 +100,13 @@ func (v Var) IsTempVariable() bool {
 }
 
 type Function struct {
-	Name       string
-	Params     []*Var
-	ReturnType ValueType
-	IsUsed     bool
-	Span       *token.Span
+	Name         string
+	OriginalName string // user-visible name before IR-level uniquification
+	Params       []*Var
+	ReturnType   ValueType
+	IsUsed       bool
+	Span         *token.Span
+	Class        *Class // non-nil when this function is a class method
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {
@@ -119,6 +121,16 @@ func NewFunction(name string, params []*Var, returnType ValueType, span *token.S
 
 func (f Function) GetSpan() *token.Span {
 	return f.Span
+}
+
+// SourceName returns the user-visible name for the function.
+// For user-defined functions/methods, OriginalName is set and carries the source name
+// while Name holds the unique IR name. Primordials leave OriginalName empty, so Name is used.
+func (f Function) SourceName() string {
+	if f.OriginalName != "" {
+		return f.OriginalName
+	}
+	return f.Name
 }
 
 func (f Function) String() string {
@@ -179,6 +191,7 @@ func (m *ClassMethod) String() string {
 type Class struct {
 	Id               int
 	Name             string
+	OriginalName     string // user-visible name before IR-level uniquification
 	ParentClass      *Class // Parent class for inheritance (nil if no parent)
 	Properties       []*ClassProperty
 	Methods          []*ClassMethod
@@ -186,6 +199,16 @@ type Class struct {
 	PrimordialName   string
 	ArrayElementType ValueType
 	Span             *token.Span
+}
+
+// SourceName returns the user-visible class name. For user-defined classes,
+// OriginalName carries the source name while Name holds the unique IR name.
+// Primordials leave OriginalName empty, so Name is used.
+func (c Class) SourceName() string {
+	if c.OriginalName != "" {
+		return c.OriginalName
+	}
+	return c.Name
 }
 
 func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {

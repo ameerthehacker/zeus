@@ -9,7 +9,6 @@ import (
 	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -35,6 +34,9 @@ type IRModule struct {
 	getModule        func(modulePath string) *IRModule
 	tryContextStack  []*TryContext  // Stack of try contexts for nested try blocks
 	loopContextStack []*LoopContext // Stack of loop contexts for nested loops
+	// usedIRNames tracks every IR-level name ever emitted in this module (functions,
+	// class methods, locals) so generateUniqueName can guarantee global uniqueness.
+	usedIRNames map[string]bool
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -44,7 +46,24 @@ func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modu
 		modulePath:      modulePath,
 		exportedSymbols: map[string]zeus_value.Value{},
 		getModule:       getIRModule,
+		usedIRNames:     map[string]bool{},
 	}
+}
+
+// generateUniqueName returns a name not already used as an IR symbol in this module.
+// It checks both the IRBuilder global registry (primordials, top-level functions/classes)
+// and usedIRNames (class methods, local vars). The returned name is marked as used.
+func (g *IRModule) generateUniqueName(name string) string {
+	unique := name
+	for count := 1; ; count++ {
+		_, inGlobal := g.irBuilder.symbolTable.GetSymbol(unique)
+		if !inGlobal && !g.usedIRNames[unique] {
+			break
+		}
+		unique = name + strconv.Itoa(count)
+	}
+	g.usedIRNames[unique] = true
+	return unique
 }
 
 // symbolTable returns the IRBuilder's symbol table (single source of truth)
@@ -94,86 +113,18 @@ func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
 }
 
 func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
-	// Note: IRBuilder already has a global scope created in NewIRBuilder()
-	// and primordial classes are already registered via initializePrimordials()
-
-	// Emit DECL_PRIMORDIAL_FUNC instructions for primordial functions
-	// (they were registered in symbol table during NewIRBuilder, but we still need IR instructions)
-	for _, fn := range zeus_value.Registry.GetAllFunctions() {
-		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
+	passes := []IRGenPass{
+		NewDeclCheckPass(),
+		NewIREmitPass(),
 	}
-
-	// Hoist all top-level function and class signatures so definition order
-	// does not matter — forward calls and forward references are resolved here.
-	g.hoistTopLevelDeclarations(program)
-
-	for _, stmt := range program.Statements {
-		stmt.Accept(g)
+	for _, p := range passes {
+		if errs := p.Run(g, program); len(errs) > 0 {
+			return errs
+		}
 	}
-	g.irBuilder.Optimize()
-
 	return g.errors
 }
 
-// hoistTopLevelDeclarations pre-registers all top-level function and class
-// signatures in the symbol table before any body is compiled, so callers can
-// reference them regardless of definition order.
-func (g *IRModule) hoistTopLevelDeclarations(program *ast.ProgramNode) {
-	seen := map[string]bool{}
-	for _, stmt := range program.Statements {
-		exprStmt, ok := stmt.(*ast.ExprStmtNode)
-		if !ok {
-			continue
-		}
-		switch expr := exprStmt.Expr.(type) {
-		case *ast.FunctionDeclExprNode:
-			name := expr.Name.Name.Value
-			if seen[name] {
-				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), expr.Name.GetSpan()))
-				continue
-			}
-			seen[name] = true
-			params := []*zeus_value.Var{}
-			for _, p := range expr.Params {
-				params = append(params, zeus_value.NewVar(p.Identifier.Name.Value, p.ValueType.ValueType, false, p.Identifier.Name.Span))
-			}
-			fn := zeus_value.NewFunction(name, params, expr.ReturnType.ValueType, expr.Name.Name.Span)
-			g.symbolTable().DeclareGlobalSymbol(name, fn)
-		case *ast.ClassDeclExprNode:
-			name := expr.Name.Name.Value
-			if seen[name] {
-				g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), expr.Name.GetSpan()))
-				continue
-			}
-			seen[name] = true
-			properties := []*zeus_value.ClassProperty{}
-			for _, prop := range expr.Properties {
-				v := zeus_value.NewVar(prop.Name.Name.Value, prop.ValueType.ValueType, false, prop.Name.GetSpan())
-				properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier))
-			}
-			methods := []*zeus_value.ClassMethod{}
-			for _, method := range expr.Methods {
-				params := []*zeus_value.Var{}
-				for _, p := range method.Params {
-					params = append(params, zeus_value.NewVar(p.Identifier.Name.Value, p.ValueType.ValueType, false, p.Identifier.Name.Span))
-				}
-				fn := zeus_value.NewFunction(method.Name.Name.Value, params, method.ReturnType.ValueType, method.Name.Name.Span)
-				methods = append(methods, zeus_value.NewClassMethod(fn, method.AccessModifier))
-			}
-			class := zeus_value.NewClass(name, properties, methods, "", nil, expr.GetSpan())
-			g.symbolTable().DeclareGlobalSymbol(name, class)
-		}
-	}
-}
-
-func (g *IRModule) isSymbolDeclared(name string, span *token.Span) bool {
-	if _, ok := g.symbolTable().GetSymbolInCurrentScope(name); ok {
-		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", name), span))
-		return true
-	}
-
-	return false
-}
 
 func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	g.symbolTable().EnterScope()
@@ -185,10 +136,6 @@ func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 
 func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
-		if g.isSymbolDeclared(decl.Identifier.Name.Value, decl.Identifier.Name.Span) {
-			continue
-		}
-
 		var initializer zeus_value.Value
 		isConst := false
 
@@ -689,14 +636,9 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
 	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
-	g.symbolTable().DeclareGlobalSymbol(name, fn)
 	g.symbolTable().EnterScope()
 
 	for index, param := range fnParams {
-		if _, ok := g.symbolTable().GetSymbolInCurrentScope(param.Identifier.Name.Value); ok {
-			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare parameter '%s' in the same scope", param.Identifier.Name.Value), param.Identifier.Name.Span))
-			return nil
-		}
 		g.symbolTable().DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
 	}
 
@@ -911,23 +853,33 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 	return arrayClass
 }
 
-// buildClass builds the IR for a class declaration and registers it in the symbol table
-// For user-defined classes, pass methodASTs to emit method bodies
-// For primordial classes, pass nil for methodASTs (methods are implemented in runtime)
+// buildClass builds the IR for a class declaration and registers it in the symbol table.
+// For user-defined classes, pass methodASTs to emit method bodies.
+// For primordial classes, pass nil for methodASTs (methods are implemented in runtime).
 func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMethod) string {
+	savedBlock := g.irBuilder.GetInsertionBlock()
+	g.irBuilder.SetInsertionBlock(nil)
 	irClassName := g.irBuilder.BuildClassDecl(class, class.GetSpan())
-	g.symbolTable().DeclareSymbol(class.Name, class)
+	g.irBuilder.SetInsertionBlock(savedBlock)
 
-	// Emit method bodies if AST nodes are provided (user-defined classes)
-	for _, method := range methodASTs {
-		var returnType zeus_value.ValueType
-		returnType = zeus_value.VoidType{Span: method.Name.GetSpan()}
-
+	// Emit method bodies if AST nodes are provided (user-defined classes).
+	// generateUniqueName gives each method a globally unique IR name (e.g. "constructor",
+	// "constructor1") without class-name prefixing. We write the IR name back into
+	// class.Methods[i].Method so that codegen and imports can look it up via Method.Name,
+	// and keep the source name in OriginalName for constructor detection and error messages.
+	for i, method := range methodASTs {
+		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
 		if method.ReturnType != nil {
 			returnType = method.ReturnType.ValueType
 		}
-
-		g.emitFunction(util.GetClassMethodName(irClassName, method.Name.Name.Value), method.Params, returnType, method.Body, class, method.Name.Name.Span)
+		irMethodName := g.generateUniqueName(method.Name.Name.Value)
+		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, method.Name.Name.Span))
+		if fn != nil {
+			fn.OriginalName = method.Name.Name.Value
+			// Sync the class method descriptor so downstream passes see the IR name.
+			class.Methods[i].Method.Name = irMethodName
+			class.Methods[i].Method.OriginalName = method.Name.Name.Value
+		}
 	}
 
 	return irClassName
@@ -1090,26 +1042,27 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 }
 
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
+	// Top-level classes use their source name as the IR name (DeclCheckPass guarantees global
+	// uniqueness at top level). Nested classes (inside a function body) can shadow outer names,
+	// so we generate a unique IR name to avoid LLVM struct-name collisions in codegen.
+	sourceName := expr.Name.Name.Value
+	var irClassName string
+	if g.irBuilder.GetInsertionBlock() == nil {
+		irClassName = sourceName
+	} else {
+		irClassName = g.generateUniqueName(sourceName)
+	}
+
 	g.symbolTable().EnterScope()
 	properties := []*zeus_value.ClassProperty{}
 	for _, property := range expr.Properties {
-		if g.isSymbolDeclared(property.Name.Name.Value, property.Name.GetSpan()) {
-			continue
-		}
 		propVar := zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan())
 		g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
 		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier))
 	}
 
 	methods := []*zeus_value.ClassMethod{}
-	seenMethods := map[string]bool{}
 	for _, method := range expr.Methods {
-		if seenMethods[method.Name.Name.Value] {
-			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("cannot redeclare identifier '%s' in the same scope", method.Name.Name.Value), method.Name.GetSpan()))
-			continue
-		}
-		seenMethods[method.Name.Name.Value] = true
-
 		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
 			if !zeus_value.IsVoidType(method.ReturnType.ValueType) {
 				g.pushError(&zeus_error.ZeusError{
@@ -1136,12 +1089,14 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		))
 	}
 
-	class := zeus_value.NewClass(expr.Name.Name.Value, properties, methods, "", nil, expr.GetSpan())
+	class := zeus_value.NewClass(irClassName, properties, methods, "", nil, expr.GetSpan())
+	class.OriginalName = sourceName
 	g.buildClass(class, expr.Methods)
 	g.symbolTable().ExitScope()
 
-	// Re-declare the class in the outer scope after exiting the class members scope
-	g.symbolTable().DeclareSymbol(expr.Name.Name.Value, class)
+	// Register by source name in the outer scope so VisitIdentifier resolves correctly.
+	// For top-level classes this overwrites the DeclCheckPass stub with the full class.
+	g.symbolTable().DeclareSymbol(sourceName, class)
 	return class
 }
 

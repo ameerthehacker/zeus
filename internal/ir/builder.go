@@ -104,7 +104,9 @@ func (b *IRBuilder) EmitClassDeclAtStart(class *zeus_value.Class) {
 	b.insertionIndex = savedIndex + 1
 }
 
-func (b *IRBuilder) generateUniqueSymbolName(name string) string {
+// generateUniqueGlobalName returns a name not yet present in the global registry.
+// Used to generate unique IR-level names for globally visible symbols (functions, classes).
+func (b *IRBuilder) generateUniqueGlobalName(name string) string {
 	unique_name := name
 	count := 1
 
@@ -253,7 +255,7 @@ func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value
 }
 
 func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
-	unique_name := b.generateUniqueSymbolName(v.Name)
+	unique_name := b.generateUniqueGlobalName(v.Name)
 
 	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
 	variable.OriginalName = v.Name
@@ -313,7 +315,7 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 	b.symbolTable.EnterScope()
 	params := []*zeus_value.Var{}
 	for _, arg := range args {
-		variable := zeus_value.NewVar(b.generateUniqueSymbolName(arg.Name), arg.ValueType, false, arg.Span)
+		variable := zeus_value.NewVar(b.generateUniqueGlobalName(arg.Name), arg.ValueType, false, arg.Span)
 		b.symbolTable.DeclareSymbol(arg.Name, variable)
 
 		params = append(params, variable)
@@ -328,8 +330,11 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 	} else {
 		fn = zeus_value.NewFunction(name, params, return_type, span)
 	}
-	// functions are global
-	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	// Only top-level functions go in the global registry; class methods are
+	// accessed via IR instruction pointers and must not pollute the global namespace.
+	if class == nil {
+		b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	}
 
 	if class != nil {
 		b.pushInstr(&Instr{
@@ -465,8 +470,6 @@ func (b *IRBuilder) BuildClassDecl(class *zeus_value.Class, span *token.Span) st
 		Input:  NewDeclClassInstrInput(class),
 		Span:   span,
 	})
-
-	b.symbolTable.DeclareSymbol(class.Name, class)
 
 	return class.Name
 }
