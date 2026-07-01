@@ -23,6 +23,7 @@ type IRBuilder struct {
 	blocksCount             int
 	symbolTable             *symbol_table.SymbolTable[zeus_value.Value]
 	instrIdCount            int
+	usedFuncIRNames         map[string]bool
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -37,6 +38,7 @@ func NewIRBuilder() *IRBuilder {
 		instrIdCount:            0,
 		blockIdInsetionIndexMap: make(map[int]int),
 		symbolTable:             symbol_table,
+		usedFuncIRNames:         make(map[string]bool),
 	}
 
 	// Register all primordial classes from the registry upfront
@@ -119,6 +121,22 @@ func (b *IRBuilder) generateUniqueGlobalName(name string) string {
 	}
 
 	return unique_name
+}
+
+// generateUniqueFuncIRName returns a function IR name that is unique across the entire module.
+// Unlike generateUniqueGlobalName, it also checks usedFuncIRNames so names from already-exited
+// scopes are still avoided (live symbol-table check alone misses them).
+func (b *IRBuilder) generateUniqueFuncIRName(name string) string {
+	unique := name
+	for count := 1; ; count++ {
+		_, inScope := b.symbolTable.GetSymbol(unique)
+		if !inScope && !b.usedFuncIRNames[unique] {
+			break
+		}
+		unique = name + strconv.Itoa(count)
+	}
+	b.usedFuncIRNames[unique] = true
+	return unique
 }
 
 func (b *IRBuilder) createTempVariable(span *token.Span) *zeus_value.Var {
@@ -327,13 +345,20 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 		existingStub.Params = params
 		existingStub.ReturnType = return_type
 		fn = existingStub
+		b.usedFuncIRNames[fn.Name] = true
 	} else {
-		fn = zeus_value.NewFunction(name, params, return_type, span)
+		irName := b.generateUniqueFuncIRName(name)
+		fn = zeus_value.NewFunction(irName, params, return_type, span)
+		if irName != name {
+			fn.OriginalName = name
+		}
 	}
-	// Only top-level functions go in the global registry; class methods are
-	// accessed via IR instruction pointers and must not pollute the global namespace.
+
+	b.symbolTable.ExitScope()
+	// Register under the original source name so call-site lookups (GetSymbol(name))
+	// resolve correctly regardless of the IR-level unique name.
 	if class == nil {
-		b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+		b.symbolTable.DeclareSymbol(name, fn)
 	}
 
 	if class != nil {
@@ -349,8 +374,6 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 			Span:  span,
 		})
 	}
-
-	b.symbolTable.ExitScope()
 
 	return fn
 }

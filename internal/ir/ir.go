@@ -125,7 +125,6 @@ func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 	return g.errors
 }
 
-
 func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 	g.symbolTable().EnterScope()
 	for _, stmt := range stmt.Statements {
