@@ -13,6 +13,8 @@ import (
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
 
+const anonymousName = "anonymous"
+
 // TryContext holds information about the current try block being processed
 type TryContext struct {
 	HandlerBlock *BasicBlock // The exception handler block
@@ -135,6 +137,16 @@ func (g *IRModule) VisitBlockStmt(stmt *ast.BlockStmtNode) {
 
 func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
+		// const X = class {} / const X = class MyClass {} → never emit a var decl
+		if classExpr, ok := decl.Initializer.(*ast.ClassDeclExprNode); ok {
+			class := classExpr.Accept(g)
+			// Named class (const X = class MyClass {}): also declare X as an alias
+			if classExpr.Name.Name.Value != decl.Identifier.Name.Value {
+				g.symbolTable().DeclareSymbol(decl.Identifier.Name.Value, class)
+			}
+			continue
+		}
+
 		var initializer zeus_value.Value
 		isConst := false
 
@@ -664,7 +676,17 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		returnType = expr.ReturnType.ValueType
 	}
 
-	return g.emitFunction(expr.Name.Name.Value, expr.Params, returnType, expr.Body, nil, expr.Name.Name.Span)
+	fnName := ""
+	var fnSpan *token.Span
+	if expr.Name == nil {
+		fnName = g.generateUniqueName(anonymousName)
+		fnSpan = expr.GetSpan()
+	} else {
+		fnName = expr.Name.Name.Value
+		fnSpan = expr.Name.GetSpan()
+	}
+
+	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, fnSpan)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -1044,9 +1066,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	// Top-level classes use their source name as the IR name (DeclCheckPass guarantees global
 	// uniqueness at top level). Nested classes (inside a function body) can shadow outer names,
 	// so we generate a unique IR name to avoid LLVM struct-name collisions in codegen.
-	sourceName := expr.Name.Name.Value
+	// Anonymous classes (no name) always get a generated unique name.
+	var sourceName string
+	if expr.Name != nil {
+		sourceName = expr.Name.Name.Value
+	} else {
+		sourceName = anonymousName
+	}
 	var irClassName string
-	if g.irBuilder.GetInsertionBlock() == nil {
+	if expr.Name != nil && g.irBuilder.GetInsertionBlock() == nil {
 		irClassName = sourceName
 	} else {
 		irClassName = g.generateUniqueName(sourceName)
@@ -1068,7 +1096,6 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 					Message: "constructor return type must be void",
 					Span:    method.ReturnType.Span,
 				})
-				fmt.Println(method.ReturnType.Span)
 			}
 		}
 		params := []*zeus_value.Var{}
@@ -1093,9 +1120,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	g.buildClass(class, expr.Methods)
 	g.symbolTable().ExitScope()
 
-	// Register by source name in the outer scope so VisitIdentifier resolves correctly.
+	// Register by source name so VisitIdentifier resolves correctly.
 	// For top-level classes this overwrites the DeclCheckPass stub with the full class.
-	g.symbolTable().DeclareSymbol(sourceName, class)
+	// Anonymous classes register under their unique IR name so multiple anonymous classes
+	// don't overwrite each other in the symbol table.
+	registerName := sourceName
+	if sourceName == anonymousName {
+		registerName = irClassName
+	}
+	g.symbolTable().DeclareSymbol(registerName, class)
 	return class
 }
 

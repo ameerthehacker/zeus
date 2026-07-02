@@ -100,10 +100,12 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 	if isClassMethod {
 		fnType = "method"
 	}
+	previousToken := p.tokens[p.current]
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
-	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: functionName.GetSpan()}
+
+	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: previousToken.Span}
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
 		param := p.parseVarDecl(false, false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
@@ -153,7 +155,13 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
-		functionName := parser.consumeIdentifier("for function name")
+		var functionName *ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeIdentifier {
+			functionName = parser.consumeIdentifier("for function name")
+		} else if parser.peek().Type != token.TokenTypeLeftParen {
+			// not anonymous (no '(' follows) — require a name, which will emit the right error
+			functionName = parser.consumeIdentifier("for function name")
+		}
 		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName, false)
 		return &ast.FunctionDeclExprNode{
 			Name:       name,
@@ -165,7 +173,13 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
-		className := parser.consumeIdentifier("class name")
+		var className *ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeIdentifier {
+			className = parser.consumeIdentifier("class name")
+		} else if parser.peek().Type != token.TokenTypeLeftBrace && parser.peek().Type != token.TokenTypeExtends {
+			// not anonymous (no '{' or 'extends' follows) — require a name, which will emit the right error
+			className = parser.consumeIdentifier("class name")
+		}
 
 		// Check for optional extends clause
 		var parentClass *ast.IdentifierExprNode
@@ -260,21 +274,21 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
-			if ast.AsIndexingExpr(callee) != nil {
+			// Constructor args are optional: new Foo and new Foo() both work.
+			// new (class { ... }) is also valid — ) closes the grouping, leaving no (.
+			if ast.AsIndexingExpr(callee) != nil || parser.peek().Type != token.TokenTypeLeftParen {
 				return &ast.NewExprNode{
 					Callee: callee,
 					Args:   []ast.ExprNode{},
 					Span:   &token.Span{Start: newKeyword.Span.Start, End: callee.GetSpan().End},
 				}
-			} else {
-				parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
-				args, closeParen := parser.parseArgumentList()
-
-				return &ast.NewExprNode{
-					Callee: callee,
-					Args:   args,
-					Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
-				}
+			}
+			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
+			args, closeParen := parser.parseArgumentList()
+			return &ast.NewExprNode{
+				Callee: callee,
+				Args:   args,
+				Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
 			}
 		},
 		token.TokenTypeFunction:   functionParselet,
@@ -672,14 +686,31 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
 		decl := p.parseVarDecl(true, true, varDeclType, "variable declaration")
 		decls = append(decls, *decl)
-		p.consumeOptionalToken(token.TokenTypeComma)
+		commaToken := p.consumeOptionalToken(token.TokenTypeComma)
+		// no new declarations to consume
+		if commaToken == nil {
+			break
+		}
 	}
 
 	if len(decls) == 0 {
 		p.expectedError("at least one variable declaration")
-	}
+	} else {
+		lastDecl := decls[len(decls)-1]
+		shouldConsumeSemicolon := true
 
-	p.consumeSemicolon()
+		if lastDecl.Initializer != nil {
+			switch lastDecl.Initializer.(type) {
+			case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode:
+				// The closing } already terminates the declaration; semicolon is optional.
+				p.consumeOptionalToken(token.TokenTypeSemicolon)
+				shouldConsumeSemicolon = false
+			}
+		}
+		if shouldConsumeSemicolon {
+			p.consumeSemicolon()
+		}
+	}
 
 	if len(decls) > 0 {
 		span = &token.Span{Start: varDeclTypeToken.Span.Start, End: decls[len(decls)-1].GetSpan().End}

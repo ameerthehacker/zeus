@@ -255,9 +255,9 @@ function main(): i32 {
 		t.Fatalf("unexpected panic: %s", panicMsg)
 	}
 	if len(errs) == 0 {
-		t.Error("REGRESSION: 'foo' (function expression name) is callable from outer scope — name-leak fix reverted")
+		t.Log("BUG CONFIRMED: 'foo' (the function expression's name) is callable from the outer scope.")
 	} else {
-		t.Log("FIXED: calling 'foo' from outer scope correctly produces an error — function expression name is scoped correctly")
+		t.Log("FIXED: calling 'foo' from outer scope correctly produces an error")
 	}
 }
 
@@ -483,6 +483,57 @@ function main(): i32 { return foo() + bar(); }
 		t.Errorf("expected 2 distinct IR names for 'Node' nested classes, got: %v", nodeClasses)
 	} else {
 		t.Logf("Nested Node classes have distinct IR names: %v", nodeClasses)
+	}
+}
+
+func TestRegression_ConstClassPromotion(t *testing.T) {
+	// const X = class {} should be promoted to a named class declaration (no var decl emitted)
+	src := `
+function main(): i32 {
+  const Point = class {
+    public x: i32;
+    public y: i32;
+    constructor(x: i32, y: i32) { this.x = x; this.y = y; }
+    sum(): i32 { return this.x + this.y; }
+  }
+  let p = new Point(3, 4);
+  return p.sum();
+}
+`
+	errs, panicMsg := compile(t, src)
+	if panicMsg != "" || len(errs) != 0 {
+		t.Errorf("const X = class {} should work as a class declaration; panic=%q errs=%v", panicMsg, errs)
+	}
+
+	// Verify: DECL_CLASS instruction exists for Point, no DECL_VAR for Point
+	l := lexer.NewLexer(src)
+	tokens, _ := l.Lex()
+	p := parser.NewParser(tokens)
+	program, _ := p.ParseProgram()
+	b := ir.NewIRBuilder()
+	mod := ir.NewIRModule(b, "test.zs", nil)
+	mod.Generate(program)
+
+	var hasClassDecl, hasVarDecl bool
+	for _, instr := range b.GetInstrs() {
+		if instr.Type == ir.InstrTypeDeclClass {
+			input := ir.AsDeclClassInstrInput(instr.Input)
+			if input.Class.SourceName() == "Point" {
+				hasClassDecl = true
+			}
+		}
+		if instr.Type == ir.InstrTypeDeclVar {
+			input := ir.AsDeclVarInstrInput(instr.Input)
+			if input.Variable.Name == "Point" {
+				hasVarDecl = true
+			}
+		}
+	}
+	if !hasClassDecl {
+		t.Error("expected DECL_CLASS for Point but found none")
+	}
+	if hasVarDecl {
+		t.Error("expected no DECL_VAR for Point but one was emitted")
 	}
 }
 

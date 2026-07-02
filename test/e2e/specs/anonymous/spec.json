@@ -1,0 +1,42 @@
+[
+    {
+        "name": "Anonymous function expression",
+        "exit": "7",
+        "entry": "func-expr.zs"
+    },
+    {
+        "name": "Function pointer",
+        "exit": "10",
+        "entry": "func-ptr.zs"
+    },
+    {
+        "name": "Same-name nested functions",
+        "exit": "10",
+        "entry": "same-name-nested.zs"
+    },
+    {
+        "name": "Anonymous class assigned to const",
+        "exit": "10",
+        "entry": "anon-class.zs"
+    },
+    {
+        "name": "Named class with const alias",
+        "exit": "10",
+        "entry": "named-alias.zs"
+    },
+    {
+        "name": "Inline anonymous class with new",
+        "exit": "42",
+        "entry": "inline-class.zs"
+    },
+    {
+        "name": "Anonymous class nested inside function",
+        "exit": "10",
+        "entry": "nested-class.zs"
+    },
+    {
+        "name": "Two anonymous classes with same method name",
+        "exit": "10",
+        "entry": "two-anon-classes.zs"
+    }
+]

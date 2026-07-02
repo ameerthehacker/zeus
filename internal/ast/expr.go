@@ -252,14 +252,22 @@ func (f *FunctionDeclExprNode) GetSpan() *token.Span {
 }
 
 func (f *FunctionDeclExprNode) PrettyString() string {
-	head := fmt.Sprintf("function %s(%s): %s", f.Name.PrettyString(), varDeclsString(f.Params, true), f.ReturnType.ValueType)
+	nameStr := ""
+	if f.Name != nil {
+		nameStr = f.Name.PrettyString()
+	}
+	head := fmt.Sprintf("function %s(%s): %s", nameStr, varDeclsString(f.Params, true), f.ReturnType.ValueType)
 	body := f.Body.PrettyString()
 
 	return fmt.Sprintf("%s\n%s\n", head, body)
 }
 
 func (f *FunctionDeclExprNode) String() string {
-	return fmt.Sprintf("{ type: FunctionDeclExprNode, Name: %s, Params: [%s], ReturnType: %s, Body: %s, Span: %s }", f.Name.String(), varDeclsString(f.Params, false), f.ReturnType.ValueType, f.Body.String(), f.GetSpan())
+	nameStr := "nil"
+	if f.Name != nil {
+		nameStr = f.Name.String()
+	}
+	return fmt.Sprintf("{ type: FunctionDeclExprNode, Name: %s, Params: [%s], ReturnType: %s, Body: %s, Span: %s }", nameStr, varDeclsString(f.Params, false), f.ReturnType.ValueType, f.Body.String(), f.GetSpan())
 }
 
 func (f *FunctionDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
@@ -336,7 +344,11 @@ func (c *ClassDeclExprNode) PrettyString() string {
 	if c.ParentClass != nil {
 		extendsStr = fmt.Sprintf(" extends %s", c.ParentClass.PrettyString())
 	}
-	return fmt.Sprintf("class %s%s {\n%s\n%s\n}", c.Name.PrettyString(), extendsStr, strings.Join(properties, "\n"), strings.Join(methods, "\n"))
+	nameStr := ""
+	if c.Name != nil {
+		nameStr = c.Name.PrettyString()
+	}
+	return fmt.Sprintf("class %s%s {\n%s\n%s\n}", nameStr, extendsStr, strings.Join(properties, "\n"), strings.Join(methods, "\n"))
 }
 
 func (c *ClassDeclExprNode) String() string {
@@ -344,7 +356,11 @@ func (c *ClassDeclExprNode) String() string {
 	if c.ParentClass != nil {
 		parentStr = c.ParentClass.String()
 	}
-	return fmt.Sprintf("{ type: ClassDeclExprNode, Name: %s, ParentClass: %s, Properties: [%s], Methods: [%s], Span: %s }", c.Name.String(), parentStr, classPropertiesString(c.Properties), classMethodsString(c.Methods), c.GetSpan())
+	nameStr := "nil"
+	if c.Name != nil {
+		nameStr = c.Name.String()
+	}
+	return fmt.Sprintf("{ type: ClassDeclExprNode, Name: %s, ParentClass: %s, Properties: [%s], Methods: [%s], Span: %s }", nameStr, parentStr, classPropertiesString(c.Properties), classMethodsString(c.Methods), c.GetSpan())
 }
 
 func (c *ClassDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
