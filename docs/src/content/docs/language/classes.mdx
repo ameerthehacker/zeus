@@ -326,6 +326,80 @@ function main(): i32 {
 
 ---
 
+## Anonymous Classes
+
+A class expression can be used inline without declaring a named type. This is useful for one-off objects or when you want to encapsulate logic without polluting the namespace.
+
+### Assign to a variable
+
+The most common form — assign the anonymous class to a `const`, then use the const as the type:
+
+```zeus
+function main(): i32 {
+  const Counter = class {
+    public n: i32;
+
+    constructor(start: i32) {
+      this.n = start;
+    }
+
+    inc(): i32 {
+      this.n = this.n + 1;
+      return this.n;
+    }
+  }
+
+  let c = new Counter(9);
+  return c.inc();  // 10
+}
+```
+
+### Named class expression
+
+You can give the class an internal name. Both the variable name and the class name are then usable in the same scope:
+
+```zeus
+function main(): i32 {
+  const Vec = class Vector {
+    public x: i32;
+    public y: i32;
+
+    constructor(x: i32, y: i32) {
+      this.x = x;
+      this.y = y;
+    }
+
+    sum(): i32 { return this.x + this.y; }
+  }
+
+  let a = new Vec(3, 4);     // via the const
+  let b = new Vector(1, 2);  // via the class name
+  return a.sum() + b.sum();  // 10
+}
+```
+
+### Inline instantiation
+
+Use `new (class { ... })(args)` to create and instantiate an anonymous class in a single expression — no variable needed for the class itself:
+
+```zeus
+function main(): i32 {
+  let obj = new (class {
+    public v: i32;
+
+    constructor(v: i32) { this.v = v; }
+
+    get(): i32 { return this.v; }
+  })(42);
+
+  return obj.get();  // 42
+}
+```
+
+This is the class equivalent of an IIFE: the class is defined and immediately instantiated. It's useful when you need a one-off object with methods but don't want to declare a named class.
+
+---
+
 ## Next
 
 <a href="/language/arrays/">Arrays →</a>
