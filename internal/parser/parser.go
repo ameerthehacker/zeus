@@ -670,6 +670,8 @@ func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
 	expr := p.ParseExpr()
 	if !exprEndsWithBlock(expr) {
 		p.consumeSemicolon()
+	} else {
+		p.consumeOptionalToken(token.TokenTypeSemicolon)
 	}
 	return &ast.ExprStmtNode{Expr: expr}
 }
@@ -697,6 +699,8 @@ func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 	var span *token.Span
 	if expr == nil || !exprEndsWithBlock(expr) {
 		p.consumeSemicolon()
+	} else {
+		p.consumeOptionalToken(token.TokenTypeSemicolon)
 	}
 
 	if expr != nil {

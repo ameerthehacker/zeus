@@ -199,6 +199,40 @@ func (b *IRBuilder) SetInsertionBefore(instr *Instr) {
 	b.insertionIndex = instrIndex
 }
 
+// ResetBlockInsertionToEnd sets the builder to append instructions at the end of block.
+func (b *IRBuilder) ResetBlockInsertionToEnd(block *BasicBlock) {
+	b.currentBlock = block
+	b.blockIdInsetionIndexMap[block.Id] = len(block.Instrs)
+}
+
+// SplitBlockBefore splits block at instr: instructions from instr onwards move into a
+// freshly-created tail block, which inherits block's successor list.
+// block's successor list is cleared (caller is responsible for adding the right edges).
+// Returns the tail block, or nil if instr is not in block.
+func (b *IRBuilder) SplitBlockBefore(block *BasicBlock, instr *Instr) *BasicBlock {
+	instrIdx := slices.Index(block.Instrs, instr)
+	if instrIdx == -1 {
+		return nil
+	}
+
+	tailBlock := b.BuildBasicBlock()
+
+	// Move instructions from instrIdx onwards into tailBlock
+	tailBlock.Instrs = make([]*Instr, len(block.Instrs)-instrIdx)
+	copy(tailBlock.Instrs, block.Instrs[instrIdx:])
+	b.blockIdInsetionIndexMap[tailBlock.Id] = len(tailBlock.Instrs)
+
+	// Trim the original block
+	block.Instrs = block.Instrs[:instrIdx]
+	b.blockIdInsetionIndexMap[block.Id] = instrIdx
+
+	// tailBlock inherits block's successors; caller will set block's new successors
+	tailBlock.Successors = block.Successors
+	block.Successors = nil
+
+	return tailBlock
+}
+
 func (b *IRBuilder) SetBlockInsertionAfter(block *BasicBlock, instr *Instr) {
 	instrIndex := slices.Index(block.Instrs, instr)
 	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in block instructions list", instr.String()))
@@ -322,11 +356,8 @@ func (b *IRBuilder) BuildDeclPrimordialFunc(fn *zeus_value.Function, span *token
 }
 
 func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock, return_type zeus_value.ValueType, class *zeus_value.Class, span *token.Span) *zeus_value.Function {
-	// If a stub was pre-hoisted for this name, reuse the same Function object so that
-	// any forward-call references already captured in CALL_FUNC instructions stay valid
-	// and share the same IsUsed pointer as the DECL_FUNC instruction.
 	var existingStub *zeus_value.Function
-	if existing, ok := b.symbolTable.GetSymbol(name); ok {
+	if existing, ok := b.symbolTable.GetSymbolInCurrentScope(name); ok {
 		existingStub = zeus_value.AsFunction(existing)
 	}
 

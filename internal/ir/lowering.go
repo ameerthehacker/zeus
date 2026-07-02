@@ -1,6 +1,8 @@
 package ir
 
 import (
+	"fmt"
+
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
@@ -41,11 +43,16 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	// because string operators need to be lowered to method calls first
 	// ArrayMethodLoweringPass should run early to lower concat/slice
 	// before other passes might interfere
+	// FuncTypePropCallLoweringPass must run before FuncPtrNullCheckPass because it
+	// converts CALL_METHOD instructions (for fn-type properties) into INDIRECT_FUNC_CALL,
+	// which is what the null-check pass watches for.
 	l.passes = []LowerPass{
 		NewArrayMethodLoweringPass(),
 		NewIndexLoweringPass(),
 		NewStringOperatorLoweringPass(),
 		NewStringCastLoweringPass(),
+		NewFuncTypePropCallLoweringPass(),
+		NewFuncPtrNullCheckPass(),
 	}
 
 	return l
@@ -816,4 +823,180 @@ func (p *ArrayMethodLoweringPass) lowerArrayReverse(l *Lowerer, method arrayMeth
 
 	updateOutputVar(method.callInstr.Output, newArr, arrayObjType)
 	method.deleteAllInstrs(builder)
+}
+
+// =============================================================================
+// FuncTypePropCallLoweringPass — rewrites CALL_METHOD instructions where the
+// "method" is actually a function-type property (e.g. obj.fnProp(args)).
+// The type checker marks these by leaving the output type set to the fn return
+// type and NOT erroring. This pass converts them to OBJ_PROP_ACCESS + LOAD +
+// INDIRECT_FUNC_CALL so that codegen sees the correct pattern.
+// =============================================================================
+
+type funcTypePropCallToLower struct {
+	instr    *Instr
+	input    *MethodCallInstrInput
+	block    *BasicBlock
+	funcType zeus_value.FunctionType
+}
+
+type FuncTypePropCallLoweringPass struct {
+	callsToLower []funcTypePropCallToLower
+}
+
+func NewFuncTypePropCallLoweringPass() *FuncTypePropCallLoweringPass {
+	return &FuncTypePropCallLoweringPass{}
+}
+
+func (p *FuncTypePropCallLoweringPass) GetName() string { return "FuncTypePropCallLowering" }
+
+func (p *FuncTypePropCallLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type != InstrTypeMethodCall {
+		return
+	}
+	input := AsMethodCallInstrInput(instr.Input)
+	objectType := zeus_value.GetValueType(input.Object)
+	objType := zeus_value.AsObjectType(objectType)
+	if objType == nil {
+		return
+	}
+	for _, prop := range objType.Class.Properties {
+		if prop.Property.Name == input.MethodName {
+			if ft, ok := prop.Property.ValueType.(zeus_value.FunctionType); ok {
+				p.callsToLower = append(p.callsToLower, funcTypePropCallToLower{
+					instr:    instr,
+					input:    input,
+					block:    l.GetCurrentBlock(),
+					funcType: ft,
+				})
+				return
+			}
+		}
+	}
+}
+
+func (p *FuncTypePropCallLoweringPass) Finalize(l *Lowerer) {
+	for _, c := range p.callsToLower {
+		p.lowerFuncTypePropCall(l, c)
+	}
+}
+
+func (p *FuncTypePropCallLoweringPass) lowerFuncTypePropCall(l *Lowerer, c funcTypePropCallToLower) {
+	builder := l.GetBuilder()
+	span := c.instr.Span
+
+	setInsertionPoint(builder, c.block, c.instr)
+
+	// Load the function pointer from the property
+	fnPtr := builder.BuildLoadProperty(c.input.Object, c.input.MethodName, c.funcType, span)
+	fnPtrVar := zeus_value.AsVar(fnPtr)
+	if fnPtrVar != nil {
+		fnPtrVar.ValueType = c.funcType
+	}
+
+	// Call it indirectly
+	result := builder.BuildIndirectFuncCall(fnPtr, c.input.Args, span)
+	resultVar := zeus_value.AsVar(result)
+	if resultVar != nil {
+		resultVar.ValueType = c.funcType.ReturnType
+	}
+
+	updateOutputVar(c.instr.Output, result, c.funcType.ReturnType)
+	builder.DeleteInstr(c.block, c.instr)
+}
+
+// =============================================================================
+// FuncPtrNullCheckPass — inserts a runtime null check before every
+// INDIRECT_FUNC_CALL. If the function pointer is null at runtime a
+// NullPointerException is thrown instead of invoking undefined behaviour.
+// =============================================================================
+
+type funcPtrCallToCheck struct {
+	instr *Instr
+	block *BasicBlock
+}
+
+type FuncPtrNullCheckPass struct {
+	callsToCheck []funcPtrCallToCheck
+}
+
+func NewFuncPtrNullCheckPass() *FuncPtrNullCheckPass {
+	return &FuncPtrNullCheckPass{}
+}
+
+func (p *FuncPtrNullCheckPass) GetName() string { return "FuncPtrNullCheck" }
+
+func (p *FuncPtrNullCheckPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type == InstrTypeIndirectFuncCall && l.GetCurrentBlock() != nil {
+		p.callsToCheck = append(p.callsToCheck, funcPtrCallToCheck{instr, l.GetCurrentBlock()})
+	}
+}
+
+func (p *FuncPtrNullCheckPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, c := range p.callsToCheck {
+		p.lowerNullCheck(builder, c.instr, c.block)
+	}
+}
+
+func (p *FuncPtrNullCheckPass) lowerNullCheck(builder *IRBuilder, callInstr *Instr, block *BasicBlock) {
+	span := callInstr.Span
+	input := AsIndirectFuncCallInstrInput(callInstr.Input)
+
+	// Split block so that callInstr and everything after it lives in continueBlock
+	continueBlock := builder.SplitBlockBefore(block, callInstr)
+	if continueBlock == nil {
+		return
+	}
+
+	// Create a dedicated block for the null throw
+	throwBlock := builder.BuildBasicBlock()
+
+	// Original block branches to throwBlock (if null) or continueBlock (if not null)
+	block.Successors = []*BasicBlock{throwBlock, continueBlock}
+
+	// Emit null comparison + conditional jump into the original block
+	builder.ResetBlockInsertionToEnd(block)
+	nullConst := zeus_value.NewConstant(zeus_value.NULL_CONSTANT_VALUE, zeus_value.NullType{Span: span}, span)
+	isNull := builder.BuildBinaryOp(input.Function, nullConst, InstrTypeEqEq, span)
+	builder.BuildCondJmp(throwBlock, continueBlock, isNull, span)
+
+	// Emit throw into throwBlock
+	builder.ResetBlockInsertionToEnd(throwBlock)
+	emitNullFuncPtrThrow(builder, span)
+}
+
+// emitNullFuncPtrThrow builds IR that creates a NullPointerException and throws it.
+func emitNullFuncPtrThrow(builder *IRBuilder, span *token.Span) {
+	errorClass := getClassFromSymbolTable(builder, "Error")
+	stringClass := getStringClass(builder)
+	u8ArrayClass := getU8ArrayClass(builder)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+
+	nameString := buildLiteralString(builder, "NullPointerException", stringClass, u8ArrayClass, i32Type, span)
+	msgString := buildLiteralString(builder, "Cannot call null function pointer", stringClass, u8ArrayClass, i32Type, span)
+
+	errorObj := builder.BuildNewObj(errorClass, []zeus_value.Value{nameString, msgString}, span)
+	zeus_value.AsVar(errorObj).ValueType = zeus_value.NewObjectType(*errorClass)
+
+	builder.BuildThrow(errorClass.Id, errorObj, "", span)
+}
+
+// buildLiteralString creates a Zeus string object from a Go string using IR instructions.
+func buildLiteralString(builder *IRBuilder, str string, stringClass *zeus_value.Class, u8ArrayClass *zeus_value.Class, i32Type zeus_value.IntType, span *token.Span) zeus_value.Value {
+	strBytes := []byte(str)
+	u8Array := builder.BuildNewObj(u8ArrayClass, []zeus_value.Value{
+		zeus_value.NewConstant(fmt.Sprintf("%d", len(strBytes)), i32Type, span),
+	}, span)
+	zeus_value.AsVar(u8Array).ValueType = zeus_value.NewObjectType(*u8ArrayClass)
+
+	for i, b := range strBytes {
+		idx := zeus_value.NewConstant(fmt.Sprintf("%d", i), i32Type, span)
+		byteVal := zeus_value.NewConstant(fmt.Sprintf("%d", b), zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
+		builder.BuildMethodCall(u8Array, zeus_value.ARRAY_METHOD_SET, []zeus_value.Value{idx, byteVal}, nil, nil, span)
+	}
+
+	strObj := builder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, span)
+	zeus_value.AsVar(strObj).ValueType = zeus_value.NewObjectType(*stringClass)
+	return strObj
 }

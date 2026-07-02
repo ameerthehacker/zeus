@@ -65,5 +65,82 @@
         "name": "Array of function types",
         "exit": "8",
         "entry": "fn-type-array.zs"
+    },
+    {
+        "name": "Anonymous function and fat arrow with no parameters",
+        "exit": "42",
+        "entry": "no-params-anon-fn.zs"
+    },
+    {
+        "name": "IIFE using function keyword",
+        "exit": "10",
+        "entry": "iife-fn-keyword.zs"
+    },
+    {
+        "name": "Function type annotation with no parameters",
+        "exit": "42",
+        "entry": "no-param-fn-type.zs"
+    },
+    {
+        "name": "Named function expression: internal name visible in enclosing scope",
+        "exit": "21",
+        "entry": "named-fn-expr-name-in-scope.zs"
+    },
+    {
+        "name": "Return fat arrow directly from function (no trailing semicolon)",
+        "exit": "10",
+        "entry": "return-fat-arrow.zs"
+    },
+    {
+        "name": "Anonymous function defined inside class method",
+        "exit": "15",
+        "entry": "anon-fn-in-method.zs"
+    },
+    {
+        "name": "Three-level deep nested named functions",
+        "exit": "10",
+        "entry": "deep-nested-fn.zs"
+    },
+    {
+        "name": "Anonymous class defined inside another class method",
+        "exit": "10",
+        "entry": "nested-class-in-method.zs"
+    },
+    {
+        "name": "Anonymous class instantiated inside loop body",
+        "exit": "3",
+        "entry": "class-in-loop.zs"
+    },
+    {
+        "name": "Fat arrow with trailing semicolon in return statement",
+        "exit": "10",
+        "entry": "return-fat-arrow-semicolon.zs"
+    },
+    {
+        "name": "Private field access from method works",
+        "exit": "42",
+        "entry": "private-access-enforced.zs"
+    },
+    {
+        "name": "Private field access from outside class is a compile error",
+        "exit": "1",
+        "entry": "private-access-error.zs",
+        "compile_error": true,
+        "stderr_contains": ["is not accessible in class"]
+    },
+    {
+        "name": "Nested function shadows global function with same name",
+        "exit": "9",
+        "entry": "nested-fn-shadows-global.zs"
+    },
+    {
+        "name": "Class field of function type can be called via this",
+        "exit": "10",
+        "entry": "fn-type-class-field.zs"
+    },
+    {
+        "name": "Calling null function pointer throws NullPointerException",
+        "exit": "0",
+        "entry": "null-func-ptr.zs"
     }
 ]

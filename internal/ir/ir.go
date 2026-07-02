@@ -1398,6 +1398,14 @@ func (g *IRModule) getClassIdFromType(valueType zeus_value.ValueType) int {
 		return t.Class.Id
 	case *zeus_value.ObjectType:
 		return t.Class.Id
+	case zeus_value.UserDefinedType:
+		// At IR generation time, catch clause types are still UserDefinedType
+		// (ToKnownTypesPass hasn't run yet). Look up the class in the symbol table.
+		sym, ok := g.symbolTable().GetSymbol(t.Name)
+		zeus_error.Assert(ok, "getClassIdFromType: unresolved type '"+t.Name+"' not found in symbol table")
+		class := zeus_value.AsClass(sym)
+		zeus_error.Assert(class != nil, "getClassIdFromType: symbol '"+t.Name+"' is not a class")
+		return class.Id
 	default:
 		return 0
 	}
