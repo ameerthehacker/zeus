@@ -38,5 +38,15 @@
         "name": "Two anonymous classes with same method name",
         "exit": "10",
         "entry": "two-anon-classes.zs"
+    },
+    {
+        "name": "Function type annotations on parameters and variables",
+        "exit": "0",
+        "entry": "func-type-annotation.zs"
+    },
+    {
+        "name": "Fat arrow function syntax",
+        "exit": "0",
+        "entry": "fat-arrow.zs"
     }
 ]
