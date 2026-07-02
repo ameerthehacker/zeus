@@ -48,5 +48,22 @@
         "name": "Fat arrow function syntax",
         "exit": "0",
         "entry": "fat-arrow.zs"
+    },
+    {
+        "name": "Method reference is a compile error",
+        "exit": "1",
+        "entry": "method-as-value-error.zs",
+        "compile_error": true,
+        "stderr_contains": ["class methods cannot be used as function values"]
+    },
+    {
+        "name": "Method call is unaffected by method-as-value check",
+        "exit": "7",
+        "entry": "method-call.zs"
+    },
+    {
+        "name": "Array of function types",
+        "exit": "8",
+        "entry": "fn-type-array.zs"
     }
 ]

@@ -285,6 +285,13 @@ func NewParser(tokens []*token.Token) *Parser {
 					Span:       &token.Span{Start: openParen.Span.Start, End: body.GetSpan().End},
 				}
 			}
+			// ((fn_type)) in expression context — used for new ((fn_type))[] array allocation
+			if parser.isFunctionTypeAt(parser.current) {
+				typeNode := parser.consumeFunctionType("grouped function type")
+				closeParen := parser.consumeToken(token.TokenTypeRightParen, "to close grouped function type")
+				typeNode.Span = &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}
+				return typeNode
+			}
 			expr := parser.parseExprOfPrecedence(0, false)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen, "to close grouped expression")
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
@@ -434,7 +441,8 @@ func (p *Parser) isFatArrowFunction() bool {
 			if depth == 0 {
 				next := i + 1
 				if next < len(p.tokens) && p.tokens[next].Type == token.TokenTypeArrow {
-					return true // (params) =>
+					// Fat arrow body must be a block — require => { to distinguish from function type annotations
+					return next+1 < len(p.tokens) && p.tokens[next+1].Type == token.TokenTypeLeftBrace
 				}
 				// (params): ReturnType => { body }
 				// Scan for '=>' immediately before '{'; this is unambiguous because
@@ -463,10 +471,40 @@ func (p *Parser) isFatArrowFunction() bool {
 	return false
 }
 
+// isFunctionTypeAt reports whether the '(' at tokenIndex is the start of a function-type
+// annotation: (params) => ReturnType (not a fat arrow — no '{ body }' after '=>').
+// Callers use this as:
+//   - isFunctionTypeAt(p.current): p.current is at the '(' (not consumed)
+//   - isFunctionTypeAt(p.current): p.current is inside an outer '(' at the inner '('
+func (p *Parser) isFunctionTypeAt(tokenIndex int) bool {
+	depth := 0
+	for i := tokenIndex; i < len(p.tokens); i++ {
+		switch p.tokens[i].Type {
+		case token.TokenTypeLeftParen:
+			depth++
+		case token.TokenTypeRightParen:
+			depth--
+			if depth == 0 {
+				next := i + 1
+				if next < len(p.tokens) && p.tokens[next].Type == token.TokenTypeArrow {
+					// Distinguish fat arrow (=> {) from function type annotation (=> non-{)
+					return next+1 >= len(p.tokens) || p.tokens[next+1].Type != token.TokenTypeLeftBrace
+				}
+				return false
+			}
+		}
+	}
+	return false
+}
+
 func exprEndsWithBlock(expr ast.ExprNode) bool {
-	switch expr.(type) {
+	switch e := expr.(type) {
 	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode:
 		return true
+	case *ast.BinaryExprNode:
+		return exprEndsWithBlock(e.Right)
+	case *ast.TernaryExprNode:
+		return exprEndsWithBlock(e.Else)
 	}
 	return false
 }
@@ -566,7 +604,13 @@ func (p *Parser) consumeDataType(dataType string, cxt string) *ast.ValueTypeNode
 
 	var valueTypeNode *ast.ValueTypeNode
 	if nextToken.Type == token.TokenTypeLeftParen {
-		valueTypeNode = p.consumeFunctionType(cxt)
+		if p.isFunctionTypeAt(p.current) {
+			valueTypeNode = p.consumeFunctionType(cxt)
+		} else {
+			p.consume() // consume '(' — grouped type annotation like ((fn_type))[]
+			valueTypeNode = p.consumeDataType(dataType, cxt)
+			p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("in %s", cxt))
+		}
 	} else {
 		if nextToken.IsDataType() || nextToken.Type == token.TokenTypeIdentifier {
 			p.consume()

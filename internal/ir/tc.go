@@ -1354,6 +1354,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		methods := class.Methods
 		isFound := false
 		isAccessible := false
+		isMethod := false
 
 		for _, property := range properties {
 			if property.Property.Name == input.Property {
@@ -1368,6 +1369,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		for _, method := range methods {
 			if method.Method.SourceName() == input.Property {
 				isFound = true
+				isMethod = true
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
@@ -1390,12 +1392,12 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			}
 		}
 
-		if input.Property == token.CONSTRUCTOR_METHOD_NAME {
+		if isFound && isMethod {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: "cannot access constructor method of a class",
+				Message: fmt.Sprintf("class methods cannot be used as function values; wrap in a fat arrow: (args): ReturnType => { return obj.%s(args); }", input.Property),
 				Span:    output.Span,
 			})
-		} else {
+		} else if isFound {
 			propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
 			if !isAccessible && !propertyOfSameClass {
 				tc.pushError(&zeus_error.ZeusError{
