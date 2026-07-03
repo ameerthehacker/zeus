@@ -1585,6 +1585,20 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 
 	methodType := tc.getValueType(input.Function)
 	functionType := zeus_value.AsFunctionType(methodType)
+	objectType := zeus_value.AsObjectType(methodType)
+	fnSpan := input.Function.GetSpan()
+
+	// may be it is a functor
+	if objectType != nil {
+		for _, method := range objectType.Class.Methods {
+			if method.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {
+				functionType = zeus_value.AsFunctionType(zeus_value.GetValueType(method.Method))
+				method.Method.IsUsed = true
+				fnSpan = method.Method.GetSpan()
+				break
+			}
+		}
+	}
 
 	if functionType == nil {
 		tc.pushError(&zeus_error.ZeusError{
@@ -1594,7 +1608,7 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 		return
 	}
 
-	input.Args = p.tcFunctionCall(tc, instr, *functionType, input.Args, input.Function.GetSpan())
+	input.Args = p.tcFunctionCall(tc, instr, *functionType, input.Args, fnSpan)
 	instr.Input = NewIndirectFuncCallInstrInput(input.Function, input.Args)
 
 	instr.Output.ValueType = functionType.ReturnType

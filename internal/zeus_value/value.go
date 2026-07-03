@@ -11,6 +11,7 @@ import (
 
 const TEMP_VARIABLE_PREFIX = "%"
 const NULL_CONSTANT_VALUE = "null"
+const FUNCTOR_CALL_METHOD_NAME = "__call__"
 
 // first 100 ids are reserved for primordial classes
 var classIdCounter = 100
@@ -327,6 +328,14 @@ func AsObject(value Value) *Object {
 	}
 }
 
+func IsObject(value Value) bool {
+	switch value.(type) {
+	case *Object:
+		return true
+	default:
+		return false
+	}
+}
 func IsVar(value Value) bool {
 	switch value.(type) {
 	case *Var:

@@ -52,6 +52,7 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 		NewStringOperatorLoweringPass(),
 		NewStringCastLoweringPass(),
 		NewFuncTypePropCallLoweringPass(),
+		NewFunctorCallLoweringPass(),
 		NewFuncPtrNullCheckPass(),
 	}
 
@@ -902,6 +903,77 @@ func (p *FuncTypePropCallLoweringPass) lowerFuncTypePropCall(l *Lowerer, c funcT
 	}
 
 	updateOutputVar(c.instr.Output, result, c.funcType.ReturnType)
+	builder.DeleteInstr(c.block, c.instr)
+}
+
+// =============================================================================
+// FunctorCallLoweringPass — converts INDIRECT_FUNC_CALL on an object with a
+// public __call__ method into a CALL_METHOD(zeus_value.FUNCTOR_CALL_METHOD_NAME) instruction so codegen
+// sees the standard method-call pattern.
+// =============================================================================
+
+type functorCallToLower struct {
+	instr *Instr
+	input *IndirectFuncCallInstrInput
+	block *BasicBlock
+}
+
+type FunctorCallLoweringPass struct {
+	callsToLower []functorCallToLower
+}
+
+func NewFunctorCallLoweringPass() *FunctorCallLoweringPass {
+	return &FunctorCallLoweringPass{}
+}
+
+func (p *FunctorCallLoweringPass) GetName() string { return "FunctorCallLowering" }
+
+func (p *FunctorCallLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type != InstrTypeIndirectFuncCall {
+		return
+	}
+	input := AsIndirectFuncCallInstrInput(instr.Input)
+	if input == nil {
+		return
+	}
+	objType := zeus_value.AsObjectType(zeus_value.GetValueType(input.Function))
+	if objType == nil {
+		return
+	}
+	for _, method := range objType.Class.Methods {
+		if method.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {
+			p.callsToLower = append(p.callsToLower, functorCallToLower{instr, input, l.GetCurrentBlock()})
+			return
+		}
+	}
+}
+
+func (p *FunctorCallLoweringPass) Finalize(l *Lowerer) {
+	for _, c := range p.callsToLower {
+		p.lowerFunctorCall(l, c)
+	}
+}
+
+func (p *FunctorCallLoweringPass) lowerFunctorCall(l *Lowerer, c functorCallToLower) {
+	builder := l.GetBuilder()
+	span := c.instr.Span
+	setInsertionPoint(builder, c.block, c.instr)
+
+	objType := zeus_value.AsObjectType(zeus_value.GetValueType(c.input.Function))
+	var returnType zeus_value.ValueType
+	var paramTypes []zeus_value.ValueType
+	for _, method := range objType.Class.Methods {
+		if method.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME {
+			if ft, ok := zeus_value.GetValueType(method.Method).(zeus_value.FunctionType); ok {
+				returnType = ft.ReturnType
+				paramTypes = ft.ParamTypes
+			}
+			break
+		}
+	}
+
+	result := builder.BuildMethodCall(c.input.Function, zeus_value.FUNCTOR_CALL_METHOD_NAME, c.input.Args, returnType, paramTypes, span)
+	updateOutputVar(c.instr.Output, result, returnType)
 	builder.DeleteInstr(c.block, c.instr)
 }
 

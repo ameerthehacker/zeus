@@ -619,6 +619,9 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	} else if zeus_value.IsVar(callee) {
 		addr := zeus_value.AsVar(callee)
 		return g.irBuilder.BuildIndirectFuncCall(addr, params, expr.GetSpan())
+	} else if zeus_value.IsObject(callee) {
+		object := zeus_value.AsObject(callee)
+		return g.irBuilder.BuildIndirectFuncCall(object, params, expr.GetSpan())
 	}
 
 	g.pushError(&zeus_error.ZeusError{
@@ -668,6 +671,50 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	return fn
 }
 
+func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, span *token.Span) zeus_value.Value {
+	functorClassName := g.generateUniqueName(fmt.Sprintf("%sFunctor", fnName))
+	functorMethods := []*zeus_value.ClassMethod{}
+	methodParams := []*zeus_value.Var{}
+	for _, param := range fnParams {
+		methodParams = append(methodParams, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
+	}
+	constructorMethod := zeus_value.ClassMethod{
+		Method:         zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span),
+		AccessModifier: &token.Token{Type: token.TokenTypePublic, Span: span},
+	}
+	callMethod := zeus_value.ClassMethod{
+		Method:         zeus_value.NewFunction(zeus_value.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span),
+		AccessModifier: &token.Token{Type: token.TokenTypePublic, Span: span},
+	}
+	functorMethods = append(functorMethods, &constructorMethod)
+	functorMethods = append(functorMethods, &callMethod)
+	functorClass := zeus_value.NewClass(functorClassName, []*zeus_value.ClassProperty{}, functorMethods, "", nil, span)
+	g.irBuilder.EmitClassDeclAtStart(functorClass)
+	currentBlock := g.irBuilder.GetInsertionBlock()
+	// generate the constructor method
+	g.irBuilder.SetInsertionBlock(nil)
+	constructorBlock := g.irBuilder.BuildBasicBlock()
+	g.irBuilder.BuildClassMethodDecl(constructorMethod.Method, constructorBlock, functorClass, span)
+	g.irBuilder.SetInsertionBlock(constructorBlock)
+	g.irBuilder.BuildReturn(nil, span)
+	// generate the call method
+	g.irBuilder.SetInsertionBlock(nil)
+	callBlock := g.irBuilder.BuildBasicBlock()
+	g.irBuilder.BuildClassMethodDecl(callMethod.Method, callBlock, functorClass, span)
+	g.irBuilder.SetInsertionBlock(callBlock)
+	g.symbolTable().EnterScope()
+	for _, param := range methodParams {
+		g.symbolTable().DeclareSymbol(param.Name, param)
+	}
+	fnBody.Accept(g)
+	g.symbolTable().ExitScope()
+	// back to the original block
+	g.irBuilder.SetInsertionBlock(currentBlock)
+	functorObject := g.irBuilder.BuildNewObj(functorClass, []zeus_value.Value{}, span)
+	g.symbolTable().DeclareSymbol(fnName, functorObject)
+	return functorObject
+}
+
 func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
 	var returnType zeus_value.ValueType
 	returnType = zeus_value.VoidType{Span: expr.GetSpan()}
@@ -684,6 +731,10 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 	} else {
 		fnName = expr.Name.Name.Value
 		fnSpan = expr.Name.GetSpan()
+	}
+
+	if g.irBuilder.currentBlock != nil {
+		return g.emitFunctorClass(fnName, expr.Params, returnType, expr.Body, fnSpan)
 	}
 
 	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, fnSpan)
