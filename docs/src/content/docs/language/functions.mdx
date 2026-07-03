@@ -116,8 +116,8 @@ function multiply(a: i32, b: i32): i32 {
 }
 
 function main(): i32 {
-  let x = multiply(6, 7);             // x = 42
-  let y = multiply(x, 2);             // y = 84
+  let x = multiply(6, 7);               // x = 42
+  let y = multiply(x, 2);               // y = 84
   let z = multiply(multiply(2, 3), 4);  // z = 24
   
   return z;
@@ -173,30 +173,6 @@ function main(): i32 {
 }
 ```
 
-## Function References
-
-Functions can be stored in variables:
-
-```zeus
-function add(a: i32, b: i32): i32 {
-  return a + b;
-}
-
-function subtract(a: i32, b: i32): i32 {
-  return a - b;
-}
-
-function main(): i32 {
-  let op: function(i32, i32): i32 = add;
-  let result1 = op(10, 5);  // 15
-  
-  op = subtract;
-  let result2 = op(10, 5);  // 5
-  
-  return result1 + result2;  // 20
-}
-```
-
 ## Multiple Return Paths
 
 All code paths must return a value (for non-void functions):
@@ -220,7 +196,187 @@ function max(a: i32, b: i32): i32 {
 
 ---
 
+## Function Types
+
+A function's type describes its parameter types and return type. The syntax mirrors TypeScript:
+
+```
+(param: Type, ...) => ReturnType
+```
+
+Function types are used to annotate variables and parameters that hold functions:
+
+```zeus
+// Variable annotated with a function type
+let op: (a: i32, b: i32) => i32;
+
+// Parameter annotated with a function type
+function apply(f: (x: i32) => i32, val: i32): i32 {
+  return f(val);
+}
+```
+
+The parameter names in a function type are optional — they're for readability only. Both of these mean the same thing:
+
+```zeus
+let op: (a: i32, b: i32) => i32;  // with names
+let op: (i32, i32) => i32;        // without names
+```
+
+Function types can also appear as return type annotations:
+
+```zeus
+// A function that returns another function
+function makeAdder(n: i32): (x: i32) => i32 {
+  return (x: i32): i32 => { return x + n; }
+}
+```
+
+---
+
+## Function References
+
+Named top-level functions can be stored in variables and passed as arguments. Annotate the variable with a function type:
+
+```zeus
+function add(a: i32, b: i32): i32 {
+  return a + b;
+}
+
+function subtract(a: i32, b: i32): i32 {
+  return a - b;
+}
+
+function apply(f: (a: i32, b: i32) => i32, x: i32, y: i32): i32 {
+  return f(x, y);
+}
+
+function main(): i32 {
+  let op: (a: i32, b: i32) => i32 = add;
+  let result1 = op(10, 5);   // 15
+
+  op = subtract;
+  let result2 = op(10, 5);   // 5
+
+  let result3 = apply(add, 3, 7);  // 10
+
+  return result1 + result2 + result3;  // 30
+}
+```
+
+---
+
+## Anonymous Functions
+
+An anonymous function is a function expression without a top-level name. Assign it to a variable or pass it directly as an argument:
+
+```zeus
+function main(): i32 {
+  // Assigned to a variable
+  let double = function(x: i32): i32 { return x * 2; };
+  let result = double(5);  // 10
+
+  return result;
+}
+```
+
+You can also give an anonymous function an internal name for recursion. The name is visible both inside the function body and in the enclosing scope:
+
+```zeus
+function main(): i32 {
+  let fib = function fibonacci(n: i32): i32 {
+    if (n <= 1) { return n; }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+  }
+  return fib(8);  // 21
+}
+```
+
+Anonymous functions can be passed directly as arguments:
+
+```zeus
+function apply(f: (x: i32) => i32, val: i32): i32 {
+  return f(val);
+}
+
+function main(): i32 {
+  return apply(function(x: i32): i32 { return x * 3; }, 7);  // 21
+}
+```
+
+---
+
+## Fat Arrow Functions
+
+Fat arrow syntax (`=>`) is a compact alternative to `function` for writing anonymous functions. The body must be a block:
+
+```zeus
+// Named function equivalent: function(x: i32): i32 { return x * 2; }
+let double = (x: i32): i32 => { return x * 2; }
+
+// Void (no return type annotation = void, same as regular functions)
+let log_value = (x: i32) => { log(x); }
+```
+
+Fat arrows are especially useful for inline callbacks:
+
+```zeus
+function apply(f: (x: i32) => i32, val: i32): i32 {
+  return f(val);
+}
+
+function main(): i32 {
+  let result = apply((x: i32): i32 => { return x + 1; }, 9);
+  return result;  // 10
+}
+```
+
+Return type annotation comes between `)` and `=>`:
+
+```
+(param: Type, ...): ReturnType => { body }
+```
+
+| Syntax | Return type |
+|--------|-------------|
+| `(x: i32): i32 => { return x; }` | `i32` |
+| `(x: i32) => { log(x); }` | `void` (default) |
+
+<Aside type="note">
+  Fat arrows only support block bodies (`{ ... }`). There is no implicit-return expression body — always use an explicit `return` statement.
+</Aside>
+
+---
+
+## Immediately Invoked Function Expressions (IIFE)
+
+A fat arrow function can be called immediately after it is defined by appending `(args)`. This creates and calls the function in a single expression:
+
+```zeus
+function main(): i32 {
+  let result = (a: i32, b: i32): i32 => { return a + b; }(3, 7);
+
+  return result;  // 10
+}
+```
+
+IIFEs are useful for one-off computations you want to keep scoped:
+
+```zeus
+function main(): i32 {
+  // Compute a value using local variables that don't pollute the outer scope
+  let offset = (): i32 => {
+    let base = 100;
+    let adjustment = 42;
+    return base - adjustment;
+  }();
+
+  return offset;  // 58
+}
+```
+
+---
+
 ## Next
 
 <a href="/language/classes/">Classes →</a>
-

@@ -85,6 +85,26 @@ func (p *DeclCheckPass) walkStmt(g *IRModule, stmt ast.StmtNode, isTopLevel bool
 
 	case *ast.VarDeclStmtNode:
 		for _, decl := range s.Decls {
+			classExpr, isClass := decl.Initializer.(*ast.ClassDeclExprNode)
+			if isClass {
+				if decl.DeclType != ast.VarDeclTypeConst {
+					p.errors = append(p.errors, zeus_error.NewZeusError(
+						zeus_error.ErrorSeverityError,
+						"class declarations must use const",
+						decl.Identifier.Name.Span,
+					))
+				}
+				if classExpr.Name == nil {
+					// const X = class {} → anonymous: promote, use var name as class name
+					classExpr.Name = decl.Identifier
+					p.walkExpr(g, classExpr, isTopLevel)
+				} else {
+					// const X = class MyClass {} → both X and MyClass become class names
+					p.checkAndDeclare(decl.Identifier.Name.Value, decl.Identifier.Name.Span)
+					p.walkExpr(g, classExpr, isTopLevel)
+				}
+				continue
+			}
 			p.checkAndDeclare(decl.Identifier.Name.Value, decl.Identifier.Name.Span)
 			if decl.Initializer != nil {
 				p.walkExpr(g, decl.Initializer, false)
@@ -159,11 +179,23 @@ func (p *DeclCheckPass) walkStmt(g *IRModule, stmt ast.StmtNode, isTopLevel bool
 func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool) {
 	switch e := expr.(type) {
 	case *ast.FunctionDeclExprNode:
-		name := e.Name.Name.Value
-		ok := p.checkAndDeclare(name, e.Name.GetSpan())
-		if ok && isTopLevel {
-			p.registerFunctionStub(g, e)
+		fnName := e.Name
+
+		if fnName != nil {
+			ok := p.checkAndDeclare(fnName.Name.Value, e.Name.GetSpan())
+			if ok && isTopLevel {
+				p.registerFunctionStub(g, e)
+			}
+		} else if isTopLevel {
+			// we cannot have anonymous functions on the top level
+			// since they can never be assiged to a variable they never can be called
+			p.errors = append(p.errors, zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				"cannot declare anonymous functions in the global scope",
+				expr.GetSpan(),
+			))
 		}
+
 		p.st.EnterScope()
 		for _, param := range e.Params {
 			p.checkAndDeclare(param.Identifier.Name.Value, param.Identifier.Name.Span)
@@ -172,10 +204,17 @@ func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool
 		p.st.ExitScope()
 
 	case *ast.ClassDeclExprNode:
-		name := e.Name.Name.Value
-		ok := p.checkAndDeclare(name, e.Name.GetSpan())
-		if ok && isTopLevel {
-			p.registerClassStub(g, e)
+		if e.Name != nil {
+			ok := p.checkAndDeclare(e.Name.Name.Value, e.Name.GetSpan())
+			if ok && isTopLevel {
+				p.registerClassStub(g, e)
+			}
+		} else if isTopLevel {
+			p.errors = append(p.errors, zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				"cannot declare anonymous classes in the global scope",
+				expr.GetSpan(),
+			))
 		}
 		p.st.EnterScope()
 		for _, prop := range e.Properties {

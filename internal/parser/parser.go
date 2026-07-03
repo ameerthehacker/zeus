@@ -100,10 +100,12 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 	if isClassMethod {
 		fnType = "method"
 	}
+	previousToken := p.tokens[p.current]
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
-	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: functionName.GetSpan()}
+
+	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: previousToken.Span}
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
 		param := p.parseVarDecl(false, false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
@@ -153,7 +155,13 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	functionParselet := func(parser *Parser, functionKeyword *token.Token) ast.ExprNode {
-		functionName := parser.consumeIdentifier("for function name")
+		var functionName *ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeIdentifier {
+			functionName = parser.consumeIdentifier("for function name")
+		} else if parser.peek().Type != token.TokenTypeLeftParen {
+			// not anonymous (no '(' follows) — require a name, which will emit the right error
+			functionName = parser.consumeIdentifier("for function name")
+		}
 		name, params, returnType, body := parser.parseFunctionSignatureAndBody(functionName, false)
 		return &ast.FunctionDeclExprNode{
 			Name:       name,
@@ -165,7 +173,13 @@ func NewParser(tokens []*token.Token) *Parser {
 	}
 
 	classParselet := func(parser *Parser, classKeyword *token.Token) ast.ExprNode {
-		className := parser.consumeIdentifier("class name")
+		var className *ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeIdentifier {
+			className = parser.consumeIdentifier("class name")
+		} else if parser.peek().Type != token.TokenTypeLeftBrace && parser.peek().Type != token.TokenTypeExtends {
+			// not anonymous (no '{' or 'extends' follows) — require a name, which will emit the right error
+			className = parser.consumeIdentifier("class name")
+		}
 
 		// Check for optional extends clause
 		var parentClass *ast.IdentifierExprNode
@@ -248,6 +262,36 @@ func NewParser(tokens []*token.Token) *Parser {
 			return &ast.IdentifierExprNode{Name: typeToken}
 		},
 		token.TokenTypeLeftParen: func(parser *Parser, openParen *token.Token) ast.ExprNode {
+			if parser.isFatArrowFunction() {
+				params := []*ast.VarDeclNode{}
+				for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightParen {
+					param := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "fat arrow parameter")
+					params = append(params, param)
+					parser.consumeOptionalToken(token.TokenTypeComma)
+				}
+				parser.consumeToken(token.TokenTypeRightParen, "to close fat arrow parameters")
+				var returnType *ast.ValueTypeNode
+				if parser.peek().Type == token.TokenTypeColon {
+					parser.consume()
+					returnType = parser.consumeDataType("return type", "fat arrow function")
+				}
+				parser.consumeToken(token.TokenTypeArrow, "in fat arrow function")
+				body := parser.parseBlockStmt()
+				return &ast.FunctionDeclExprNode{
+					Name:       nil,
+					Params:     params,
+					Body:       body,
+					ReturnType: returnType,
+					Span:       &token.Span{Start: openParen.Span.Start, End: body.GetSpan().End},
+				}
+			}
+			// ((fn_type)) in expression context — used for new ((fn_type))[] array allocation
+			if parser.isFunctionTypeAt(parser.current) {
+				typeNode := parser.consumeFunctionType("grouped function type")
+				closeParen := parser.consumeToken(token.TokenTypeRightParen, "to close grouped function type")
+				typeNode.Span = &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}
+				return typeNode
+			}
 			expr := parser.parseExprOfPrecedence(0, false)
 			closeParen := parser.consumeToken(token.TokenTypeRightParen, "to close grouped expression")
 			return &ast.GroupingExprNode{Expr: expr, Span: &token.Span{Start: openParen.Span.Start, End: closeParen.Span.End}}
@@ -260,21 +304,21 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)
-			if ast.AsIndexingExpr(callee) != nil {
+			// Constructor args are optional: new Foo and new Foo() both work.
+			// new (class { ... }) is also valid — ) closes the grouping, leaving no (.
+			if ast.AsIndexingExpr(callee) != nil || parser.peek().Type != token.TokenTypeLeftParen {
 				return &ast.NewExprNode{
 					Callee: callee,
 					Args:   []ast.ExprNode{},
 					Span:   &token.Span{Start: newKeyword.Span.Start, End: callee.GetSpan().End},
 				}
-			} else {
-				parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
-				args, closeParen := parser.parseArgumentList()
-
-				return &ast.NewExprNode{
-					Callee: callee,
-					Args:   args,
-					Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
-				}
+			}
+			parser.consumeToken(token.TokenTypeLeftParen, "after class name in new expression")
+			args, closeParen := parser.parseArgumentList()
+			return &ast.NewExprNode{
+				Callee: callee,
+				Args:   args,
+				Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
 			}
 		},
 		token.TokenTypeFunction:   functionParselet,
@@ -383,6 +427,88 @@ func (p *Parser) lookahead(n int, tokenType token.TokenType) bool {
 	return p.tokens[index].Type == tokenType
 }
 
+// isFatArrowFunction reports whether the current position (just after a consumed '(')
+// starts a fat-arrow function. It looks ahead past the matching ')' and checks for '=>'
+// or ': ReturnType =>' where the '=>' is immediately followed by '{'.
+func (p *Parser) isFatArrowFunction() bool {
+	depth := 1 // we are already inside the opening '('
+	for i := p.current; i < len(p.tokens); i++ {
+		switch p.tokens[i].Type {
+		case token.TokenTypeLeftParen:
+			depth++
+		case token.TokenTypeRightParen:
+			depth--
+			if depth == 0 {
+				next := i + 1
+				if next < len(p.tokens) && p.tokens[next].Type == token.TokenTypeArrow {
+					// Fat arrow body must be a block — require => { to distinguish from function type annotations
+					return next+1 < len(p.tokens) && p.tokens[next+1].Type == token.TokenTypeLeftBrace
+				}
+				// (params): ReturnType => { body }
+				// Scan for '=>' immediately before '{'; this is unambiguous because
+				// function-type annotations never have '=>' followed by '{'.
+				if next < len(p.tokens) && p.tokens[next].Type == token.TokenTypeColon {
+					innerDepth := 0
+					for j := next + 1; j < len(p.tokens); j++ {
+						switch p.tokens[j].Type {
+						case token.TokenTypeLeftParen:
+							innerDepth++
+						case token.TokenTypeRightParen:
+							innerDepth--
+						case token.TokenTypeArrow:
+							if j+1 < len(p.tokens) && p.tokens[j+1].Type == token.TokenTypeLeftBrace {
+								return true
+							}
+						case token.TokenTypeSemicolon:
+							return false
+						}
+					}
+				}
+				return false
+			}
+		}
+	}
+	return false
+}
+
+// isFunctionTypeAt reports whether the '(' at tokenIndex is the start of a function-type
+// annotation: (params) => ReturnType (not a fat arrow — no '{ body }' after '=>').
+// Callers use this as:
+//   - isFunctionTypeAt(p.current): p.current is at the '(' (not consumed)
+//   - isFunctionTypeAt(p.current): p.current is inside an outer '(' at the inner '('
+func (p *Parser) isFunctionTypeAt(tokenIndex int) bool {
+	depth := 0
+	for i := tokenIndex; i < len(p.tokens); i++ {
+		switch p.tokens[i].Type {
+		case token.TokenTypeLeftParen:
+			depth++
+		case token.TokenTypeRightParen:
+			depth--
+			if depth == 0 {
+				next := i + 1
+				if next < len(p.tokens) && p.tokens[next].Type == token.TokenTypeArrow {
+					// Distinguish fat arrow (=> {) from function type annotation (=> non-{)
+					return next+1 >= len(p.tokens) || p.tokens[next+1].Type != token.TokenTypeLeftBrace
+				}
+				return false
+			}
+		}
+	}
+	return false
+}
+
+func exprEndsWithBlock(expr ast.ExprNode) bool {
+	switch e := expr.(type) {
+	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode:
+		return true
+	case *ast.BinaryExprNode:
+		return exprEndsWithBlock(e.Right)
+	case *ast.TernaryExprNode:
+		return exprEndsWithBlock(e.Else)
+	}
+	return false
+}
+
 func (p *Parser) consumeAccessModifier() *token.Token {
 	accessModifierTokens := []token.TokenType{token.TokenTypePublic, token.TokenTypePrivate, token.TokenTypeProtected}
 
@@ -449,28 +575,59 @@ func (p *Parser) consumeSemicolon(extraInfo ...string) {
 	p.consumeToken(token.TokenTypeSemicolon, extraInfo...)
 }
 
-func (p *Parser) consumeDataType(dataType string, cxt string) *ast.ValueTypeNode {
-	nextToken := p.peek()
-	if nextToken.IsDataType() || nextToken.Type == token.TokenTypeIdentifier {
-		p.consume()
-	} else {
-		p.expectedButGotError(dataType, nextToken, fmt.Sprintf("in %s", cxt))
+func (p *Parser) consumeFunctionType(cxt string) *ast.ValueTypeNode {
+	startToken := p.peek()
+	p.consumeToken(token.TokenTypeLeftParen, fmt.Sprintf("in %s", cxt))
+
+	paramTypes := []zeus_value.ValueType{}
+	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
+		// optional parameter name followed by ':'
+		if p.peek().Type == token.TokenTypeIdentifier && p.lookahead(1, token.TokenTypeColon) {
+			p.consume() // name
+			p.consume() // colon
+		}
+		paramType := p.consumeDataType("parameter type", cxt)
+		paramTypes = append(paramTypes, paramType.ValueType)
+		p.consumeOptionalToken(token.TokenTypeComma)
 	}
 
-	valueType := zeus_value.ToValueType(nextToken)
+	p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("in %s", cxt))
+	p.consumeToken(token.TokenTypeArrow, fmt.Sprintf("in %s", cxt))
+	returnType := p.consumeDataType("return type", cxt)
+
+	fnType := zeus_value.NewFunctionType(returnType.ValueType, paramTypes)
+	return &ast.ValueTypeNode{ValueType: fnType, Span: startToken.Span}
+}
+
+func (p *Parser) consumeDataType(dataType string, cxt string) *ast.ValueTypeNode {
+	nextToken := p.peek()
+
+	var valueTypeNode *ast.ValueTypeNode
+	if nextToken.Type == token.TokenTypeLeftParen {
+		if p.isFunctionTypeAt(p.current) {
+			valueTypeNode = p.consumeFunctionType(cxt)
+		} else {
+			p.consume() // consume '(' — grouped type annotation like ((fn_type))[]
+			valueTypeNode = p.consumeDataType(dataType, cxt)
+			p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("in %s", cxt))
+		}
+	} else {
+		if nextToken.IsDataType() || nextToken.Type == token.TokenTypeIdentifier {
+			p.consume()
+		} else {
+			p.expectedButGotError(dataType, nextToken, fmt.Sprintf("in %s", cxt))
+		}
+		valueTypeNode = &ast.ValueTypeNode{ValueType: zeus_value.ToValueType(nextToken), Span: nextToken.Span}
+	}
+
 	// check if the data type is an array
 	for p.peek().Type == token.TokenTypeLeftBracket {
 		p.consume()
 		p.consumeToken(token.TokenTypeRightBracket, "in array definition")
-
-		valueType = zeus_value.ArrayType{ElementType: valueType}
+		valueTypeNode = &ast.ValueTypeNode{ValueType: zeus_value.ArrayType{ElementType: valueTypeNode.ValueType}, Span: valueTypeNode.Span}
 	}
 
-	if zeus_value.IsArrayType(valueType) {
-		return &ast.ValueTypeNode{ValueType: valueType, Span: nextToken.Span}
-	}
-
-	return &ast.ValueTypeNode{ValueType: valueType, Span: nextToken.Span}
+	return valueTypeNode
 }
 
 func (p *Parser) pushError(err *zeus_error.ZeusError) {
@@ -511,14 +668,11 @@ func (p *Parser) expectedButGotError(expected string, token *token.Token, extraI
 
 func (p *Parser) parseExprStmt() *ast.ExprStmtNode {
 	expr := p.ParseExpr()
-
-	switch expr.(type) {
-	case *ast.FunctionDeclExprNode:
-	case *ast.ClassDeclExprNode:
-	default:
+	if !exprEndsWithBlock(expr) {
 		p.consumeSemicolon()
+	} else {
+		p.consumeOptionalToken(token.TokenTypeSemicolon)
 	}
-
 	return &ast.ExprStmtNode{Expr: expr}
 }
 
@@ -543,7 +697,11 @@ func (p *Parser) parseReturnStmt() *ast.ReturnStmtNode {
 	returnKeyword := p.consumeToken(token.TokenTypeReturn)
 	expr := p.parseExprOfPrecedence(0, true)
 	var span *token.Span
-	p.consumeSemicolon()
+	if expr == nil || !exprEndsWithBlock(expr) {
+		p.consumeSemicolon()
+	} else {
+		p.consumeOptionalToken(token.TokenTypeSemicolon)
+	}
 
 	if expr != nil {
 		span = &token.Span{Start: returnKeyword.Span.Start, End: expr.GetSpan().End}
@@ -672,14 +830,27 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 	for !p.isEOF() && p.peek().Type != token.TokenTypeSemicolon {
 		decl := p.parseVarDecl(true, true, varDeclType, "variable declaration")
 		decls = append(decls, *decl)
-		p.consumeOptionalToken(token.TokenTypeComma)
+		commaToken := p.consumeOptionalToken(token.TokenTypeComma)
+		// no new declarations to consume
+		if commaToken == nil {
+			break
+		}
 	}
 
 	if len(decls) == 0 {
 		p.expectedError("at least one variable declaration")
-	}
+	} else {
+		lastDecl := decls[len(decls)-1]
+		shouldConsumeSemicolon := true
 
-	p.consumeSemicolon()
+		if lastDecl.Initializer != nil && exprEndsWithBlock(lastDecl.Initializer) {
+			p.consumeOptionalToken(token.TokenTypeSemicolon)
+			shouldConsumeSemicolon = false
+		}
+		if shouldConsumeSemicolon {
+			p.consumeSemicolon()
+		}
+	}
 
 	if len(decls) > 0 {
 		span = &token.Span{Start: varDeclTypeToken.Span.Start, End: decls[len(decls)-1].GetSpan().End}

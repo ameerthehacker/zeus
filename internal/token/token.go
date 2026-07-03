@@ -60,6 +60,7 @@ const (
 	TokenTypeLeftShiftEqual  // <<=
 	TokenTypeRightShiftEqual // >>=
 	TokenTypeQuestion        // ?
+	TokenTypeArrow           // =>
 	operator_end
 	// literals
 	literal_beg
@@ -214,6 +215,8 @@ func (t TokenType) String() string {
 		return ">>="
 	case TokenTypeQuestion:
 		return "?"
+	case TokenTypeArrow:
+		return "=>"
 	case TokenTypeNumber:
 		return "number"
 	case TokenTypeString:

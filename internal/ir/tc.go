@@ -99,6 +99,7 @@ func (tc *TypeChecker) updateContext(instr *Instr) {
 	case InstrTypeDeclFunc:
 		input := AsDeclFuncInstrInput(instr.Input)
 		tc.currentFunction = input.Function
+		tc.currentClass = nil
 	case InstrTypeDeclClassMethod:
 		input := AsDeclClassMethodInstrInput(instr.Input)
 		tc.currentClass = input.Class
@@ -711,6 +712,13 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 			}
 			// Allow string comparisons
 			if isStringType(a) && isStringType(b) {
+				return true
+			}
+			// Allow function pointer compared with null (used by null-check lowering pass)
+			if zeus_value.IsFunctionType(a) && zeus_value.IsNullType(b) {
+				return true
+			}
+			if zeus_value.IsNullType(a) && zeus_value.IsFunctionType(b) {
 				return true
 			}
 			return false
@@ -1354,12 +1362,15 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		methods := class.Methods
 		isFound := false
 		isAccessible := false
+		isMethod := false
 
 		for _, property := range properties {
 			if property.Property.Name == input.Property {
 				isFound = true
 				if property.AccessModifier != nil {
 					isAccessible = property.AccessModifier.Type == token.TokenTypePublic
+				} else {
+					isAccessible = false
 				}
 				instr.Output.ValueType = property.Property.ValueType
 			}
@@ -1368,6 +1379,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		for _, method := range methods {
 			if method.Method.SourceName() == input.Property {
 				isFound = true
+				isMethod = true
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
@@ -1390,12 +1402,12 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			}
 		}
 
-		if input.Property == token.CONSTRUCTOR_METHOD_NAME {
+		if isFound && isMethod {
 			tc.pushError(&zeus_error.ZeusError{
-				Message: "cannot access constructor method of a class",
+				Message: fmt.Sprintf("class methods cannot be used as function values; wrap in a fat arrow: (args): ReturnType => { return obj.%s(args); }", input.Property),
 				Span:    output.Span,
 			})
-		} else {
+		} else if isFound {
 			propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
 			if !isAccessible && !propertyOfSameClass {
 				tc.pushError(&zeus_error.ZeusError{
@@ -1441,6 +1453,18 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	if foundMethod == nil {
+		// Check if it is a function-type property being called directly (obj.fnProp(args)).
+		// The IR generator cannot distinguish methods from function-type properties at gen time,
+		// so it always emits CALL_METHOD for obj.x(args). The lowering pass rewrites these
+		// to OBJ_PROP_ACCESS + INDIRECT_CALL after type checking.
+		for _, property := range class.Properties {
+			if property.Property.Name == input.MethodName {
+				if ft, ok := property.Property.ValueType.(zeus_value.FunctionType); ok {
+					instr.Output.ValueType = ft.ReturnType
+					return
+				}
+			}
+		}
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("property %s not found in class %s", input.MethodName, class.SourceName()),
 			Span:    instr.Output.Span,

@@ -60,6 +60,8 @@ func toZeusRuntimeType(zeusType zeus_value.ValueType) ZeusRuntimeType {
 		return ZeusRuntimeTypeNull
 	case zeus_value.ObjectType:
 		return ZeusRuntimeTypeObject
+	case zeus_value.FunctionType:
+		return ZeusRuntimeTypeObject
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to zeus runtime type: %T", zeusType))
 	}

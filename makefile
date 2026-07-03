@@ -9,6 +9,7 @@ clean:
 	rm -rf runtime/zig-out
 
 always:
+	rm -rf playground/target
 	cmake -B build -DCMAKE_BUILD_TYPE=Release
 	make -C build
 

@@ -436,6 +436,10 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 				l.advance()
 				endPosition := l.getCurrentPosition()
 				l.pushToken(token.NewToken(token.TokenTypeEqualEqual, token.NewSpan(*startPosition, *endPosition)))
+			} else if l.matchNextRune('>') {
+				l.advance()
+				endPosition := l.getCurrentPosition()
+				l.pushToken(token.NewToken(token.TokenTypeArrow, token.NewSpan(*startPosition, *endPosition)))
 			} else {
 				l.pushToken(token.NewToken(token.TokenTypeEqual, token.NewSpan(*startPosition, *startPosition)))
 			}

@@ -202,6 +202,11 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 		c.cxt.Int32Type(),                      // num_classes
 	}, false)
 	zeusTryBeginFunc := llvm.AddFunction(module, "zeus_try_begin", zeusTryBeginType)
+	// returns_twice tells LLVM this function behaves like setjmp — it can return
+	// a second time (with a non-zero value) when longjmp is called with its jmp_buf.
+	// Without this attribute, LLVM may optimize under the assumption that the function
+	// returns exactly once, breaking longjmp semantics for non-trivial try bodies.
+	zeusTryBeginFunc.AddFunctionAttr(c.cxt.CreateEnumAttribute(llvm.AttributeKindID("returns_twice"), 0))
 	globalFunctions["zeus_try_begin"] = GlobalLLVMFunction{zeusTryBeginFunc, zeusTryBeginType}
 
 	// zeus_pop_handler() - unregister exception handler
@@ -644,8 +649,8 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 		c.builder.CreateStore(c.toLLVMValue(input.Initializer), variable)
 	} else if zeus_value.IsPrimitiveType(input.Variable.ValueType) {
 		c.builder.CreateStore(c.getDefaultLLVMValue(input.Variable.ValueType), variable)
-	} else if zeus_value.IsObjectType(input.Variable.ValueType) {
-		// uninitialized object variables must be explicitly null so that
+	} else if zeus_value.IsObjectType(input.Variable.ValueType) || zeus_value.IsFunctionType(input.Variable.ValueType) {
+		// uninitialized object/function-pointer variables must be explicitly null so that
 		// null-reference checks produce deterministic results (alloca is otherwise UB)
 		c.builder.CreateStore(llvm.ConstPointerNull(variableType), variable)
 	}
@@ -742,9 +747,21 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 		}
 		// Use intIntOp for pointer comparison (IntEQ/IntNE work on pointers)
 		return intIntOp(leftValue, rightValue, opName)
+	case zeus_value.FunctionType:
+		// Function pointer compared with null (used by null-check lowering pass)
+		leftValue := c.toLLVMValue(left)
+		if zeus_value.IsNullType(rightType) {
+			rightValue := llvm.ConstPointerNull(leftValue.Type())
+			return intIntOp(leftValue, rightValue, opName)
+		}
 	case zeus_value.NullType:
-		// null compared with object (reversed order)
+		// null compared with object or function pointer (reversed order)
 		if zeus_value.IsObjectType(rightType) {
+			rightValue := c.toLLVMValue(right)
+			leftValue := llvm.ConstPointerNull(rightValue.Type())
+			return intIntOp(leftValue, rightValue, opName)
+		}
+		if zeus_value.IsFunctionType(rightType) {
 			rightValue := c.toLLVMValue(right)
 			leftValue := llvm.ConstPointerNull(rightValue.Type())
 			return intIntOp(leftValue, rightValue, opName)
@@ -1495,6 +1512,8 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 	case zeus_value.ObjectType:
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	case zeus_value.OpaqueType:
+		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	case zeus_value.FunctionType:
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	default:
 		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
