@@ -40,5 +40,20 @@
             "main",
             "let value: i32 = array[5];"
         ]
+    },
+    {
+        "name": "Sequential try blocks each catch their own exception",
+        "entry": "sequential-try.zs",
+        "exit": "0"
+    },
+    {
+        "name": "Null reference in callee propagates to caller try-catch",
+        "entry": "null-in-callee.zs",
+        "exit": "0"
+    },
+    {
+        "name": "Null reference two frames deep is caught by try-catch",
+        "entry": "null-check-cross-frame.zs",
+        "exit": "0"
     }
 ]
