@@ -1,6 +1,6 @@
 # Closures
 
-This document covers Zeus's closure implementation end-to-end: the capture-by-value system that is live today, the bugs that were fixed during implementation, and the design for the upcoming capture-by-reference (ref cell) rewrite.
+This document covers Zeus's closure implementation end-to-end: the functor model, capture-by-value, capture-by-reference (ref cells), all bugs fixed during implementation, and the AST-level type pre-inference pass that makes ref cell promotion correct for complex initializers.
 
 ---
 
@@ -49,6 +49,7 @@ type CapturedVar struct {
     PropertyName string               // e.g. "__cap_n__", "__cap_this__"
     ValueType    zeus_value.ValueType // type of the captured value
     Source       zeus_value.Value     // *Var (local/param) or *Object (for "this")
+    IsRefCell    bool                 // true when Source is a ref cell object
 }
 ```
 
@@ -58,6 +59,7 @@ type CapturedVar struct {
 - Continues walking into nested function bodies (to propagate transitive capture requirements upward).
 - Captures `*zeus_value.Var` sources for locals and parameters.
 - Captures `*zeus_value.Object` sources for `this` (class method closures).
+- Captures `*zeus_value.RefCellVar` cell objects for escaped mutable vars (sets `IsRefCell=true`).
 - Returns non-`this` captures first, `this` last (ordering constraint in `__call__` preamble).
 
 ### `emitFunctorClass` (`internal/ir/ir.go`)
@@ -69,6 +71,7 @@ Called from `VisitFunctionDeclExpr` and `VisitFunctionDeclStmt` for any nested/a
 3. Emit `DECL_CLASS`, constructor, and `__call__` (via `emitFunction`).
 4. Emit `NEW_OBJ(functorClass)` to create the instance. Immediately set `resultVar.ValueType = ObjectType{functorClass}` so any outer `collectFreeVars` that captures this functor object sees a non-nil type.
 5. For each captured var, store its current value into the corresponding property:
+   - Ref cell (`IsRefCell=true`): store the cell object pointer directly — no load needed, the closure shares the heap cell.
    - `srcVar.IsPtr == true` (alloca local): emit `LOAD srcVar` → store result
    - `srcVar.IsPtr == false` (SSA parameter): use the var directly (no load needed)
    - `*zeus_value.Object` (`this`): store the object reference directly
@@ -78,6 +81,16 @@ Called from `VisitFunctionDeclExpr` and `VisitFunctionDeclStmt` for any nested/a
 Inside `__call__`, before the function body is visited:
 
 **Pass 1 — non-`this` captures** (uses the functor's `this`):
+
+For ref cell captures:
+```
+cellPtr = OBJECT_PROPERTY_ACCESS this.__cap_x__  // gets the cell object
+loadedCell = LOAD cellPtr
+symbolTable.declare("x", RefCellVar{cell: loadedCell, ValueType: T})
+// reads/writes to "x" in the body automatically route through cell.value
+```
+
+For value captures:
 ```
 propPtr = OBJECT_PROPERTY_ACCESS this.__cap_x__
 loadedVal = LOAD propPtr
@@ -94,85 +107,11 @@ loadedOuterThis.IsPtr = false  // already a loaded pointer, not pointer-to-point
 symbolTable.declare("this", loadedOuterThis)
 ```
 
-The `this` capture must be last because pass 1 still needs to read from the functor's `this` to load the other properties. Once `this` is re-declared as the outer object, reads of `this` in the body correctly see the enclosing class instance.
-
-### Eager type inference for untyped variables
-
-Variables declared without an explicit type annotation (`let count = 0`) get `UndefinedType{}` at IR-gen time, with the real type resolved later by `TypeCheckingPass.tcDeclVar`. When such a variable is captured by a closure, its `UndefinedType{}` propagates into the functor class property, causing `UndefinedTypeCheckPass` to error after TC.
-
-**Fix** (`VisitVarDeclStmt`, `internal/ir/ir.go`): eagerly infer the type from the initializer value using `zeus_value.GetValueType(initializer)`. If the initializer already carries a concrete type (common for literals, function-call results, etc.) use it immediately; otherwise fall back to `UndefinedType{}` for TC to resolve later.
-
-```go
-if decl.ValueType != nil {
-    valueType = decl.ValueType.ValueType
-} else if initializer != nil {
-    inferred := zeus_value.GetValueType(initializer)
-    if inferred != nil && !zeus_value.IsUndefinedType(inferred) {
-        valueType = inferred   // e.g. IntType{I8} for literal 0
-    } else {
-        valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
-    }
-} else {
-    valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
-}
-```
-
-The nil guard (`inferred != nil`) is critical: `new Foo()` returns a temp var with nil ValueType before TC's `tcNewObj` runs, so `GetValueType` would return nil. Without the guard, nil would be used as the variable's type, breaking TC for `let x = new Foo()` patterns.
+The `this` capture must be last because pass 1 still needs to read from the functor's `this` to load the other properties.
 
 ---
 
-## Part 2 — Bugs fixed during implementation
-
-### Bug 1 — `load i32, i32 %param` (SIGSEGV at runtime)
-
-**Symptom**: Closures that capture function parameters crash at runtime.
-
-**Root cause**: `emitFunctorClass` unconditionally called `BuildLoad(srcVar)` for every captured `*Var` source. For alloca locals (`IsPtr=true`) this is correct. For SSA parameters (`IsPtr=false`) this emitted `load i32, i32 %0` — attempting to interpret an integer value as a memory address → SIGSEGV.
-
-**Fix**: Check `srcVar.IsPtr` before emitting the load:
-```go
-if srcVar.IsPtr {
-    currentVal = g.irBuilder.BuildLoad(srcVar, span)  // alloca
-} else {
-    currentVal = srcVar                                // SSA param — already the value
-}
-```
-
-### Bug 2a — nil property type panic in `resolveClass`
-
-**Symptom**: Compiling a closure that captures another closure (functor object) panics in `ToKnownTypesPass.resolveClass` with a nil pointer dereference.
-
-**Root cause**: `BuildNewObj` uses `createTempVariable` which creates a var with `ValueType = nil`. When `collectFreeVars` in an outer closure captured an inner functor variable, it captured `ValueType = nil`. This nil propagated into the outer functor's class property, and `resolveClass` called `nil.GetSpan()` → SIGSEGV.
-
-**Fix 1**: After `BuildNewObj` in `emitFunctorClass`, immediately set the result var's type:
-```go
-if resultVar := zeus_value.AsVar(functorObject); resultVar != nil {
-    resultVar.ValueType = zeus_value.NewObjectType(*functorClass)
-}
-```
-This ensures any outer `collectFreeVars` sees a concrete `ObjectType` instead of nil.
-
-**Fix 2** (safety net): `resolveClass` in `tc.go` skips properties with nil ValueType rather than panicking. These are resolved later via the first `STORE` into the property.
-
-### Bug 2b — `getLLVMStructType` panic for cross-ordered class references
-
-**Symptom**: Compiling a closure that captures `this` inside a class method panics with "llvm struct type Box not found".
-
-**Root cause**: Functor classes are inserted at position 0 in the instruction list (via `EmitClassDeclAtStart`). A functor class whose properties reference a user-defined class (e.g., `Box` for a `this` capture) is processed in Phase 1 (DECL_CLASS processing) before `Box`'s own `DECL_CLASS`. `createClassStructTypes` called `getLLVMStructType("Box")` which hadn't been registered yet.
-
-**Fix**: In `toLLVMType` for `ObjectType`, stop calling `getLLVMStructType`. In LLVM's opaque-pointer mode (LLVM 15+), all GC object pointers are `ptr addrspace(1)` regardless of the nominal element type. The element type passed to `PointerType` is silently discarded by LLVM — no information is lost and no optimization is affected.
-
-```go
-case zeus_value.ObjectType:
-    // In LLVM opaque-pointer mode the element type is irrelevant.
-    return llvm.PointerType(c.cxt.VoidType(), 1)
-```
-
-Note: `toLLVMStructType` (used for GEPs) is a separate function and still performs the lookup correctly, but by that point all classes have been registered in Phase 1.
-
----
-
-## Part 3 — Capture-by-reference (upcoming)
+## Part 2 — Capture-by-reference (implemented)
 
 ### Why capture-by-value cannot support mutable closures
 
@@ -185,20 +124,16 @@ function makeCounter(): () => i32 {
     };
 }
 let incr = makeCounter();
-incr();  // returns 1, not 1, 2, 3, 4
+incr();  // always returns 1, not 1, 2, 3, 4
 ```
 
-With capture-by-value, `count`'s value (0) is copied into `__cap_count__` when the closure is created. Each `__call__` invocation:
+With capture-by-value, `count`'s value (0) is copied into `__cap_count__` at closure creation time. Each `__call__` invocation:
 1. Loads 0 from `this.__cap_count__`
 2. Increments the local shadow → 1
 3. Returns 1
 4. The shadow is discarded; `this.__cap_count__` remains 0
 
-The local shadow variable is never written back to `this.__cap_count__`. Each call starts fresh at 0.
-
-The deeper reason this can't be fixed by "just write back on return": `count` is an alloca on `makeCounter`'s stack frame. That frame is gone by the time `incr()` is called. Any pointer to the alloca would be dangling. **The variable must be moved to the heap.**
-
-This is what JavaScript, Go, Python, and most languages with closures do internally: variables that escape into closures are heap-allocated ("escaping" in compiler terminology). The closure holds a pointer to the heap cell, not a copy of the value.
+The deeper reason this can't be fixed by "write back on return": `count` is on `makeCounter`'s stack frame which is gone by the time `incr()` is called. The variable must be moved to the heap.
 
 ### Design: ref cells
 
@@ -210,58 +145,47 @@ class __ref_cell_i32__ {
 }
 ```
 
-When a variable is declared in a scope where it will be captured, it is allocated as a ref cell instead of a stack alloca:
+When a variable is declared in a scope where it will be captured by a nested closure, it is allocated as a ref cell instead of a stack alloca:
 
 ```
-// Before (capture-by-value, stack alloca):
+// Before (stack alloca):
 %count = alloca i32
 store i32 0, ptr %count
 
-// After (capture-by-reference, heap ref cell):
+// After (heap ref cell):
 %count_cell = call zeus_gc_alloc(sizeof __ref_cell_i32__)
 GEP(count_cell, value_field) ← store 0
 ```
 
-All reads and writes to `count` in the outer scope go through the cell:
-- Read `count` → `load GEP(count_cell, value_field)`
-- Write `count = v` → `store v, GEP(count_cell, value_field)`
-
 The closure captures the **cell pointer** (not the value). Both the outer function and the closure operate on the same heap cell:
 
 ```
-makeCounter scope:        Closure (__call__):
+makeCounter scope:         Closure (__call__):
   count_cell → [value: 0]   __cap_count__ → same cell
        ↑                           ↑
    both reference the same GC object
 ```
 
-Inside `__call__`:
-- `count += 1` → load from cell, add 1, store back to cell
-- Returns the cell's value → 1 on first call, 2 on second, etc.
-
-### RefCellVar: transparent access in the symbol table
-
-To avoid changing every visitor that reads or writes a variable, a new value type `RefCellVar` is added to `zeus_value/`. It wraps the underlying cell object and acts as a transparent proxy:
+### `RefCellVar`: transparent access in the symbol table
 
 ```go
 type RefCellVar struct {
     OriginalName string
     ValueType    zeus_value.ValueType  // type of .value, not of the cell
     Cell         zeus_value.Value      // the GC ref cell object
+    Span         *token.Span
 }
 ```
 
 `RefCellVar` implements the `Value` interface. The symbol table maps `"count"` to a `RefCellVar` instead of a `*Var`.
 
-**Reads** (`VisitIdentifier`): detects `RefCellVar`, emits `OBJECT_PROPERTY_ACCESS cell.value` + `LOAD` → returns the loaded scalar value. Identical to what the callers expect.
+**Reads** (`VisitIdentifier`): detects `RefCellVar`, emits `OBJECT_PROPERTY_ACCESS cell.value` + `LOAD` → returns the loaded scalar. Identical to what callers expect.
 
-**Writes** (`VisitAssignExpr` and compound assignments): detects `RefCellVar` target, emits `OBJECT_PROPERTY_ACCESS cell.value` + `STORE`. The alloca-based `BuildStore(var, val)` path is bypassed.
+**Writes** (`VisitAssignExpr` and compound assignments): detects `RefCellVar` target, emits `OBJECT_PROPERTY_ACCESS cell.value` + `STORE`. The alloca-based path is bypassed.
 
 ### Escape analysis pre-pass
 
-Ref cells must be created at variable *declaration* time (in `VisitVarDeclStmt`), because by the time `VisitFunctionDeclExpr` encounters the nested closure the variable is already in the symbol table. We need to know *before* generating the function body which variables will be captured.
-
-A new pure-AST pre-pass `collectEscapedVarNames` runs in `emitFunction` before `fnBody.Accept(g)`. It walks the function body's AST (no IR emitted) and finds: variables or parameters declared in this scope that are referenced in any nested function body.
+Ref cells must be created at variable *declaration* time (in `VisitVarDeclStmt`), because by the time `VisitFunctionDeclExpr` encounters the nested closure the variable is already in the symbol table. A pure-AST pre-pass `collectEscapedVarNames` runs in `emitFunction` before `fnBody.Accept(g)`:
 
 ```go
 // Returns names of vars/params in this scope that escape into nested closures.
@@ -269,149 +193,233 @@ func collectEscapedVarNames(params []*ast.VarDeclNode, body *ast.BlockStmtNode) 
 ```
 
 The walker:
-1. Maintains a set of names declared at the current (top) level.
-2. When it encounters a nested `FunctionDeclExprNode` or `FunctionDeclStmtNode`, collects all identifiers referenced in its body (recursively, including deeper nested closures).
+1. Maintains the set of names declared at the current (top) level.
+2. When it encounters a nested `FunctionDeclExprNode`, collects all identifiers referenced in its body (recursively).
 3. Any name in the current-level set that is also referenced in a nested body is marked escaped.
 
-### Implementation changes (component by component)
+### Ref cell type resolution: three-priority cascade
 
-**`internal/zeus_value/`** — add `RefCellVar` type implementing `Value`.
+At `VisitVarDeclStmt` time, the type of an escaped variable's initializer may not yet be known (e.g., `let count = a + b` — type is resolved later by `TypeCheckingPass`). Three priority levels determine the ref cell's inner type `T`:
 
-**`internal/ir/closure.go`** — add `collectEscapedVarNames` AST pre-pass.
+**Priority 1 — explicit annotation**: `let count: i32 = ...` → `T = i32` directly.
 
-**`internal/ir/ir.go` — `emitFunction`**:
-- Call `collectEscapedVarNames(params, fnBody)` before `fnBody.Accept(g)`.
-- For escaped params: immediately after the param `*Var` is created, allocate a ref cell, store the param's SSA value into it, and re-register the symbol as `RefCellVar`.
-- Pass the escaped-names set into the body generation context.
+**Priority 2 — AST pre-inferred type**: `inferFunctionLocalTypes` runs before the body is emitted and pre-infers types from AST structure alone (no IR emitted). Handles: binary ops, ternary, direct/indirect calls, method calls, property access, array indexing, string literals, `new ClassName()`.
 
-**`internal/ir/ir.go` — `VisitVarDeclStmt`**:
-- If the declared name is in the escaped set: allocate `new __ref_cell_T__()`, store the initializer into `cell.value`, register `RefCellVar` in symbol table.
-- Otherwise: existing alloca path unchanged.
+**Priority 3 — eager IR result type**: after `decl.Initializer.Accept(g)` runs, `GetValueType(initializer)` captures the type the IR gen set on the result (used for functor expressions, which set `resultVar.ValueType = ObjectType{functorClass}` eagerly).
 
-**`internal/ir/ir.go` — `VisitIdentifier`**:
-- Add a `case *zeus_value.RefCellVar` branch: emit `OBJECT_PROPERTY_ACCESS cell.value` + `LOAD`.
-
-**`internal/ir/ir.go` — `VisitAssignExpr` (and `+=`, `-=`, etc.)**:
-- Add a `case *zeus_value.RefCellVar` branch for the assignment target: emit `OBJECT_PROPERTY_ACCESS cell.value` + `STORE`.
-
-**`internal/ir/closure.go` — `collectFreeVars`**:
-- For `RefCellVar` symbols, capture the underlying cell object as the `Source` with `ValueType = ObjectType{__ref_cell_T__}`.
-
-**`internal/ir/ir.go` — `emitFunctorClass` capture initialization**:
-- For ref cell captures (source is a ref cell object): store the cell pointer directly into the property. No load needed — the cell itself is the shared reference.
-
-**`internal/ir/ir.go` — `emitFunction` `__call__` preamble**:
-- For ref cell captures: load `this.__cap_x__` → get the cell object → register `RefCellVar{cell: loaded_cell}` in the local symbol table under the original name. The body's reads/writes automatically route through the cell.
-
-**`internal/ir/tc.go` — TypeCheckingPass**:
-- Ref cell properties have a concrete `ObjectType{__ref_cell_T__}` type (no nil/UndefinedType issues).
-- `tcObjectPropertyAccess` for `.value` on a ref cell class resolves to type `T` normally.
-
-**`internal/codegen/codegen.go`**:
-- No changes needed for ref cell access paths — `OBJECT_PROPERTY_ACCESS` + `LOAD`/`STORE` already work for any class. The ref cell classes are ordinary Zeus classes.
-- Ref cell class generation follows the same pattern as array primordial classes.
-
-### Ref cell class generation
-
-Ref cell classes are generated on demand by a new pass (or extended `PrimordialClassGenPass`). For each unique value type `T` that needs boxing, a class `__ref_cell_T__` is declared:
-
-```
-DECL_CLASS __ref_cell_i32__
-  properties:
-    public value: i32
-  methods:
-    constructor() { /* no-op */ }
+```go
+if g.escapedVarNames[varName] {
+    refCellType := valueType  // Priority 1: explicit annotation
+    if zeus_value.IsUndefinedType(refCellType) {
+        if preInferred, ok := g.escapedVarInferredTypes[varName]; ok && ... {
+            refCellType = preInferred  // Priority 2: AST pre-inferred
+        }
+    }
+    if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
+        if inferred := zeus_value.GetValueType(initializer); ... {
+            refCellType = inferred  // Priority 3: eager IR result
+        }
+    }
+    if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
+        cellObj := g.allocRefCell(refCellType, initializer, decl.GetSpan())
+        ...
+    }
+}
 ```
 
-The class name is derived from the type string: `__ref_cell_` + `T.String()` + `__`. For nested generics (e.g., an `i32[]` captured), the class name contains the array type string.
+### AST pre-inference pass (`internal/ir/ir_type_infer.go`)
 
-Classes are emitted via `EmitClassDeclAtStart` so they precede any use, and cached to avoid duplicates.
+`inferFunctionLocalTypes` scans the function body AST before any IR is emitted. It must run after params and the captured-var preamble are registered in the symbol table (so identifier lookups succeed).
+
+```go
+func (g *IRModule) inferFunctionLocalTypes(
+    escapedVarNames map[string]bool,
+    body            *ast.BlockStmtNode,
+) map[string]zeus_value.ValueType
+```
+
+Internal `inferExprType` handles:
+
+| Expression | Inferred type |
+|---|---|
+| `NumberExprNode` (float) | `FloatType{F64}` |
+| `NumberExprNode` (int) | `IntType{Signed: false, Size: GetSignedIntSize(v)}` |
+| `BooleanExprNode` | `BoolType{}` |
+| `NullExprNode` | `NullType{}` |
+| `CharExprNode` | `IntType{Signed: false, Size: I8}` |
+| `StringConstantExprNode` | `ObjectType{stringClass}` (via `ZEUS_PRIMORDIAL_STRING` lookup) |
+| `GroupingExprNode` | recurse into inner |
+| `IdentifierExprNode` | check `localTypes[name]` first; then symbol table `*Var`, `*RefCellVar`, `*Function`, `*Class`, `*Constant`; apply `resolveUserDefinedType` |
+| `UnaryExprNode` with `!` | `BoolType{}` |
+| `UnaryExprNode` arithmetic | recurse into operand |
+| `BinaryExprNode` comparison/logical | `BoolType{}` |
+| `BinaryExprNode` assignment | `nil` |
+| `BinaryExprNode` arithmetic/bitwise | `GetBiggerType(left, right)` if both numeric |
+| `TernaryExprNode` | try then-branch; fall back to else-branch |
+| `FunctionCallExprNode` method call | resolve object type → find method by name → return type |
+| `FunctionCallExprNode` direct/indirect | callee type → `FunctionType.ReturnType` or functor `__call__.ReturnType` |
+| `IndexingExprNode` | resolve array object → `ArrayElementType` |
+| `ObjectPropertyAccessExprNode` | resolve object → find property → property type |
+| `NewExprNode` | look up class by identifier → `ObjectType{class}` |
+| `FunctionDeclExprNode` | `nil` (Priority 3 handles this correctly) |
+
+`localTypes` accumulates ALL variable types seen during the scan (not just escaped ones), enabling chained inference: `let a = 1; let counter = a + 1`.
+
+The scan recurses into `if`/`while`/`for`/`try` bodies but never into nested `FunctionDeclExprNode` bodies — escaped vars are only those declared in the CURRENT function's scope.
+
+### Escaped parameters
+
+Parameters of the outer function that are also escaped into a closure are promoted to ref cells immediately after their `*Var` is created in `emitFunction`:
+
+```go
+cellObj := g.allocRefCell(paramType, paramVar, span)
+refCell := &zeus_value.RefCellVar{...}
+g.symbolTable().DeclareSymbol(paramName, refCell)
+```
 
 ### Semantic changes vs capture-by-value
 
-Switching to capture-by-reference changes the observable semantics of several patterns:
+Capture-by-reference changes observable semantics:
 
-**Pattern 1 — outer mutation after closure creation** (now visible):
+**Outer mutation after closure creation** (now visible inside closure):
 ```zeus
 let x: i32 = 10;
 function getX(): i32 { return x; }
 x = 99;
-return getX();  // capture-by-value: 10 | capture-by-reference: 99
+return getX();  // 99 (was 10 with capture-by-value)
 ```
 
-**Pattern 2 — inner mutation** (now propagates to outer scope):
+**Inner mutation propagates to outer scope**:
 ```zeus
 let x: i32 = 5;
 function set99() { x = 99; }
 set99();
-// x is now 99 in outer scope too
+// x is 99 in outer scope
 ```
 
-**Pattern 3 — shared variable across multiple closures** (all see the same cell):
+**Multiple closures share one ref cell**:
 ```zeus
 let i: i32 = 1;
 let f1 = (): i32 => i;
 i = 2;
 let f2 = (): i32 => i;
 i = 3;
-// f1() == 3, f2() == 3 (all reference the same cell, see final value)
-```
-
-To get snapshot semantics explicitly, the programmer copies before capturing:
-```zeus
-let i: i32 = 1;
-let snap1: i32 = i;   // snap1 has its own ref cell, value = 1
-let f1 = (): i32 => snap1;
-i = 2;
-// f1() == 1 (snap1's cell was never mutated)
-```
-
-### Tests that change with the switch
-
-These existing closure tests were written to document value semantics and need to be updated:
-
-| Test file | Current expected exit | Why it changes |
-|---|---|---|
-| `value_semantics_outer_mutation.zs` | 10 | getX() will see x=99 (latest value) |
-| `value_semantics_inner_mutation.zs` | 0 (x==5 in outer) | x is shared; outer x becomes 99 too |
-| `closure_in_loop.zs` | 0 (f1=1, f2=2, f3=3) | all three closures share i; all return 3 |
-
-New test to add: `mutable_counter.zs` — the canonical capture-by-reference test:
-```zeus
-function makeCounter(): () => i32 {
-    let count: i32 = 0;
-    return (): i32 => {
-        count += 1;
-        return count;
-    };
-}
-
-function main(): i32 {
-    let incr: () => i32 = makeCounter();
-    incr();
-    incr();
-    incr();
-    if (incr() == 4) {
-        return 0;
-    }
-    return 1;
-}
+// f1() == 3, f2() == 3 (all see the same cell's final value)
 ```
 
 ---
 
-## Pass pipeline summary (after ref cell)
+## Part 3 — Bugs fixed during implementation
+
+### Bug 1 — `load i32, i32 %param` (SIGSEGV at runtime)
+
+**Symptom**: Closures that capture function parameters crash at runtime.
+
+**Root cause**: `emitFunctorClass` unconditionally called `BuildLoad(srcVar)` for every captured `*Var` source. For alloca locals (`IsPtr=true`) this is correct. For SSA parameters (`IsPtr=false`) this emitted `load i32, i32 %0` — interpreting an integer as a memory address → SIGSEGV.
+
+**Fix**: Check `srcVar.IsPtr` before emitting the load.
+
+### Bug 2a — nil property type panic in `resolveClass`
+
+**Symptom**: Compiling a closure that captures another closure (functor object) panics in `ToKnownTypesPass.resolveClass`.
+
+**Root cause**: `BuildNewObj` uses `createTempVariable` which creates a var with `ValueType = nil`. When an outer closure captured an inner functor variable, it captured `ValueType = nil`. `resolveClass` called `nil.GetSpan()` → SIGSEGV.
+
+**Fix 1**: After `BuildNewObj` in `emitFunctorClass`, immediately set the result var's type:
+```go
+if resultVar := zeus_value.AsVar(functorObject); resultVar != nil {
+    resultVar.ValueType = zeus_value.NewObjectType(*functorClass)
+}
+```
+
+**Fix 2** (safety net): `resolveClass` skips properties with nil `ValueType` rather than panicking.
+
+### Bug 2b — `getLLVMStructType` panic for cross-ordered class references
+
+**Symptom**: Compiling a closure that captures `this` inside a class method panics with "llvm struct type Box not found".
+
+**Root cause**: Functor classes are inserted at position 0 via `EmitClassDeclAtStart`. A functor class whose properties reference a user-defined class (e.g. `Box` for a `this` capture) is processed before `Box`'s own `DECL_CLASS`. `createClassStructTypes` called `getLLVMStructType("Box")` which hadn't been registered yet.
+
+**Fix**: In `toLLVMType` for `ObjectType`, return `ptr addrspace(1)` directly (LLVM opaque-pointer mode — element type is irrelevant). No struct lookup needed at this point.
+
+### Bug 3 — `FunctionType` inner types not resolved by `ToKnownTypesPass`
+
+**Symptom**: A function with return type `(): string` (or any other function type annotation containing a user-defined type) fails with `type '() => string' is not assignable to type '() => string'`.
+
+**Root cause**: `ToKnownTypesPass.resolveValueType` handled `UserDefinedType`, `ArrayType`, `NullType`, `VoidType` but NOT `FunctionType`. So `FunctionType{ReturnType: UserDefinedType{"string"}}` passed through unresolved. `CmpValueType` has no case for `UserDefinedType`, causing all comparisons involving it to return `false`.
+
+**Fix** (`tc_known_types.go`): Added a `FunctionType` case to `resolveValueType` that recursively resolves `ReturnType` and `ParamTypes`:
+```go
+} else if ft := zeus_value.AsFunctionType(valueType); ft != nil {
+    if ft.ReturnType != nil {
+        ft.ReturnType = p.resolveValueType(tc, ft.ReturnType, true)
+    }
+    for i := range ft.ParamTypes {
+        if ft.ParamTypes[i] != nil {
+            ft.ParamTypes[i] = p.resolveValueType(tc, ft.ParamTypes[i], false)
+        }
+    }
+    return *ft
+}
+```
+
+### Bug 4 — False "unused" warnings
+
+Three distinct false-positive warning cases were fixed in `UnusedWarningPass`:
+
+**4a — Function passed as argument**: When `apply(double, 5)` is called, `tryImplicitCast` wraps `double` in a `CAST` instruction to coerce `*Function → FunctionType`. The `CALL_FUNC` args reference the cast result, not `double` directly. `UnusedWarningPass` handled `InstrTypeCoerce` but not `InstrTypeCast`, so the original function looked unused.
+
+**Fix**: Added `InstrTypeCast` case to `HandleInstruction` to mark the cast's source value as used.
+
+**4b — Exported class methods**: Each module is type-checked independently. `UnusedWarningPass.handleExport` marked the exported class as used but NOT its methods. Methods called only by importers appeared unused.
+
+**Fix**: `handleExport` now marks all methods and properties of exported classes as used (they're part of the public API).
+
+**4c — Exported functions as arguments** (pre-existing): This is the combination of 4a and 4b — covered by the `InstrTypeCast` fix.
+
+### Bug 5 — Global instruction implicit cast panic
+
+**Symptom**: Compiling a module with a global variable whose initializer requires an implicit cast (e.g. integer constant → larger int type) panics with "instruction DECLARE_VAR ... not found in block instructions list".
+
+**Root cause**: `Walk` processes function body blocks inline (via worklist) before continuing to the next global instruction. After processing a function's body, `tc.currentBlock` is left set to the last block visited. When `tryImplicitCast` is later called for a global instruction, it calls `SetBlockInsertionBefore(tc.currentBlock, instr)` — but `instr` is in the global list (`b.instrs`), not in `tc.currentBlock` → assert fails.
+
+**Fix** (`builder.go`): Added `SetInsertionBeforeInstr(block, instr)` which tries block-scoped insertion first and falls back to global-list insertion if the instruction is not in the block.
+
+```go
+func (b *IRBuilder) SetInsertionBeforeInstr(block *BasicBlock, instr *Instr) {
+    if block != nil {
+        if idx := slices.Index(block.Instrs, instr); idx != -1 {
+            b.SetInsertionBlock(block)
+            b.blockIdInsetionIndexMap[block.Id] = idx
+            return
+        }
+    }
+    // Global instruction: insert into the top-level list.
+    idx := slices.Index(b.instrs, instr)
+    zeus_error.Assert(idx != -1, ...)
+    b.SetInsertionBlock(nil)
+    b.insertionIndex = idx
+}
+```
+
+`tryImplicitCast` now calls `SetInsertionBeforeInstr` instead of `SetBlockInsertionBefore`.
+
+---
+
+## Pass pipeline summary
 
 | Phase | What happens |
 |---|---|
-| **Escape analysis** (pre-IR, AST walk) | Identifies which vars/params in each function scope will be captured by nested closures |
-| **IR gen — `VisitVarDeclStmt`** | Escaped vars → allocate ref cell (`NEW_OBJ __ref_cell_T__`), initialize `cell.value`, register `RefCellVar` in symbol table |
+| **Escape analysis** (`collectEscapedVarNames`, AST walk) | Identifies which vars/params in each function scope escape into nested closures |
+| **AST pre-inference** (`inferFunctionLocalTypes`, AST walk) | Pre-infers types of escaped vars from initializer expressions; runs after params and preamble are in symbol table |
+| **IR gen — `VisitVarDeclStmt`** | Escaped vars → allocate ref cell (`NEW_OBJ __ref_cell_T__`), initialize `cell.value`, register `RefCellVar` in symbol table; three-priority cascade for type resolution |
 | **IR gen — `VisitIdentifier`** | `RefCellVar` → emit `PROP_ACCESS cell.value` + `LOAD` |
 | **IR gen — `VisitAssignExpr`** | `RefCellVar` target → emit `PROP_ACCESS cell.value` + `STORE` |
-| **IR gen — `collectFreeVars`** | Captures ref cell objects (not values); property type = `ObjectType{__ref_cell_T__}` |
-| **IR gen — `emitFunctorClass`** | Stores cell pointer into `__cap_x__` property (no load) |
+| **IR gen — `collectFreeVars`** | Captures ref cell objects (not values); property type = `ObjectType{__ref_cell_T__}`; `IsRefCell=true` |
+| **IR gen — `emitFunctorClass`** | Stores cell pointer into `__cap_x__` property (no load for ref cells) |
 | **IR gen — `__call__` preamble** | Loads cell from `this.__cap_x__`, registers `RefCellVar` in local symbol table |
-| **TypeCheckingPass** | `.value` property access resolves to type `T` normally; ref cell classes are ordinary classes |
+| **`ToKnownTypesPass`** | Resolves `UserDefinedType` inside `FunctionType` return/param types (fixed Bug 3) |
+| **`TypeCheckingPass`** | `.value` property access on ref cell resolves to type `T` normally; ref cell classes are ordinary Zeus classes |
 | **Codegen** | `PROP_ACCESS` + `LOAD`/`STORE` on ref cell objects — no new codegen cases needed |
 
 ---
@@ -420,11 +428,18 @@ function main(): i32 {
 
 | File | Relevance |
 |---|---|
-| `internal/ir/closure.go` | `CapturedVar`, `freeVarCollector`, `collectFreeVars`, `collectEscapedVarNames` (upcoming) |
-| `internal/ir/ir.go` — `emitFunctorClass` | Functor class creation, capture property initialization, type-setting after `BuildNewObj` |
-| `internal/ir/ir.go` — `emitFunction` | `__call__` preamble: shadow var setup (by-value) / ref cell setup (by-reference) |
-| `internal/ir/ir.go` — `VisitVarDeclStmt` | Escaped var → ref cell allocation (upcoming); eager type inference from initializer |
-| `internal/ir/tc.go` — `resolveClass` | Skips nil property types (safety guard for delayed type resolution) |
-| `internal/codegen/codegen.go` — `toLLVMType(ObjectType)` | Returns `ptr addrspace(1)` without struct lookup (opaque-pointer safe) |
-| `internal/zeus_value/` | `RefCellVar` type (upcoming) |
-| `test/e2e/specs/closures/` | 21 closure tests (capture-by-value); will grow and some will change for by-reference |
+| `internal/ir/closure.go` | `CapturedVar`, `freeVarCollector`, `collectFreeVars`, `collectEscapedVarNames` |
+| `internal/ir/ir_type_infer.go` | `resolveUserDefinedType`, `inferExprType`, `inferFunctionLocalTypes` |
+| `internal/ir/ir.go` — `emitFunctorClass` | Functor class creation, capture property initialization |
+| `internal/ir/ir.go` — `emitFunction` | Escape analysis, AST pre-inference, escaped param promotion, `__call__` preamble |
+| `internal/ir/ir.go` — `VisitVarDeclStmt` | Three-priority ref cell promotion cascade |
+| `internal/ir/ir.go` — `VisitIdentifier` | `RefCellVar` → `PROP_ACCESS` + `LOAD` |
+| `internal/ir/tc_known_types.go` — `resolveValueType` | `FunctionType` inner type resolution (Bug 3 fix) |
+| `internal/ir/tc_unused.go` | False warning fixes: `InstrTypeCast`, exported class members |
+| `internal/ir/tc_type_check.go` — `tryImplicitCast` | Uses `SetInsertionBeforeInstr` for global-instruction safety |
+| `internal/ir/builder.go` — `SetInsertionBeforeInstr` | Block-or-global insertion helper (Bug 5 fix) |
+| `internal/ir/tc.go` — `resolveClass` | Skips nil property types (safety guard) |
+| `internal/codegen/codegen.go` — `toLLVMType(ObjectType)` | Returns `ptr addrspace(1)` without struct lookup (Bug 2b fix) |
+| `internal/zeus_value/value.go` — `RefCellVar` | Ref cell value type implementing `Value` interface |
+| `internal/zeus_value/primordials.go` | `RefCellClassName`, `GetRefCellClassDefinition`, `ZEUS_REF_CELL_VALUE_PROPERTY` |
+| `test/e2e/specs/closures/` | 27 closure e2e tests |
