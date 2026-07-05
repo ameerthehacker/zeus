@@ -195,18 +195,36 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		varName := decl.Identifier.Name.Value
 
+		// Enforce: every variable declaration must have a type annotation or an initializer.
+		if decl.ValueType == nil && decl.Initializer == nil {
+			g.pushError(zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				fmt.Sprintf("variable '%s' must have a type annotation or an initializer", varName),
+				decl.GetSpan(),
+			))
+		}
+
 		// Escaped variable: promote to a heap ref cell so nested closures can share
-		// the same mutable binding. Only possible when we know the concrete type.
-		if g.escapedVarNames[varName] && !zeus_value.IsUndefinedType(valueType) {
-			cellObj := g.allocRefCell(valueType, initializer, decl.GetSpan())
-			refCell := &zeus_value.RefCellVar{
-				OriginalName: varName,
-				ValueType:    valueType,
-				Cell:         cellObj,
-				Span:         decl.GetSpan(),
+		// the same mutable binding. Requires a concrete type — use the explicit
+		// annotation when present, otherwise fall back to the initializer's type.
+		if g.escapedVarNames[varName] {
+			refCellType := valueType
+			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
+				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+					refCellType = inferred
+				}
 			}
-			g.symbolTable().DeclareSymbol(varName, refCell)
-			continue
+			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
+				cellObj := g.allocRefCell(refCellType, initializer, decl.GetSpan())
+				refCell := &zeus_value.RefCellVar{
+					OriginalName: varName,
+					ValueType:    refCellType,
+					Cell:         cellObj,
+					Span:         decl.GetSpan(),
+				}
+				g.symbolTable().DeclareSymbol(varName, refCell)
+				continue
+			}
 		}
 
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(

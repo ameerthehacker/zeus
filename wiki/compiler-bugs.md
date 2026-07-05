@@ -4,33 +4,52 @@ Known bugs and surprising limitations in the Zeus compiler, discovered during de
 
 ---
 
-## Capturing outer variables in a function expression crashes the compiler
+## Variable declared without a type annotation or initializer is a compile error
 
-Referencing a variable from an enclosing scope inside an anonymous function, fat arrow, or named function expression (i.e. forming a closure) causes a SIGSEGV or SIGBUS during codegen. Closures are not yet implemented 
-
-```zeus
-// Bug: crashes — fat arrow closes over 'n' from the outer function
-function makeAdder(n: i32): (x: i32) => i32 {
-  return (x: i32): i32 => { return x + n; }
-}
-```
+Every variable declaration must have either a type annotation or an inline initializer. A bare `let x;` without either is rejected at compile time.
 
 ```zeus
-// Bug: crashes — anonymous function closes over 'a'
+// Error: variable 'x' must have a type annotation or an initializer
 function main(): i32 {
-  let add = function(a: i32): (b: i32) => i32 {
-    return (b: i32): i32 => { return a + b; }
-  }
-  return add(3)(7);
+  let x;
+  x = 5;
+  return x;
 }
 ```
 
-**Workaround:** Only reference the function's own parameters and locally declared variables inside a function expression. To carry external state, pass it as an explicit parameter or use a class instance.
+Use a type annotation or an initializer:
 
 ```zeus
-// OK: fat arrow only uses its own parameter
-function makeDouble(): (x: i32) => i32 {
-  return (x: i32): i32 => { return x * 2; }
+let x: i32;    // ✓ type annotation
+let y = 42;    // ✓ initializer (type inferred)
+let z: i32 = 0; // ✓ both
+```
+
+---
+
+## Reassigning a closure variable to a different closure expression fails type checking
+
+Every closure expression (fat arrow or anonymous function) compiles into a unique functor class with a generated name (`anonymousFunctor`, `anonymous1Functor`, …). Even when two closure expressions have exactly the same parameter and return types, the type checker treats their compiled types as distinct nominal types and rejects assignment between them.
+
+```zeus
+// Bug: type error — 'anonymous1Functor' is not assignable to 'anonymousFunctor'
+function main(): i32 {
+  let f: () => i32 = (): i32 => { return 1; };
+  f = (): i32 => { return 2; };   // ← compile error
+  return f();
+}
+```
+
+**Workaround:** Assign different names to the closures and call through a conditional, or use named function declarations instead.
+
+```zeus
+// OK: two separate variables, pick at call site by rebinding
+function main(): i32 {
+  let f1: () => i32 = (): i32 => { return 1; };
+  let f2: () => i32 = (): i32 => { return 2; };
+  let f: () => i32 = f2;   // rebinding to an already-typed variable works
+  if (f() != 2) { return 1; }
+  return 0;
 }
 ```
 

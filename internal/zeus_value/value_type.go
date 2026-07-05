@@ -533,8 +533,31 @@ func CmpValueType(a, b ValueType) bool {
 
 	case ObjectType:
 		bClassType, ok := b.(ObjectType)
-		return ok && a.Class.Name == bClassType.Class.Name
+		if !ok {
+			return false
+		}
+		if a.Class.Name == bClassType.Class.Name {
+			return true
+		}
+		// Two different functor classes are compatible when their __call__ signatures match.
+		aCall := getFunctorCallMethod(&a.Class)
+		bCall := getFunctorCallMethod(&bClassType.Class)
+		if aCall == nil || bCall == nil {
+			return false
+		}
+		return CmpValueType(GetValueType(aCall), GetValueType(bCall))
 	}
 
 	return false
 }
+
+// getFunctorCallMethod returns the __call__ method of a class if it has one, nil otherwise.
+func getFunctorCallMethod(class *Class) *Function {
+	for _, m := range class.Methods {
+		if m.Method.OriginalName == FUNCTOR_CALL_METHOD_NAME {
+			return m.Method
+		}
+	}
+	return nil
+}
+
