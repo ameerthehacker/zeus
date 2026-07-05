@@ -72,6 +72,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeCoerce:
 		input := AsCoerceInstrInput(instr.Input)
 		markValueAsUsed(input.Value)
+	case InstrTypeCast:
+		input := AsCastInstrInput(instr.Input)
+		markValueAsUsed(input.Value)
 	}
 }
 
