@@ -1,0 +1,23 @@
+[
+    { "name": "Basic capture of outer let variable", "exit": "42", "entry": "basic_capture.zs" },
+    { "name": "Capture multiple outer variables", "exit": "15", "entry": "capture_multiple.zs" },
+    { "name": "Outer mutation after closure creation does not affect closure", "exit": "10", "entry": "value_semantics_outer_mutation.zs" },
+    { "name": "Inner mutation does not affect outer variable", "exit": "0", "entry": "value_semantics_inner_mutation.zs" },
+    { "name": "Closure captures function parameter", "exit": "7", "entry": "capture_param.zs" },
+    { "name": "Adder factory returns independent closures", "exit": "0", "entry": "adder_factory.zs" },
+    { "name": "Returned closure called after outer function exits", "exit": "30", "entry": "returned_closure.zs" },
+    { "name": "Nested closure: inner captures from grandparent scope", "exit": "42", "entry": "nested_closure.zs" },
+    { "name": "Three-level deep nested closure", "exit": "7", "entry": "deep_nested_closure.zs" },
+    { "name": "Nested closure returned and called from outer context", "exit": "15", "entry": "nested_closure_returned.zs" },
+    { "name": "Two closures from same scope capture independently", "exit": "0", "entry": "independent_closures.zs" },
+    { "name": "Closure captures another closure (functor)", "exit": "8", "entry": "capture_functor.zs" },
+    { "name": "Class method: nested function captures this", "exit": "42", "entry": "class_this_capture.zs" },
+    { "name": "Class method: nested function captures this and a local variable", "exit": "50", "entry": "class_this_and_local.zs" },
+    { "name": "Value semantics in loop: each closure gets its own snapshot", "exit": "0", "entry": "closure_in_loop.zs" },
+    { "name": "Closure param shadows outer variable with same name", "exit": "20", "entry": "shadow_param.zs" },
+    { "name": "Closure passed as function-type callback", "exit": "12", "entry": "closure_as_callback.zs" },
+    { "name": "Fat arrow closure captures outer variable", "exit": "9", "entry": "fat_arrow_capture.zs" },
+    { "name": "Closure captures zero value correctly", "exit": "0", "entry": "capture_zero.zs" },
+    { "name": "Multiplier factory with chained calls", "exit": "0", "entry": "multiplier_factory.zs" },
+    { "name": "Closure captures untyped variable (type inferred from initializer)", "exit": "42", "entry": "untyped_capture.zs" }
+]

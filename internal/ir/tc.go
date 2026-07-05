@@ -1159,24 +1159,6 @@ func isU8ArrayType(valueType zeus_value.ValueType) bool {
 	return intType.Size == zeus_value.I8 && !intType.Signed
 }
 
-// getOrCreateStringClass returns the string primordial class, creating it if necessary
-func (p *TypeCheckingPass) getOrCreateStringClass(tc *TypeChecker, span *token.Span) *zeus_value.Class {
-	stringClassName := zeus_value.ZEUS_PRIMORDIAL_STRING
-
-	// Check if the string class already exists in the symbol table
-	if existingClass, ok := tc.builder.symbolTable.GetSymbol(stringClassName); ok {
-		if class := zeus_value.AsClass(existingClass); class != nil {
-			return class
-		}
-	}
-
-	// Create the string class definition
-	stringClass := zeus_value.GetStringPrimordialClassDefinition(span)
-	tc.builder.symbolTable.DeclareSymbol(stringClassName, stringClass)
-
-	return stringClass
-}
-
 // converts left and right to the same type
 func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Instr, left, right zeus_value.Value) (zeus_value.Value, zeus_value.Value) {
 	leftValueType := tc.getValueType(left)

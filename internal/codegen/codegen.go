@@ -513,7 +513,8 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 		// All FunctionType values are functor objects at runtime (ptr addrspace(1))
 		return llvm.PointerType(c.cxt.VoidType(), 1)
 	case zeus_value.ObjectType:
-		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
+		// In LLVM opaque-pointer mode the element type is irrelevant; ptr addrspace(1) is the GC pointer.
+		return llvm.PointerType(c.cxt.VoidType(), 1)
 	case zeus_value.ArrayType:
 		// Arrays are objects - use the array class name to get the struct type
 		return llvm.PointerType(c.getLLVMStructType(_type.String()), 1)

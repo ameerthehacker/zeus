@@ -162,6 +162,13 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		if decl.ValueType != nil {
 			valueType = decl.ValueType.ValueType
+		} else if initializer != nil {
+			inferred := zeus_value.GetValueType(initializer)
+			if inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+				valueType = inferred
+			} else {
+				valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
+			}
 		} else {
 			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
 		}
@@ -656,7 +663,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	return nil
 }
 
-func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, span *token.Span) zeus_value.Value {
+func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
 	params := []*VarDecl{}
 
 	for _, param := range fnParams {
@@ -687,6 +694,51 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	g.irBuilder.SetInsertionBlock(body)
+
+	// Emit captured variable preamble: load each captured value from the
+	// functor's own properties and shadow it as a local variable so the body
+	// can reference the outer name transparently.
+	//
+	// Pass 1: non-this captures — must happen before "this" is shadowed so we
+	// can still reach functor properties through the functor's own "this".
+	for _, cap := range capturedVars {
+		if cap.OriginalName == token.THIS_KEYWORD {
+			continue
+		}
+		functorThis, _ := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorThis, cap.PropertyName, false, span)
+		propPtrVar := zeus_value.AsVar(propPtr)
+		propPtrVar.ValueType = cap.ValueType
+		loadedVal := g.irBuilder.BuildLoad(propPtrVar, span)
+		zeus_value.AsVar(loadedVal).ValueType = cap.ValueType
+
+		localVar := g.irBuilder.BuildVarDecl(NewVarDecl(cap.OriginalName, cap.ValueType, false, nil, span))
+		g.irBuilder.BuildStore(localVar, loadedVal, span)
+		// Register under the original source name so body can look it up —
+		// same pattern as VisitVarDeclStmt (ir.go).
+		g.symbolTable().DeclareSymbol(cap.OriginalName, localVar)
+	}
+
+	// Pass 2: "this" capture — shadow the functor's "this" with the outer class
+	// instance. Done last so pass 1 property loads still use the functor's this.
+	for _, cap := range capturedVars {
+		if cap.OriginalName != token.THIS_KEYWORD {
+			continue
+		}
+		functorThis, _ := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorThis, cap.PropertyName, false, span)
+		propPtrVar := zeus_value.AsVar(propPtr)
+		propPtrVar.ValueType = cap.ValueType
+		loadedVal := g.irBuilder.BuildLoad(propPtrVar, span)
+		loadedVar := zeus_value.AsVar(loadedVal)
+		loadedVar.ValueType = cap.ValueType
+		// IsPtr=false: the loaded value is already a heap pointer (not a
+		// pointer-to-pointer), so VisitObjectPropertyAccessExpr must not
+		// dereference it again.
+		loadedVar.IsPtr = false
+		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, loadedVar)
+	}
+
 	fnBody.Accept(g)
 	g.irBuilder.SetInsertionBlock(current_block)
 
@@ -698,6 +750,19 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, span *token.Span) zeus_value.Value {
 	functorClassName := g.generateUniqueName(fmt.Sprintf("%sFunctor", fnName))
 
+	// Collect free variables before any IR is emitted: the symbol table still
+	// reflects the enclosing scope at this point, so GetSymbol finds outer vars.
+	capturedVars := g.collectFreeVars(fnParams, fnBody)
+
+	// Build the captured-var class properties (public fields on the functor struct).
+	capturedProps := make([]*zeus_value.ClassProperty, 0, len(capturedVars))
+	for _, cap := range capturedVars {
+		capturedProps = append(capturedProps, zeus_value.NewClassProperty(
+			zeus_value.NewVar(cap.PropertyName, cap.ValueType, false, span),
+			&token.Token{Type: token.TokenTypePublic, Span: span},
+		))
+	}
+
 	// Create stubs with actual param types; IR names (Name) are updated below after
 	// generateUniqueName produces class-unique names, matching buildClass's pattern.
 	methodParams := []*zeus_value.Var{}
@@ -706,7 +771,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	}
 	constructorStub := zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span)
 	callStub := zeus_value.NewFunction(zeus_value.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
-	functorClass := zeus_value.NewClass(functorClassName, []*zeus_value.ClassProperty{},
+	functorClass := zeus_value.NewClass(functorClassName, capturedProps,
 		[]*zeus_value.ClassMethod{
 			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
 			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
@@ -736,8 +801,9 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 
 	// __call__: emitFunction handles the DECL_CLASS_METHOD instruction, unique IR naming,
 	// param scoping, and body generation — same as buildClass does for user-defined methods.
+	// Pass capturedVars so emitFunction emits the preamble that loads captured values.
 	callIRName := g.generateUniqueName(zeus_value.FUNCTOR_CALL_METHOD_NAME)
-	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, span))
+	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, capturedVars, span))
 	if callFn != nil {
 		callFn.OriginalName = zeus_value.FUNCTOR_CALL_METHOD_NAME
 		callStub.Name = callFn.Name
@@ -747,7 +813,32 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	// Overwrite the selfRef entry with the actual functor object so the name is usable
 	// in the enclosing scope after the declaration (e.g. `return fibonacci(8)`).
 	functorObject := g.irBuilder.BuildNewObj(functorClass, []zeus_value.Value{}, span)
+	// Set the type immediately so any outer collectFreeVars sees the correct ObjectType.
+	if resultVar := zeus_value.AsVar(functorObject); resultVar != nil {
+		resultVar.ValueType = zeus_value.NewObjectType(*functorClass)
+	}
 	g.symbolTable().DeclareSymbol(fnName, functorObject)
+
+	// Initialize captured-var properties on the new functor object.
+	// Each property gets the current value of the corresponding outer variable.
+	for _, cap := range capturedVars {
+		var currentVal zeus_value.Value
+		if srcVar := zeus_value.AsVar(cap.Source); srcVar != nil {
+			if srcVar.IsPtr {
+				// alloca (local variable) — load current value from its stack slot
+				currentVal = g.irBuilder.BuildLoad(srcVar, span)
+			} else {
+				// SSA parameter — the var IS the value, no load needed
+				currentVal = srcVar
+			}
+		} else {
+			// *zeus_value.Object (e.g. "this"): the object reference IS the value.
+			currentVal = cap.Source
+		}
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorObject, cap.PropertyName, true, span)
+		g.irBuilder.BuildStore(zeus_value.AsVar(propPtr), currentVal, span)
+	}
+
 	return functorObject
 }
 
@@ -773,7 +864,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		return g.emitFunctorClass(fnName, expr.Params, returnType, expr.Body, fnSpan)
 	}
 
-	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, fnSpan)
+	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, nil, fnSpan)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -981,7 +1072,7 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 			returnType = method.ReturnType.ValueType
 		}
 		irMethodName := g.generateUniqueName(method.Name.Name.Value)
-		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, method.Name.Name.Span))
+		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
 		if fn != nil {
 			fn.OriginalName = method.Name.Name.Value
 			// Sync the class method descriptor so downstream passes see the IR name.
