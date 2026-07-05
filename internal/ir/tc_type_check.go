@@ -449,8 +449,7 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 		return value, true
 	}
 
-	zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
-	tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
+	tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
 
 	castIntToFloat := func(intType zeus_value.IntType, value zeus_value.Value) zeus_value.Value {
 		size := zeus_value.F32

@@ -228,9 +228,15 @@ func (p *UnusedWarningPass) handleExport(instr *Instr) {
 		function.IsUsed = true
 	}
 
-	// Mark exported classes as used
+	// Mark exported classes and all their members as used (importers can call any public member).
 	if class := zeus_value.AsClass(input.Value); class != nil {
 		class.IsUsed = true
+		for _, m := range class.Methods {
+			m.Method.IsUsed = true
+		}
+		for _, p := range class.Properties {
+			p.Property.IsUsed = true
+		}
 	}
 }
 
