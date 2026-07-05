@@ -4,5 +4,8 @@ function main(): i32 {
         return x;
     }
     x = 99;
-    return getX();
+    if (getX() == 99) {
+        return 0;
+    }
+    return 1;
 }

@@ -5,7 +5,7 @@ function main(): i32 {
     let f2: () => i32 = function(): i32 { return i; };
     i = 3;
     let f3: () => i32 = function(): i32 { return i; };
-    if (f1() == 1 && f2() == 2 && f3() == 3) {
+    if (f1() == 3 && f2() == 3 && f3() == 3) {
         return 0;
     }
     return 1;

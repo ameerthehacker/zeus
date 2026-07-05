@@ -402,6 +402,31 @@ func IsFloat(number string) bool {
 	return strings.Contains(number, ".")
 }
 
+// RefCellVar represents a variable that has been promoted to a GC-managed heap cell
+// for capture-by-reference in closures. The symbol table stores a RefCellVar instead
+// of a plain *Var; VisitIdentifier emits OBJECT_PROPERTY_ACCESS cell.value + LOAD
+// transparently so the rest of the compiler sees a normal scalar.
+type RefCellVar struct {
+	OriginalName string
+	ValueType    ValueType // type of .value (not of the cell object itself)
+	Cell         Value     // *Var holding the GC ref cell object (IsPtr=false)
+	Span         *token.Span
+}
+
+func (r *RefCellVar) GetSpan() *token.Span { return r.Span }
+func (r *RefCellVar) String() string {
+	return fmt.Sprintf("RefCellVar(%s: %s)", r.OriginalName, r.ValueType)
+}
+
+func AsRefCellVar(value Value) *RefCellVar {
+	switch v := value.(type) {
+	case *RefCellVar:
+		return v
+	default:
+		return nil
+	}
+}
+
 // ArrayElementRef represents a reference to an array element for assignment
 // It stores the array object (after navigating all but the last index) and the last index
 // This is used when handling array[0][1] = expr to generate temp1.set(lastIndex, expr)

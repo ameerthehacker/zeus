@@ -4,8 +4,8 @@ function main(): i32 {
         x = 99;
         return x;
     }
-    let inner_result: i32 = modify();
-    if (inner_result == 99 && x == 5) {
+    let result: i32 = modify();
+    if (result == 99 && x == 99) {
         return 0;
     }
     return 1;
