@@ -82,7 +82,7 @@ func (p *TypeCheckingPass) tcFunctorCast(tc *TypeChecker, instr *Instr, sourceCl
 
 	var callMethod *zeus_value.Function
 	for _, m := range sourceClass.Class.Methods {
-		if m.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME && m.AccessModifier.Type == token.TokenTypePublic {
+		if m.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && m.AccessModifier.Type == token.TokenTypePublic {
 			callMethod = m.Method
 			m.Method.IsUsed = true
 			break
@@ -92,7 +92,7 @@ func (p *TypeCheckingPass) tcFunctorCast(tc *TypeChecker, instr *Instr, sourceCl
 	if callMethod == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot cast '%s' to function type: no public '%s' method found",
-				sourceClass.Class.SourceName(), zeus_value.FUNCTOR_CALL_METHOD_NAME),
+				sourceClass.Class.SourceName(), token.FUNCTOR_CALL_METHOD_NAME),
 			Span: span,
 		})
 		return
@@ -106,7 +106,7 @@ func (p *TypeCheckingPass) tcFunctorCast(tc *TypeChecker, instr *Instr, sourceCl
 	if len(callFnType.ParamTypes) != len(targetFnType.ParamTypes) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot cast '%s' to '%s': '%s' has %d parameter(s) but function type expects %d",
-				sourceClass.Class.SourceName(), targetFnType, zeus_value.FUNCTOR_CALL_METHOD_NAME,
+				sourceClass.Class.SourceName(), targetFnType, token.FUNCTOR_CALL_METHOD_NAME,
 				len(callFnType.ParamTypes), len(targetFnType.ParamTypes)),
 			Span: span,
 		})
@@ -1092,7 +1092,7 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 	// may be it is a functor
 	if objectType != nil {
 		for _, method := range objectType.Class.Methods {
-			if method.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {
+			if method.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {
 				functionType = zeus_value.AsFunctionType(zeus_value.GetValueType(method.Method))
 				method.Method.IsUsed = true
 				fnSpan = method.Method.GetSpan()

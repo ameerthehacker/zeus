@@ -184,10 +184,10 @@ func (f *freeVarCollector) VisitIndexingExpression(node *ast.IndexingExprNode) z
 	return nil
 }
 
-func (f *freeVarCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value         { return nil }
-func (f *freeVarCollector) VisitChar(*ast.CharExprNode) zeus_value.Value              { return nil }
-func (f *freeVarCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value        { return nil }
-func (f *freeVarCollector) VisitNull(*ast.NullExprNode) zeus_value.Value              { return nil }
+func (f *freeVarCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value   { return nil }
+func (f *freeVarCollector) VisitChar(*ast.CharExprNode) zeus_value.Value       { return nil }
+func (f *freeVarCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value { return nil }
+func (f *freeVarCollector) VisitNull(*ast.NullExprNode) zeus_value.Value       { return nil }
 func (f *freeVarCollector) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value {
 	return nil
 }
@@ -255,8 +255,8 @@ func (f *freeVarCollector) VisitIdentifier(node *ast.IdentifierExprNode) zeus_va
 			Source:       v.Cell,
 			IsRefCell:    true,
 		}
-	// *zeus_value.Function and *zeus_value.Class are referenced as raw pointers —
-	// they don't live on any stack frame, so no capture is needed.
+		// *zeus_value.Function and *zeus_value.Class are referenced as raw pointers —
+		// they don't live on any stack frame, so no capture is needed.
 	}
 	return nil
 }
@@ -470,10 +470,10 @@ func (c *escapedNameCollector) VisitIndexingExpression(node *ast.IndexingExprNod
 	return nil
 }
 
-func (c *escapedNameCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value            { return nil }
-func (c *escapedNameCollector) VisitChar(*ast.CharExprNode) zeus_value.Value                { return nil }
-func (c *escapedNameCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value          { return nil }
-func (c *escapedNameCollector) VisitNull(*ast.NullExprNode) zeus_value.Value                { return nil }
+func (c *escapedNameCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value   { return nil }
+func (c *escapedNameCollector) VisitChar(*ast.CharExprNode) zeus_value.Value       { return nil }
+func (c *escapedNameCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value { return nil }
+func (c *escapedNameCollector) VisitNull(*ast.NullExprNode) zeus_value.Value       { return nil }
 func (c *escapedNameCollector) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value {
 	return nil
 }

@@ -456,6 +456,15 @@ func (b *IRBuilder) BuildCallFunc(callee *zeus_value.Function, args []zeus_value
 func (b *IRBuilder) BuildIndirectFuncCall(callee zeus_value.Value, args []zeus_value.Value, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 
+	switch ct := zeus_value.GetValueType(callee).(type) {
+	case zeus_value.FunctionType:
+		result.ValueType = ct.ReturnType
+	case zeus_value.ObjectType:
+		if callMethod := zeus_value.GetFunctorCallMethod(&ct.Class); callMethod != nil {
+			result.ValueType = callMethod.ReturnType
+		}
+	}
+
 	b.pushInstr(&Instr{
 		Type:   InstrTypeIndirectFuncCall,
 		Output: result,

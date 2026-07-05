@@ -1434,7 +1434,7 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 
 	// All FunctionType values are functor objects (ptr addrspace(1)); dispatch via vtable slot 0.
 	functorObj := c.toLLVMValue(input.Function)
-	methodPtr := c.loadVTableMethodPtr(functorObj, nil, 0, "__call__")
+	methodPtr := c.loadVTableMethodPtr(functorObj, nil, 0, token.FUNCTOR_CALL_METHOD_NAME)
 
 	functionArgs := make([]llvm.Value, 0, len(input.Args)+1)
 	for _, arg := range input.Args {

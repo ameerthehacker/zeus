@@ -126,4 +126,3 @@ func (p *TypeInferencePass) Finalize(tc *TypeChecker) {
 		tc.runPass(p)
 	}
 }
-

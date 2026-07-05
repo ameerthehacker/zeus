@@ -11,7 +11,6 @@ import (
 
 const TEMP_VARIABLE_PREFIX = "%"
 const NULL_CONSTANT_VALUE = "null"
-const FUNCTOR_CALL_METHOD_NAME = "__call__"
 
 // first 100 ids are reserved for primordial classes
 var classIdCounter = 100

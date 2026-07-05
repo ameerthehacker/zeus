@@ -666,7 +666,8 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		for _, param := range expr.Params {
 			args = append(args, param.Accept(g))
 		}
-		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, nil, nil, expr.GetSpan())
+		methodReturnType := g.lookupMethodReturnType(object, propAccess.Property.Name.Value)
+		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, methodReturnType, nil, expr.GetSpan())
 	}
 
 	callee := expr.Callee.Accept(g)
@@ -898,7 +899,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 		methodParams = append(methodParams, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
 	}
 	constructorStub := zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span)
-	callStub := zeus_value.NewFunction(zeus_value.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
+	callStub := zeus_value.NewFunction(token.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
 	functorClass := zeus_value.NewClass(functorClassName, capturedProps,
 		[]*zeus_value.ClassMethod{
 			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
@@ -930,12 +931,12 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	// __call__: emitFunction handles the DECL_CLASS_METHOD instruction, unique IR naming,
 	// param scoping, and body generation — same as buildClass does for user-defined methods.
 	// Pass capturedVars so emitFunction emits the preamble that loads captured values.
-	callIRName := g.generateUniqueName(zeus_value.FUNCTOR_CALL_METHOD_NAME)
+	callIRName := g.generateUniqueName(token.FUNCTOR_CALL_METHOD_NAME)
 	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, capturedVars, span))
 	if callFn != nil {
-		callFn.OriginalName = zeus_value.FUNCTOR_CALL_METHOD_NAME
+		callFn.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
 		callStub.Name = callFn.Name
-		callStub.OriginalName = zeus_value.FUNCTOR_CALL_METHOD_NAME
+		callStub.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
 	}
 
 	// Overwrite the selfRef entry with the actual functor object so the name is usable
@@ -1036,7 +1037,13 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	if asVar != nil {
 		if asVar.IsPtr {
-			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+			loaded := g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+			if asVar.ValueType != nil {
+				if loadedVar := zeus_value.AsVar(loaded); loadedVar != nil {
+					loadedVar.ValueType = asVar.ValueType
+				}
+			}
+			return loaded
 		} else {
 			return asVar
 		}
@@ -1481,6 +1488,33 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 }
 
 // isThisExpression checks if an expression is a 'this' reference
+// lookupMethodReturnType returns the return type of methodName on object's class, or nil if unknown.
+// Used to eagerly type method-call results at IR gen time (needed for escaped-var ref cell promotion).
+func (g *IRModule) lookupMethodReturnType(object zeus_value.Value, methodName string) zeus_value.ValueType {
+	valueType := zeus_value.GetValueType(object)
+
+	// UserDefinedType is resolved by ToKnownTypesPass (which runs after IR gen), so we
+	// resolve it ourselves here via a symbol table lookup.
+	if udt := zeus_value.AsUserDefinedType(valueType); udt != nil {
+		if sym, ok := g.symbolTable().GetSymbol(udt.Name); ok {
+			if class := zeus_value.AsClass(sym); class != nil {
+				valueType = zeus_value.NewObjectType(*class)
+			}
+		}
+	}
+
+	objType, ok := valueType.(zeus_value.ObjectType)
+	if !ok {
+		return nil
+	}
+	for _, m := range objType.Class.Methods {
+		if m.Method.OriginalName == methodName || m.Method.Name == methodName {
+			return m.Method.ReturnType
+		}
+	}
+	return nil
+}
+
 func (g *IRModule) isThisExpression(expr ast.ExprNode) bool {
 	if identExpr, ok := expr.(*ast.IdentifierExprNode); ok {
 		return identExpr.Name.Value == token.THIS_KEYWORD
