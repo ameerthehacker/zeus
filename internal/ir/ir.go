@@ -166,13 +166,6 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		if decl.ValueType != nil {
 			valueType = decl.ValueType.ValueType
-		} else if initializer != nil {
-			inferred := zeus_value.GetValueType(initializer)
-			if inferred != nil && !zeus_value.IsUndefinedType(inferred) {
-				valueType = inferred
-			} else {
-				valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
-			}
 		} else {
 			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
 		}

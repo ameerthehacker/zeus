@@ -123,6 +123,7 @@ export default defineConfig({
             { label: 'Operators', slug: 'language/operators' },
             { label: 'Control Flow', slug: 'language/control-flow' },
             { label: 'Functions', slug: 'language/functions' },
+            { label: 'Closures', slug: 'language/closures' },
             { label: 'Classes', slug: 'language/classes' },
             { label: 'Arrays', slug: 'language/arrays' },
             { label: 'Strings', slug: 'language/strings' },
@@ -156,7 +157,6 @@ export default defineConfig({
           items: [
             { label: 'Inheritance', slug: 'coming-soon/inheritance' },
             { label: 'Interfaces', slug: 'coming-soon/interfaces' },
-            { label: 'Closures', slug: 'coming-soon/closures' },
           ],
         },
         {

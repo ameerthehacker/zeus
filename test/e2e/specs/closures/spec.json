@@ -20,5 +20,6 @@
     { "name": "Closure captures zero value correctly", "exit": "0", "entry": "capture_zero.zs" },
     { "name": "Multiplier factory with chained calls", "exit": "0", "entry": "multiplier_factory.zs" },
     { "name": "Closure captures untyped variable (type inferred from initializer)", "exit": "42", "entry": "untyped_capture.zs" },
-    { "name": "Mutable counter via capture-by-reference", "exit": "0", "entry": "mutable_counter.zs" }
+    { "name": "Mutable counter via capture-by-reference", "exit": "0", "entry": "mutable_counter.zs" },
+    { "name": "Monkey test: closures under many patterns", "exit": "0", "entry": "monkey_closures.zs" }
 ]
