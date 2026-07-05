@@ -43,6 +43,11 @@ type IRModule struct {
 	// names of vars/params in the current function scope that escape into nested
 	// closures and therefore need to be promoted to heap ref cells.
 	escapedVarNames map[string]bool
+	// escapedVarInferredTypes is set by inferFunctionLocalTypes in emitFunction.
+	// Maps source var name → pre-inferred type for escaped vars whose initializers
+	// are complex expressions (binary ops, ternary, array indexing). Saved/restored
+	// around nested emitFunction calls like escapedVarNames.
+	escapedVarInferredTypes map[string]zeus_value.ValueType
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -205,10 +210,18 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		}
 
 		// Escaped variable: promote to a heap ref cell so nested closures can share
-		// the same mutable binding. Requires a concrete type — use the explicit
-		// annotation when present, otherwise fall back to the initializer's type.
+		// the same mutable binding. Type resolution priority:
+		//   1. Explicit annotation (already in valueType)
+		//   2. AST pre-inferred type from inferFunctionLocalTypes
+		//   3. Eager IR result type (fallback for call results and functor expressions)
 		if g.escapedVarNames[varName] {
 			refCellType := valueType
+			if zeus_value.IsUndefinedType(refCellType) {
+				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
+					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+					refCellType = preInferred
+				}
+			}
 			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
 				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
 					refCellType = inferred
@@ -666,8 +679,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		for _, param := range expr.Params {
 			args = append(args, param.Accept(g))
 		}
-		methodReturnType := g.lookupMethodReturnType(object, propAccess.Property.Name.Value)
-		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, methodReturnType, nil, expr.GetSpan())
+		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, nil, nil, expr.GetSpan())
 	}
 
 	callee := expr.Callee.Accept(g)
@@ -822,11 +834,22 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, loadedVar)
 	}
 
-	// Save/restore escapedVarNames so nested emitFunction calls don't clobber it.
+	// Pre-infer types for escaped vars whose initializers are complex expressions
+	// (binary ops, ternary, array indexing). Must run after params and captured-var
+	// preamble are in the symbol table so identifier lookups in inferExprType succeed.
+	inferredTypes := map[string]zeus_value.ValueType{}
+	if fnBody != nil && len(escapedNames) > 0 {
+		inferredTypes = g.inferFunctionLocalTypes(escapedNames, fnBody)
+	}
+
+	// Save/restore both fields so nested emitFunction calls don't clobber them.
 	prevEscapedVarNames := g.escapedVarNames
+	prevEscapedVarInferredTypes := g.escapedVarInferredTypes
 	g.escapedVarNames = escapedNames
+	g.escapedVarInferredTypes = inferredTypes
 	fnBody.Accept(g)
 	g.escapedVarNames = prevEscapedVarNames
+	g.escapedVarInferredTypes = prevEscapedVarInferredTypes
 
 	g.irBuilder.SetInsertionBlock(current_block)
 
@@ -1037,13 +1060,7 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	if asVar != nil {
 		if asVar.IsPtr {
-			loaded := g.irBuilder.BuildLoad(asVar, expr.Name.Span)
-			if asVar.ValueType != nil {
-				if loadedVar := zeus_value.AsVar(loaded); loadedVar != nil {
-					loadedVar.ValueType = asVar.ValueType
-				}
-			}
-			return loaded
+			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
 		} else {
 			return asVar
 		}
@@ -1485,34 +1502,6 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	} else {
 		return g.irBuilder.BuildLoad(zeus_value.AsVar(propertyPtr), expr.GetSpan())
 	}
-}
-
-// isThisExpression checks if an expression is a 'this' reference
-// lookupMethodReturnType returns the return type of methodName on object's class, or nil if unknown.
-// Used to eagerly type method-call results at IR gen time (needed for escaped-var ref cell promotion).
-func (g *IRModule) lookupMethodReturnType(object zeus_value.Value, methodName string) zeus_value.ValueType {
-	valueType := zeus_value.GetValueType(object)
-
-	// UserDefinedType is resolved by ToKnownTypesPass (which runs after IR gen), so we
-	// resolve it ourselves here via a symbol table lookup.
-	if udt := zeus_value.AsUserDefinedType(valueType); udt != nil {
-		if sym, ok := g.symbolTable().GetSymbol(udt.Name); ok {
-			if class := zeus_value.AsClass(sym); class != nil {
-				valueType = zeus_value.NewObjectType(*class)
-			}
-		}
-	}
-
-	objType, ok := valueType.(zeus_value.ObjectType)
-	if !ok {
-		return nil
-	}
-	for _, m := range objType.Class.Methods {
-		if m.Method.OriginalName == methodName || m.Method.Name == methodName {
-			return m.Method.ReturnType
-		}
-	}
-	return nil
 }
 
 func (g *IRModule) isThisExpression(expr ast.ExprNode) bool {

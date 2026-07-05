@@ -553,15 +553,15 @@ func CmpValueType(a, b ValueType) bool {
 
 // GetFunctorCallMethod returns the __call__ method of a class if it has one, nil otherwise.
 func GetFunctorCallMethod(class *Class) *Function {
-	return getFunctorCallMethod(class)
-}
-
-// getFunctorCallMethod returns the __call__ method of a class if it has one, nil otherwise.
-func getFunctorCallMethod(class *Class) *Function {
 	for _, m := range class.Methods {
 		if m.Method.OriginalName == token.FUNCTOR_CALL_METHOD_NAME {
 			return m.Method
 		}
 	}
 	return nil
+}
+
+// getFunctorCallMethod is the package-private alias used within this package.
+func getFunctorCallMethod(class *Class) *Function {
+	return GetFunctorCallMethod(class)
 }

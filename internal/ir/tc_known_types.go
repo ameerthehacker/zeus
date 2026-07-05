@@ -73,6 +73,16 @@ func (p *ToKnownTypesPass) resolveValueType(tc *TypeChecker, valueType zeus_valu
 		arrayType.ElementType = resolvedElementType
 		class := tc.getClassFromArrayType(*arrayType)
 		return zeus_value.NewObjectType(*class)
+	} else if ft := zeus_value.AsFunctionType(valueType); ft != nil {
+		if ft.ReturnType != nil {
+			ft.ReturnType = p.resolveValueType(tc, ft.ReturnType, true)
+		}
+		for i := range ft.ParamTypes {
+			if ft.ParamTypes[i] != nil {
+				ft.ParamTypes[i] = p.resolveValueType(tc, ft.ParamTypes[i], false)
+			}
+		}
+		return *ft
 	} else if zeus_value.IsNullType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: "cannot use null as a standalone type",

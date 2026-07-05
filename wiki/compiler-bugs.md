@@ -4,10 +4,6 @@ Known bugs and surprising limitations in the Zeus compiler, discovered during de
 
 ---
 
-```
-
----
-
 ## Unterminated string crashes LSP
 
 ```zeus
@@ -15,5 +11,9 @@ function main(): void {
   log("Hello World!)
 }
 ```
+
+If a string literal is never closed, the LSP crashes instead of reporting a clean error. The compiler itself handles it correctly (emits a lex error); only the LSP path is affected.
+
+**Workaround:** always close string literals.
 
 ---

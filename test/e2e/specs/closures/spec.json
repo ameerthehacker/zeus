@@ -21,5 +21,9 @@
     { "name": "Multiplier factory with chained calls", "exit": "0", "entry": "multiplier_factory.zs" },
     { "name": "Closure captures untyped variable (type inferred from initializer)", "exit": "42", "entry": "untyped_capture.zs" },
     { "name": "Mutable counter via capture-by-reference", "exit": "0", "entry": "mutable_counter.zs" },
-    { "name": "Monkey test: closures under many patterns", "exit": "0", "entry": "monkey_closures.zs" }
+    { "name": "Monkey test: closures under many patterns", "exit": "0", "entry": "monkey_closures.zs" },
+    { "name": "Escaped var initialized from binary op (type inferred at IR gen time)", "exit": "0", "entry": "infer_binop_init.zs" },
+    { "name": "Escaped var initialized from ternary (type inferred at IR gen time)", "exit": "0", "entry": "infer_ternary_init.zs" },
+    { "name": "Escaped var initialized from indirect call (type inferred at IR gen time)", "exit": "0", "entry": "infer_call_init.zs" },
+    { "name": "Escaped var initialized from method call (type inferred at IR gen time)", "exit": "0", "entry": "infer_method_init.zs" }
 ]
