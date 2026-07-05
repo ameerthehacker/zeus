@@ -628,6 +628,106 @@ func (p *TypeCheckingPass) Finalize(tc *TypeChecker) {
 	}
 }
 
+func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
+	input := AsCastInstrInput(instr.Input)
+	sourceType := tc.getValueType(input.Value)
+
+	// *Function → FunctionType: CastLoweringPass will wrap it in a functor class
+	if zeus_value.AsFunction(input.Value) != nil {
+		if _, ok := input.CastType.(zeus_value.FunctionType); ok {
+			instr.Output.ValueType = input.CastType
+			return
+		}
+	}
+
+	if zeus_value.IsObjectType(sourceType) {
+		if targetFnType, ok := input.CastType.(zeus_value.FunctionType); ok {
+			p.tcFunctorCast(tc, instr, *zeus_value.AsObjectType(sourceType), targetFnType)
+			return
+		}
+	}
+	// Numeric and string casts are handled by existing codegen/lowering.
+}
+
+func (p *TypeCheckingPass) tcCoerce(tc *TypeChecker, instr *Instr) {
+	input := AsCoerceInstrInput(instr.Input)
+	sourceType := tc.getValueType(input.Value)
+	objType := zeus_value.AsObjectType(sourceType)
+	if objType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("coerce source must be an object type, got '%s'", sourceType),
+			Span:    instr.Span,
+		})
+		return
+	}
+	targetFnType, ok := input.TargetType.(zeus_value.FunctionType)
+	if !ok {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("coerce target must be a function type, got '%s'", input.TargetType),
+			Span:    instr.Span,
+		})
+		return
+	}
+	p.tcFunctorCast(tc, instr, *objType, targetFnType)
+	instr.Output.ValueType = sourceType
+}
+
+func (p *TypeCheckingPass) tcFunctorCast(tc *TypeChecker, instr *Instr, sourceClass zeus_value.ObjectType, targetFnType zeus_value.FunctionType) {
+	span := instr.Span
+
+	var callMethod *zeus_value.Function
+	for _, m := range sourceClass.Class.Methods {
+		if m.Method.SourceName() == zeus_value.FUNCTOR_CALL_METHOD_NAME && m.AccessModifier.Type == token.TokenTypePublic {
+			callMethod = m.Method
+			m.Method.IsUsed = true
+			break
+		}
+	}
+
+	if callMethod == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot cast '%s' to function type: no public '%s' method found",
+				sourceClass.Class.SourceName(), zeus_value.FUNCTOR_CALL_METHOD_NAME),
+			Span: span,
+		})
+		return
+	}
+
+	callFnType := zeus_value.AsFunctionType(zeus_value.GetValueType(callMethod))
+	if callFnType == nil {
+		return
+	}
+
+	if len(callFnType.ParamTypes) != len(targetFnType.ParamTypes) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot cast '%s' to '%s': '%s' has %d parameter(s) but function type expects %d",
+				sourceClass.Class.SourceName(), targetFnType, zeus_value.FUNCTOR_CALL_METHOD_NAME,
+				len(callFnType.ParamTypes), len(targetFnType.ParamTypes)),
+			Span: span,
+		})
+		return
+	}
+
+	for i, callParamType := range callFnType.ParamTypes {
+		if !zeus_value.CmpValueType(callParamType, targetFnType.ParamTypes[i]) {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot cast '%s' to '%s': parameter %d type mismatch ('%s' vs '%s')",
+					sourceClass.Class.SourceName(), targetFnType, i+1, callParamType, targetFnType.ParamTypes[i]),
+				Span: span,
+			})
+			return
+		}
+	}
+
+	if !zeus_value.CmpValueType(callFnType.ReturnType, targetFnType.ReturnType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot cast '%s' to '%s': return type mismatch ('%s' vs '%s')",
+				sourceClass.Class.SourceName(), targetFnType, callFnType.ReturnType, targetFnType.ReturnType),
+			Span: span,
+		})
+	}
+}
+
 func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	// Track the first span from user-written code (skip primordial declarations)
 	if p.firstUserSpan == nil && instr.Span != nil && instr.Type != InstrTypeDeclPrimordialFunc {
@@ -813,7 +913,9 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeDeclClassMethod:
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
-		// TODO: add type checking for cast
+		p.tcCast(tc, instr)
+	case InstrTypeCoerce:
+		p.tcCoerce(tc, instr)
 	case InstrTypeDeclPrimordialFunc:
 		// no type checking for primordial functions
 	case InstrTypeGetIndex:
@@ -927,6 +1029,16 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
 
+	// *Function → FunctionType: wrap in a functor class (all FunctionType values are objects at runtime)
+	// Must come before CmpValueType check since *Function.GetValueType() returns a matching FunctionType.
+	if zeus_value.AsFunction(value) != nil {
+		if _, ok := targetType.(zeus_value.FunctionType); ok {
+			zeus_error.Assert(tc.currentBlock != nil, "current block is nil")
+			tc.builder.SetBlockInsertionBefore(tc.currentBlock, instr)
+			return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
+		}
+	}
+
 	// if they both are same type, no need to cast
 	if zeus_value.CmpValueType(valueType, targetType) {
 		return value, true
@@ -984,6 +1096,8 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 		}
 	case zeus_value.ObjectType:
 		switch targetType := targetType.(type) {
+		case zeus_value.FunctionType:
+			return tc.builder.BuildCoerce(value, targetType, value.GetSpan()), true
 		case zeus_value.ArrayType:
 			// if the class name is stringifies version of value type, then it is a valid cast
 			if valueType.Class.Name == targetType.String() {
@@ -1714,6 +1828,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleExport(instr)
 	case InstrTypeGetIndex:
 		p.handleGetIndex(instr)
+	case InstrTypeCoerce:
+		input := AsCoerceInstrInput(instr.Input)
+		markValueAsUsed(input.Value)
 	}
 }
 

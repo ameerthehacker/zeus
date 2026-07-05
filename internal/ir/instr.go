@@ -397,6 +397,29 @@ func AsCastInstrInput(input InstrInput) *CastInstrInput {
 	return nil
 }
 
+type CoerceInstrInput struct {
+	Value      zeus_value.Value
+	TargetType zeus_value.ValueType
+}
+
+func NewCoerceInstrInput(value zeus_value.Value, targetType zeus_value.ValueType) *CoerceInstrInput {
+	return &CoerceInstrInput{Value: value, TargetType: targetType}
+}
+
+func (i CoerceInstrInput) String() string {
+	return fmt.Sprintf("COERCE(%s as %s)", i.Value, i.TargetType)
+}
+
+func AsCoerceInstrInput(input InstrInput) *CoerceInstrInput {
+	switch input := input.(type) {
+	case *CoerceInstrInput:
+		return input
+	default:
+		panicInvalidInputType("CoerceInstrInput", input)
+	}
+	return nil
+}
+
 type DeclClassInstrInput struct {
 	Class *zeus_value.Class
 }
@@ -785,6 +808,9 @@ const (
 	InstrTypeCheckException // Check if exception pending after call in try block
 	InstrTypeGetException   // Get current exception object for catch binding
 	InstrTypeClearException // Clear exception after successful catch
+	// type coercion: ObjectType value whose __call__ is compatible with the target FunctionType;
+	// output has the source ObjectType so FunctorCallLoweringPass handles downstream calls naturally.
+	InstrTypeCoerce
 )
 
 func (i InstrType) String() string {
@@ -883,6 +909,8 @@ func (i InstrType) String() string {
 		return "GET_EXCEPTION"
 	case InstrTypeClearException:
 		return "CLEAR_EXCEPTION"
+	case InstrTypeCoerce:
+		return "COERCE"
 	default:
 		panic("unknown instruction type")
 	}

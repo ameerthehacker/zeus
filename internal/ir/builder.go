@@ -346,6 +346,20 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	return result
 }
 
+func (b *IRBuilder) BuildCoerce(value zeus_value.Value, targetType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	b.pushInstr(&Instr{
+		Type:   InstrTypeCoerce,
+		Output: result,
+		Input:  NewCoerceInstrInput(value, targetType),
+		Span:   span,
+	})
+	// Output keeps the source ObjectType, not the target FunctionType — this is the key
+	// difference from BuildCast: the variable's type becomes the actual functor ObjectType.
+	result.ValueType = zeus_value.GetValueType(value)
+	return result
+}
+
 func (b *IRBuilder) BuildDeclPrimordialFunc(fn *zeus_value.Function, span *token.Span) {
 	b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
 	b.pushInstr(&Instr{

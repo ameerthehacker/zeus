@@ -166,6 +166,29 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
 		}
 
+		// When initializer is a *Function (global function reference):
+		// - No type annotation: declare as alias so calls go through CALL_FUNC (no functor)
+		// - FunctionType annotation: emit CAST so CastLoweringPass wraps it in a functor
+		if asFunc := zeus_value.AsFunction(initializer); asFunc != nil {
+			if decl.ValueType == nil {
+				g.symbolTable().DeclareSymbol(decl.Identifier.Name.Value, asFunc)
+				continue
+			}
+			if zeus_value.IsFunctionType(valueType) {
+				initializer = g.irBuilder.BuildCast(initializer, valueType, decl.GetSpan())
+			}
+		}
+
+		// When assigning a functor Object to an explicitly-typed FunctionType variable, coerce
+		// the variable's type to the actual ObjectType so FunctorCallLoweringPass handles calls
+		// on it naturally without needing a fat-pointer or wrapper (MLIR unrealized_conversion_cast).
+		if initializer != nil && zeus_value.IsFunctionType(valueType) {
+			if initType := zeus_value.GetValueType(initializer); zeus_value.IsObjectType(initType) {
+				initializer = g.irBuilder.BuildCoerce(initializer, valueType, decl.GetSpan())
+				valueType = initType
+			}
+		}
+
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
 			decl.Identifier.Name.Value,
 			valueType,
@@ -615,7 +638,8 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	}
 
 	if zeus_value.IsFunction(callee) {
-		return g.irBuilder.BuildCallFunc(zeus_value.AsFunction(callee), params, expr.GetSpan())
+		fn := zeus_value.AsFunction(callee)
+		return g.irBuilder.BuildCallFunc(fn, params, expr.GetSpan())
 	} else if zeus_value.IsVar(callee) {
 		addr := zeus_value.AsVar(callee)
 		return g.irBuilder.BuildIndirectFuncCall(addr, params, expr.GetSpan())
@@ -673,43 +697,55 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 
 func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, span *token.Span) zeus_value.Value {
 	functorClassName := g.generateUniqueName(fmt.Sprintf("%sFunctor", fnName))
-	functorMethods := []*zeus_value.ClassMethod{}
+
+	// Create stubs with actual param types; IR names (Name) are updated below after
+	// generateUniqueName produces class-unique names, matching buildClass's pattern.
 	methodParams := []*zeus_value.Var{}
 	for _, param := range fnParams {
 		methodParams = append(methodParams, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
 	}
-	constructorMethod := zeus_value.ClassMethod{
-		Method:         zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span),
-		AccessModifier: &token.Token{Type: token.TokenTypePublic, Span: span},
-	}
-	callMethod := zeus_value.ClassMethod{
-		Method:         zeus_value.NewFunction(zeus_value.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span),
-		AccessModifier: &token.Token{Type: token.TokenTypePublic, Span: span},
-	}
-	functorMethods = append(functorMethods, &constructorMethod)
-	functorMethods = append(functorMethods, &callMethod)
-	functorClass := zeus_value.NewClass(functorClassName, []*zeus_value.ClassProperty{}, functorMethods, "", nil, span)
+	constructorStub := zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span)
+	callStub := zeus_value.NewFunction(zeus_value.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
+	functorClass := zeus_value.NewClass(functorClassName, []*zeus_value.ClassProperty{},
+		[]*zeus_value.ClassMethod{
+			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
+			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
+		}, "", nil, span)
 	g.irBuilder.EmitClassDeclAtStart(functorClass)
-	currentBlock := g.irBuilder.GetInsertionBlock()
-	// generate the constructor method
+
+	// Constructor: no AST body, just a return. Use BuildFuncDecl with a unique IR name
+	// (same approach as buildClass uses for regular class methods via generateUniqueName).
+	constructorIRName := g.generateUniqueName(token.CONSTRUCTOR_METHOD_NAME)
+	savedBlock := g.irBuilder.GetInsertionBlock()
 	g.irBuilder.SetInsertionBlock(nil)
 	constructorBlock := g.irBuilder.BuildBasicBlock()
-	g.irBuilder.BuildClassMethodDecl(constructorMethod.Method, constructorBlock, functorClass, span)
+	constructorFn := g.irBuilder.BuildFuncDecl(constructorIRName, []*VarDecl{}, constructorBlock, zeus_value.VoidType{Span: span}, functorClass, span)
+	constructorFn.OriginalName = token.CONSTRUCTOR_METHOD_NAME
+	constructorStub.Name = constructorFn.Name
+	constructorStub.OriginalName = token.CONSTRUCTOR_METHOD_NAME
 	g.irBuilder.SetInsertionBlock(constructorBlock)
 	g.irBuilder.BuildReturn(nil, span)
-	// generate the call method
-	g.irBuilder.SetInsertionBlock(nil)
-	callBlock := g.irBuilder.BuildBasicBlock()
-	g.irBuilder.BuildClassMethodDecl(callMethod.Method, callBlock, functorClass, span)
-	g.irBuilder.SetInsertionBlock(callBlock)
-	g.symbolTable().EnterScope()
-	for _, param := range methodParams {
-		g.symbolTable().DeclareSymbol(param.Name, param)
+	g.irBuilder.SetInsertionBlock(savedBlock)
+
+	// Make fnName resolve to 'this' in the parent scope before processing the body.
+	// This lets named function expressions call themselves recursively:
+	//   fibonacci(n-1) → INDIRECT_FUNC_CALL(this) → FunctorCallLoweringPass → CALL_METHOD(this, __call__, [n-1])
+	// Anonymous functors use a generated unique name so this declaration is harmless.
+	selfRef := zeus_value.NewObject(token.THIS_KEYWORD, zeus_value.NewObjectType(*functorClass), span)
+	g.symbolTable().DeclareSymbol(fnName, &selfRef)
+
+	// __call__: emitFunction handles the DECL_CLASS_METHOD instruction, unique IR naming,
+	// param scoping, and body generation — same as buildClass does for user-defined methods.
+	callIRName := g.generateUniqueName(zeus_value.FUNCTOR_CALL_METHOD_NAME)
+	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, span))
+	if callFn != nil {
+		callFn.OriginalName = zeus_value.FUNCTOR_CALL_METHOD_NAME
+		callStub.Name = callFn.Name
+		callStub.OriginalName = zeus_value.FUNCTOR_CALL_METHOD_NAME
 	}
-	fnBody.Accept(g)
-	g.symbolTable().ExitScope()
-	// back to the original block
-	g.irBuilder.SetInsertionBlock(currentBlock)
+
+	// Overwrite the selfRef entry with the actual functor object so the name is usable
+	// in the enclosing scope after the declaration (e.g. `return fibonacci(8)`).
 	functorObject := g.irBuilder.BuildNewObj(functorClass, []zeus_value.Value{}, span)
 	g.symbolTable().DeclareSymbol(fnName, functorObject)
 	return functorObject

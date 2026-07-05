@@ -510,7 +510,8 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	switch _type := _type.(type) {
 	case zeus_value.FunctionType:
-		return llvm.PointerType(c.toLLVMFunctionType(_type), 0)
+		// All FunctionType values are functor objects at runtime (ptr addrspace(1))
+		return llvm.PointerType(c.cxt.VoidType(), 1)
 	case zeus_value.ObjectType:
 		return llvm.PointerType(c.getLLVMStructType(_type.Class.Name), 1)
 	case zeus_value.ArrayType:
@@ -944,6 +945,14 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 	valueType := zeus_value.GetValueType(input.Value)
 	castErrorMsg := fmt.Sprintf("cannot cast %s to %s", input.Value, input.CastType)
 
+	// ObjectType → FunctionType: both are ptr addrspace(1) at runtime — identity cast
+	if zeus_value.IsObjectType(valueType) {
+		if _, ok := input.CastType.(zeus_value.FunctionType); ok {
+			c.llvmValues[output.Name] = c.toLLVMValue(input.Value)
+			return
+		}
+	}
+
 	switch valueType := valueType.(type) {
 	case zeus_value.IntType:
 		switch castType := input.CastType.(type) {
@@ -1372,6 +1381,36 @@ func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) l
 	return c.genClassMethod(*input.Method, *input.Class)
 }
 
+// loadVTableMethodPtr navigates obj → header → vtable → slot[slotIndex] and returns the fn ptr.
+// When objType is non-nil the precise typed structs for that class are used.
+// When objType is nil it falls back to opaque-pointer GEPs for generic/unknown-class dispatch.
+func (c *CodegenModule) loadVTableMethodPtr(obj llvm.Value, objType *zeus_value.ObjectType, slotIndex int, name string) llvm.Value {
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+	if objType != nil {
+		className := objType.Class.Name
+		objStructType := c.getLLVMStructType(className)
+		headerPtrAddr := c.builder.CreateStructGEP(objStructType, obj, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
+		header := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(className), 0), headerPtrAddr, "objHeader")
+		vtablePtrAddr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(className), header, VTABLE_STRUCT_INDEX, "vTablePtr")
+		vtable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(className), 0), vtablePtrAddr, "vTable")
+		slotAddr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(className), vtable, slotIndex, name)
+		return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
+	}
+	// Generic opaque-pointer dispatch (class unknown at compile time)
+	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
+	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, 0, "objHeaderPtr")
+	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")
+	genericHeaderType := c.cxt.StructType([]llvm.Type{ptrType, ptrType}, false)
+	vtablePtrAddr := c.builder.CreateStructGEP(genericHeaderType, header, 0, "vTablePtr")
+	vtable := c.builder.CreateLoad(ptrType, vtablePtrAddr, "vTable")
+	slotTypes := make([]llvm.Type, slotIndex+1)
+	for i := range slotTypes {
+		slotTypes[i] = ptrType
+	}
+	slotAddr := c.builder.CreateStructGEP(c.cxt.StructType(slotTypes, false), vtable, slotIndex, name)
+	return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
+}
+
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
 	objectType := c.getValueType(input.Object)
 	llvmValue := c.toLLVMValue(input.Object)
@@ -1381,13 +1420,7 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 	if propertyIndex == -1 {
 		methodIndex := util.GetMethodIndex(objectClass.Class, input.Property)
 		zeus_error.Assert(methodIndex != -1, fmt.Sprintf("property %s not found in class %s", input.Property, objectClass.Class.Name))
-		llvmObjHeaderPtr := c.builder.CreateStructGEP(c.toLLVMStructType(objectType), llvmValue, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
-		llvmObjHeader := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(objectClass.Class.Name), 0), llvmObjHeaderPtr, "objHeader")
-		llvmVTablePtr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(objectClass.Class.Name), llvmObjHeader, VTABLE_STRUCT_INDEX, "vTablePtr")
-		llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
-		classMethodSlotPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.Property)
-		classMethodPtr := c.builder.CreateLoad(llvm.PointerType(c.cxt.VoidType(), 0), classMethodSlotPtr, input.Property+"_fn_ptr")
-		c.llvmValues[output.Name] = classMethodPtr
+		c.llvmValues[output.Name] = c.loadVTableMethodPtr(llvmValue, objectClass, methodIndex, input.Property)
 		return
 	}
 	llvmValue = c.builder.CreateStructGEP(c.toLLVMStructType(objectType), llvmValue, propertyIndex, input.Property)
@@ -1395,17 +1428,28 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 }
 
 func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
-	functionVar := zeus_value.AsVar(input.Function)
-	zeus_error.Assert(functionVar != nil, fmt.Sprintf("function %s is not a variable", input.Function))
-	function := c.toLLVMValue(input.Function)
 	functionType := zeus_value.AsFunctionType(zeus_value.GetValueType(input.Function))
-	functionArgs := []llvm.Value{}
+	zeus_error.Assert(functionType != nil, fmt.Sprintf("INDIRECT_FUNC_CALL: %s is not a FunctionType", input.Function))
 
+	// All FunctionType values are functor objects (ptr addrspace(1)); dispatch via vtable slot 0.
+	functorObj := c.toLLVMValue(input.Function)
+	methodPtr := c.loadVTableMethodPtr(functorObj, nil, 0, "__call__")
+
+	functionArgs := make([]llvm.Value, 0, len(input.Args)+1)
 	for _, arg := range input.Args {
 		functionArgs = append(functionArgs, c.toLLVMValue(arg))
 	}
+	functionArgs = append(functionArgs, functorObj)
 
-	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(*functionType), function, functionArgs, fmt.Sprintf("%s_call_result", function.Name()))
+	ptrAs1Type := llvm.PointerType(c.cxt.VoidType(), 1)
+	llvmParamTypes := make([]llvm.Type, len(functionType.ParamTypes)+1)
+	for i, pt := range functionType.ParamTypes {
+		llvmParamTypes[i] = c.toLLVMType(pt)
+	}
+	llvmParamTypes[len(functionType.ParamTypes)] = ptrAs1Type
+	callType := llvm.FunctionType(c.toLLVMType(functionType.ReturnType), llvmParamTypes, false)
+
+	llvmValue := c.builder.CreateCall(callType, methodPtr, functionArgs, "indirect_call")
 	c.llvmValues[output.Name] = llvmValue
 }
 
@@ -1418,12 +1462,7 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	methodIndex := util.GetMethodIndex(objectClass.Class, input.MethodName)
 	zeus_error.Assert(methodIndex != -1, fmt.Sprintf("method %s not found in class %s", input.MethodName, objectClass.Class.Name))
 
-	llvmObjHeaderPtr := c.builder.CreateStructGEP(c.toLLVMStructType(objectType), llvmObject, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
-	llvmObjHeader := c.builder.CreateLoad(llvm.PointerType(c.getLLVMObjHeaderStruct(objectClass.Class.Name), 0), llvmObjHeaderPtr, "objHeader")
-	llvmVTablePtr := c.builder.CreateStructGEP(c.getLLVMObjHeaderStruct(objectClass.Class.Name), llvmObjHeader, VTABLE_STRUCT_INDEX, "vTablePtr")
-	llvmVTable := c.builder.CreateLoad(llvm.PointerType(c.getLLVMVTableStruct(objectClass.Class.Name), 0), llvmVTablePtr, "vTable")
-	methodSlotPtr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(objectClass.Class.Name), llvmVTable, methodIndex, input.MethodName)
-	methodPtr := c.builder.CreateLoad(llvm.PointerType(c.cxt.VoidType(), 0), methodSlotPtr, input.MethodName+"_fn_ptr")
+	methodPtr := c.loadVTableMethodPtr(llvmObject, objectClass, methodIndex, input.MethodName)
 
 	functionArgs := []llvm.Value{}
 	for _, arg := range input.Args {
@@ -1664,6 +1703,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genGetException(*instr.Output)
 		case ir.InstrTypeClearException:
 			c.genClearException()
+		case ir.InstrTypeCoerce:
+			// Zero-cost type annotation: output maps to the same LLVM value as input.
+			input := ir.AsCoerceInstrInput(instr.Input)
+			c.llvmValues[instr.Output.Name] = c.toLLVMValue(input.Value)
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}
