@@ -77,6 +77,11 @@ func (s *SymbolTable[T]) IsGlobalScope() bool {
 	return s.current_scope == s.tables[0]
 }
 
+func (s *SymbolTable[T]) IsSymbolGlobal(name string) bool {
+	_, ok := s.tables[0].symbols[name]
+	return ok
+}
+
 func (s *SymbolTable[T]) SetReadonly(readonly bool) {
 	s.readonly = readonly
 }

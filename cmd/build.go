@@ -14,7 +14,6 @@ const (
 	FlagOutputPath = "out"
 	FlagTargetDir  = "target-dir"
 	FlagRelease    = "release"
-	FlagEmitIR     = "internal-emit-ir"
 )
 
 func buildCmd() *cobra.Command {

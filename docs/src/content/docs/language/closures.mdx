@@ -1,0 +1,280 @@
+---
+title: Closures
+description: How to create and use closures in Zeus — anonymous functions, fat arrows, and captured variables.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Closures are functions that **capture variables from the surrounding scope**. In Zeus, any function defined inside another function — whether named or anonymous — is a closure.
+
+## Anonymous Functions
+
+An anonymous function is a function without a name. You can assign it to a variable or pass it directly as an argument.
+
+```zeus
+let greet: () => i32 = (): i32 => {
+    return 42;
+};
+
+let result: i32 = greet();  // 42
+```
+
+### Fat Arrow Syntax
+
+The `=>` syntax is the standard way to write anonymous functions in Zeus:
+
+```zeus
+// No parameters
+let getValue: () => i32 = (): i32 => { return 10; };
+
+// One parameter
+let double: (x: i32) => i32 = (x: i32): i32 => { return x * 2; };
+
+// Two parameters
+let add: (a: i32, b: i32) => i32 = (a: i32, b: i32): i32 => { return a + b; };
+```
+
+### Named Function Expressions
+
+You can also use the `function` keyword to name a closure. The name is local to the enclosing function:
+
+```zeus
+function makeAdder(n: i32): (x: i32) => i32 {
+    function add(x: i32): i32 {
+        return x + n;
+    }
+    return add;
+}
+```
+
+## Capturing Variables
+
+Closures capture variables from their enclosing scope **by reference**. This means a closure always sees the current value of the captured variable, not a snapshot taken at the time of closure creation.
+
+### Reading Captured Variables
+
+```zeus
+function makeGreeter(name: i32): () => i32 {
+    return (): i32 => {
+        return name;
+    };
+}
+
+function main(): i32 {
+    let sayHello: () => i32 = makeGreeter(42);
+    return sayHello();  // 42
+}
+```
+
+### Mutating Captured Variables
+
+A closure can mutate captured variables, and the change is visible to the outer scope:
+
+```zeus
+function main(): i32 {
+    let x: i32 = 0;
+
+    function increment(): i32 {
+        x += 1;
+        return x;
+    }
+
+    increment();
+    increment();
+
+    return x;  // 2
+}
+```
+
+The reverse is also true — changes made in the outer scope after the closure is created are visible inside the closure:
+
+```zeus
+function main(): i32 {
+    let x: i32 = 1;
+    let get: () => i32 = (): i32 => { return x; };
+
+    x = 99;
+
+    return get();  // 99, not 1
+}
+```
+
+## Common Patterns
+
+### Factory Functions (Counter)
+
+The most common closure pattern — each call to the factory returns an independent closure with its own captured state:
+
+```zeus
+function makeCounter(): () => i32 {
+    let count: i32 = 0;
+    return (): i32 => {
+        count += 1;
+        return count;
+    };
+}
+
+function main(): i32 {
+    let c1: () => i32 = makeCounter();
+    let c2: () => i32 = makeCounter();
+
+    c1();  // 1
+    c1();  // 2
+    c1();  // 3
+    c2();  // 1  — independent from c1
+
+    if (c1() == 4 && c2() == 2) {
+        return 0;
+    }
+    return 1;
+}
+```
+
+### Higher-Order Functions (Callbacks)
+
+Pass closures as arguments to functions that accept function-type parameters:
+
+```zeus
+function applyTwice(f: (x: i32) => i32, n: i32): i32 {
+    return f(f(n));
+}
+
+function main(): i32 {
+    let addFive: (x: i32) => i32 = makeAdder(5);
+    return applyTwice(addFive, 10);  // 20
+}
+```
+
+### Adder / Multiplier Factories
+
+```zeus
+function makeAdder(x: i32): (y: i32) => i32 {
+    return (y: i32): i32 => { return x + y; };
+}
+
+function makeMultiplier(factor: i32): (x: i32) => i32 {
+    return (x: i32): i32 => { return x * factor; };
+}
+
+function main(): i32 {
+    let add3: (y: i32) => i32 = makeAdder(3);
+    let times2: (x: i32) => i32 = makeMultiplier(2);
+
+    if (add3(7) == 10 && times2(6) == 12) {
+        return 0;
+    }
+    return 1;
+}
+```
+
+### Capturing Class Fields
+
+Closures can capture `this` and local variables from class methods:
+
+```zeus
+class Scaler {
+    public factor: i32;
+    constructor() { this.factor = 3; }
+
+    public makeScaler(): (x: i32) => i32 {
+        let f: i32 = this.factor;
+        return (x: i32): i32 => { return x * f; };
+    }
+}
+
+function main(): i32 {
+    let s: Scaler = new Scaler();
+    let scale: (x: i32) => i32 = s.makeScaler();
+    return scale(7);  // 21
+}
+```
+
+### Capturing Object References
+
+When a closure captures a class instance, both the closure and the outer scope operate on the **same object**. Mutations to the object's fields are shared:
+
+```zeus
+class Box {
+    public val: i32;
+    constructor() { this.val = 0; }
+}
+
+function makeBoxMutator(): () => i32 {
+    let box: Box = new Box();
+    box.val = 5;
+    return (): i32 => {
+        box.val += 1;
+        return box.val;
+    };
+}
+
+function main(): i32 {
+    let mutate: () => i32 = makeBoxMutator();
+    mutate();  // 6
+    return mutate();  // 7
+}
+```
+
+## Reference Semantics
+
+Zeus closures use **capture by reference**, not capture by value. All closures that capture the same variable share the **same binding** — mutations from any closure (or from the outer scope) are immediately visible everywhere.
+
+```zeus
+function main(): i32 {
+    let x: i32 = 0;
+
+    // Two closures share the same 'x'
+    let inc: () => i32 = (): i32 => { x += 1; return x; };
+    let get: () => i32 = (): i32 => { return x; };
+
+    inc();
+    inc();
+
+    // get() reflects the mutations made by inc()
+    if (get() == 2) {
+        return 0;
+    }
+    return 1;
+}
+```
+
+<Aside type="note">
+For reference semantics to work, the captured variable must have an **explicit type annotation** (e.g. `let count: i32 = 0`). Variables declared without a type whose value is only used inside closures still work correctly for reading; for mutation-sharing, add the type.
+</Aside>
+
+## Type Annotations for Function Variables
+
+Zeus uses the fat-arrow form for function type annotations:
+
+| Signature | Type annotation |
+|-----------|----------------|
+| `(): i32` | `() => i32` |
+| `(x: i32): i32` | `(x: i32) => i32` |
+| `(a: i32, b: i32): boolean` | `(a: i32, b: i32) => boolean` |
+
+```zeus
+let counter: () => i32 = makeCounter();
+let adder: (x: i32) => i32 = makeAdder(5);
+let check: (a: i32, b: i32) => boolean = (a: i32, b: i32): boolean => { return a > b; };
+```
+
+## Nested Closures
+
+Closures can be nested to any depth; each level captures from its own enclosing scope:
+
+```zeus
+function outer(a: i32): () => () => i32 {
+    let b: i32 = a + 10;
+    return (): () => i32 => {
+        return (): i32 => {
+            return a + b;
+        };
+    };
+}
+
+function main(): i32 {
+    let mid: () => () => i32 = outer(5);
+    let inner: () => i32 = mid();
+    return inner();  // a=5, b=15 → 20
+}
+```

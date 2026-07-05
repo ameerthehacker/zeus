@@ -51,7 +51,7 @@ type SourceFile struct {
 	IRBuilder    *ir.IRBuilder
 	Exports      []*zeus_value.Value
 	IsEntryPoint bool
-	HIRText      string // captured after TypeCheck, before LowerIR
+	HIRText      string // captured after GenerateZeusIR, before TypeCheck and LowerIR
 	LIRText      string // captured after LowerIR, before GenerateLLVMIR
 }
 
@@ -345,17 +345,18 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 	// generate zeus IR
 	sourceFiles = c.GenerateZeusIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
-	// type check the zeus IR
-	sourceFiles = c.TypeCheck(sourceFiles)
-	checkSourceFilesErrors(sourceFiles)
-	// snapshot HIR before lowering
+	// snapshot HIR from the IR generator before TypeCheck modifies anything
 	if c.emitIR {
 		for _, sf := range sourceFiles {
 			if sf.IRBuilder != nil {
 				sf.HIRText = formatZeusIR(sf.IRBuilder, "HIR", sf.Path)
 			}
 		}
+		c.writeHIRFiles(sourceFiles)
 	}
+	// type check the zeus IR
+	sourceFiles = c.TypeCheck(sourceFiles)
+	checkSourceFilesErrors(sourceFiles)
 	// lower high-level IR constructs (e.g., string<->u8[] casts)
 	sourceFiles = c.LowerIR(sourceFiles)
 	// snapshot LIR after lowering
@@ -370,18 +371,18 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 	sourceFiles = c.GenerateLLVMIR(sourceFiles)
 	checkSourceFilesErrors(sourceFiles)
 	checkSourceFilesWarnings(sourceFiles)
-
-	return sourceFiles
-}
-
-func (c *Compiler) Compile(entryFilePath string, outDir string, outputPath string) {
-	sourceFiles := c.Check(entryFilePath)
 	if c.emitIR {
 		if err := c.emitIRFiles(sourceFiles); err != nil {
 			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to emit IR files: %s", err.Error()))
 			os.Exit(1)
 		}
 	}
+
+	return sourceFiles
+}
+
+func (c *Compiler) Compile(entryFilePath string, outDir string, outputPath string) {
+	sourceFiles := c.Check(entryFilePath)
 	if c.mode == BuildModeRelease {
 		c.compileRelease(sourceFiles, outDir, outputPath)
 	} else {
@@ -604,6 +605,25 @@ func formatZeusIR(b *ir.IRBuilder, phase string, filePath string) string {
 	sb.WriteString("; source: " + filePath + "\n\n")
 	sb.WriteString(b.String())
 	return sb.String()
+}
+
+// writeHIRFiles writes only .zhir files so HIR is available even when type errors abort compilation.
+func (c *Compiler) writeHIRFiles(sourceFiles []*SourceFile) {
+	for _, sf := range sourceFiles {
+		relPath, err := filepath.Rel(c.cwd, sf.Path)
+		if err != nil {
+			relPath = filepath.Base(sf.Path)
+		}
+		relBase := strings.TrimSuffix(relPath, filepath.Ext(relPath))
+		outBase := filepath.Join(c.irDir, relBase)
+		if err := os.MkdirAll(filepath.Dir(outBase), 0755); err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to create IR directory: %s", err.Error()))
+			return
+		}
+		if err := os.WriteFile(outBase+".zhir", []byte(sf.HIRText), 0644); err != nil {
+			logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to write HIR file: %s", err.Error()))
+		}
+	}
 }
 
 func (c *Compiler) emitIRFiles(sourceFiles []*SourceFile) error {

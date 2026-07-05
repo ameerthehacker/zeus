@@ -186,18 +186,21 @@ func TestVarDeclWithoutInit(t *testing.T) {
 }
 
 func TestVarDeclNoTypeNoInitializerIsError(t *testing.T) {
-	builder, _ := generateHIR(t, `
+	l := lexer.NewLexer(`
 function f(): void {
     let x;
 }`)
-	tc := ir.NewTypeChecker(builder, false)
-	tcErrors := tc.TypeCheck()
-	for _, err := range tcErrors {
+	tokens, _ := l.Lex()
+	program, _ := parser.NewParser(tokens).ParseProgram()
+	builder := ir.NewIRBuilder()
+	mod := ir.NewIRModule(builder, "test.zs", nil)
+	irErrors := mod.Generate(program)
+	for _, err := range irErrors {
 		if err.Severity == zeus_error.ErrorSeverityError && err.Message != "" {
 			return
 		}
 	}
-	t.Error("expected a TC error for 'let x;' with no type annotation and no initializer")
+	t.Error("expected an IR gen error for 'let x;' with no type annotation and no initializer")
 }
 
 // ---- Type Inference Tests ----

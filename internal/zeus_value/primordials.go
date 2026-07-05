@@ -285,6 +285,31 @@ func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
 	return NewClassWithId(ERROR_CLASS_ID, "Error", properties, methods, ZEUS_PRIMORDIAL_ERROR, span)
 }
 
+// Ref cell class naming constants
+const ZEUS_REF_CELL_CLASS_PREFIX = "__ref_cell_"
+const ZEUS_REF_CELL_VALUE_PROPERTY = "value"
+
+// RefCellClassName returns the IR-level class name for a ref cell wrapping the given type.
+func RefCellClassName(valueType ValueType) string {
+	return ZEUS_REF_CELL_CLASS_PREFIX + valueType.String() + "__"
+}
+
+// GetRefCellClassDefinition builds the class definition for a ref cell wrapping valueType.
+// The class has a single public `value` property and a no-op constructor.
+// Ref cells are allocated on-demand by emitFunction/VisitVarDeclStmt for variables that
+// escape into nested closures; they are not pre-registered in the primordial registry.
+func GetRefCellClassDefinition(valueType ValueType, span *token.Span) *Class {
+	valueProp := NewClassProperty(
+		NewVar(ZEUS_REF_CELL_VALUE_PROPERTY, valueType, false, span),
+		&token.Token{Type: token.TokenTypePublic, Span: span},
+	)
+	constructorFn := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{}, VoidType{Span: span}, span)
+	methods := []*ClassMethod{
+		NewClassMethod(constructorFn, &token.Token{Type: token.TokenTypePublic, Span: span}),
+	}
+	return NewClass(RefCellClassName(valueType), []*ClassProperty{valueProp}, methods, "", nil, span)
+}
+
 // IsErrorClass checks if a class is the Error class or derives from it
 func IsErrorClass(class *Class) bool {
 	if class == nil {

@@ -1,0 +1,12 @@
+[
+    {
+        "name": "Basic functor with __call__",
+        "exit": "3",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "Functor cast to function type",
+        "exit": "0",
+        "entry": "cast-to-fn-type.zs"
+    }
+]

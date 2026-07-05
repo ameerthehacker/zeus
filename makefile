@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run always build lsp fmt
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check always build lsp fmt
 
 clean:
 	rm -rf playground/target
@@ -74,9 +74,12 @@ compile-release: always
 	cd runtime && zig build -Doptimize=ReleaseSmall
 	ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
 
+check:
+	ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) go run $(GO_BUILD_TAGS) zeus.go check ./playground/$(file).zs --emit-ir ./playground
+
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
-		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --internal-emit-ir --target-dir ./playground && \
+		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --emit-ir --target-dir ./playground && \
 		ZEUS_GC_DEBUG=true ./playground/target/debug/bin/$(file); \
 	else \
 		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --target-dir ./playground && \

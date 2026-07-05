@@ -247,6 +247,23 @@ func (b *IRBuilder) SetBlockInsertionBefore(block *BasicBlock, instr *Instr) {
 	b.blockIdInsetionIndexMap[block.Id] = instrIndex
 }
 
+// SetInsertionBeforeInstr positions the builder to insert just before instr.
+// If block is non-nil and contains instr, uses block-scoped insertion;
+// otherwise falls back to global-list insertion (for module-level instructions).
+func (b *IRBuilder) SetInsertionBeforeInstr(block *BasicBlock, instr *Instr) {
+	if block != nil {
+		if idx := slices.Index(block.Instrs, instr); idx != -1 {
+			b.SetInsertionBlock(block)
+			b.blockIdInsetionIndexMap[block.Id] = idx
+			return
+		}
+	}
+	idx := slices.Index(b.instrs, instr)
+	zeus_error.Assert(idx != -1, fmt.Sprintf("instruction %s not found in any known location", instr.String()))
+	b.SetInsertionBlock(nil)
+	b.insertionIndex = idx
+}
+
 // DeleteInstr removes an instruction from the IR.
 // If block is nil, the instruction is removed from the global instruction list.
 // If block is provided, the instruction is removed from that block's instruction list.
@@ -343,6 +360,20 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	})
 	result.ValueType = castType
 
+	return result
+}
+
+func (b *IRBuilder) BuildCoerce(value zeus_value.Value, targetType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	b.pushInstr(&Instr{
+		Type:   InstrTypeCoerce,
+		Output: result,
+		Input:  NewCoerceInstrInput(value, targetType),
+		Span:   span,
+	})
+	// Output keeps the source ObjectType, not the target FunctionType — this is the key
+	// difference from BuildCast: the variable's type becomes the actual functor ObjectType.
+	result.ValueType = zeus_value.GetValueType(value)
 	return result
 }
 

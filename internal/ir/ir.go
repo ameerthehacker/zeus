@@ -39,6 +39,15 @@ type IRModule struct {
 	// usedIRNames tracks every IR-level name ever emitted in this module (functions,
 	// class methods, locals) so generateUniqueName can guarantee global uniqueness.
 	usedIRNames map[string]bool
+	// escapedVarNames is set by emitFunction before visiting the body. It holds the
+	// names of vars/params in the current function scope that escape into nested
+	// closures and therefore need to be promoted to heap ref cells.
+	escapedVarNames map[string]bool
+	// escapedVarInferredTypes is set by inferFunctionLocalTypes in emitFunction.
+	// Maps source var name → pre-inferred type for escaped vars whose initializers
+	// are complex expressions (binary ops, ternary, array indexing). Saved/restored
+	// around nested emitFunction calls like escapedVarNames.
+	escapedVarInferredTypes map[string]zeus_value.ValueType
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -166,15 +175,80 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
 		}
 
+		// When initializer is a *Function (global function reference):
+		// - No type annotation: declare as alias so calls go through CALL_FUNC (no functor)
+		// - FunctionType annotation: emit CAST so CastLoweringPass wraps it in a functor
+		if asFunc := zeus_value.AsFunction(initializer); asFunc != nil {
+			if decl.ValueType == nil {
+				g.symbolTable().DeclareSymbol(decl.Identifier.Name.Value, asFunc)
+				continue
+			}
+			if zeus_value.IsFunctionType(valueType) {
+				initializer = g.irBuilder.BuildCast(initializer, valueType, decl.GetSpan())
+			}
+		}
+
+		// When assigning a functor Object to an explicitly-typed FunctionType variable, coerce
+		// the variable's type to the actual ObjectType so FunctorCallLoweringPass handles calls
+		// on it naturally without needing a fat-pointer or wrapper (MLIR unrealized_conversion_cast).
+		if initializer != nil && zeus_value.IsFunctionType(valueType) {
+			if initType := zeus_value.GetValueType(initializer); zeus_value.IsObjectType(initType) {
+				initializer = g.irBuilder.BuildCoerce(initializer, valueType, decl.GetSpan())
+				valueType = initType
+			}
+		}
+
+		varName := decl.Identifier.Name.Value
+
+		// Enforce: every variable declaration must have a type annotation or an initializer.
+		if decl.ValueType == nil && decl.Initializer == nil {
+			g.pushError(zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				fmt.Sprintf("variable '%s' must have a type annotation or an initializer", varName),
+				decl.GetSpan(),
+			))
+		}
+
+		// Escaped variable: promote to a heap ref cell so nested closures can share
+		// the same mutable binding. Type resolution priority:
+		//   1. Explicit annotation (already in valueType)
+		//   2. AST pre-inferred type from inferFunctionLocalTypes
+		//   3. Eager IR result type (fallback for call results and functor expressions)
+		if g.escapedVarNames[varName] {
+			refCellType := valueType
+			if zeus_value.IsUndefinedType(refCellType) {
+				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
+					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+					refCellType = preInferred
+				}
+			}
+			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
+				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+					refCellType = inferred
+				}
+			}
+			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
+				cellObj := g.allocRefCell(refCellType, initializer, decl.GetSpan())
+				refCell := &zeus_value.RefCellVar{
+					OriginalName: varName,
+					ValueType:    refCellType,
+					Cell:         cellObj,
+					Span:         decl.GetSpan(),
+				}
+				g.symbolTable().DeclareSymbol(varName, refCell)
+				continue
+			}
+		}
+
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
-			decl.Identifier.Name.Value,
+			varName,
 			valueType,
 			isConst,
 			initializer,
 			decl.GetSpan(),
 		))
 
-		g.symbolTable().DeclareSymbol(decl.Identifier.Name.Value, variable)
+		g.symbolTable().DeclareSymbol(varName, variable)
 	}
 }
 
@@ -615,10 +689,14 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	}
 
 	if zeus_value.IsFunction(callee) {
-		return g.irBuilder.BuildCallFunc(zeus_value.AsFunction(callee), params, expr.GetSpan())
+		fn := zeus_value.AsFunction(callee)
+		return g.irBuilder.BuildCallFunc(fn, params, expr.GetSpan())
 	} else if zeus_value.IsVar(callee) {
 		addr := zeus_value.AsVar(callee)
 		return g.irBuilder.BuildIndirectFuncCall(addr, params, expr.GetSpan())
+	} else if zeus_value.IsObject(callee) {
+		object := zeus_value.AsObject(callee)
+		return g.irBuilder.BuildIndirectFuncCall(object, params, expr.GetSpan())
 	}
 
 	g.pushError(&zeus_error.ZeusError{
@@ -629,7 +707,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	return nil
 }
 
-func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, span *token.Span) zeus_value.Value {
+func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
 	params := []*VarDecl{}
 
 	for _, param := range fnParams {
@@ -642,6 +720,14 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		))
 	}
 
+	// Escape analysis: determine which params/vars in this scope are referenced by
+	// nested closures and therefore need heap ref cells. Only meaningful when there
+	// is an actual body (fnBody != nil, i.e. not a stub).
+	escapedNames := map[string]bool{}
+	if fnBody != nil {
+		escapedNames = collectEscapedVarNames(fnParams, fnBody)
+	}
+
 	current_block := g.irBuilder.GetInsertionBlock()
 	// functions are global
 	g.irBuilder.SetInsertionBlock(nil)
@@ -649,8 +735,16 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
 	g.symbolTable().EnterScope()
 
+	// Declare params; for escaped params, immediately promote to a ref cell.
 	for index, param := range fnParams {
-		g.symbolTable().DeclareSymbol(param.Identifier.Name.Value, fn.Params[index])
+		paramName := param.Identifier.Name.Value
+		paramVar := fn.Params[index]
+		g.symbolTable().DeclareSymbol(paramName, paramVar)
+		if escapedNames[paramName] {
+			// Param is captured by a nested closure — move its value into a heap cell.
+			// We'll set the insertion block and emit the ref cell inside the body block.
+			// (The block is set below before the preamble.)
+		}
 	}
 
 	if class != nil {
@@ -660,12 +754,248 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	g.irBuilder.SetInsertionBlock(body)
+
+	// Promote escaped params to ref cells now that we're in the body block.
+	for index, param := range fnParams {
+		paramName := param.Identifier.Name.Value
+		if !escapedNames[paramName] {
+			continue
+		}
+		paramVar := fn.Params[index]
+		paramType := param.ValueType.ValueType
+		if zeus_value.IsUndefinedType(paramType) {
+			continue // can't box an unknown type; leave as alloca
+		}
+		cellObj := g.allocRefCell(paramType, paramVar, param.Identifier.Name.Span)
+		refCell := &zeus_value.RefCellVar{
+			OriginalName: paramName,
+			ValueType:    paramType,
+			Cell:         cellObj,
+			Span:         param.Identifier.Name.Span,
+		}
+		g.symbolTable().DeclareSymbol(paramName, refCell)
+	}
+
+	// Emit captured variable preamble: load each captured value from the
+	// functor's own properties and shadow it as a local variable so the body
+	// can reference the outer name transparently.
+	//
+	// Pass 1: non-this captures — must happen before "this" is shadowed so we
+	// can still reach functor properties through the functor's own "this".
+	for _, cap := range capturedVars {
+		if cap.OriginalName == token.THIS_KEYWORD {
+			continue
+		}
+		functorThis, _ := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorThis, cap.PropertyName, false, span)
+		propPtrVar := zeus_value.AsVar(propPtr)
+		propPtrVar.ValueType = cap.ValueType
+		loadedVal := g.irBuilder.BuildLoad(propPtrVar, span)
+		zeus_value.AsVar(loadedVal).ValueType = cap.ValueType
+
+		if cap.IsRefCell {
+			// Ref cell capture: register RefCellVar so reads/writes go through cell.value.
+			cellObjType := zeus_value.AsObjectType(cap.ValueType)
+			innerType := getRefCellValueType(&cellObjType.Class)
+			refCell := &zeus_value.RefCellVar{
+				OriginalName: cap.OriginalName,
+				ValueType:    innerType,
+				Cell:         loadedVal,
+				Span:         span,
+			}
+			g.symbolTable().DeclareSymbol(cap.OriginalName, refCell)
+		} else {
+			// Plain value capture: shadow with a local alloca copy.
+			localVar := g.irBuilder.BuildVarDecl(NewVarDecl(cap.OriginalName, cap.ValueType, false, nil, span))
+			g.irBuilder.BuildStore(localVar, loadedVal, span)
+			// Register under the original source name so body can look it up —
+			// same pattern as VisitVarDeclStmt (ir.go).
+			g.symbolTable().DeclareSymbol(cap.OriginalName, localVar)
+		}
+	}
+
+	// Pass 2: "this" capture — shadow the functor's "this" with the outer class
+	// instance. Done last so pass 1 property loads still use the functor's this.
+	for _, cap := range capturedVars {
+		if cap.OriginalName != token.THIS_KEYWORD {
+			continue
+		}
+		functorThis, _ := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorThis, cap.PropertyName, false, span)
+		propPtrVar := zeus_value.AsVar(propPtr)
+		propPtrVar.ValueType = cap.ValueType
+		loadedVal := g.irBuilder.BuildLoad(propPtrVar, span)
+		loadedVar := zeus_value.AsVar(loadedVal)
+		loadedVar.ValueType = cap.ValueType
+		// IsPtr=false: the loaded value is already a heap pointer (not a
+		// pointer-to-pointer), so VisitObjectPropertyAccessExpr must not
+		// dereference it again.
+		loadedVar.IsPtr = false
+		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, loadedVar)
+	}
+
+	// Pre-infer types for escaped vars whose initializers are complex expressions
+	// (binary ops, ternary, array indexing). Must run after params and captured-var
+	// preamble are in the symbol table so identifier lookups in inferExprType succeed.
+	inferredTypes := map[string]zeus_value.ValueType{}
+	if fnBody != nil && len(escapedNames) > 0 {
+		inferredTypes = g.inferFunctionLocalTypes(escapedNames, fnBody)
+	}
+
+	// Save/restore both fields so nested emitFunction calls don't clobber them.
+	prevEscapedVarNames := g.escapedVarNames
+	prevEscapedVarInferredTypes := g.escapedVarInferredTypes
+	g.escapedVarNames = escapedNames
+	g.escapedVarInferredTypes = inferredTypes
 	fnBody.Accept(g)
+	g.escapedVarNames = prevEscapedVarNames
+	g.escapedVarInferredTypes = prevEscapedVarInferredTypes
+
 	g.irBuilder.SetInsertionBlock(current_block)
 
 	g.symbolTable().ExitScope()
 
 	return fn
+}
+
+// getOrCreateRefCellClass returns (creating if necessary) the class used to box a
+// variable of the given valueType on the heap for capture-by-reference closures.
+func (g *IRModule) getOrCreateRefCellClass(valueType zeus_value.ValueType, span *token.Span) *zeus_value.Class {
+	className := zeus_value.RefCellClassName(valueType)
+	if existing, ok := g.symbolTable().GetSymbol(className); ok {
+		if cls := existing.(*zeus_value.Class); cls != nil {
+			return cls
+		}
+	}
+	refCellClass := zeus_value.GetRefCellClassDefinition(valueType, span)
+	g.irBuilder.EmitClassDeclAtStart(refCellClass)
+	g.symbolTable().DeclareSymbol(className, refCellClass)
+	return refCellClass
+}
+
+// getRefCellValueType extracts the inner scalar type from a ref cell class's `value` property.
+func getRefCellValueType(class *zeus_value.Class) zeus_value.ValueType {
+	for _, prop := range class.Properties {
+		if prop.Property.Name == zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY {
+			return prop.Property.ValueType
+		}
+	}
+	return nil
+}
+
+// allocRefCell creates a new ref cell object for valueType, stores initializer into
+// cell.value (if non-nil), and returns the cell object *Var.
+func (g *IRModule) allocRefCell(valueType zeus_value.ValueType, initializer zeus_value.Value, span *token.Span) zeus_value.Value {
+	refCellClass := g.getOrCreateRefCellClass(valueType, span)
+	cellObj := g.irBuilder.BuildNewObj(refCellClass, []zeus_value.Value{}, span)
+	if cellVar := zeus_value.AsVar(cellObj); cellVar != nil {
+		cellVar.ValueType = zeus_value.NewObjectType(*refCellClass)
+	}
+	if initializer != nil {
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(cellObj, zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY, true, span)
+		zeus_value.AsVar(propPtr).ValueType = valueType
+		g.irBuilder.BuildStore(zeus_value.AsVar(propPtr), initializer, span)
+	}
+	return cellObj
+}
+
+func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, span *token.Span) zeus_value.Value {
+	functorClassName := g.generateUniqueName(fmt.Sprintf("%sFunctor", fnName))
+
+	// Collect free variables before any IR is emitted: the symbol table still
+	// reflects the enclosing scope at this point, so GetSymbol finds outer vars.
+	capturedVars := g.collectFreeVars(fnParams, fnBody)
+
+	// Build the captured-var class properties (public fields on the functor struct).
+	capturedProps := make([]*zeus_value.ClassProperty, 0, len(capturedVars))
+	for _, cap := range capturedVars {
+		capturedProps = append(capturedProps, zeus_value.NewClassProperty(
+			zeus_value.NewVar(cap.PropertyName, cap.ValueType, false, span),
+			&token.Token{Type: token.TokenTypePublic, Span: span},
+		))
+	}
+
+	// Create stubs with actual param types; IR names (Name) are updated below after
+	// generateUniqueName produces class-unique names, matching buildClass's pattern.
+	methodParams := []*zeus_value.Var{}
+	for _, param := range fnParams {
+		methodParams = append(methodParams, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
+	}
+	constructorStub := zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span)
+	callStub := zeus_value.NewFunction(token.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
+	functorClass := zeus_value.NewClass(functorClassName, capturedProps,
+		[]*zeus_value.ClassMethod{
+			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
+			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
+		}, "", nil, span)
+	g.irBuilder.EmitClassDeclAtStart(functorClass)
+
+	// Constructor: no AST body, just a return. Use BuildFuncDecl with a unique IR name
+	// (same approach as buildClass uses for regular class methods via generateUniqueName).
+	constructorIRName := g.generateUniqueName(token.CONSTRUCTOR_METHOD_NAME)
+	savedBlock := g.irBuilder.GetInsertionBlock()
+	g.irBuilder.SetInsertionBlock(nil)
+	constructorBlock := g.irBuilder.BuildBasicBlock()
+	constructorFn := g.irBuilder.BuildFuncDecl(constructorIRName, []*VarDecl{}, constructorBlock, zeus_value.VoidType{Span: span}, functorClass, span)
+	constructorFn.OriginalName = token.CONSTRUCTOR_METHOD_NAME
+	constructorStub.Name = constructorFn.Name
+	constructorStub.OriginalName = token.CONSTRUCTOR_METHOD_NAME
+	g.irBuilder.SetInsertionBlock(constructorBlock)
+	g.irBuilder.BuildReturn(nil, span)
+	g.irBuilder.SetInsertionBlock(savedBlock)
+
+	// Make fnName resolve to 'this' in the parent scope before processing the body.
+	// This lets named function expressions call themselves recursively:
+	//   fibonacci(n-1) → INDIRECT_FUNC_CALL(this) → FunctorCallLoweringPass → CALL_METHOD(this, __call__, [n-1])
+	// Anonymous functors use a generated unique name so this declaration is harmless.
+	selfRef := zeus_value.NewObject(token.THIS_KEYWORD, zeus_value.NewObjectType(*functorClass), span)
+	g.symbolTable().DeclareSymbol(fnName, &selfRef)
+
+	// __call__: emitFunction handles the DECL_CLASS_METHOD instruction, unique IR naming,
+	// param scoping, and body generation — same as buildClass does for user-defined methods.
+	// Pass capturedVars so emitFunction emits the preamble that loads captured values.
+	callIRName := g.generateUniqueName(token.FUNCTOR_CALL_METHOD_NAME)
+	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, capturedVars, span))
+	if callFn != nil {
+		callFn.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
+		callStub.Name = callFn.Name
+		callStub.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
+	}
+
+	// Overwrite the selfRef entry with the actual functor object so the name is usable
+	// in the enclosing scope after the declaration (e.g. `return fibonacci(8)`).
+	functorObject := g.irBuilder.BuildNewObj(functorClass, []zeus_value.Value{}, span)
+	// Set the type immediately so any outer collectFreeVars sees the correct ObjectType.
+	if resultVar := zeus_value.AsVar(functorObject); resultVar != nil {
+		resultVar.ValueType = zeus_value.NewObjectType(*functorClass)
+	}
+	g.symbolTable().DeclareSymbol(fnName, functorObject)
+
+	// Initialize captured-var properties on the new functor object.
+	// Each property gets the current value of the corresponding outer variable.
+	for _, cap := range capturedVars {
+		var currentVal zeus_value.Value
+		if srcVar := zeus_value.AsVar(cap.Source); srcVar != nil {
+			if cap.IsRefCell {
+				// Ref cell: Source is the cell *Var (IsPtr=false) — store the cell
+				// pointer itself so the closure shares the same heap cell.
+				currentVal = srcVar
+			} else if srcVar.IsPtr {
+				// alloca (local variable) — load current value from its stack slot
+				currentVal = g.irBuilder.BuildLoad(srcVar, span)
+			} else {
+				// SSA parameter — the var IS the value, no load needed
+				currentVal = srcVar
+			}
+		} else {
+			// *zeus_value.Object (e.g. "this"): the object reference IS the value.
+			currentVal = cap.Source
+		}
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(functorObject, cap.PropertyName, true, span)
+		g.irBuilder.BuildStore(zeus_value.AsVar(propPtr), currentVal, span)
+	}
+
+	return functorObject
 }
 
 func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_value.Value {
@@ -686,7 +1016,11 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		fnSpan = expr.Name.GetSpan()
 	}
 
-	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, fnSpan)
+	if g.irBuilder.currentBlock != nil {
+		return g.emitFunctorClass(fnName, expr.Params, returnType, expr.Body, fnSpan)
+	}
+
+	return g.emitFunction(fnName, expr.Params, returnType, expr.Body, nil, nil, fnSpan)
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
@@ -701,6 +1035,19 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	if asFn != nil {
 		return asFn
+	}
+
+	// RefCellVar: reads and writes go through cell.value transparently.
+	if refCell := zeus_value.AsRefCellVar(variable); refCell != nil {
+		propPtr := g.irBuilder.BuildObjectPropertyAccess(refCell.Cell, zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY, g.isLValueExpr, expr.Name.Span)
+		propPtrVar := zeus_value.AsVar(propPtr)
+		propPtrVar.ValueType = refCell.ValueType
+		if g.isLValueExpr {
+			return propPtrVar
+		}
+		loadedVal := g.irBuilder.BuildLoad(propPtrVar, expr.Name.Span)
+		zeus_value.AsVar(loadedVal).ValueType = refCell.ValueType
+		return loadedVal
 	}
 
 	if g.isLValueExpr {
@@ -894,7 +1241,7 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 			returnType = method.ReturnType.ValueType
 		}
 		irMethodName := g.generateUniqueName(method.Name.Name.Value)
-		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, method.Name.Name.Span))
+		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
 		if fn != nil {
 			fn.OriginalName = method.Name.Name.Value
 			// Sync the class method descriptor so downstream passes see the IR name.
@@ -1157,7 +1504,6 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	}
 }
 
-// isThisExpression checks if an expression is a 'this' reference
 func (g *IRModule) isThisExpression(expr ast.ExprNode) bool {
 	if identExpr, ok := expr.(*ast.IdentifierExprNode); ok {
 		return identExpr.Name.Value == token.THIS_KEYWORD
