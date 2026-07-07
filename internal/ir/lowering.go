@@ -1175,7 +1175,7 @@ func (p *CastLoweringPass) Finalize(l *Lowerer) {
 }
 
 func (p *CastLoweringPass) generateFuncWrapper(builder *IRBuilder, c funcCastInfo) {
-	wrapperClassName := "__fnwrap_" + c.fn.SourceName() + "__"
+	wrapperClassName := c.fn.SourceName() + "Functor"
 
 	var wrapperClass *zeus_value.Class
 	if !p.wrappersSeen[wrapperClassName] {

@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check always build lsp fmt
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check always build lsp fmt fetch-libxev
 
 clean:
 	rm -rf playground/target
@@ -29,38 +29,55 @@ test-go:
 test-e2e: build-runtime
 	ZEUS_HOME=$(CURDIR) go test $(GO_BUILD_TAGS) ./test/e2e/... -v -count=1
 
-test-runtime:
-	cd runtime && zig build-lib main.zig -O Debug -static --name zeus-runtime-test $(ZIG_FLAGS) && rm -f libzeus-runtime-test.a libzeus-runtime-test.a.o
+test-runtime: fetch-libxev
+	cd runtime && zig build-lib -O Debug -static --name zeus-runtime-test \
+		$(ZIG_MODULE_FLAGS) $(ZIG_FLAGS) && rm -f libzeus-runtime-test.a libzeus-runtime-test.a.o
 
 ZIG_SDK ?= $(shell xcrun --show-sdk-path 2>/dev/null)
 BOEHM_GC_INCLUDE ?= $(CURDIR)/third_party/bdwgc/include
 BOEHM_GC_LIB ?= $(CURDIR)/third_party/bdwgc/lib
 LLVM_CONFIG ?= $(shell brew --prefix llvm@19 2>/dev/null)/bin/llvm-config
 VERSION ?= dev
-ZIG_FLAGS = --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -I$(BOEHM_GC_INCLUDE) -lc -lunwind -L$(BOEHM_GC_LIB) -lgc
 
-build-runtime:
+# libxev: last Zig 0.13-compatible commit of mitchellh/libxev
+LIBXEV_HASH = 1220d220fe297775b574b0312faaf5afcc0044cbda650d0558ec2dda8fb1a6dc1228
+LIBXEV_URL = https://github.com/mitchellh/libxev/archive/07bcffa0f63054152a9883baa42bce5faad297e6.tar.gz
+LIBXEV_SRC = /tmp/zig-cache-15/p/$(LIBXEV_HASH)/src/main.zig
+
+ZIG_FLAGS = --global-cache-dir /tmp/zig-cache-15 --sysroot $(ZIG_SDK) -I$(ZIG_SDK)/usr/include -I$(BOEHM_GC_INCLUDE) -lc -lunwind -L$(BOEHM_GC_LIB) -lgc
+ZIG_MODULE_FLAGS = --dep xev -Mmain=main.zig -Mxev=$(LIBXEV_SRC)
+
+fetch-libxev:
+	@if [ ! -f "$(LIBXEV_SRC)" ]; then \
+		zig fetch --global-cache-dir /tmp/zig-cache-15 "$(LIBXEV_URL)"; \
+	fi
+
+build-runtime: fetch-libxev
 	@mkdir -p runtime/zig-out/out
 	@if [ "$(release)" = "true" ]; then \
-		cd runtime && zig build-lib main.zig -O ReleaseSmall -static --name zeus-runtime $(ZIG_FLAGS) && \
+		cd runtime && zig build-lib -O ReleaseSmall -static --name zeus-runtime \
+			$(ZIG_MODULE_FLAGS) $(ZIG_FLAGS) && \
 		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o; \
 	else \
-		cd runtime && zig build-lib main.zig -O ReleaseFast -static --name zeus-runtime $(ZIG_FLAGS) && \
+		cd runtime && zig build-lib -O ReleaseFast -static --name zeus-runtime \
+			$(ZIG_MODULE_FLAGS) $(ZIG_FLAGS) && \
 		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o; \
 	fi
 
-build-runtime-debug:
+build-runtime-debug: fetch-libxev
 	@mkdir -p runtime/zig-out/out
-	cd runtime && zig build-lib main.zig -O Debug -static --name zeus-runtime $(ZIG_FLAGS) && \
+	cd runtime && zig build-lib -O Debug -static --name zeus-runtime \
+		$(ZIG_MODULE_FLAGS) $(ZIG_FLAGS) && \
 		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o
 
 build-zeus-vscode:
 	mkdir -p zeus-vscode/vsix
-	cd zeus-vscode && npm run package &&npm run vsix 
+	cd zeus-vscode && npm run package &&npm run vsix
 
-build-runtime-release: always
+build-runtime-release: always fetch-libxev
 	@mkdir -p runtime/zig-out/out
-	cd runtime && zig build-lib main.zig -O ReleaseSmall -static --name zeus-runtime $(ZIG_FLAGS) && \
+	cd runtime && zig build-lib -O ReleaseSmall -static --name zeus-runtime \
+		$(ZIG_MODULE_FLAGS) $(ZIG_FLAGS) && \
 		mv libzeus-runtime.a zig-out/out/ && mv libzeus-runtime.a.o zig-out/out/zeus-runtime.o
 
 compile: always build-runtime
@@ -70,8 +87,7 @@ compile: always build-runtime
 		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file); \
 	fi
 
-compile-release: always
-	cd runtime && zig build -Doptimize=ReleaseSmall
+compile-release: always build-runtime-release
 	ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs -o ./playground/debug/$(file)
 
 check:

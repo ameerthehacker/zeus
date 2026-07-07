@@ -141,3 +141,21 @@ pub fn getZeusTypeSize(zeus_type: abi.ZeusType) u32 {
 pub inline fn castToArrayObj(ptr: *anyopaque) *abi.ZeusArrayObj {
     return @as(*abi.ZeusArrayObj, @ptrCast(@alignCast(ptr)));
 }
+
+/// Call a Zeus functor object's __call__ method (vtable slot 0) with no args.
+/// obj_ptr is the already-dereferenced functor object pointer.
+/// __call__ receives (self: *anyopaque) as its only argument.
+pub inline fn callFunctor(obj_ptr: *anyopaque) void {
+    const zeus_obj = @as(*abi.ZeusObj, @ptrCast(@alignCast(obj_ptr)));
+    const vtable_fn_slots = @as([*]*anyopaque, @ptrCast(@alignCast(zeus_obj.obj_header.vtable)));
+    const call_fn = @as(*const fn (*anyopaque) callconv(.C) void, @ptrCast(@alignCast(vtable_fn_slots[0])));
+    call_fn(obj_ptr);
+}
+
+/// Call a Zeus callback following the ptr_ptr convention.
+/// Dereferences ptr_ptr to get the functor object, then dispatches via vtable slot 0 (__call__).
+/// The type checker guarantees all FunctionType values are functor objects.
+pub fn callZeusCallback(ptr_ptr: *anyopaque) void {
+    const obj_ptr = @as(**anyopaque, @ptrCast(@alignCast(ptr_ptr))).*;
+    callFunctor(obj_ptr);
+}

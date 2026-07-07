@@ -75,6 +75,12 @@ func (r *PrimordialRegistry) registerFunctions() {
 		VoidType{Span: span},
 		span,
 	)
+	r.functions["setTimeout"] = NewFunction(
+		"setTimeout",
+		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
+		VoidType{Span: span},
+		span,
+	)
 }
 
 // getOrCreateArrayClassUnsafe is the internal version without locking (for initialization)

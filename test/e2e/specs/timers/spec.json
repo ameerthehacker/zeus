@@ -1,0 +1,20 @@
+[
+    {
+        "name": "setTimeout fires callback after main",
+        "entry": "basic.zs",
+        "exit": "0",
+        "stdout": "main done\ntimer fired\n"
+    },
+    {
+        "name": "setTimeout shorter delay fires first",
+        "entry": "delay_order.zs",
+        "exit": "0",
+        "stdout": "10ms\n100ms\n"
+    },
+    {
+        "name": "setTimeout callback captures outer variable",
+        "entry": "capture.zs",
+        "exit": "0",
+        "stdout": "hello from closure\n"
+    }
+]
