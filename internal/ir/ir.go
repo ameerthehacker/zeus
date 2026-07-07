@@ -488,15 +488,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 
 		// Check if this is an array element compound assignment
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
-			// For array[i] += value, we need to:
-			// 1. Get current value: temp = array.get(i)
-			// 2. Compute new value: temp = temp op value
-			// 3. Store back: array.set(i, temp)
-			currentValue := g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_GET,
-				[]zeus_value.Value{arrayRef.Index},
-				nil, // type will be inferred
-				[]zeus_value.ValueType{zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}},
-				expr.GetSpan())
+			// For array[i] += value:
+			// 1. GET_INDEX to read current value
+			// 2. Compute new value
+			// 3. SET_INDEX to write back
+			currentValue := g.irBuilder.BuildGetIndex(arrayRef.ArrayObject, []zeus_value.Value{arrayRef.Index}, expr.GetSpan())
 
 			op := g.getCompoundAssignmentOp(expr.Operator.Type)
 			var newValue zeus_value.Value
@@ -506,14 +502,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 
-			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
-			valueType := zeus_value.GetValueType(newValue)
-			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
-				[]zeus_value.Value{arrayRef.Index, newValue},
-				zeus_value.VoidType{Span: expr.GetSpan()},
-				[]zeus_value.ValueType{i32Type, valueType},
-				expr.GetSpan())
-
+			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, newValue, expr.GetSpan())
 			return newValue
 		}
 
@@ -591,17 +580,8 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypeEqual:
 		// Check if this is an array element assignment (array[0][1] = expr)
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
-			// Generate: arrayObject.set(index, value)
-			// Type checking will catch invalid assignments (e.g., to strings)
-			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
-			valueType := zeus_value.GetValueType(right)
-			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
-				[]zeus_value.Value{arrayRef.Index, right},
-				zeus_value.VoidType{Span: expr.GetSpan()},
-				[]zeus_value.ValueType{i32Type, valueType},
-				expr.GetSpan())
-
-			// Return the value that was set
+			// Emit SET_INDEX HIR instruction; lowering pass converts to .set() method call
+			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, right, expr.GetSpan())
 			return right
 		}
 

@@ -325,6 +325,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		// no type checking for primordial functions
 	case InstrTypeGetIndex:
 		p.tcGetIndex(tc, instr)
+	case InstrTypeSetIndex:
+		p.tcSetIndex(tc, instr)
 	// Exception handling instructions
 	case InstrTypeThrow:
 		p.tcThrow(tc, instr)
@@ -1078,6 +1080,45 @@ func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
 	}
 
 	output.ValueType = resultType
+}
+
+func (p *TypeCheckingPass) tcSetIndex(tc *TypeChecker, instr *Instr) {
+	input := AsSetIndexInstrInput(instr.Input)
+	targetType := tc.getValueType(input.Array)
+
+	if !zeus_value.IsObjectType(targetType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", targetType),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	objType := zeus_value.AsObjectType(targetType)
+
+	if objType.Class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: "strings are immutable and cannot be assigned via indexing",
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	if objType.Class.ArrayElementType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot use indexing operator [] on type '%s', expected an array", objType.Class.Name),
+			Span:    instr.Span,
+		})
+		return
+	}
+
+	indexType := tc.getValueType(input.Index)
+	if !zeus_value.IsIntType(indexType) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("array index must be an integer, got '%s'", indexType),
+			Span:    instr.Span,
+		})
+	}
 }
 
 func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {

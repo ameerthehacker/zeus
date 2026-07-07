@@ -69,6 +69,8 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleExport(instr)
 	case InstrTypeGetIndex:
 		p.handleGetIndex(instr)
+	case InstrTypeSetIndex:
+		p.handleSetIndex(instr)
 	case InstrTypeCoerce:
 		input := AsCoerceInstrInput(instr.Input)
 		markValueAsUsed(input.Value)
@@ -253,6 +255,20 @@ func (p *UnusedWarningPass) handleGetIndex(instr *Instr) {
 		if indexVar := zeus_value.AsVar(index); indexVar != nil {
 			indexVar.IsUsed = true
 		}
+	}
+}
+
+func (p *UnusedWarningPass) handleSetIndex(instr *Instr) {
+	input := AsSetIndexInstrInput(instr.Input)
+
+	if arrayVar := zeus_value.AsVar(input.Array); arrayVar != nil {
+		arrayVar.IsUsed = true
+	}
+	if indexVar := zeus_value.AsVar(input.Index); indexVar != nil {
+		indexVar.IsUsed = true
+	}
+	if valueVar := zeus_value.AsVar(input.Value); valueVar != nil {
+		valueVar.IsUsed = true
 	}
 }
 
