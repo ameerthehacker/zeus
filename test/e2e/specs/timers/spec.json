@@ -16,5 +16,34 @@
         "entry": "capture.zs",
         "exit": "0",
         "stdout": "hello from closure\n"
+    },
+    {
+        "name": "setTimeout returns a positive timer ID",
+        "entry": "return_id.zs",
+        "exit": "0"
+    },
+    {
+        "name": "clearTimeout cancels a pending timer",
+        "entry": "clear_timeout.zs",
+        "exit": "0",
+        "stdout": "after clear\n"
+    },
+    {
+        "name": "setInterval fires callback repeatedly",
+        "entry": "set_interval.zs",
+        "exit": "0",
+        "stdout": "tick\ntick\ntick\n"
+    },
+    {
+        "name": "clearInterval stops a repeating timer",
+        "entry": "clear_interval.zs",
+        "exit": "0",
+        "stdout": "before clear\n"
+    },
+    {
+        "name": "setInterval can reference its own timer ID inside the callback",
+        "entry": "self_ref_interval.zs",
+        "exit": "0",
+        "stdout": "tick\ntick\ntick\n"
     }
 ]

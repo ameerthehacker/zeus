@@ -156,8 +156,78 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			continue
 		}
 
+		varName := decl.Identifier.Name.Value
+
 		var initializer zeus_value.Value
 		isConst := false
+
+		// Escaped variable: promote to a heap ref cell so nested closures can share
+		// the same mutable binding.
+		//
+		// Type resolution priority:
+		//   1. Explicit annotation
+		//   2. AST pre-inferred type from inferFunctionLocalTypes
+		//   3. Eager IR result type (only available after the initializer is evaluated)
+		//
+		// When the type is known from sources 1 or 2, the ref-cell is pre-declared
+		// before the initializer is evaluated so that closures in the RHS can capture
+		// the variable by name:
+		//   let timer = setInterval(() => { clearInterval(timer) }, 1000)
+		if g.escapedVarNames[varName] {
+			refCellType := zeus_value.ValueType(zeus_value.UndefinedType{Span: decl.GetSpan()})
+			if decl.ValueType != nil {
+				refCellType = decl.ValueType.ValueType
+			}
+			if zeus_value.IsUndefinedType(refCellType) {
+				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
+					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+					refCellType = preInferred
+				}
+			}
+
+			// Pre-declare when type is known from sources 1 or 2.
+			var cellObj zeus_value.Value
+			if !zeus_value.IsUndefinedType(refCellType) {
+				cellObj = g.allocRefCell(refCellType, nil, decl.GetSpan())
+				g.symbolTable().DeclareSymbol(varName, &zeus_value.RefCellVar{
+					OriginalName: varName,
+					ValueType:    refCellType,
+					Cell:         cellObj,
+					Span:         decl.GetSpan(),
+				})
+			}
+
+			// Evaluate the initializer (closures compiled here can see varName if pre-declared).
+			if decl.Initializer != nil {
+				initializer = decl.Initializer.Accept(g)
+			}
+
+			// Source 3: infer from IR result when sources 1 and 2 both failed.
+			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
+				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+					refCellType = inferred
+				}
+			}
+
+			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
+				if cellObj == nil {
+					// Type resolved only after init: create cell now with the initializer value.
+					cellObj = g.allocRefCell(refCellType, initializer, decl.GetSpan())
+					g.symbolTable().DeclareSymbol(varName, &zeus_value.RefCellVar{
+						OriginalName: varName,
+						ValueType:    refCellType,
+						Cell:         cellObj,
+						Span:         decl.GetSpan(),
+					})
+				} else if initializer != nil {
+					// Cell was pre-declared: store the initializer value into cell.value now.
+					propPtr := g.irBuilder.BuildObjectPropertyAccess(cellObj, zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY, true, decl.GetSpan())
+					zeus_value.AsVar(propPtr).ValueType = refCellType
+					g.irBuilder.BuildStore(zeus_value.AsVar(propPtr), initializer, decl.GetSpan())
+				}
+				continue
+			}
+		}
 
 		if decl.Initializer != nil {
 			initializer = decl.Initializer.Accept(g)
@@ -198,8 +268,6 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			}
 		}
 
-		varName := decl.Identifier.Name.Value
-
 		// Enforce: every variable declaration must have a type annotation or an initializer.
 		if decl.ValueType == nil && decl.Initializer == nil {
 			g.pushError(zeus_error.NewZeusError(
@@ -207,37 +275,6 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 				fmt.Sprintf("variable '%s' must have a type annotation or an initializer", varName),
 				decl.GetSpan(),
 			))
-		}
-
-		// Escaped variable: promote to a heap ref cell so nested closures can share
-		// the same mutable binding. Type resolution priority:
-		//   1. Explicit annotation (already in valueType)
-		//   2. AST pre-inferred type from inferFunctionLocalTypes
-		//   3. Eager IR result type (fallback for call results and functor expressions)
-		if g.escapedVarNames[varName] {
-			refCellType := valueType
-			if zeus_value.IsUndefinedType(refCellType) {
-				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
-					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
-					refCellType = preInferred
-				}
-			}
-			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
-				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
-					refCellType = inferred
-				}
-			}
-			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
-				cellObj := g.allocRefCell(refCellType, initializer, decl.GetSpan())
-				refCell := &zeus_value.RefCellVar{
-					OriginalName: varName,
-					ValueType:    refCellType,
-					Cell:         cellObj,
-					Span:         decl.GetSpan(),
-				}
-				g.symbolTable().DeclareSymbol(varName, refCell)
-				continue
-			}
 		}
 
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(

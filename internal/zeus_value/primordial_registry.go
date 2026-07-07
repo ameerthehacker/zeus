@@ -78,6 +78,24 @@ func (r *PrimordialRegistry) registerFunctions() {
 	r.functions["setTimeout"] = NewFunction(
 		"setTimeout",
 		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
+		IntType{Size: I32, Signed: true, Span: span},
+		span,
+	)
+	r.functions["clearTimeout"] = NewFunction(
+		"clearTimeout",
+		[]*Var{NewVar("id", IntType{Size: I32, Signed: true, Span: span}, false, span)},
+		VoidType{Span: span},
+		span,
+	)
+	r.functions["setInterval"] = NewFunction(
+		"setInterval",
+		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
+		IntType{Size: I32, Signed: true, Span: span},
+		span,
+	)
+	r.functions["clearInterval"] = NewFunction(
+		"clearInterval",
+		[]*Var{NewVar("id", IntType{Size: I32, Signed: true, Span: span}, false, span)},
 		VoidType{Span: span},
 		span,
 	)
