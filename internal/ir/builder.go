@@ -538,6 +538,14 @@ func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.V
 	return result
 }
 
+func (b *IRBuilder) BuildSetIndex(array, index, value zeus_value.Value, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypeSetIndex,
+		Input: NewSetIndexInstrInput(array, index, value),
+		Span:  span,
+	})
+}
+
 func (b *IRBuilder) BuildClassMethodDecl(method *zeus_value.Function, body *BasicBlock, class *zeus_value.Class, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type:  InstrTypeDeclClassMethod,

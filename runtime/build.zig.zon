@@ -1,0 +1,11 @@
+.{
+    .name = "zeus-runtime",
+    .version = "0.0.1",
+    .dependencies = .{
+        .xev = .{
+            .url = "https://github.com/mitchellh/libxev/archive/07bcffa0f63054152a9883baa42bce5faad297e6.tar.gz",
+            .hash = "1220d220fe297775b574b0312faaf5afcc0044cbda650d0558ec2dda8fb1a6dc1228",
+        },
+    },
+    .paths = .{"."},
+}

@@ -61,6 +61,217 @@ function main() {
 
 ---
 
+## Timer Functions
+
+Zeus provides a built-in async event loop backed by [libxev](https://github.com/mitchellh/libxev). You can schedule callbacks to run after a delay or on a repeating interval — no extra setup required.
+
+**How the event loop works:** When `main()` returns, Zeus automatically drains all pending timers before the process exits. You never need to start or stop a loop manually.
+
+---
+
+### `setTimeout`
+
+Schedules a callback to run once after a delay.
+
+```zeus
+setTimeout(callback: () => void, delay: i32): i32
+```
+
+**Parameters:**
+- `callback` — A zero-argument function to invoke after the delay
+- `delay` — Delay in milliseconds (values ≤ 0 fire on the next event loop tick)
+
+**Returns:** A timer ID (`i32`) that can be passed to `clearTimeout` to cancel the timer before it fires.
+
+**Example:**
+
+```zeus
+function main() {
+  setTimeout(() => {
+    log("Runs after main returns");
+  }, 500);
+
+  log("Runs first");
+}
+```
+
+**Output:**
+```
+Runs first
+Runs after main returns
+```
+
+The callback fires after `main()` returns because Zeus drains the event loop as part of program shutdown.
+
+**Capturing variables:**
+
+```zeus
+function main() {
+  let message: string = "hello from closure";
+
+  setTimeout(() => {
+    log(message);
+  }, 100);
+}
+```
+
+**Output:**
+```
+hello from closure
+```
+
+---
+
+### `clearTimeout`
+
+Cancels a timer that was scheduled with `setTimeout`, preventing its callback from firing.
+
+```zeus
+clearTimeout(id: i32)
+```
+
+**Parameters:**
+- `id` — The timer ID returned by `setTimeout`
+
+If `id` does not match any pending timer, `clearTimeout` does nothing.
+
+**Example:**
+
+```zeus
+function main() {
+  let id: i32 = setTimeout(() => {
+    log("this will never run");
+  }, 1000);
+
+  clearTimeout(id);
+
+  log("timer cancelled");
+}
+```
+
+**Output:**
+```
+timer cancelled
+```
+
+---
+
+### `setInterval`
+
+Schedules a callback to run repeatedly at a fixed interval.
+
+```zeus
+setInterval(callback: () => void, delay: i32): i32
+```
+
+**Parameters:**
+- `callback` — A zero-argument function to invoke on each interval tick
+- `delay` — Time between firings in milliseconds (minimum 1ms)
+
+**Returns:** An interval ID (`i32`) that can be passed to `clearInterval` to stop the repeating timer.
+
+**Example:**
+
+```zeus
+function main() {
+  let count: i32 = 0;
+
+  setInterval(() => {
+    count += 1;
+    log("tick");
+  }, 100);
+}
+```
+
+<Aside type="caution">
+  An interval that is never cleared will keep the event loop alive indefinitely. Always call `clearInterval` when you are done — typically from inside the callback itself.
+</Aside>
+
+**Stopping the interval from inside the callback:**
+
+To cancel an interval from within its own callback, declare the timer ID variable *before* the `setInterval` call so the closure can capture it:
+
+```zeus
+function main() {
+  let count: i32 = 0;
+  let timer = setInterval(() => {
+    count += 1;
+    log("tick");
+    if (count >= 5) {
+      clearInterval(timer);
+    }
+  }, 200);
+}
+```
+
+**Output:**
+```
+tick
+tick
+tick
+tick
+tick
+```
+
+This pattern works because Zeus closures capture variables **by reference**. By the time the first tick fires, `timer` already holds the interval ID assigned by `setInterval`.
+
+---
+
+### `clearInterval`
+
+Stops a repeating timer that was scheduled with `setInterval`.
+
+```zeus
+clearInterval(id: i32)
+```
+
+**Parameters:**
+- `id` — The interval ID returned by `setInterval`
+
+If `id` does not match any active interval, `clearInterval` does nothing. `clearTimeout` and `clearInterval` are interchangeable — either function can cancel timers created by either scheduling function.
+
+**Example:**
+
+```zeus
+function main() {
+  let id: i32 = 0;
+  id = setInterval(() => {
+    log("this will never run");
+  }, 500);
+
+  clearInterval(id);
+  log("interval cancelled before first tick");
+}
+```
+
+**Output:**
+```
+interval cancelled before first tick
+```
+
+---
+
+### Timer ordering
+
+When multiple timers are pending, Zeus fires them in ascending delay order — the shortest delay fires first:
+
+```zeus
+function main() {
+  setTimeout(() => { log("200ms"); }, 200);
+  setTimeout(() => { log("50ms"); }, 50);
+  setTimeout(() => { log("100ms"); }, 100);
+}
+```
+
+**Output:**
+```
+50ms
+100ms
+200ms
+```
+
+---
+
 ## More Functions Coming Soon
 
 Additional standard library functions for math, string manipulation, and more are planned for future releases.

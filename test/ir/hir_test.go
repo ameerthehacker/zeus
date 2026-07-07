@@ -1052,3 +1052,95 @@ export function greet(): void {
 		t.Error("expected DECLARE_FUNC along with EXPORT")
 	}
 }
+
+// runTCExpectError generates HIR, runs TC passes, and asserts that at least one
+// error with the given substring is present.
+func runTCExpectError(t *testing.T, source, wantSubstr string) {
+	t.Helper()
+	l := lexer.NewLexer(source)
+	tokens, lexErrs := l.Lex()
+	if len(lexErrs) > 0 {
+		t.Fatalf("lexer errors: %v", lexErrs)
+	}
+	program, parseErrs := parser.NewParser(tokens).ParseProgram()
+	if len(parseErrs) > 0 {
+		t.Fatalf("parser errors: %v", parseErrs)
+	}
+	builder := ir.NewIRBuilder()
+	mod := ir.NewIRModule(builder, "test.zs", nil)
+	// Ignore IR gen errors — TC errors are what we want to assert.
+	mod.Generate(program)
+	tc := ir.NewTypeChecker(builder, false)
+	errs := tc.TypeCheck()
+	for _, err := range errs {
+		if err.Severity == zeus_error.ErrorSeverityError && containsSubstr(err.Message, wantSubstr) {
+			return
+		}
+	}
+	t.Errorf("expected a TC error containing %q, got: %v", wantSubstr, errs)
+}
+
+func containsSubstr(s, sub string) bool {
+	return len(sub) == 0 || (len(s) >= len(sub) && (s == sub || len(s) > 0 && containsSubstrHelper(s, sub)))
+}
+
+func containsSubstrHelper(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// ---- Indexing type-check error tests ----
+
+func TestIndexOnNonArrayIsError(t *testing.T) {
+	runTCExpectError(t, `
+function f(): void {
+    let x: i32 = 1
+    let y = x[0]
+}`, "cannot use indexing operator []")
+}
+
+func TestIndexOnBoolIsError(t *testing.T) {
+	runTCExpectError(t, `
+function f(): void {
+    let x: bool = true
+    let y = x[0]
+}`, "cannot use indexing operator []")
+}
+
+func TestSetIndexOnNonArrayIsError(t *testing.T) {
+	runTCExpectError(t, `
+function f(): void {
+    let x: i32 = 1
+    x[0] = 2
+}`, "cannot use indexing operator []")
+}
+
+func TestSetIndexOnStringIsError(t *testing.T) {
+	runTCExpectError(t, `
+function f(): void {
+    let s: string = "hello"
+    s[0] = 'x'
+}`, "immutable")
+}
+
+func TestArrayCreationWithoutNewIsError(t *testing.T) {
+	l := lexer.NewLexer(`
+function f(): void {
+    let a = i32[]
+}`)
+	tokens, _ := l.Lex()
+	program, _ := parser.NewParser(tokens).ParseProgram()
+	builder := ir.NewIRBuilder()
+	mod := ir.NewIRModule(builder, "test.zs", nil)
+	errs := mod.Generate(program)
+	for _, err := range errs {
+		if err.Severity == zeus_error.ErrorSeverityError && containsSubstr(err.Message, "new") {
+			return
+		}
+	}
+	t.Error("expected an IR gen error suggesting 'new' for 'i32[]' without new")
+}

@@ -156,8 +156,78 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			continue
 		}
 
+		varName := decl.Identifier.Name.Value
+
 		var initializer zeus_value.Value
 		isConst := false
+
+		// Escaped variable: promote to a heap ref cell so nested closures can share
+		// the same mutable binding.
+		//
+		// Type resolution priority:
+		//   1. Explicit annotation
+		//   2. AST pre-inferred type from inferFunctionLocalTypes
+		//   3. Eager IR result type (only available after the initializer is evaluated)
+		//
+		// When the type is known from sources 1 or 2, the ref-cell is pre-declared
+		// before the initializer is evaluated so that closures in the RHS can capture
+		// the variable by name:
+		//   let timer = setInterval(() => { clearInterval(timer) }, 1000)
+		if g.escapedVarNames[varName] {
+			refCellType := zeus_value.ValueType(zeus_value.UndefinedType{Span: decl.GetSpan()})
+			if decl.ValueType != nil {
+				refCellType = decl.ValueType.ValueType
+			}
+			if zeus_value.IsUndefinedType(refCellType) {
+				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
+					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+					refCellType = preInferred
+				}
+			}
+
+			// Pre-declare when type is known from sources 1 or 2.
+			var cellObj zeus_value.Value
+			if !zeus_value.IsUndefinedType(refCellType) {
+				cellObj = g.allocRefCell(refCellType, nil, decl.GetSpan())
+				g.symbolTable().DeclareSymbol(varName, &zeus_value.RefCellVar{
+					OriginalName: varName,
+					ValueType:    refCellType,
+					Cell:         cellObj,
+					Span:         decl.GetSpan(),
+				})
+			}
+
+			// Evaluate the initializer (closures compiled here can see varName if pre-declared).
+			if decl.Initializer != nil {
+				initializer = decl.Initializer.Accept(g)
+			}
+
+			// Source 3: infer from IR result when sources 1 and 2 both failed.
+			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
+				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+					refCellType = inferred
+				}
+			}
+
+			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
+				if cellObj == nil {
+					// Type resolved only after init: create cell now with the initializer value.
+					cellObj = g.allocRefCell(refCellType, initializer, decl.GetSpan())
+					g.symbolTable().DeclareSymbol(varName, &zeus_value.RefCellVar{
+						OriginalName: varName,
+						ValueType:    refCellType,
+						Cell:         cellObj,
+						Span:         decl.GetSpan(),
+					})
+				} else if initializer != nil {
+					// Cell was pre-declared: store the initializer value into cell.value now.
+					propPtr := g.irBuilder.BuildObjectPropertyAccess(cellObj, zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY, true, decl.GetSpan())
+					zeus_value.AsVar(propPtr).ValueType = refCellType
+					g.irBuilder.BuildStore(zeus_value.AsVar(propPtr), initializer, decl.GetSpan())
+				}
+				continue
+			}
+		}
 
 		if decl.Initializer != nil {
 			initializer = decl.Initializer.Accept(g)
@@ -198,8 +268,6 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			}
 		}
 
-		varName := decl.Identifier.Name.Value
-
 		// Enforce: every variable declaration must have a type annotation or an initializer.
 		if decl.ValueType == nil && decl.Initializer == nil {
 			g.pushError(zeus_error.NewZeusError(
@@ -207,37 +275,6 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 				fmt.Sprintf("variable '%s' must have a type annotation or an initializer", varName),
 				decl.GetSpan(),
 			))
-		}
-
-		// Escaped variable: promote to a heap ref cell so nested closures can share
-		// the same mutable binding. Type resolution priority:
-		//   1. Explicit annotation (already in valueType)
-		//   2. AST pre-inferred type from inferFunctionLocalTypes
-		//   3. Eager IR result type (fallback for call results and functor expressions)
-		if g.escapedVarNames[varName] {
-			refCellType := valueType
-			if zeus_value.IsUndefinedType(refCellType) {
-				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
-					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
-					refCellType = preInferred
-				}
-			}
-			if zeus_value.IsUndefinedType(refCellType) && initializer != nil {
-				if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
-					refCellType = inferred
-				}
-			}
-			if refCellType != nil && !zeus_value.IsUndefinedType(refCellType) {
-				cellObj := g.allocRefCell(refCellType, initializer, decl.GetSpan())
-				refCell := &zeus_value.RefCellVar{
-					OriginalName: varName,
-					ValueType:    refCellType,
-					Cell:         cellObj,
-					Span:         decl.GetSpan(),
-				}
-				g.symbolTable().DeclareSymbol(varName, refCell)
-				continue
-			}
 		}
 
 		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
@@ -488,15 +525,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 
 		// Check if this is an array element compound assignment
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
-			// For array[i] += value, we need to:
-			// 1. Get current value: temp = array.get(i)
-			// 2. Compute new value: temp = temp op value
-			// 3. Store back: array.set(i, temp)
-			currentValue := g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_GET,
-				[]zeus_value.Value{arrayRef.Index},
-				nil, // type will be inferred
-				[]zeus_value.ValueType{zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}},
-				expr.GetSpan())
+			// For array[i] += value:
+			// 1. GET_INDEX to read current value
+			// 2. Compute new value
+			// 3. SET_INDEX to write back
+			currentValue := g.irBuilder.BuildGetIndex(arrayRef.ArrayObject, []zeus_value.Value{arrayRef.Index}, expr.GetSpan())
 
 			op := g.getCompoundAssignmentOp(expr.Operator.Type)
 			var newValue zeus_value.Value
@@ -506,14 +539,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 
-			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
-			valueType := zeus_value.GetValueType(newValue)
-			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
-				[]zeus_value.Value{arrayRef.Index, newValue},
-				zeus_value.VoidType{Span: expr.GetSpan()},
-				[]zeus_value.ValueType{i32Type, valueType},
-				expr.GetSpan())
-
+			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, newValue, expr.GetSpan())
 			return newValue
 		}
 
@@ -591,17 +617,8 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypeEqual:
 		// Check if this is an array element assignment (array[0][1] = expr)
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
-			// Generate: arrayObject.set(index, value)
-			// Type checking will catch invalid assignments (e.g., to strings)
-			i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: expr.GetSpan()}
-			valueType := zeus_value.GetValueType(right)
-			g.irBuilder.BuildMethodCall(arrayRef.ArrayObject, zeus_value.ARRAY_METHOD_SET,
-				[]zeus_value.Value{arrayRef.Index, right},
-				zeus_value.VoidType{Span: expr.GetSpan()},
-				[]zeus_value.ValueType{i32Type, valueType},
-				expr.GetSpan())
-
-			// Return the value that was set
+			// Emit SET_INDEX HIR instruction; lowering pass converts to .set() method call
+			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, right, expr.GetSpan())
 			return right
 		}
 
@@ -1254,6 +1271,17 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
+	// Catch `i32[]` / `MyType[]` written without `new` — the parser produces an
+	// IndexingExprNode whose base is a ValueTypeNode, which has no runtime value.
+	if typeNode, ok := expr.Array.(*ast.ValueTypeNode); ok {
+		span := token.NewSpan(typeNode.GetSpan().Start, expr.GetSpan().End)
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("use 'new %s[]' to create an array", typeNode.ValueType),
+			Span:    span,
+		})
+		return nil
+	}
+
 	// Save and clear isLValueExpr flag temporarily to properly load the base array
 	// Otherwise, if array is a variable, VisitIdentifier would return it without loading
 	wasLValueExpr := g.isLValueExpr

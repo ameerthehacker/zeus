@@ -633,6 +633,31 @@ func AsGetIndexInstrInput(input InstrInput) *GetIndexInstrInput {
 	return nil
 }
 
+type SetIndexInstrInput struct {
+	Array zeus_value.Value
+	Index zeus_value.Value
+	Value zeus_value.Value
+}
+
+func (i SetIndexInstrInput) String() string {
+	return fmt.Sprintf("%s[%s] = %s", i.Array.String(), i.Index.String(), i.Value.String())
+}
+
+func NewSetIndexInstrInput(array, index, value zeus_value.Value) *SetIndexInstrInput {
+	return &SetIndexInstrInput{Array: array, Index: index, Value: value}
+}
+
+func AsSetIndexInstrInput(input InstrInput) *SetIndexInstrInput {
+	switch input := input.(type) {
+	case *SetIndexInstrInput:
+		return input
+	default:
+		panicInvalidInputType("SetIndexInstrInput", input)
+	}
+
+	return nil
+}
+
 type DeclPrimordialFuncInstrInput struct {
 	Function *zeus_value.Function
 }
@@ -801,6 +826,8 @@ const (
 	InstrTypeMethodCall
 	// array indexing (HIR - lowered before codegen)
 	InstrTypeGetIndex
+	// array element assignment (HIR - lowered before codegen)
+	InstrTypeSetIndex
 	// exception handling
 	InstrTypeThrow          // Throw exception: calls zeus_throw(class_id, obj_ptr)
 	InstrTypePushHandler    // Push catch handler onto handler stack at try entry
@@ -897,6 +924,8 @@ func (i InstrType) String() string {
 		return "DECLARE_CLASS_METHOD"
 	case InstrTypeGetIndex:
 		return "GET_INDEX"
+	case InstrTypeSetIndex:
+		return "SET_INDEX"
 	case InstrTypeThrow:
 		return "THROW"
 	case InstrTypePushHandler:

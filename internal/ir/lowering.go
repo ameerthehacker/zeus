@@ -319,7 +319,7 @@ func updateOutputVar(output *zeus_value.Var, result zeus_value.Value, resultType
 }
 
 // =============================================================================
-// IndexLoweringPass - Lowers GET_INDEX instructions to .get() method calls
+// IndexLoweringPass - Lowers GET_INDEX/SET_INDEX instructions to method calls
 // =============================================================================
 
 type indexToLower struct {
@@ -328,9 +328,16 @@ type indexToLower struct {
 	block *BasicBlock
 }
 
-// IndexLoweringPass lowers GET_INDEX instructions to array.get() method calls
+type setIndexToLower struct {
+	instr *Instr
+	input *SetIndexInstrInput
+	block *BasicBlock
+}
+
+// IndexLoweringPass lowers GET_INDEX/SET_INDEX instructions to array.get()/.set() method calls
 type IndexLoweringPass struct {
-	indicesToLower []indexToLower
+	indicesToLower    []indexToLower
+	setIndicesToLower []setIndexToLower
 }
 
 func NewIndexLoweringPass() *IndexLoweringPass {
@@ -341,24 +348,33 @@ func (p *IndexLoweringPass) GetName() string {
 	return "IndexLowering"
 }
 
-// HandleInstruction collects GET_INDEX instructions that need lowering
+// HandleInstruction collects GET_INDEX/SET_INDEX instructions that need lowering
 func (p *IndexLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
-	if instr.Type != InstrTypeGetIndex {
+	if instr.Type == InstrTypeGetIndex {
+		input := AsGetIndexInstrInput(instr.Input)
+		if input == nil {
+			return
+		}
+		p.indicesToLower = append(p.indicesToLower, indexToLower{instr, input, l.GetCurrentBlock()})
 		return
 	}
 
-	input := AsGetIndexInstrInput(instr.Input)
-	if input == nil {
-		return
+	if instr.Type == InstrTypeSetIndex {
+		input := AsSetIndexInstrInput(instr.Input)
+		if input == nil {
+			return
+		}
+		p.setIndicesToLower = append(p.setIndicesToLower, setIndexToLower{instr, input, l.GetCurrentBlock()})
 	}
-
-	p.indicesToLower = append(p.indicesToLower, indexToLower{instr, input, l.GetCurrentBlock()})
 }
 
 // Finalize performs the actual lowering transformations
 func (p *IndexLoweringPass) Finalize(l *Lowerer) {
 	for _, indexOp := range p.indicesToLower {
 		p.lowerGetIndex(l, indexOp.instr, indexOp.input, indexOp.block)
+	}
+	for _, setOp := range p.setIndicesToLower {
+		p.lowerSetIndex(l, setOp.instr, setOp.input, setOp.block)
 	}
 }
 
@@ -423,6 +439,29 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 			instr.Output.ValueType = resultVar.ValueType
 		}
 	}
+
+	builder.DeleteInstr(block, instr)
+}
+
+// lowerSetIndex converts SET_INDEX into array.set() method call
+func (p *IndexLoweringPass) lowerSetIndex(l *Lowerer, instr *Instr, input *SetIndexInstrInput, block *BasicBlock) {
+	span := instr.Span
+	builder := l.GetBuilder()
+	setInsertionPoint(builder, block, instr)
+
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+	valueType := zeus_value.GetValueType(input.Value)
+
+	arrayType := zeus_value.GetValueType(input.Array)
+	objType := zeus_value.AsObjectType(arrayType)
+	zeus_error.Assert(objType != nil && objType.Class.ArrayElementType != nil,
+		"SET_INDEX lowering requires array type with element type - type checking should have caught this")
+
+	builder.BuildMethodCall(input.Array, zeus_value.ARRAY_METHOD_SET,
+		[]zeus_value.Value{input.Index, input.Value},
+		zeus_value.VoidType{Span: span},
+		[]zeus_value.ValueType{i32Type, valueType},
+		span)
 
 	builder.DeleteInstr(block, instr)
 }
@@ -1136,7 +1175,7 @@ func (p *CastLoweringPass) Finalize(l *Lowerer) {
 }
 
 func (p *CastLoweringPass) generateFuncWrapper(builder *IRBuilder, c funcCastInfo) {
-	wrapperClassName := "__fnwrap_" + c.fn.SourceName() + "__"
+	wrapperClassName := c.fn.SourceName() + "Functor"
 
 	var wrapperClass *zeus_value.Class
 	if !p.wrappersSeen[wrapperClassName] {
