@@ -1234,6 +1234,17 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
+	// Catch `i32[]` / `MyType[]` written without `new` — the parser produces an
+	// IndexingExprNode whose base is a ValueTypeNode, which has no runtime value.
+	if typeNode, ok := expr.Array.(*ast.ValueTypeNode); ok {
+		span := token.NewSpan(typeNode.GetSpan().Start, expr.GetSpan().End)
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("use 'new %s[]' to create an array", typeNode.ValueType),
+			Span:    span,
+		})
+		return nil
+	}
+
 	// Save and clear isLValueExpr flag temporarily to properly load the base array
 	// Otherwise, if array is a variable, VisitIdentifier would return it without loading
 	wasLValueExpr := g.isLValueExpr

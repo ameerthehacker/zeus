@@ -1126,3 +1126,21 @@ function f(): void {
     s[0] = 'x'
 }`, "immutable")
 }
+
+func TestArrayCreationWithoutNewIsError(t *testing.T) {
+	l := lexer.NewLexer(`
+function f(): void {
+    let a = i32[]
+}`)
+	tokens, _ := l.Lex()
+	program, _ := parser.NewParser(tokens).ParseProgram()
+	builder := ir.NewIRBuilder()
+	mod := ir.NewIRModule(builder, "test.zs", nil)
+	errs := mod.Generate(program)
+	for _, err := range errs {
+		if err.Severity == zeus_error.ErrorSeverityError && containsSubstr(err.Message, "new") {
+			return
+		}
+	}
+	t.Error("expected an IR gen error suggesting 'new' for 'i32[]' without new")
+}
