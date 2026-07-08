@@ -232,7 +232,7 @@ function safeGet(arr: i32[], index: i32): i32 {
   try {
     return arr[index];
   } catch (e: Error) {
-    log("Index out of bounds: " + e.message);
+    console.log("Index out of bounds: " + e.message);
     return -1;  // Return default value
   }
 }

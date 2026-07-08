@@ -90,21 +90,16 @@ function reset(): void {
 
 ## The main Function
 
-Every Zeus program needs a `main` function as the entry point:
+The `main` function is optional in Zeus. If defined, it serves as the program entry point and its return value becomes the exit code:
 
 ```zeus
 function main(): i32 {
-  // Program starts here
+  // Runs after all module-level code
   return 0;  // Exit code
 }
 ```
 
-The return value of `main` becomes the program's exit code:
-
-```bash
-./myprogram
-echo $?  # Shows the return value of main
-```
+If no `main` function is defined, the program exits with code `0` after running all module-level code.
 
 ## Calling Functions
 

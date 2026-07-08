@@ -1,5 +1,5 @@
 function main(): i32 {
-  log("Hello, World 👋");
+  console.log("Hello, World 👋");
   return 0;
 }
 

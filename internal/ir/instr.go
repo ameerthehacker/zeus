@@ -124,6 +124,10 @@ func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 	return nil
 }
 
+func AsDeclGlobalVarInstrInput(input InstrInput) *DeclareVarInstrInput {
+	return AsDeclVarInstrInput(input)
+}
+
 type LoadInstrInput struct {
 	Addr *zeus_value.Var
 }
@@ -801,6 +805,8 @@ const (
 	InstrTypeShr    // >> (arithmetic for signed, logical for unsigned)
 	// variable declaration
 	InstrTypeDeclVar
+	// module-level global variable declaration (uses AddGlobal in codegen)
+	InstrTypeDeclGlobalVar
 	// mem management
 	InstrTypeLoad
 	InstrTypeStore
@@ -888,6 +894,8 @@ func (i InstrType) String() string {
 		return "SHR"
 	case InstrTypeDeclVar:
 		return "DECLARE_VAR"
+	case InstrTypeDeclGlobalVar:
+		return "DECLARE_GLOBAL_VAR"
 	case InstrTypeDeclFunc:
 		return "DECLARE_FUNC"
 	case InstrTypeDeclPrimordialFunc:

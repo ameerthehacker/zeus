@@ -1,0 +1,20 @@
+[
+    {
+        "name": "console.log",
+        "entry": "log.zs",
+        "exit": "0",
+        "stdout": "hello from console.log\n"
+    },
+    {
+        "name": "console.error",
+        "entry": "error.zs",
+        "exit": "0",
+        "stderr": "hello from console.error\n"
+    },
+    {
+        "name": "console.info",
+        "entry": "info.zs",
+        "exit": "0",
+        "stdout": "hello from console.info\n"
+    }
+]

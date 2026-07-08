@@ -219,14 +219,10 @@ function process(value: i32): boolean {
   return value > 0;
 }
 
-function main(): i32 {
-  let result = process(42);  // inferred: boolean
-  
-  // let wrong: i32 = process(42);  // Error: boolean not assignable to i32
-  // process("hello");              // Error: string not assignable to i32
-  
-  return 0;
-}
+let result = process(42);  // inferred: boolean
+
+// let wrong: i32 = process(42);  // Error: boolean not assignable to i32
+// process("hello");              // Error: string not assignable to i32
 ```
 
 ---

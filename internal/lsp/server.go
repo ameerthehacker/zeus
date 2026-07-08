@@ -320,7 +320,7 @@ func (s *Server) parseDocument(content string) (*ir.IRModule, []*zeus_error.Zeus
 
 	// IR Generation phase
 	irBuilder := ir.NewIRBuilder()
-	irModule := ir.NewIRModule(irBuilder, "lsp-document", func(modulePath string) *ir.IRModule {
+	irModule := ir.NewIRModule(irBuilder, "lsp-document", true, func(modulePath string) *ir.IRModule {
 		// For LSP, we don't resolve imports (yet)
 		return nil
 	})

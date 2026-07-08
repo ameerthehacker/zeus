@@ -194,7 +194,7 @@ Validates types and performs semantic analysis using a pass-based system.
 - **Function Call Validation**: Parameter count and types
 - **Return Value Checking**: Ensures all code paths return
 - **Class Validation**: Constructor signatures, access modifiers
-- **Entry Point**: Validates `main` function exists in entry modules
+- **Entry Point**: Validates entry modules; `main` function is optional (defaults to exit code 0)
 
 **3. UnusedWarningPass**:
 - Tracks variable, function, and class usage

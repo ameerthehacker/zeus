@@ -34,12 +34,10 @@ String literals support escape sequences for special characters:
 | `\0` | Null character |
 
 ```zeus
-function main() {
-  log("Line 1\nLine 2");     // Two lines
-  log("Col1\tCol2\tCol3");   // Tab-separated
-  log("Say \"Hello\"");      // Embedded quotes
-  log("Path: C:\\Users");    // Backslash
-}
+console.log("Line 1\nLine 2");     // Two lines
+console.log("Col1\tCol2\tCol3");   // Tab-separated
+console.log("Say \"Hello\"");      // Embedded quotes
+console.log("Path: C:\\Users");    // Backslash
 ```
 
 **Output:**
@@ -80,11 +78,11 @@ let bytes: u8[] = original;
 // Modify the copy (original is unchanged)
 bytes[0] = 'h';
 
-log(original);  // "Hello" (unchanged)
+console.log(original);  // "Hello" (unchanged)
 
 // To log bytes, convert back to string
 let modified: string = bytes;
-log(modified);  // "hello"
+console.log(modified);  // "hello"
 ```
 
 <Aside type="note">
@@ -173,7 +171,7 @@ let hello = "Hello";
 let world = "World";
 
 let greeting = hello.concat(" ").concat(world);
-log(greeting);  // "Hello World"
+console.log(greeting);  // "Hello World"
 ```
 
 <Aside type="tip">
@@ -192,7 +190,7 @@ The `+` operator concatenates two strings:
 let first = "Hello";
 let second = "World";
 let result = first + " " + second;
-log(result);  // "Hello World"
+console.log(result);  // "Hello World"
 ```
 
 ### Equality Operators (== and !=)
@@ -205,11 +203,11 @@ let b = "hello";
 let c = "world";
 
 if (a == b) {
-  log("a equals b");  // This executes
+  console.log("a equals b");  // This executes
 }
 
 if (a != c) {
-  log("a not equals c");  // This executes
+  console.log("a not equals c");  // This executes
 }
 ```
 
@@ -222,22 +220,22 @@ let apple = "apple";
 let banana = "banana";
 
 if (apple < banana) {
-  log("apple comes before banana");  // This executes
+  console.log("apple comes before banana");  // This executes
 }
 
 if (banana > apple) {
-  log("banana comes after apple");  // This executes
+  console.log("banana comes after apple");  // This executes
 }
 
 let a = "hello";
 let b = "hello";
 
 if (a <= b) {
-  log("a <= b");  // This executes (they're equal)
+  console.log("a <= b");  // This executes (they're equal)
 }
 
 if (a >= b) {
-  log("a >= b");  // This executes (they're equal)
+  console.log("a >= b");  // This executes (they're equal)
 }
 ```
 
@@ -304,24 +302,22 @@ let text: string = bytes;  // Creates immutable string "Hi"
 Since strings are UTF-8 encoded, you can work with individual bytes through `u8[]`:
 
 ```zeus
-function main() {
-  let greeting: string = "Hi!";
-  
-  // Convert to mutable bytes
-  let bytes: u8[] = greeting;
-  
-  // Access individual bytes
-  let h: u8 = bytes[0];  // 72 ('H')
-  let i: u8 = bytes[1];  // 105 ('i')
-  let exclaim: u8 = bytes[2];  // 33 ('!')
-  
-  // Modify bytes
-  bytes[0] = 'h';  // lowercase
-  
-  // Convert back to string for output
-  let modified: string = bytes;
-  log(modified);  // "hi!"
-}
+let greeting: string = "Hi!";
+
+// Convert to mutable bytes
+let bytes: u8[] = greeting;
+
+// Access individual bytes
+let h: u8 = bytes[0];  // 72 ('H')
+let i: u8 = bytes[1];  // 105 ('i')
+let exclaim: u8 = bytes[2];  // 33 ('!')
+
+// Modify bytes
+bytes[0] = 'h';  // lowercase
+
+// Convert back to string for output
+let modified: string = bytes;
+console.log(modified);  // "hi!"
 ```
 
 ## UTF-8 Encoding

@@ -341,6 +341,24 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 	return variable
 }
 
+func (b *IRBuilder) BuildGlobalVarDecl(v *VarDecl) *zeus_value.Var {
+	unique_name := b.generateUniqueGlobalName(v.Name)
+
+	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
+	variable.OriginalName = v.Name
+	variable.IsConst = v.IsConst
+
+	b.symbolTable.DeclareSymbol(unique_name, variable)
+
+	b.pushInstr(&Instr{
+		Type:  InstrTypeDeclGlobalVar,
+		Input: NewDeclareVarInstrInput(variable, v.Initializer, v.IsConst),
+		Span:  v.Span,
+	})
+
+	return variable
+}
+
 func (b *IRBuilder) BuildStore(addr *zeus_value.Var, value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type:  InstrTypeStore,

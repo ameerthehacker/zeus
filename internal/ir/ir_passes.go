@@ -27,12 +27,73 @@ func NewIREmitPass() *IREmitPass { return &IREmitPass{} }
 func (p *IREmitPass) Name() string { return "IREmitPass" }
 
 func (p *IREmitPass) Run(g *IRModule, program *ast.ProgramNode) []*zeus_error.ZeusError {
+	defaultSpan := token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))
+
+	// Emit primordial functions
 	for _, fn := range zeus_value.Registry.GetAllFunctions() {
 		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
 	}
-	for _, stmt := range program.Statements {
-		stmt.Accept(g)
+
+	if g.isEntryPoint {
+		// Determine the return type for #_zeus_main. If the user pre-declared
+		// `function main()` (DeclCheckPass registers the stub), use its return type
+		// so that calling main() and returning its value doesn't cause a type mismatch.
+		// Otherwise default to i32.
+		i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: defaultSpan}
+		entryReturnType := zeus_value.ValueType(i32Type)
+		if sym, ok := g.irBuilder.symbolTable.GetSymbol(token.MAIN_FUNCTION_NAME); ok {
+			if mainFnStub, ok := sym.(*zeus_value.Function); ok {
+				if mainFnStub.ReturnType != nil {
+					entryReturnType = mainFnStub.ReturnType
+				}
+			}
+		}
+
+		// Create the synthetic #_zeus_main function as the actual OS entry point.
+		// `#` is not a valid Zeus identifier start character, so users can never
+		// define a function with this name.
+		entryBody := g.irBuilder.BuildBasicBlock()
+		g.irBuilder.BuildFuncDecl(token.ZEUS_ENTRY_FUNCTION_NAME, []*VarDecl{}, entryBody, entryReturnType, nil, defaultSpan)
+		g.irBuilder.SetInsertionBlock(entryBody)
+		g.isInModuleScope = true
+
+		// Initialize primordial globals (console etc.) at the start of the entry body
+		g.initPrimordialGlobals(defaultSpan)
+
+		// Visit user top-level statements; module-level var decls become globals,
+		// function/class decls are emitted to b.instrs via emitFunction's save/restore
+		for _, stmt := range program.Statements {
+			stmt.Accept(g)
+		}
+		g.isInModuleScope = false
+
+		// If user defined `function main()`, call it and return its value.
+		// Otherwise return 0 (cast to entryReturnType).
+		var userMainFn *zeus_value.Function
+		for _, instr := range g.irBuilder.GetInstrs() {
+			if IsFunctionDeclInstr(instr.Type) {
+				input := AsDeclFuncInstrInput(instr.Input)
+				if input.Function.Name == token.MAIN_FUNCTION_NAME {
+					userMainFn = input.Function
+					break
+				}
+			}
+		}
+
+		if userMainFn != nil {
+			exitCode := g.irBuilder.BuildCallFunc(userMainFn, []zeus_value.Value{}, defaultSpan)
+			g.irBuilder.BuildReturn(exitCode, defaultSpan)
+		} else {
+			zero := zeus_value.NewConstant("0", entryReturnType, defaultSpan)
+			g.irBuilder.BuildReturn(zero, defaultSpan)
+		}
+		g.irBuilder.SetInsertionBlock(nil)
+	} else {
+		for _, stmt := range program.Statements {
+			stmt.Accept(g)
+		}
 	}
+
 	g.irBuilder.Optimize()
 	return g.errors
 }

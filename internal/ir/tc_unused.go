@@ -36,7 +36,7 @@ func markValueAsUsed(value zeus_value.Value) {
 
 func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	switch instr.Type {
-	case InstrTypeDeclVar:
+	case InstrTypeDeclVar, InstrTypeDeclGlobalVar:
 		p.handleVarDecl(instr)
 	case InstrTypeStore:
 		p.handleStore(instr)
@@ -295,9 +295,9 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					return
 				}
 			}
-			isMainFunction := function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint
+			isEntryFunction := (function.Name == token.MAIN_FUNCTION_NAME || function.Name == token.ZEUS_ENTRY_FUNCTION_NAME) && tc.IsEntryPoint
 			// Check for unused functions, ignore class methods
-			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isMainFunction {
+			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isEntryFunction {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
 					Message:  fmt.Sprintf("function '%s' is declared but not used", function.Name),

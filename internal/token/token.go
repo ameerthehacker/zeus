@@ -5,6 +5,7 @@ import (
 )
 
 const MAIN_FUNCTION_NAME = "main"
+const ZEUS_ENTRY_FUNCTION_NAME = "#_zeus_main"
 const CONSTRUCTOR_METHOD_NAME = "constructor"
 const FUNCTOR_CALL_METHOD_NAME = "__call__"
 const THIS_KEYWORD = "this"

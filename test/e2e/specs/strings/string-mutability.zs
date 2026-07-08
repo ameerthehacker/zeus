@@ -1,7 +1,7 @@
 function main(): i8 {
   let message: string = "Hello World! 👋";
 
-  log(message);
+  console.log(message);
 
   let messageEdited: u8[] = message;
 
@@ -9,7 +9,7 @@ function main(): i8 {
 
   // Cast u8[] back to string for log
   let editedString: string = messageEdited;
-  log(editedString);
+  console.log(editedString);
 
   return 0;
 }

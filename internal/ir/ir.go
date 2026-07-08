@@ -48,9 +48,16 @@ type IRModule struct {
 	// are complex expressions (binary ops, ternary, array indexing). Saved/restored
 	// around nested emitFunction calls like escapedVarNames.
 	escapedVarInferredTypes map[string]zeus_value.ValueType
+	// isEntryPoint is true when this module is the program entry point.
+	isEntryPoint bool
+	// isInModuleScope is true while IREmitPass visits top-level statements inside
+	// the synthetic #_zeus_main body. VisitVarDeclStmt uses BuildGlobalVarDecl when
+	// this flag is set. emitFunction saves/restores it so nested function bodies use
+	// ordinary local vars.
+	isInModuleScope bool
 }
 
-func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modulePath string) *IRModule) *IRModule {
+func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, getIRModule func(modulePath string) *IRModule) *IRModule {
 	return &IRModule{
 		irBuilder:       ir_builder,
 		isLValueExpr:    false,
@@ -58,6 +65,7 @@ func NewIRModule(ir_builder *IRBuilder, modulePath string, getIRModule func(modu
 		exportedSymbols: map[string]zeus_value.Value{},
 		getModule:       getIRModule,
 		usedIRNames:     map[string]bool{},
+		isEntryPoint:    isEntryPoint,
 	}
 }
 
@@ -277,13 +285,13 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			))
 		}
 
-		variable := g.irBuilder.BuildVarDecl(NewVarDecl(
-			varName,
-			valueType,
-			isConst,
-			initializer,
-			decl.GetSpan(),
-		))
+		varDecl := NewVarDecl(varName, valueType, isConst, initializer, decl.GetSpan())
+		var variable *zeus_value.Var
+		if g.isInModuleScope {
+			variable = g.irBuilder.BuildGlobalVarDecl(varDecl)
+		} else {
+			variable = g.irBuilder.BuildVarDecl(varDecl)
+		}
 
 		g.symbolTable().DeclareSymbol(varName, variable)
 	}
@@ -860,13 +868,17 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	// Save/restore both fields so nested emitFunction calls don't clobber them.
+	// Also reset isInModuleScope so vars declared inside a function body are local.
 	prevEscapedVarNames := g.escapedVarNames
 	prevEscapedVarInferredTypes := g.escapedVarInferredTypes
+	prevIsInModuleScope := g.isInModuleScope
 	g.escapedVarNames = escapedNames
 	g.escapedVarInferredTypes = inferredTypes
+	g.isInModuleScope = false
 	fnBody.Accept(g)
 	g.escapedVarNames = prevEscapedVarNames
 	g.escapedVarInferredTypes = prevEscapedVarInferredTypes
+	g.isInModuleScope = prevIsInModuleScope
 
 	g.irBuilder.SetInsertionBlock(current_block)
 
@@ -1033,7 +1045,9 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		fnSpan = expr.Name.GetSpan()
 	}
 
-	if g.irBuilder.currentBlock != nil {
+	// When inside a function body that is NOT the module-level scope, create a closure.
+	// When at module level (isInModuleScope) or truly outside any block, emit as global function.
+	if g.irBuilder.currentBlock != nil && !g.isInModuleScope {
 		return g.emitFunctorClass(fnName, expr.Params, returnType, expr.Body, fnSpan)
 	}
 
@@ -1449,7 +1463,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		sourceName = anonymousName
 	}
 	var irClassName string
-	if expr.Name != nil && g.irBuilder.GetInsertionBlock() == nil {
+	if expr.Name != nil && (g.irBuilder.GetInsertionBlock() == nil || g.isInModuleScope) {
 		irClassName = sourceName
 	} else {
 		irClassName = g.generateUniqueName(sourceName)
@@ -1579,6 +1593,37 @@ func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
 	// This should never happen - Error is registered during IRBuilder init
 	zeus_error.Assert(false, "Error class not found in symbol table - this is a bug")
 	return nil
+}
+
+// getOrCreateConsoleClass returns the Console primordial class, registering it if needed.
+func (g *IRModule) getOrCreateConsoleClass() *zeus_value.Class {
+	consoleClassName := zeus_value.ZEUS_PRIMORDIAL_CONSOLE
+
+	if existingClass, ok := g.symbolTable().GetSymbol(consoleClassName); ok {
+		return existingClass.(*zeus_value.Class)
+	}
+
+	consoleClass := zeus_value.Registry.GetClass(consoleClassName)
+	zeus_error.Assert(consoleClass != nil, "Console class not found in registry - this is a bug")
+
+	g.symbolTable().DeclareGlobalSymbol(consoleClassName, consoleClass)
+	g.irBuilder.EmitClassDeclAtStart(consoleClass)
+
+	return consoleClass
+}
+
+// initPrimordialGlobals creates the `console` global object inside the entry function body.
+// Must be called while the insertion block is set to the entry function's body block
+// and isInModuleScope is true.
+func (g *IRModule) initPrimordialGlobals(span *token.Span) {
+	consoleClass := g.getOrCreateConsoleClass()
+	consoleObj := g.irBuilder.BuildNewObj(consoleClass, []zeus_value.Value{}, span)
+
+	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(*consoleClass), true, consoleObj, span)
+	consoleVar := g.irBuilder.BuildGlobalVarDecl(consoleVarDecl)
+	consoleVar.IsUsed = true // primordial global — suppress unused warning
+
+	g.symbolTable().DeclareGlobalSymbol("console", consoleVar)
 }
 
 // emitBoundsCheck generates IR to check if an array index is within bounds and throw if not

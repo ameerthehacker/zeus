@@ -31,7 +31,7 @@ func (p *PrimordialClassGenPass) HandleInstruction(tc *TypeChecker, instr *Instr
 
 	// Collect from specific instruction types
 	switch instr.Type {
-	case InstrTypeDeclVar:
+	case InstrTypeDeclVar, InstrTypeDeclGlobalVar:
 		input := AsDeclVarInstrInput(instr.Input)
 		p.collectType(input.Variable.ValueType)
 	case InstrTypeDeclFunc:

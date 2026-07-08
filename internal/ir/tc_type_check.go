@@ -144,7 +144,7 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeJmp:
 	case InstrTypeDeclFunc:
 		p.tcFuncDecl(tc, instr)
-	case InstrTypeDeclVar:
+	case InstrTypeDeclVar, InstrTypeDeclGlobalVar:
 		p.tcDeclVar(tc, instr)
 	case InstrTypeAdd:
 		p.tcBinaryOp(tc, instr, func(a, b zeus_value.ValueType) zeus_value.ValueType {
@@ -379,7 +379,7 @@ func (p *TypeCheckingPass) validateFunctionReturns(tc *TypeChecker, function *ze
 func (p *TypeCheckingPass) tcFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
 
-	if input.Function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint {
+	if (input.Function.Name == token.MAIN_FUNCTION_NAME || input.Function.Name == token.ZEUS_ENTRY_FUNCTION_NAME) && tc.IsEntryPoint {
 		p.hasMainFunction = true
 	}
 

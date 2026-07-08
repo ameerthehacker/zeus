@@ -8,6 +8,6 @@ class Person {
 
 function main(): i32 {
   let person: Person;
-  log(person.name);
+  console.log(person.name);
   return 0;
 }

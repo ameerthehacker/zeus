@@ -483,7 +483,7 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 		zeus_error.Assert(sourceFile.Program != nil, "source file program is nil")
 		irBuilder := ir.NewIRBuilder()
 		sourceFile.IRBuilder = irBuilder
-		irModule := ir.NewIRModule(irBuilder, sourceFile.Path, func(modulePath string) *ir.IRModule {
+		irModule := ir.NewIRModule(irBuilder, sourceFile.Path, sourceFile.IsEntryPoint, func(modulePath string) *ir.IRModule {
 			irModule, ok := irModuleFilePathMap[modulePath]
 			zeus_error.Assert(ok, fmt.Sprintf("IR module not found %s", modulePath))
 			return irModule
@@ -741,6 +741,13 @@ func linkObjFiles(objFiles []string, outputPath string) error {
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
 		linkerArgs = append(linkerArgs, "-L"+getBDWGCLibDir(), "-lgc")
+		// On macOS, LLVM prepends '_' to all symbol names in the object file,
+		// so the linker must reference the symbol with the '_' prefix.
+		entrySymbol := token.ZEUS_ENTRY_FUNCTION_NAME
+		if runtime.GOOS == "darwin" {
+			entrySymbol = "_" + entrySymbol
+		}
+		linkerArgs = append(linkerArgs, "-Wl,-e,"+entrySymbol)
 		linkerArgs = append(linkerArgs, "-o", outputPath)
 		linkerCmd = exec.Command(linker, linkerArgs...)
 		linkerCmd.Stdout = os.Stdout
