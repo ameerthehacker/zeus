@@ -64,17 +64,14 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 	// Error class - base class for all exceptions (must be registered before any Error subclasses)
 	r.classes[ZEUS_PRIMORDIAL_ERROR] = GetErrorPrimordialClassDefinition(r.defaultSpan)
 	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_ERROR)
+
+	// Console class - global console object (log/error/info)
+	r.classes[ZEUS_PRIMORDIAL_CONSOLE] = GetConsolePrimordialClassDefinition(r.defaultSpan)
+	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_CONSOLE)
 }
 
 func (r *PrimordialRegistry) registerFunctions() {
 	span := r.defaultSpan
-	stringClass := r.classes[ZEUS_PRIMORDIAL_STRING]
-	r.functions["log"] = NewFunction(
-		"log",
-		[]*Var{NewVar("message", ObjectType{Class: *stringClass}, false, span)},
-		VoidType{Span: span},
-		span,
-	)
 	r.functions["setTimeout"] = NewFunction(
 		"setTimeout",
 		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
@@ -140,6 +137,14 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 	r.arrayClasses[className] = class
 	r.classOrder = append(r.classOrder, className)
 	return class
+}
+
+// GetClass returns a fixed primordial class by name (string, error, Console, ...).
+// Returns nil if not found. Does not search parameterized array classes.
+func (r *PrimordialRegistry) GetClass(name string) *Class {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.classes[name]
 }
 
 // GetAllClasses returns all registered primordial classes in dependency-safe insertion order.

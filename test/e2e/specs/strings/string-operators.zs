@@ -7,48 +7,48 @@ function main(): i32 {
 
     // Test + operator (concatenation)
     let concat: string = a + " " + b;
-    log(concat);
+    console.log(concat);
 
     // Test == operator
     if (a == c) {
-        log("a == c: true");
+        console.log("a == c: true");
     } else {
-        log("a == c: false");
+        console.log("a == c: false");
     }
 
     // Test != operator
     if (a != b) {
-        log("a != b: true");
+        console.log("a != b: true");
     } else {
-        log("a != b: false");
+        console.log("a != b: false");
     }
 
     // Test < operator
     if (a < b) {
-        log("a < b: true");
+        console.log("a < b: true");
     } else {
-        log("a < b: false");
+        console.log("a < b: false");
     }
 
     // Test > operator
     if (b > a) {
-        log("b > a: true");
+        console.log("b > a: true");
     } else {
-        log("b > a: false");
+        console.log("b > a: false");
     }
 
     // Test <= operator
     if (a <= c) {
-        log("a <= c: true");
+        console.log("a <= c: true");
     } else {
-        log("a <= c: false");
+        console.log("a <= c: false");
     }
 
     // Test >= operator
     if (a >= c) {
-        log("a >= c: true");
+        console.log("a >= c: true");
     } else {
-        log("a >= c: false");
+        console.log("a >= c: false");
     }
 
     return 0;

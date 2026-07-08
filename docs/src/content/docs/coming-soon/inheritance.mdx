@@ -152,10 +152,10 @@ function main(): i32 {
   try {
     validate(-5);
   } catch (e: ValidationError) {
-    log("Validation failed for field: " + e.field);
+    console.log("Validation failed for field: " + e.field);
     return 1;
   } catch (e: Error) {
-    log("Other error: " + e.message);
+    console.log("Other error: " + e.message);
     return 2;
   }
   return 0;

@@ -3,7 +3,7 @@ function main(): i32 {
     let count: i32 = 0;
     id = setInterval(() => {
         count = count + 1;
-        log("tick");
+        console.log("tick");
         if (count >= 3) {
             clearInterval(id);
         }

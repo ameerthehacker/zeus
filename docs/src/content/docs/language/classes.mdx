@@ -15,13 +15,9 @@ class Rectangle {
   public height: f64;
 }
 
-function main(): i32 {
-  let rect: Rectangle = new Rectangle();
-  rect.width = 10.0;
-  rect.height = 5.0;
-  
-  return 0;
-}
+let rect: Rectangle = new Rectangle();
+rect.width = 10.0;
+rect.height = 5.0;
 ```
 
 ## Constructors
@@ -72,13 +68,9 @@ class Rectangle {
   }
 }
 
-function main(): i32 {
-  let rect: Rectangle = new Rectangle(10.0, 5.0);
-  let a: f64 = rect.area();       // 50.0
-  let p: f64 = rect.perimeter();  // 30.0
-  
-  return 0;
-}
+let rect: Rectangle = new Rectangle(10.0, 5.0);
+let a: f64 = rect.area();       // 50.0
+let p: f64 = rect.perimeter();  // 30.0
 ```
 
 ## The `this` Keyword
@@ -240,11 +232,8 @@ class Person {
   }
 }
 
-function main(): i32 {
-  let person: Person;       // null by default
-  log(person.name);         // Throws NullReferenceException!
-  return 0;
-}
+let person: Person;       // null by default
+console.log(person.name);         // Throws NullReferenceException!
 ```
 
 <Aside type="caution">

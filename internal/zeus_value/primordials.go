@@ -285,6 +285,38 @@ func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
 	return NewClassWithId(ERROR_CLASS_ID, "Error", properties, methods, ZEUS_PRIMORDIAL_ERROR, span)
 }
 
+const ZEUS_PRIMORDIAL_CONSOLE = "Console"
+
+// Console method names
+const (
+	CONSOLE_METHOD_LOG   = "log"
+	CONSOLE_METHOD_ERROR = "error"
+	CONSOLE_METHOD_INFO  = "info"
+)
+
+// GetConsolePrimordialClassDefinition returns the built-in Console class definition.
+// It has no properties and no constructor; methods are backed by runtime ABI functions.
+func GetConsolePrimordialClassDefinition(span *token.Span) *Class {
+	stringType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
+	publicMethod := func(fn *Function) *ClassMethod {
+		return NewClassMethod(fn, &token.Token{Type: token.TokenTypePublic, Span: span})
+	}
+	logMethod := NewFunction(CONSOLE_METHOD_LOG, []*Var{
+		NewVar("message", stringType, true, span),
+	}, VoidType{Span: span}, span)
+	errorMethod := NewFunction(CONSOLE_METHOD_ERROR, []*Var{
+		NewVar("message", stringType, true, span),
+	}, VoidType{Span: span}, span)
+	infoMethod := NewFunction(CONSOLE_METHOD_INFO, []*Var{
+		NewVar("message", stringType, true, span),
+	}, VoidType{Span: span}, span)
+	return NewClass(ZEUS_PRIMORDIAL_CONSOLE, []*ClassProperty{}, []*ClassMethod{
+		publicMethod(logMethod),
+		publicMethod(errorMethod),
+		publicMethod(infoMethod),
+	}, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
+}
+
 // Ref cell class naming constants
 const ZEUS_REF_CELL_CLASS_PREFIX = "__ref_cell_"
 const ZEUS_REF_CELL_VALUE_PROPERTY = "value"

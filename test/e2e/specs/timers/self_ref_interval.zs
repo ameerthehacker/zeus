@@ -5,7 +5,7 @@ function main(): i32 {
             clearInterval(timer);
         } else {
             count = count + 1;
-            log("tick");
+            console.log("tick");
         }
     }, 10);
     return 0;

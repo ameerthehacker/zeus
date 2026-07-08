@@ -14,7 +14,7 @@ Zeus provides built-in functions that are available globally without any imports
 Prints a string to standard output, followed by a newline.
 
 ```zeus
-log(message: string)
+console.log(message: string)
 ```
 
 **Parameters:**
@@ -23,13 +23,11 @@ log(message: string)
 **Example:**
 
 ```zeus
-function main() {
-  log("Hello, World!");
-  log("Zeus supports UTF-8 🚀");
-  
-  let greeting: string = "Welcome to Zeus!";
-  log(greeting);
-}
+console.log("Hello, World!");
+console.log("Zeus supports UTF-8 🚀");
+
+let greeting: string = "Welcome to Zeus!";
+console.log(greeting);
 ```
 
 **Output:**
@@ -48,15 +46,13 @@ Welcome to Zeus!
 Since `u8[]` can be implicitly converted to `string`, you can log byte arrays by first converting them:
 
 ```zeus
-function main() {
-  let bytes: u8[] = new u8[];
-  bytes[0] = 'H';
-  bytes[1] = 'i';
-  
-  // Convert to string for logging
-  let text: string = bytes;
-  log(text);  // "Hi"
-}
+let bytes: u8[] = new u8[];
+bytes[0] = 'H';
+bytes[1] = 'i';
+
+// Convert to string for logging
+let text: string = bytes;
+console.log(text);  // "Hi"
 ```
 
 ---
@@ -65,7 +61,7 @@ function main() {
 
 Zeus provides a built-in async event loop backed by [libxev](https://github.com/mitchellh/libxev). You can schedule callbacks to run after a delay or on a repeating interval — no extra setup required.
 
-**How the event loop works:** When `main()` returns, Zeus automatically drains all pending timers before the process exits. You never need to start or stop a loop manually.
+**How the event loop works:** After all module-level code runs, Zeus automatically drains all pending timers before the process exits. You never need to start or stop a loop manually.
 
 ---
 
@@ -86,33 +82,29 @@ setTimeout(callback: () => void, delay: i32): i32
 **Example:**
 
 ```zeus
-function main() {
-  setTimeout(() => {
-    log("Runs after main returns");
-  }, 500);
+setTimeout(() => {
+  console.log("Runs after module-level code");
+}, 500);
 
-  log("Runs first");
-}
+console.log("Runs first");
 ```
 
 **Output:**
 ```
 Runs first
-Runs after main returns
+Runs after module-level code
 ```
 
-The callback fires after `main()` returns because Zeus drains the event loop as part of program shutdown.
+The callback fires after module-level code completes because Zeus drains the event loop as part of program shutdown.
 
 **Capturing variables:**
 
 ```zeus
-function main() {
-  let message: string = "hello from closure";
+let message: string = "hello from closure";
 
-  setTimeout(() => {
-    log(message);
-  }, 100);
-}
+setTimeout(() => {
+  console.log(message);
+}, 100);
 ```
 
 **Output:**
@@ -138,15 +130,13 @@ If `id` does not match any pending timer, `clearTimeout` does nothing.
 **Example:**
 
 ```zeus
-function main() {
-  let id: i32 = setTimeout(() => {
-    log("this will never run");
-  }, 1000);
+let id: i32 = setTimeout(() => {
+  console.log("this will never run");
+}, 1000);
 
-  clearTimeout(id);
+clearTimeout(id);
 
-  log("timer cancelled");
-}
+console.log("timer cancelled");
 ```
 
 **Output:**
@@ -173,14 +163,12 @@ setInterval(callback: () => void, delay: i32): i32
 **Example:**
 
 ```zeus
-function main() {
-  let count: i32 = 0;
+let count: i32 = 0;
 
-  setInterval(() => {
-    count += 1;
-    log("tick");
-  }, 100);
-}
+setInterval(() => {
+  count += 1;
+  console.log("tick");
+}, 100);
 ```
 
 <Aside type="caution">
@@ -192,16 +180,14 @@ function main() {
 To cancel an interval from within its own callback, declare the timer ID variable *before* the `setInterval` call so the closure can capture it:
 
 ```zeus
-function main() {
-  let count: i32 = 0;
-  let timer = setInterval(() => {
-    count += 1;
-    log("tick");
-    if (count >= 5) {
-      clearInterval(timer);
-    }
-  }, 200);
-}
+let count: i32 = 0;
+let timer = setInterval(() => {
+  count += 1;
+  console.log("tick");
+  if (count >= 5) {
+    clearInterval(timer);
+  }
+}, 200);
 ```
 
 **Output:**
@@ -233,15 +219,13 @@ If `id` does not match any active interval, `clearInterval` does nothing. `clear
 **Example:**
 
 ```zeus
-function main() {
-  let id: i32 = 0;
-  id = setInterval(() => {
-    log("this will never run");
-  }, 500);
+let id: i32 = 0;
+id = setInterval(() => {
+  console.log("this will never run");
+}, 500);
 
-  clearInterval(id);
-  log("interval cancelled before first tick");
-}
+clearInterval(id);
+console.log("interval cancelled before first tick");
 ```
 
 **Output:**
@@ -256,11 +240,9 @@ interval cancelled before first tick
 When multiple timers are pending, Zeus fires them in ascending delay order — the shortest delay fires first:
 
 ```zeus
-function main() {
-  setTimeout(() => { log("200ms"); }, 200);
-  setTimeout(() => { log("50ms"); }, 50);
-  setTimeout(() => { log("100ms"); }, 100);
-}
+setTimeout(() => { console.log("200ms"); }, 200);
+setTimeout(() => { console.log("50ms"); }, 50);
+setTimeout(() => { console.log("100ms"); }, 100);
 ```
 
 **Output:**

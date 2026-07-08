@@ -6,7 +6,7 @@ function main(): i32 {
   try {
     throwError();
   } catch (e: Error) {
-    log("Caught error: " + e.message);
+    console.log("Caught error: " + e.message);
     return 0;
   }
   return 1;

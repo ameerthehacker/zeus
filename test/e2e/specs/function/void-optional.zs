@@ -1,5 +1,5 @@
 function greet(name: string) {
-  log("Hello, " + name);
+  console.log("Hello, " + name);
 }
 
 class Counter {

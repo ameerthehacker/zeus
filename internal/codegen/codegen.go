@@ -586,7 +586,9 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
 	llvmFunc := c.genFunc(*input.Function)
 
-	if c.isEntryPoint && input.Function.Name == token.MAIN_FUNCTION_NAME {
+	// #_zeus_main is the compiler-generated OS entry point; `#` is not a valid Zeus
+	// identifier character so users can never define a function with this name.
+	if input.Function.Name == token.ZEUS_ENTRY_FUNCTION_NAME {
 		llvmFunc.SetLinkage(llvm.ExternalLinkage)
 	} else {
 		// Use InternalLinkage instead of PrivateLinkage to preserve symbol names
@@ -640,6 +642,21 @@ func (c *CodegenModule) genReturn(input ir.ReturnInstrInput) {
 		c.builder.CreateRet(c.toLLVMValue(input.Value))
 	} else {
 		c.builder.CreateRetVoid()
+	}
+}
+
+func (c *CodegenModule) genDeclGlobalVar(input ir.DeclareVarInstrInput) {
+	llvmType := c.toLLVMType(input.Variable.ValueType)
+	global := llvm.AddGlobal(c.module, llvmType, input.Variable.Name)
+	global.SetLinkage(llvm.InternalLinkage)
+	global.SetInitializer(llvm.ConstNull(llvmType))
+	c.llvmValues[input.Variable.Name] = global
+	if input.Initializer != nil {
+		c.builder.CreateStore(c.toLLVMValue(input.Initializer), global)
+	} else if zeus_value.IsPrimitiveType(input.Variable.ValueType) {
+		c.builder.CreateStore(c.getDefaultLLVMValue(input.Variable.ValueType), global)
+	} else if zeus_value.IsObjectType(input.Variable.ValueType) || zeus_value.IsFunctionType(input.Variable.ValueType) {
+		c.builder.CreateStore(llvm.ConstPointerNull(llvmType), global)
 	}
 }
 
@@ -1601,6 +1618,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeDeclVar:
 			c.setDebugLocation(instr.Span)
 			c.genDeclVar(*ir.AsDeclVarInstrInput(instr.Input))
+		case ir.InstrTypeDeclGlobalVar:
+			c.setDebugLocation(instr.Span)
+			c.genDeclGlobalVar(*ir.AsDeclGlobalVarInstrInput(instr.Input))
 		case ir.InstrTypeStore:
 			c.setDebugLocation(instr.Span)
 			c.genStore(*ir.AsStoreInstrInput(instr.Input))
@@ -1803,7 +1823,10 @@ func (c *CodegenModule) genPushHandler(input ir.PushHandlerInstrInput, currentFu
 	// Allocate jmp_buf on the stack
 	// jmp_buf is typically an array of platform-specific size
 	// On most platforms, we can use a large enough array (256 bytes should be safe)
-	jmpBufType := llvm.ArrayType(c.cxt.Int8Type(), 256)
+	// Allocate jmp_buf as an array of i64 words so the alloca has natural 8-byte
+	// alignment on all platforms. sizeof(jmp_buf) on macOS arm64 is 192 bytes;
+	// 256 bytes (32 × 8) is a safe upper bound that also covers x86-64/Linux.
+	jmpBufType := llvm.ArrayType(c.cxt.Int64Type(), 32)
 	jmpBuf := c.builder.CreateAlloca(jmpBufType, "jmp_buf")
 
 	// Cast to void pointer for the runtime function

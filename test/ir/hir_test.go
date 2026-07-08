@@ -24,7 +24,7 @@ func generateHIR(t *testing.T, source string) (*ir.IRBuilder, []*ir.Instr) {
 		t.Fatalf("parser errors: %v", errs)
 	}
 	builder := ir.NewIRBuilder()
-	mod := ir.NewIRModule(builder, "test.zs", nil)
+	mod := ir.NewIRModule(builder, "test.zs", false, nil)
 	irErrors := mod.Generate(program)
 	if len(irErrors) > 0 {
 		t.Fatalf("IR generation errors: %v", irErrors)
@@ -193,7 +193,7 @@ function f(): void {
 	tokens, _ := l.Lex()
 	program, _ := parser.NewParser(tokens).ParseProgram()
 	builder := ir.NewIRBuilder()
-	mod := ir.NewIRModule(builder, "test.zs", nil)
+	mod := ir.NewIRModule(builder, "test.zs", false, nil)
 	irErrors := mod.Generate(program)
 	for _, err := range irErrors {
 		if err.Severity == zeus_error.ErrorSeverityError && err.Message != "" {
@@ -1067,7 +1067,7 @@ func runTCExpectError(t *testing.T, source, wantSubstr string) {
 		t.Fatalf("parser errors: %v", parseErrs)
 	}
 	builder := ir.NewIRBuilder()
-	mod := ir.NewIRModule(builder, "test.zs", nil)
+	mod := ir.NewIRModule(builder, "test.zs", false, nil)
 	// Ignore IR gen errors — TC errors are what we want to assert.
 	mod.Generate(program)
 	tc := ir.NewTypeChecker(builder, false)
@@ -1135,7 +1135,7 @@ function f(): void {
 	tokens, _ := l.Lex()
 	program, _ := parser.NewParser(tokens).ParseProgram()
 	builder := ir.NewIRBuilder()
-	mod := ir.NewIRModule(builder, "test.zs", nil)
+	mod := ir.NewIRModule(builder, "test.zs", false, nil)
 	errs := mod.Generate(program)
 	for _, err := range errs {
 		if err.Severity == zeus_error.ErrorSeverityError && containsSubstr(err.Message, "new") {

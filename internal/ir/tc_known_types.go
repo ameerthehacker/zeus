@@ -29,7 +29,7 @@ func (p *ToKnownTypesPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	}
 
 	switch instr.Type {
-	case InstrTypeDeclVar:
+	case InstrTypeDeclVar, InstrTypeDeclGlobalVar:
 		p.resolveVarDecl(tc, instr)
 	case InstrTypeDeclFunc:
 		p.resolveFuncDecl(tc, instr)

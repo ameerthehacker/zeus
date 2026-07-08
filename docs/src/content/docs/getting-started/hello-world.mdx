@@ -5,7 +5,7 @@ description: Write and run your first Zeus program.
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-Let's write your first Zeus program! We'll create a simple program that demonstrates the basics.
+Let's write your first Zeus program!
 
 <Aside type="tip">
   Zeus programs use the `.zs` file extension.
@@ -17,21 +17,17 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
 
 1. **Create a new file**
 
-   Create a file called `hello.zs`:
-
    ```bash
    touch hello.zs
    ```
 
 2. **Write the code**
 
-   Open `hello.zs` and add:
-
    ```zeus
-   function main() {
-     log("Hello, World 👋");
-   }
+   console.log("Hello, World 👋")
    ```
+
+   That's it. No boilerplate!
 
 3. **Run it**
 
@@ -40,7 +36,7 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
    # Output: Hello, World 👋
    ```
 
-   That's it — `zeus run` compiles and executes in one step. When you want to keep the binary, use `zeus build` instead:
+   When you want to keep the binary, use `zeus build`:
 
    ```bash
    zeus build hello.zs -o hello
@@ -53,42 +49,49 @@ Let's write your first Zeus program! We'll create a simple program that demonstr
 
 ## Understanding the Code
 
-Let's break down what we wrote:
-
 ```zeus
-function main() {
-  log("Hello, World 👋");
-}
+console.log("Hello, World 👋")
 ```
 
-### The `main` Function
+- `console` — A global object available in every Zeus program, no import needed
+- `.log` — Prints to stdout with a newline (like JavaScript's `console.log`)
+- The string supports full UTF-8, including emojis 🎉
 
-Every Zeus program needs a `main` function—this is where execution begins:
-
-```zeus
-function main() {
-  // Your code here
-}
-```
-
-- `function` — Keyword to declare a function
-- `main` — The entry point function name
-- `()` — Takes no parameters, returns nothing
-
-### The `log` Function
+Zeus also has `console.error` (stderr) and `console.info` (stdout):
 
 ```zeus
-log("Hello, World 👋");
+console.log("info message")
+console.error("something went wrong")
+console.info("another info message")
 ```
-
-- `log` — Built-in function to print to stdout
-- Accepts a string (UTF-8 supported, including emojis! 🎉)
 
 ---
 
-## A More Interesting Example
+## Controlling the Exit Code
 
-Let's try something with a class:
+By default, a Zeus program exits with code `0`. If you need to return a specific exit code — for scripts, CI, or error signaling — define a `main` function (optional) that returns `i32`:
+
+```zeus
+function main(): i32 {
+  console.log("starting up")
+  return 42  // this becomes the process exit code
+}
+```
+
+```bash
+zeus run exit-code.zs
+echo $?  # 42
+```
+
+Module-level code runs directly — no `main()` required:
+
+```zeus
+console.log("module-level code runs")
+```
+
+---
+
+## A Slightly Bigger Example
 
 ```zeus
 class Greeter {
@@ -98,58 +101,25 @@ class Greeter {
     this.times = t;
   }
 
-  public greetCount(): i32 {
-    return this.times;
+  public greet() {
+    let i = 0;
+    while (i < this.times) {
+      console.log("Hello!")
+      i = i + 1;
+    }
   }
 }
 
-function main(): i32 {
-  let greeter = new Greeter(5);
-  return greeter.greetCount();
-}
+let greeter = new Greeter(3);
+greeter.greet();
 ```
-
-Save this as `greeter.zs` and run:
 
 ```bash
 zeus run greeter.zs
-echo $?
-# Output: 5
+# Hello!
+# Hello!
+# Hello!
 ```
-
----
-
-## Working with Arrays
-
-Here's an example using dynamic arrays:
-
-```zeus
-function main(): i32 {
-  // Create an array of integers
-  let numbers = new i32[];
-  
-  // Add some numbers
-  numbers.push(10);
-  numbers.push(20);
-  numbers.push(30);
-  
-  // Access by index
-  let first = numbers.get(0);
-  let second = numbers.get(1);
-  
-  return first + second;  // Returns 30
-}
-```
-
-Save as `arrays.zs` and run:
-
-```bash
-zeus run arrays.zs
-echo $?
-# Output: 30
-```
-
----
 
 ---
 
@@ -165,4 +135,3 @@ echo $?
     <p style="margin: 0.5rem 0 0; opacity: 0.8; font-size: 0.9rem;">Learn the full language</p>
   </a>
 </div>
-

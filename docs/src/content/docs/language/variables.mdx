@@ -62,13 +62,9 @@ The syntax is: `let variableName: Type = value;`
 Variables declared without an initializer receive type-appropriate defaults:
 
 ```zeus
-function main(): i32 {
-  let x: i32;      // Defaults to 0
-  let y: f64;      // Defaults to 0.0
-  let b: boolean;  // Defaults to false
-  
-  return x;  // Returns 0
-}
+let x: i32;      // Defaults to 0
+let y: f64;      // Defaults to 0.0
+let b: boolean;  // Defaults to false
 ```
 
 | Type | Default Value |
@@ -117,19 +113,15 @@ let count2 = 3;
 Variables are scoped to the block they're declared in:
 
 ```zeus
-function main(): i32 {
-  let outer = 10;
-  
-  if (outer > 5) {
-    let inner = 20;
-    // Both outer and inner are accessible here
-  }
-  
-  // Only outer is accessible here
-  // inner is out of scope
-  
-  return outer;
+let outer = 10;
+
+if (outer > 5) {
+  let inner = 20;
+  // Both outer and inner are accessible here
 }
+
+// Only outer is accessible here
+// inner is out of scope
 ```
 
 ## Object Variables
@@ -142,13 +134,9 @@ class Point {
   public y: i32;
 }
 
-function main(): i32 {
-  let p = new Point();
-  p.x = 10;
-  p.y = 20;
-  
-  return p.x + p.y;
-}
+let p = new Point();
+p.x = 10;
+p.y = 20;
 ```
 
 Object variables can be assigned `null` (explicit type annotation required in that case):
