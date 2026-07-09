@@ -283,7 +283,7 @@ func GetValueType(value Value) ValueType {
 	case *Object:
 		return value.ValueType
 	case *Class:
-		return NewClassType(*value)
+		return NewClassType(value)
 	case *Function:
 		param_types := []ValueType{}
 		for _, param := range value.Params {

@@ -68,6 +68,51 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 	// Console class - global console object (log/error/info)
 	r.classes[ZEUS_PRIMORDIAL_CONSOLE] = GetConsolePrimordialClassDefinition(r.defaultSpan)
 	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_CONSOLE)
+
+	// Resolve UserDefinedType{"string"} to ObjectType{*stringClass} in all registered class
+	// method signatures. Primordial definitions use UserDefinedType as a placeholder to avoid
+	// forward-reference issues; now that string is registered we can resolve them.
+	r.resolveStringRefs()
+}
+
+// resolveStringRefs rewrites every UserDefinedType{"string"} in all registered primordial
+// class property/method signatures to ObjectType{*stringClass}. Called once after all base
+// classes are registered so the type checker sees concrete ObjectType values, not raw
+// UserDefinedType placeholders.
+func (r *PrimordialRegistry) resolveStringRefs() {
+	stringClass := r.classes[ZEUS_PRIMORDIAL_STRING]
+	if stringClass == nil {
+		return
+	}
+
+	resolveType := func(t ValueType) ValueType {
+		if t == nil {
+			return t
+		}
+		if udt, ok := t.(UserDefinedType); ok && udt.Name == ZEUS_PRIMORDIAL_STRING {
+			return NewObjectType(stringClass)
+		}
+		return t
+	}
+
+	resolveClass := func(class *Class) {
+		for _, prop := range class.Properties {
+			prop.Property.ValueType = resolveType(prop.Property.ValueType)
+		}
+		for _, method := range class.Methods {
+			method.Method.ReturnType = resolveType(method.Method.ReturnType)
+			for _, param := range method.Method.Params {
+				param.ValueType = resolveType(param.ValueType)
+			}
+		}
+	}
+
+	for _, class := range r.classes {
+		resolveClass(class)
+	}
+	for _, class := range r.arrayClasses {
+		resolveClass(class)
+	}
 }
 
 func (r *PrimordialRegistry) registerFunctions() {
@@ -98,6 +143,39 @@ func (r *PrimordialRegistry) registerFunctions() {
 	)
 }
 
+// resolveArrayMethodTypes replaces raw ArrayType values in a class's ArrayElementType,
+// method parameter/return types, and property types with ObjectType{*registeredClass}.
+// Must be called after the class itself is registered in r.arrayClasses so that
+// self-referential types (e.g. concat returns selfArrayType) resolve correctly.
+func (r *PrimordialRegistry) resolveArrayMethodTypes(class *Class) {
+	resolveType := func(t ValueType) ValueType {
+		if t == nil {
+			return t
+		}
+		at, ok := t.(ArrayType)
+		if !ok {
+			return t
+		}
+		if nested, ok := r.arrayClasses[at.String()]; ok {
+			return NewObjectType(nested)
+		}
+		return t
+	}
+	// Resolve the element type stored on the class (used by codegen to emit runtime type info)
+	if class.ArrayElementType != nil {
+		class.ArrayElementType = resolveType(class.ArrayElementType)
+	}
+	for _, prop := range class.Properties {
+		prop.Property.ValueType = resolveType(prop.Property.ValueType)
+	}
+	for _, method := range class.Methods {
+		method.Method.ReturnType = resolveType(method.Method.ReturnType)
+		for _, param := range method.Method.Params {
+			param.ValueType = resolveType(param.ValueType)
+		}
+	}
+}
+
 // getOrCreateArrayClassUnsafe is the internal version without locking (for initialization)
 func (r *PrimordialRegistry) getOrCreateArrayClassUnsafe(arrayType ArrayType) *Class {
 	className := arrayType.String()
@@ -114,6 +192,8 @@ func (r *PrimordialRegistry) getOrCreateArrayClassUnsafe(arrayType ArrayType) *C
 	class := GetArrayPrimordialClassDefinition(arrayType)
 	r.arrayClasses[className] = class
 	r.classOrder = append(r.classOrder, className)
+	// Resolve raw ArrayType signatures now that all nested classes are registered.
+	r.resolveArrayMethodTypes(class)
 	return class
 }
 
@@ -136,6 +216,8 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 	class := GetArrayPrimordialClassDefinition(arrayType)
 	r.arrayClasses[className] = class
 	r.classOrder = append(r.classOrder, className)
+	// Resolve raw ArrayType signatures now that all nested classes are registered.
+	r.resolveArrayMethodTypes(class)
 	return class
 }
 

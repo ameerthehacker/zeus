@@ -850,7 +850,7 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 		}
 	}
 
-	instr.Output.ValueType = zeus_value.NewObjectType(*class)
+	instr.Output.ValueType = zeus_value.NewObjectType(class)
 }
 
 func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr) {
@@ -1076,7 +1076,7 @@ func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
 	// If the result is still an array type, wrap it in ObjectType
 	if arrayResultType, ok := resultType.(zeus_value.ArrayType); ok {
 		resultClass := tc.getClassFromArrayType(arrayResultType)
-		resultType = zeus_value.NewObjectType(*resultClass)
+		resultType = zeus_value.NewObjectType(resultClass)
 	}
 
 	output.ValueType = resultType
@@ -1187,7 +1187,7 @@ func (p *TypeCheckingPass) tcThrow(tc *TypeChecker, instr *Instr) {
 		return
 	}
 
-	if !zeus_value.IsErrorClass(&objectType.Class) {
+	if !zeus_value.IsErrorClass(objectType.Class) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("throw expression must be an Error or subclass, but found class '%s'", objectType.Class.SourceName()),
 			Span:    instr.Span,

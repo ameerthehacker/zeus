@@ -49,7 +49,7 @@ ZIG_MODULE_FLAGS = --dep xev -Mmain=main.zig -Mxev=$(LIBXEV_SRC)
 
 fetch-libxev:
 	@if [ ! -f "$(LIBXEV_SRC)" ]; then \
-		zig fetch --global-cache-dir /tmp/zig-cache-15 "$(LIBXEV_URL)"; \
+		zig fetch --global-cache-dir /tmp/zig-cache-15 "$(LIBXEV_URL)" > /dev/null; \
 	fi
 
 build-runtime: fetch-libxev

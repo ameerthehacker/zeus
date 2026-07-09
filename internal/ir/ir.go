@@ -43,11 +43,11 @@ type IRModule struct {
 	// names of vars/params in the current function scope that escape into nested
 	// closures and therefore need to be promoted to heap ref cells.
 	escapedVarNames map[string]bool
-	// escapedVarInferredTypes is set by inferFunctionLocalTypes in emitFunction.
-	// Maps source var name → pre-inferred type for escaped vars whose initializers
-	// are complex expressions (binary ops, ternary, array indexing). Saved/restored
-	// around nested emitFunction calls like escapedVarNames.
-	escapedVarInferredTypes map[string]zeus_value.ValueType
+	// funcTypeEnv is set by inferFunctionEnv in emitFunction and is the primary source
+	// of truth for local variable types. It covers all vars (escaped and non-escaped)
+	// whose type can be determined from the AST before any IR is emitted.
+	// Saved/restored around nested emitFunction calls like escapedVarNames.
+	funcTypeEnv *FunctionTypeEnv
 	// isEntryPoint is true when this module is the program entry point.
 	isEntryPoint bool
 	// isInModuleScope is true while IREmitPass visits top-level statements inside
@@ -174,7 +174,7 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		//
 		// Type resolution priority:
 		//   1. Explicit annotation
-		//   2. AST pre-inferred type from inferFunctionLocalTypes
+		//   2. AST pre-inferred type from inferFunctionEnv
 		//   3. Eager IR result type (only available after the initializer is evaluated)
 		//
 		// When the type is known from sources 1 or 2, the ref-cell is pre-declared
@@ -184,12 +184,14 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		if g.escapedVarNames[varName] {
 			refCellType := zeus_value.ValueType(zeus_value.UndefinedType{Span: decl.GetSpan()})
 			if decl.ValueType != nil {
-				refCellType = decl.ValueType.ValueType
+				refCellType = g.resolveTypeForIRGen(decl.ValueType.ValueType, false)
 			}
 			if zeus_value.IsUndefinedType(refCellType) {
-				if preInferred, ok := g.escapedVarInferredTypes[varName]; ok &&
-					preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
-					refCellType = preInferred
+				if g.funcTypeEnv != nil {
+					if preInferred, ok := g.funcTypeEnv.VarTypes[varName]; ok &&
+						preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+						refCellType = preInferred
+					}
 				}
 			}
 
@@ -248,8 +250,14 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		var valueType zeus_value.ValueType
 
 		if decl.ValueType != nil {
-			valueType = decl.ValueType.ValueType
-		} else {
+			valueType = g.resolveTypeForIRGen(decl.ValueType.ValueType, false)
+		} else if g.funcTypeEnv != nil {
+			if preInferred, ok := g.funcTypeEnv.VarTypes[varName]; ok &&
+				preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
+				valueType = preInferred
+			}
+		}
+		if valueType == nil || zeus_value.IsUndefinedType(valueType) {
 			valueType = zeus_value.UndefinedType{Span: decl.GetSpan()}
 		}
 
@@ -736,9 +744,10 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	params := []*VarDecl{}
 
 	for _, param := range fnParams {
+		paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
 		params = append(params, NewVarDecl(
 			param.Identifier.Name.Value,
-			param.ValueType.ValueType,
+			paramType,
 			true,
 			nil,
 			param.Identifier.Name.Span,
@@ -773,7 +782,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	if class != nil {
-		valueType := zeus_value.NewObjectType(*class)
+		valueType := zeus_value.NewObjectType(class)
 		object := zeus_value.NewObject(token.THIS_KEYWORD, valueType, span)
 		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, &object)
 	}
@@ -821,7 +830,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		if cap.IsRefCell {
 			// Ref cell capture: register RefCellVar so reads/writes go through cell.value.
 			cellObjType := zeus_value.AsObjectType(cap.ValueType)
-			innerType := getRefCellValueType(&cellObjType.Class)
+			innerType := getRefCellValueType(cellObjType.Class)
 			refCell := &zeus_value.RefCellVar{
 				OriginalName: cap.OriginalName,
 				ValueType:    innerType,
@@ -859,25 +868,25 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, loadedVar)
 	}
 
-	// Pre-infer types for escaped vars whose initializers are complex expressions
-	// (binary ops, ternary, array indexing). Must run after params and captured-var
-	// preamble are in the symbol table so identifier lookups in inferExprType succeed.
-	inferredTypes := map[string]zeus_value.ValueType{}
-	if fnBody != nil && len(escapedNames) > 0 {
-		inferredTypes = g.inferFunctionLocalTypes(escapedNames, fnBody)
+	// Pre-infer types for all local vars before emitting IR for the function body.
+	// Must run after params and captured-var preamble are in the symbol table so
+	// identifier lookups in inferExprType succeed.
+	var funcTypeEnv *FunctionTypeEnv
+	if fnBody != nil {
+		funcTypeEnv = g.inferFunctionEnv(fnBody)
 	}
 
-	// Save/restore both fields so nested emitFunction calls don't clobber them.
+	// Save/restore all per-function fields so nested emitFunction calls don't clobber them.
 	// Also reset isInModuleScope so vars declared inside a function body are local.
 	prevEscapedVarNames := g.escapedVarNames
-	prevEscapedVarInferredTypes := g.escapedVarInferredTypes
+	prevFuncTypeEnv := g.funcTypeEnv
 	prevIsInModuleScope := g.isInModuleScope
 	g.escapedVarNames = escapedNames
-	g.escapedVarInferredTypes = inferredTypes
+	g.funcTypeEnv = funcTypeEnv
 	g.isInModuleScope = false
 	fnBody.Accept(g)
 	g.escapedVarNames = prevEscapedVarNames
-	g.escapedVarInferredTypes = prevEscapedVarInferredTypes
+	g.funcTypeEnv = prevFuncTypeEnv
 	g.isInModuleScope = prevIsInModuleScope
 
 	g.irBuilder.SetInsertionBlock(current_block)
@@ -918,7 +927,7 @@ func (g *IRModule) allocRefCell(valueType zeus_value.ValueType, initializer zeus
 	refCellClass := g.getOrCreateRefCellClass(valueType, span)
 	cellObj := g.irBuilder.BuildNewObj(refCellClass, []zeus_value.Value{}, span)
 	if cellVar := zeus_value.AsVar(cellObj); cellVar != nil {
-		cellVar.ValueType = zeus_value.NewObjectType(*refCellClass)
+		cellVar.ValueType = zeus_value.NewObjectType(refCellClass)
 	}
 	if initializer != nil {
 		propPtr := g.irBuilder.BuildObjectPropertyAccess(cellObj, zeus_value.ZEUS_REF_CELL_VALUE_PROPERTY, true, span)
@@ -977,7 +986,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	// This lets named function expressions call themselves recursively:
 	//   fibonacci(n-1) → INDIRECT_FUNC_CALL(this) → FunctorCallLoweringPass → CALL_METHOD(this, __call__, [n-1])
 	// Anonymous functors use a generated unique name so this declaration is harmless.
-	selfRef := zeus_value.NewObject(token.THIS_KEYWORD, zeus_value.NewObjectType(*functorClass), span)
+	selfRef := zeus_value.NewObject(token.THIS_KEYWORD, zeus_value.NewObjectType(functorClass), span)
 	g.symbolTable().DeclareSymbol(fnName, &selfRef)
 
 	// __call__: emitFunction handles the DECL_CLASS_METHOD instruction, unique IR naming,
@@ -996,7 +1005,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	functorObject := g.irBuilder.BuildNewObj(functorClass, []zeus_value.Value{}, span)
 	// Set the type immediately so any outer collectFreeVars sees the correct ObjectType.
 	if resultVar := zeus_value.AsVar(functorObject); resultVar != nil {
-		resultVar.ValueType = zeus_value.NewObjectType(*functorClass)
+		resultVar.ValueType = zeus_value.NewObjectType(functorClass)
 	}
 	g.symbolTable().DeclareSymbol(fnName, functorObject)
 
@@ -1032,7 +1041,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 	returnType = zeus_value.VoidType{Span: expr.GetSpan()}
 
 	if expr.ReturnType != nil {
-		returnType = expr.ReturnType.ValueType
+		returnType = g.resolveTypeForIRGen(expr.ReturnType.ValueType, true)
 	}
 
 	fnName := ""
@@ -1269,7 +1278,7 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	for i, method := range methodASTs {
 		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
 		if method.ReturnType != nil {
-			returnType = method.ReturnType.ValueType
+			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
 		}
 		irMethodName := g.generateUniqueName(method.Name.Name.Value)
 		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
@@ -1377,11 +1386,14 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 		if valueTypeNode, ok := indexingExpr.Array.(*ast.ValueTypeNode); ok {
 			baseElementType = valueTypeNode.ValueType
 		} else if identifierNode, ok := indexingExpr.Array.(*ast.IdentifierExprNode); ok {
-			// Handle user-defined types (e.g., Point, MyClass)
-			baseElementType = zeus_value.UserDefinedType{
+			// Handle user-defined types (e.g., Point, MyClass) — resolve immediately so the
+			// array class is created with ObjectType{*Class} element types rather than raw
+			// UserDefinedType placeholders that the type checker cannot compare against
+			// concrete ObjectType values.
+			baseElementType = g.resolveTypeForIRGen(zeus_value.UserDefinedType{
 				Name: identifierNode.Name.Value,
 				Span: identifierNode.Name.Span,
-			}
+			}, false)
 		} else {
 			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "array base type must be a type name", indexingExpr.Array.GetSpan()))
 			return nil
@@ -1472,7 +1484,8 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	g.symbolTable().EnterScope()
 	properties := []*zeus_value.ClassProperty{}
 	for _, property := range expr.Properties {
-		propVar := zeus_value.NewVar(property.Name.Name.Value, property.ValueType.ValueType, false, property.Name.GetSpan())
+		propType := g.resolveTypeForIRGen(property.ValueType.ValueType, false)
+		propVar := zeus_value.NewVar(property.Name.Name.Value, propType, false, property.Name.GetSpan())
 		g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
 		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier))
 	}
@@ -1489,13 +1502,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		}
 		params := []*zeus_value.Var{}
 		for _, param := range method.Params {
-			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, param.ValueType.ValueType, false, param.Identifier.Name.Span))
+			paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span))
 		}
 
+		methodReturnType := g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
 		function := zeus_value.NewFunction(
 			method.Name.Name.Value,
 			params,
-			method.ReturnType.ValueType,
+			methodReturnType,
 			method.Span,
 		)
 		methods = append(methods, zeus_value.NewClassMethod(
@@ -1517,6 +1532,33 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	if sourceName == anonymousName {
 		registerName = irClassName
 	}
+
+	// Back-fill the DeclCheckPass stub's property/method types with the resolved ones.
+	// The stub pointer (*stubClass) may have been embedded in ObjectType values during
+	// self-referential property resolution (e.g. Node.next: Node → ObjectType{*stubClass}).
+	// Those ObjectType instances remain valid since they hold the pointer, but the stub's
+	// own property types are still raw UserDefinedType — update them so that accessing
+	// properties through the stub returns the resolved type (e.g. current.next.next works).
+	if oldVal, ok := g.symbolTable().GetSymbol(registerName); ok {
+		if stubClass := zeus_value.AsClass(oldVal); stubClass != nil && stubClass != class {
+			for i, prop := range class.Properties {
+				if i < len(stubClass.Properties) {
+					stubClass.Properties[i].Property.ValueType = prop.Property.ValueType
+				}
+			}
+			for i, method := range class.Methods {
+				if i < len(stubClass.Methods) {
+					stubClass.Methods[i].Method.ReturnType = method.Method.ReturnType
+					for j, param := range method.Method.Params {
+						if j < len(stubClass.Methods[i].Method.Params) {
+							stubClass.Methods[i].Method.Params[j].ValueType = param.ValueType
+						}
+					}
+				}
+			}
+		}
+	}
+
 	g.symbolTable().DeclareSymbol(registerName, class)
 	return class
 }
@@ -1619,7 +1661,7 @@ func (g *IRModule) initPrimordialGlobals(span *token.Span) {
 	consoleClass := g.getOrCreateConsoleClass()
 	consoleObj := g.irBuilder.BuildNewObj(consoleClass, []zeus_value.Value{}, span)
 
-	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(*consoleClass), true, consoleObj, span)
+	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(consoleClass), true, consoleObj, span)
 	consoleVar := g.irBuilder.BuildGlobalVarDecl(consoleVarDecl)
 	consoleVar.IsUsed = true // primordial global — suppress unused warning
 
@@ -1889,12 +1931,13 @@ func (g *IRModule) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 		g.symbolTable().EnterScope()
 
 		// Get the exception with the expected type
-		exception := g.irBuilder.BuildGetException(clause.ErrorType.ValueType, clause.GetSpan())
+		catchType := g.resolveTypeForIRGen(clause.ErrorType.ValueType, false)
+		exception := g.irBuilder.BuildGetException(catchType, clause.GetSpan())
 
 		// Declare the catch variable (e.g., 'e' in catch (e: Error))
 		errorVar := zeus_value.NewVar(
 			clause.ErrorVar.Name.Value,
-			clause.ErrorType.ValueType,
+			catchType,
 			true,
 			clause.GetSpan(),
 		)
@@ -1947,4 +1990,64 @@ func (g *IRModule) VisitThrowStmt(stmt *ast.ThrowStmtNode) {
 
 	// Build the THROW instruction
 	g.irBuilder.BuildThrow(classId, exceptionValue, g.modulePath, stmt.GetSpan())
+}
+
+// resolveTypeForIRGen converts raw AST type annotations to concrete IR types.
+// It must be called at every point where a type annotation appears in the source.
+//
+//   - UserDefinedType{"Foo"}  → ObjectType{*FooClass}  (symbol table lookup)
+//   - ArrayType{T}            → ObjectType{*T[]Class}  (getOrCreateArrayClass)
+//   - FunctionType{…}         → same shape with resolved param/return types
+//   - Primitive types         → unchanged
+func (g *IRModule) resolveTypeForIRGen(t zeus_value.ValueType, isReturnType bool) zeus_value.ValueType {
+	if t == nil {
+		return t
+	}
+
+	switch typ := t.(type) {
+	case zeus_value.UserDefinedType:
+		sym, ok := g.symbolTable().GetSymbol(typ.Name)
+		if !ok {
+			g.errors = append(g.errors, zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				fmt.Sprintf("undefined type '%s'", typ.Name),
+				typ.Span,
+			))
+			return zeus_value.UndefinedType{Span: typ.Span}
+		}
+		cls := zeus_value.AsClass(sym)
+		if cls == nil {
+			g.errors = append(g.errors, zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				fmt.Sprintf("'%s' is not a type", typ.Name),
+				typ.Span,
+			))
+			return zeus_value.UndefinedType{Span: typ.Span}
+		}
+		return zeus_value.NewObjectType(cls)
+
+	case zeus_value.ArrayType:
+		resolvedElement := g.resolveTypeForIRGen(typ.ElementType, false)
+		if zeus_value.IsUndefinedType(resolvedElement) {
+			return resolvedElement
+		}
+		arrayType := zeus_value.NewArrayType(resolvedElement, typ.Span)
+		cls := g.getOrCreateArrayClass(arrayType)
+		return zeus_value.NewObjectType(cls)
+
+	case zeus_value.FunctionType:
+		resolved := typ
+		if typ.ReturnType != nil {
+			resolved.ReturnType = g.resolveTypeForIRGen(typ.ReturnType, true)
+		}
+		for i, p := range typ.ParamTypes {
+			if p != nil {
+				resolved.ParamTypes[i] = g.resolveTypeForIRGen(p, false)
+			}
+		}
+		return resolved
+
+	default:
+		return t
+	}
 }
