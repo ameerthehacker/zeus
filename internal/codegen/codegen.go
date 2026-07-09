@@ -1415,7 +1415,8 @@ func (c *CodegenModule) loadVTableMethodPtr(obj llvm.Value, objType *zeus_value.
 		slotAddr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(className), vtable, slotIndex, name)
 		return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
 	}
-	// Generic opaque-pointer dispatch (class unknown at compile time)
+	// Generic opaque-pointer dispatch (class unknown at compile time).
+	// Field offsets MUST match getLLVMObjHeaderStruct: index 0 = vtable ptr, index 1 = ...
 	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
 	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, 0, "objHeaderPtr")
 	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")

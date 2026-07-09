@@ -17,13 +17,164 @@ type CapturedVar struct {
 	IsRefCell    bool                 // true when Source is a GC ref cell object (capture-by-reference)
 }
 
-// freeVarCollector walks a function body AST and collects all variables that are
-// defined in an outer (non-global) scope and referenced inside the body.
-// It implements ast.StmtVisitor and ast.ExprVisitor[zeus_value.Value].
-//
-// Must be created and run while the symbol table still reflects the enclosing scope
-// (before emitFunctorClass pushes a new scope for the functor body).
+// ─────────────────────────────────────────────────────────────────────────────
+// astWalker — shared traversal base for closure analysis passes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// closureVisitor combines the two visitor interfaces so astWalker can dispatch
+// through the concrete outer type, giving correct virtual-method behaviour.
+type closureVisitor interface {
+	ast.StmtVisitor
+	ast.ExprVisitor[zeus_value.Value]
+}
+
+// astWalker provides default visitor implementations that recurse into children.
+// Concrete types embed astWalker and set self = themselves after construction,
+// then override only the methods that carry analysis-specific logic.
+// All walkExpr / walkStmt calls go through self so overridden methods are reached.
+type astWalker struct {
+	self closureVisitor
+}
+
+func (w *astWalker) walkExpr(expr ast.ExprNode) {
+	if expr != nil {
+		expr.Accept(w.self)
+	}
+}
+
+func (w *astWalker) walkStmt(stmt ast.StmtNode) {
+	if stmt != nil {
+		stmt.Accept(w.self)
+	}
+}
+
+// ---- ast.StmtVisitor defaults ----
+
+func (w *astWalker) VisitExprStmt(stmt *ast.ExprStmtNode) { w.walkExpr(stmt.Expr) }
+
+func (w *astWalker) VisitBlockStmt(stmt *ast.BlockStmtNode) {
+	for _, s := range stmt.Statements {
+		w.walkStmt(s)
+	}
+}
+
+func (w *astWalker) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
+	if stmt.Expr != nil {
+		w.walkExpr(stmt.Expr)
+	}
+}
+
+func (w *astWalker) VisitIfStmt(stmt *ast.IfStmtNode) {
+	w.walkExpr(stmt.Condition)
+	w.walkStmt(stmt.ThenStmt)
+	if stmt.ElseStmt != nil {
+		w.walkStmt(stmt.ElseStmt)
+	}
+}
+
+func (w *astWalker) VisitWhileStmt(stmt *ast.WhileStmtNode) {
+	w.walkExpr(stmt.Condition)
+	w.walkStmt(stmt.Body)
+}
+
+func (w *astWalker) VisitForStmt(stmt *ast.ForStmtNode) {
+	if stmt.Init != nil {
+		w.walkStmt(stmt.Init)
+	}
+	if stmt.Condition != nil {
+		w.walkExpr(stmt.Condition)
+	}
+	if stmt.Update != nil {
+		w.walkExpr(stmt.Update)
+	}
+	w.walkStmt(stmt.Body)
+}
+
+func (w *astWalker) VisitThrowStmt(stmt *ast.ThrowStmtNode) { w.walkExpr(stmt.Expr) }
+
+func (w *astWalker) VisitImportStmt(*ast.ImportStmtNode)     {}
+func (w *astWalker) VisitExportStmt(*ast.ExportStmtNode)     {}
+func (w *astWalker) VisitBreakStmt(*ast.BreakStmtNode)       {}
+func (w *astWalker) VisitContinueStmt(*ast.ContinueStmtNode) {}
+
+// ---- ast.ExprVisitor[zeus_value.Value] defaults ----
+
+func (w *astWalker) VisitBinaryExpr(node *ast.BinaryExprNode) zeus_value.Value {
+	w.walkExpr(node.Left)
+	w.walkExpr(node.Right)
+	return nil
+}
+
+func (w *astWalker) VisitIndexingExpression(node *ast.IndexingExprNode) zeus_value.Value {
+	w.walkExpr(node.Array)
+	for _, idx := range node.IndexingMeta.IndexingExprs {
+		w.walkExpr(idx)
+	}
+	return nil
+}
+
+func (w *astWalker) VisitUnaryExpr(node *ast.UnaryExprNode) zeus_value.Value {
+	w.walkExpr(node.Expr)
+	return nil
+}
+
+func (w *astWalker) VisitPostfixExpr(node *ast.PostfixExprNode) zeus_value.Value {
+	w.walkExpr(node.Expr)
+	return nil
+}
+
+func (w *astWalker) VisitGroupingExpr(node *ast.GroupingExprNode) zeus_value.Value {
+	w.walkExpr(node.Expr)
+	return nil
+}
+
+func (w *astWalker) VisitFunctionCallExpr(node *ast.FunctionCallExprNode) zeus_value.Value {
+	w.walkExpr(node.Callee)
+	for _, arg := range node.Params {
+		w.walkExpr(arg)
+	}
+	return nil
+}
+
+func (w *astWalker) VisitNewExpr(node *ast.NewExprNode) zeus_value.Value {
+	w.walkExpr(node.Callee)
+	for _, arg := range node.Args {
+		w.walkExpr(arg)
+	}
+	return nil
+}
+
+func (w *astWalker) VisitObjectPropertyAccessExpr(node *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
+	w.walkExpr(node.Object)
+	return nil
+}
+
+func (w *astWalker) VisitTernaryExpr(node *ast.TernaryExprNode) zeus_value.Value {
+	w.walkExpr(node.Condition)
+	w.walkExpr(node.Then)
+	w.walkExpr(node.Else)
+	return nil
+}
+
+func (w *astWalker) VisitClassDeclExpr(*ast.ClassDeclExprNode) zeus_value.Value {
+	return nil // class bodies have their own scope; don't walk method bodies
+}
+
+func (w *astWalker) VisitNumber(*ast.NumberExprNode) zeus_value.Value          { return nil }
+func (w *astWalker) VisitChar(*ast.CharExprNode) zeus_value.Value              { return nil }
+func (w *astWalker) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value        { return nil }
+func (w *astWalker) VisitNull(*ast.NullExprNode) zeus_value.Value              { return nil }
+func (w *astWalker) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value { return nil }
+func (w *astWalker) VisitValueType(*ast.ValueTypeNode) zeus_value.Value        { return nil }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// freeVarCollector — finds variables referenced inside a closure body that
+// are defined in the enclosing (non-global) scope and must be captured.
+// Must be run while the symbol table still reflects the enclosing scope.
+// ─────────────────────────────────────────────────────────────────────────────
+
 type freeVarCollector struct {
+	astWalker
 	module      *IRModule
 	localScopes []map[string]bool // stack; level 0 = current fn's own params + locals
 	captured    map[string]*CapturedVar
@@ -34,11 +185,13 @@ func newFreeVarCollector(module *IRModule, ownParams []*ast.VarDeclNode) *freeVa
 	for _, p := range ownParams {
 		top[p.Identifier.Name.Value] = true
 	}
-	return &freeVarCollector{
+	f := &freeVarCollector{
 		module:      module,
 		localScopes: []map[string]bool{top},
 		captured:    make(map[string]*CapturedVar),
 	}
+	f.astWalker.self = f
+	return f
 }
 
 func (f *freeVarCollector) isLocal(name string) bool {
@@ -84,24 +237,6 @@ func (f *freeVarCollector) result() []*CapturedVar {
 	return out
 }
 
-func (f *freeVarCollector) walkExpr(expr ast.ExprNode) {
-	if expr != nil {
-		expr.Accept(f)
-	}
-}
-
-func (f *freeVarCollector) walkStmt(stmt ast.StmtNode) {
-	if stmt != nil {
-		stmt.Accept(f)
-	}
-}
-
-// ---- ast.StmtVisitor ----
-
-func (f *freeVarCollector) VisitExprStmt(stmt *ast.ExprStmtNode) {
-	f.walkExpr(stmt.Expr)
-}
-
 func (f *freeVarCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
 		if decl.Initializer != nil {
@@ -111,49 +246,6 @@ func (f *freeVarCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	}
 }
 
-func (f *freeVarCollector) VisitBlockStmt(stmt *ast.BlockStmtNode) {
-	for _, s := range stmt.Statements {
-		f.walkStmt(s)
-	}
-}
-
-func (f *freeVarCollector) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
-	if stmt.Expr != nil {
-		f.walkExpr(stmt.Expr)
-	}
-}
-
-func (f *freeVarCollector) VisitIfStmt(stmt *ast.IfStmtNode) {
-	f.walkExpr(stmt.Condition)
-	f.walkStmt(stmt.ThenStmt)
-	if stmt.ElseStmt != nil {
-		f.walkStmt(stmt.ElseStmt)
-	}
-}
-
-func (f *freeVarCollector) VisitWhileStmt(stmt *ast.WhileStmtNode) {
-	f.walkExpr(stmt.Condition)
-	f.walkStmt(stmt.Body)
-}
-
-func (f *freeVarCollector) VisitForStmt(stmt *ast.ForStmtNode) {
-	if stmt.Init != nil {
-		f.walkStmt(stmt.Init)
-	}
-	if stmt.Condition != nil {
-		f.walkExpr(stmt.Condition)
-	}
-	if stmt.Update != nil {
-		f.walkExpr(stmt.Update)
-	}
-	f.walkStmt(stmt.Body)
-}
-
-func (f *freeVarCollector) VisitImportStmt(*ast.ImportStmtNode)     {}
-func (f *freeVarCollector) VisitExportStmt(*ast.ExportStmtNode)     {}
-func (f *freeVarCollector) VisitBreakStmt(*ast.BreakStmtNode)       {}
-func (f *freeVarCollector) VisitContinueStmt(*ast.ContinueStmtNode) {}
-
 func (f *freeVarCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 	f.walkStmt(stmt.TryBody)
 	for _, clause := range stmt.CatchClauses {
@@ -162,58 +254,6 @@ func (f *freeVarCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 		}
 		f.walkStmt(clause.Body)
 	}
-}
-
-func (f *freeVarCollector) VisitThrowStmt(stmt *ast.ThrowStmtNode) {
-	f.walkExpr(stmt.Expr)
-}
-
-// ---- ast.ExprVisitor[zeus_value.Value] ----
-
-func (f *freeVarCollector) VisitBinaryExpr(node *ast.BinaryExprNode) zeus_value.Value {
-	f.walkExpr(node.Left)
-	f.walkExpr(node.Right)
-	return nil
-}
-
-func (f *freeVarCollector) VisitIndexingExpression(node *ast.IndexingExprNode) zeus_value.Value {
-	f.walkExpr(node.Array)
-	for _, idx := range node.IndexingMeta.IndexingExprs {
-		f.walkExpr(idx)
-	}
-	return nil
-}
-
-func (f *freeVarCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value   { return nil }
-func (f *freeVarCollector) VisitChar(*ast.CharExprNode) zeus_value.Value       { return nil }
-func (f *freeVarCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value { return nil }
-func (f *freeVarCollector) VisitNull(*ast.NullExprNode) zeus_value.Value       { return nil }
-func (f *freeVarCollector) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value {
-	return nil
-}
-func (f *freeVarCollector) VisitValueType(*ast.ValueTypeNode) zeus_value.Value { return nil }
-
-func (f *freeVarCollector) VisitUnaryExpr(node *ast.UnaryExprNode) zeus_value.Value {
-	f.walkExpr(node.Expr)
-	return nil
-}
-
-func (f *freeVarCollector) VisitPostfixExpr(node *ast.PostfixExprNode) zeus_value.Value {
-	f.walkExpr(node.Expr)
-	return nil
-}
-
-func (f *freeVarCollector) VisitGroupingExpr(node *ast.GroupingExprNode) zeus_value.Value {
-	f.walkExpr(node.Expr)
-	return nil
-}
-
-func (f *freeVarCollector) VisitFunctionCallExpr(node *ast.FunctionCallExprNode) zeus_value.Value {
-	f.walkExpr(node.Callee)
-	for _, arg := range node.Params {
-		f.walkExpr(arg)
-	}
-	return nil
 }
 
 func (f *freeVarCollector) VisitIdentifier(node *ast.IdentifierExprNode) zeus_value.Value {
@@ -276,32 +316,6 @@ func (f *freeVarCollector) VisitFunctionDeclExpr(node *ast.FunctionDeclExprNode)
 	return nil
 }
 
-func (f *freeVarCollector) VisitClassDeclExpr(node *ast.ClassDeclExprNode) zeus_value.Value {
-	// Class bodies run in a separate self context; their methods cannot capture
-	// outer locals the same way. Skip walking class method bodies here.
-	return nil
-}
-
-func (f *freeVarCollector) VisitNewExpr(node *ast.NewExprNode) zeus_value.Value {
-	f.walkExpr(node.Callee)
-	for _, arg := range node.Args {
-		f.walkExpr(arg)
-	}
-	return nil
-}
-
-func (f *freeVarCollector) VisitObjectPropertyAccessExpr(node *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
-	f.walkExpr(node.Object)
-	return nil
-}
-
-func (f *freeVarCollector) VisitTernaryExpr(node *ast.TernaryExprNode) zeus_value.Value {
-	f.walkExpr(node.Condition)
-	f.walkExpr(node.Then)
-	f.walkExpr(node.Else)
-	return nil
-}
-
 // collectFreeVars analyzes a function body AST and returns the variables that
 // must be captured from the enclosing scope. Must be called before any IR is
 // emitted for the body (symbol table still reflects the enclosing scope).
@@ -312,14 +326,13 @@ func (g *IRModule) collectFreeVars(fnParams []*ast.VarDeclNode, body *ast.BlockS
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// collectEscapedVarNames: pure-AST pre-pass for capture-by-reference
+// escapedNameCollector — finds variable/param names at the outermost scope of a
+// function that are referenced inside any nested closure, so they can be promoted
+// to heap ref cells for shared mutable capture.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// escapedNameCollector walks a function body AST to discover which variable/param
-// names declared at the outermost (depth=0) scope are referenced inside any nested
-// function body. These variables need to be promoted to heap ref cells so that
-// closures can share the same mutable binding.
 type escapedNameCollector struct {
+	astWalker
 	topLevelNames map[string]bool   // params + var names declared at depth=0
 	nestedRefs    map[string]bool   // identifiers referenced at depth>0
 	nestedScopes  []map[string]bool // scope stack for nested functions' own locals
@@ -331,10 +344,12 @@ func newEscapedNameCollector(params []*ast.VarDeclNode) *escapedNameCollector {
 	for _, p := range params {
 		topLevel[p.Identifier.Name.Value] = true
 	}
-	return &escapedNameCollector{
+	c := &escapedNameCollector{
 		topLevelNames: topLevel,
 		nestedRefs:    make(map[string]bool),
 	}
+	c.astWalker.self = c
+	return c
 }
 
 func (c *escapedNameCollector) isLocalToNested(name string) bool {
@@ -364,22 +379,6 @@ func (c *escapedNameCollector) declareNestedLocal(name string) {
 	}
 }
 
-func (c *escapedNameCollector) walkExpr(expr ast.ExprNode) {
-	if expr != nil {
-		expr.Accept(c)
-	}
-}
-
-func (c *escapedNameCollector) walkStmt(stmt ast.StmtNode) {
-	if stmt != nil {
-		stmt.Accept(c)
-	}
-}
-
-// ---- ast.StmtVisitor ----
-
-func (c *escapedNameCollector) VisitExprStmt(stmt *ast.ExprStmtNode) { c.walkExpr(stmt.Expr) }
-
 func (c *escapedNameCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
 		if decl.Initializer != nil {
@@ -394,49 +393,6 @@ func (c *escapedNameCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	}
 }
 
-func (c *escapedNameCollector) VisitBlockStmt(stmt *ast.BlockStmtNode) {
-	for _, s := range stmt.Statements {
-		c.walkStmt(s)
-	}
-}
-
-func (c *escapedNameCollector) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
-	if stmt.Expr != nil {
-		c.walkExpr(stmt.Expr)
-	}
-}
-
-func (c *escapedNameCollector) VisitIfStmt(stmt *ast.IfStmtNode) {
-	c.walkExpr(stmt.Condition)
-	c.walkStmt(stmt.ThenStmt)
-	if stmt.ElseStmt != nil {
-		c.walkStmt(stmt.ElseStmt)
-	}
-}
-
-func (c *escapedNameCollector) VisitWhileStmt(stmt *ast.WhileStmtNode) {
-	c.walkExpr(stmt.Condition)
-	c.walkStmt(stmt.Body)
-}
-
-func (c *escapedNameCollector) VisitForStmt(stmt *ast.ForStmtNode) {
-	if stmt.Init != nil {
-		c.walkStmt(stmt.Init)
-	}
-	if stmt.Condition != nil {
-		c.walkExpr(stmt.Condition)
-	}
-	if stmt.Update != nil {
-		c.walkExpr(stmt.Update)
-	}
-	c.walkStmt(stmt.Body)
-}
-
-func (c *escapedNameCollector) VisitImportStmt(*ast.ImportStmtNode)     {}
-func (c *escapedNameCollector) VisitExportStmt(*ast.ExportStmtNode)     {}
-func (c *escapedNameCollector) VisitBreakStmt(*ast.BreakStmtNode)       {}
-func (c *escapedNameCollector) VisitContinueStmt(*ast.ContinueStmtNode) {}
-
 func (c *escapedNameCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 	c.walkStmt(stmt.TryBody)
 	for _, clause := range stmt.CatchClauses {
@@ -450,56 +406,6 @@ func (c *escapedNameCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 		}
 		c.walkStmt(clause.Body)
 	}
-}
-
-func (c *escapedNameCollector) VisitThrowStmt(stmt *ast.ThrowStmtNode) { c.walkExpr(stmt.Expr) }
-
-// ---- ast.ExprVisitor[zeus_value.Value] ----
-
-func (c *escapedNameCollector) VisitBinaryExpr(node *ast.BinaryExprNode) zeus_value.Value {
-	c.walkExpr(node.Left)
-	c.walkExpr(node.Right)
-	return nil
-}
-
-func (c *escapedNameCollector) VisitIndexingExpression(node *ast.IndexingExprNode) zeus_value.Value {
-	c.walkExpr(node.Array)
-	for _, idx := range node.IndexingMeta.IndexingExprs {
-		c.walkExpr(idx)
-	}
-	return nil
-}
-
-func (c *escapedNameCollector) VisitNumber(*ast.NumberExprNode) zeus_value.Value   { return nil }
-func (c *escapedNameCollector) VisitChar(*ast.CharExprNode) zeus_value.Value       { return nil }
-func (c *escapedNameCollector) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value { return nil }
-func (c *escapedNameCollector) VisitNull(*ast.NullExprNode) zeus_value.Value       { return nil }
-func (c *escapedNameCollector) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value {
-	return nil
-}
-func (c *escapedNameCollector) VisitValueType(*ast.ValueTypeNode) zeus_value.Value { return nil }
-
-func (c *escapedNameCollector) VisitUnaryExpr(node *ast.UnaryExprNode) zeus_value.Value {
-	c.walkExpr(node.Expr)
-	return nil
-}
-
-func (c *escapedNameCollector) VisitPostfixExpr(node *ast.PostfixExprNode) zeus_value.Value {
-	c.walkExpr(node.Expr)
-	return nil
-}
-
-func (c *escapedNameCollector) VisitGroupingExpr(node *ast.GroupingExprNode) zeus_value.Value {
-	c.walkExpr(node.Expr)
-	return nil
-}
-
-func (c *escapedNameCollector) VisitFunctionCallExpr(node *ast.FunctionCallExprNode) zeus_value.Value {
-	c.walkExpr(node.Callee)
-	for _, arg := range node.Params {
-		c.walkExpr(arg)
-	}
-	return nil
 }
 
 func (c *escapedNameCollector) VisitIdentifier(node *ast.IdentifierExprNode) zeus_value.Value {
@@ -517,30 +423,6 @@ func (c *escapedNameCollector) VisitFunctionDeclExpr(node *ast.FunctionDeclExprN
 	c.walkStmt(node.Body)
 	c.depth--
 	c.popNestedScope()
-	return nil
-}
-
-func (c *escapedNameCollector) VisitClassDeclExpr(*ast.ClassDeclExprNode) zeus_value.Value {
-	return nil // class bodies have their own scope; don't walk method bodies
-}
-
-func (c *escapedNameCollector) VisitNewExpr(node *ast.NewExprNode) zeus_value.Value {
-	c.walkExpr(node.Callee)
-	for _, arg := range node.Args {
-		c.walkExpr(arg)
-	}
-	return nil
-}
-
-func (c *escapedNameCollector) VisitObjectPropertyAccessExpr(node *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
-	c.walkExpr(node.Object)
-	return nil
-}
-
-func (c *escapedNameCollector) VisitTernaryExpr(node *ast.TernaryExprNode) zeus_value.Value {
-	c.walkExpr(node.Condition)
-	c.walkExpr(node.Then)
-	c.walkExpr(node.Else)
 	return nil
 }
 

@@ -1129,7 +1129,7 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 	objectType := zeus_value.AsObjectType(methodType)
 	fnSpan := input.Function.GetSpan()
 
-	// may be it is a functor
+	// TC runs before lowering, so functor INDIRECT_FUNC_CALLs haven't been rewritten to CALL_METHOD yet.
 	if objectType != nil {
 		for _, method := range objectType.Class.Methods {
 			if method.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {

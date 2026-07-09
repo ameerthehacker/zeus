@@ -774,11 +774,6 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		paramName := param.Identifier.Name.Value
 		paramVar := fn.Params[index]
 		g.symbolTable().DeclareSymbol(paramName, paramVar)
-		if escapedNames[paramName] {
-			// Param is captured by a nested closure — move its value into a heap cell.
-			// We'll set the insertion block and emit the ref cell inside the body block.
-			// (The block is set below before the preamble.)
-		}
 	}
 
 	if class != nil {
@@ -901,7 +896,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 func (g *IRModule) getOrCreateRefCellClass(valueType zeus_value.ValueType, span *token.Span) *zeus_value.Class {
 	className := zeus_value.RefCellClassName(valueType)
 	if existing, ok := g.symbolTable().GetSymbol(className); ok {
-		if cls := existing.(*zeus_value.Class); cls != nil {
+		if cls, ok := existing.(*zeus_value.Class); ok {
 			return cls
 		}
 	}

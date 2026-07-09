@@ -5,7 +5,7 @@
 Zeus is a compiled language that emits native binaries via LLVM. The pipeline is:
 
 ```
-.zs source  →  Lexer  →  Parser  →  IR gen  →  Lowering  →  Type check  →  Codegen  →  LLVM  →  binary
+.zs source  →  Lexer  →  Parser  →  IR gen  →  Type check  →  Lowering  →  Codegen  →  LLVM  →  binary
 ```
 
 The runtime is written in Zig (`runtime/`). Build tags: `-tags llvm19` are required for all `go` commands.

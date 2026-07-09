@@ -187,6 +187,12 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 	b.currentBlock = block
 }
 
+// ResetToGlobalEnd switches to top-level (non-block) insertion at the end of the instruction list.
+func (b *IRBuilder) ResetToGlobalEnd() {
+	b.currentBlock = nil
+	b.insertionIndex = len(b.instrs)
+}
+
 func (b *IRBuilder) SetInsertionAfter(instr *Instr) {
 	instrIndex := slices.Index(b.instrs, instr)
 	zeus_error.Assert(instrIndex != -1, fmt.Sprintf("instruction %s not found in instructions list", instr.String()))

@@ -25,5 +25,7 @@
     { "name": "Escaped var initialized from binary op (type inferred at IR gen time)", "exit": "0", "entry": "infer_binop_init.zs" },
     { "name": "Escaped var initialized from ternary (type inferred at IR gen time)", "exit": "0", "entry": "infer_ternary_init.zs" },
     { "name": "Escaped var initialized from indirect call (type inferred at IR gen time)", "exit": "0", "entry": "infer_call_init.zs" },
-    { "name": "Escaped var initialized from method call (type inferred at IR gen time)", "exit": "0", "entry": "infer_method_init.zs" }
+    { "name": "Escaped var initialized from method call (type inferred at IR gen time)", "exit": "0", "entry": "infer_method_init.zs" },
+    { "name": "Named function stored in FunctionType variable and passed as callback", "exit": "0", "entry": "named_fn_as_callback.zs" },
+    { "name": "Closure captures variable declared inside conditional block", "exit": "42", "entry": "capture_conditional_var.zs" }
 ]
