@@ -205,8 +205,8 @@ func (p *StringCastLoweringPass) lowerU8ArrayToStringCast(l *Lowerer, castInstr 
 
 	u8ArrayClass := getU8ArrayClass(builder)
 	stringClass := getStringClass(builder)
-	u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
-	stringType := zeus_value.NewObjectType(*stringClass)
+	u8ArrayType := zeus_value.NewObjectType(u8ArrayClass)
+	stringType := zeus_value.NewObjectType(stringClass)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
 
 	// Get source array length and create new array with copy
@@ -233,7 +233,7 @@ func (p *StringCastLoweringPass) lowerStringToU8ArrayCast(l *Lowerer, castInstr 
 	setInsertionPoint(builder, block, castInstr)
 
 	u8ArrayClass := getU8ArrayClass(builder)
-	u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
+	u8ArrayType := zeus_value.NewObjectType(u8ArrayClass)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
 
 	// Access string.data and get its length
@@ -289,7 +289,7 @@ func getStringClass(builder *IRBuilder) *zeus_value.Class {
 
 // createTypedNewObj creates a new object and sets its type correctly
 func createTypedNewObj(builder *IRBuilder, class *zeus_value.Class, args []zeus_value.Value, span *token.Span) zeus_value.Value {
-	objType := zeus_value.NewObjectType(*class)
+	objType := zeus_value.NewObjectType(class)
 	newObj := builder.BuildNewObj(class, args, span)
 	zeus_value.AsVar(newObj).ValueType = objType
 	return newObj
@@ -306,7 +306,7 @@ func deleteInstrIfPresent(builder *IRBuilder, block *BasicBlock, instr *Instr) {
 func getArrayClassFromValue(value zeus_value.Value) *zeus_value.Class {
 	objType := zeus_value.AsObjectType(zeus_value.GetValueType(value))
 	zeus_error.Assert(objType != nil, "value is not an object type")
-	return &objType.Class
+	return objType.Class
 }
 
 // updateOutputVar updates the output variable to point to the result value
@@ -396,7 +396,7 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 		zeus_error.Assert(len(input.Indices) == 1, "string indexing should only have one index - type checking should have caught this")
 
 		u8ArrayClass := getU8ArrayClass(builder)
-		u8ArrayType := zeus_value.NewObjectType(*u8ArrayClass)
+		u8ArrayType := zeus_value.NewObjectType(u8ArrayClass)
 		u8Type := zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}
 
 		dataArray := builder.BuildLoadProperty(currentValue, zeus_value.STRING_PROPERTY_DATA, u8ArrayType, span)
@@ -425,7 +425,7 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 		if arrayElemType, ok := elementType.(zeus_value.ArrayType); ok {
 			if existingClass, ok := builder.symbolTable.GetSymbol(arrayElemType.String()); ok {
 				if class := zeus_value.AsClass(existingClass); class != nil {
-					resultVar.ValueType = zeus_value.NewObjectType(*class)
+					resultVar.ValueType = zeus_value.NewObjectType(class)
 				}
 			}
 		}
@@ -527,7 +527,7 @@ func (p *StringOperatorLoweringPass) lowerStringOp(l *Lowerer, instr *Instr, inp
 	setInsertionPoint(builder, block, instr)
 
 	stringClass := getStringClass(builder)
-	stringType := zeus_value.NewObjectType(*stringClass)
+	stringType := zeus_value.NewObjectType(stringClass)
 	boolType := zeus_value.BoolType{Span: span}
 
 	switch instr.Type {
@@ -764,7 +764,7 @@ func (p *ArrayMethodLoweringPass) lowerArrayConcat(l *Lowerer, method arrayMetho
 	arr2 := method.args[0]
 	arrayClass := getArrayClassFromValue(arr1)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
-	arrayObjType := zeus_value.NewObjectType(*arrayClass)
+	arrayObjType := zeus_value.NewObjectType(arrayClass)
 
 	// Load lengths
 	len1 := builder.BuildLoadProperty(arr1, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
@@ -811,7 +811,7 @@ func (p *ArrayMethodLoweringPass) lowerArraySlice(l *Lowerer, method arrayMethod
 	endArg := method.args[1]
 	arrayClass := getArrayClassFromValue(arr)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
-	arrayObjType := zeus_value.NewObjectType(*arrayClass)
+	arrayObjType := zeus_value.NewObjectType(arrayClass)
 
 	// sliceLen = end - start
 	sliceLen := builder.BuildBinaryOp(endArg, startArg, InstrTypeSub, span)
@@ -847,7 +847,7 @@ func (p *ArrayMethodLoweringPass) lowerArrayReverse(l *Lowerer, method arrayMeth
 	arr := method.arrayObj
 	arrayClass := getArrayClassFromValue(arr)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
-	arrayObjType := zeus_value.NewObjectType(*arrayClass)
+	arrayObjType := zeus_value.NewObjectType(arrayClass)
 
 	// Load arr.length
 	arrLen := builder.BuildLoadProperty(arr, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
@@ -1089,7 +1089,7 @@ func emitNullFuncPtrThrow(builder *IRBuilder, span *token.Span) {
 	msgString := buildLiteralString(builder, "Cannot call null function pointer", stringClass, u8ArrayClass, i32Type, span)
 
 	errorObj := builder.BuildNewObj(errorClass, []zeus_value.Value{nameString, msgString}, span)
-	zeus_value.AsVar(errorObj).ValueType = zeus_value.NewObjectType(*errorClass)
+	zeus_value.AsVar(errorObj).ValueType = zeus_value.NewObjectType(errorClass)
 
 	builder.BuildThrow(errorClass.Id, errorObj, "", span)
 }
@@ -1100,7 +1100,7 @@ func buildLiteralString(builder *IRBuilder, str string, stringClass *zeus_value.
 	u8Array := builder.BuildNewObj(u8ArrayClass, []zeus_value.Value{
 		zeus_value.NewConstant(fmt.Sprintf("%d", len(strBytes)), i32Type, span),
 	}, span)
-	zeus_value.AsVar(u8Array).ValueType = zeus_value.NewObjectType(*u8ArrayClass)
+	zeus_value.AsVar(u8Array).ValueType = zeus_value.NewObjectType(u8ArrayClass)
 
 	for i, b := range strBytes {
 		idx := zeus_value.NewConstant(fmt.Sprintf("%d", i), i32Type, span)
@@ -1109,14 +1109,8 @@ func buildLiteralString(builder *IRBuilder, str string, stringClass *zeus_value.
 	}
 
 	strObj := builder.BuildNewObj(stringClass, []zeus_value.Value{u8Array}, span)
-	zeus_value.AsVar(strObj).ValueType = zeus_value.NewObjectType(*stringClass)
+	zeus_value.AsVar(strObj).ValueType = zeus_value.NewObjectType(stringClass)
 	return strObj
-}
-
-// FunctorWrapperName returns the wrapper function name for a functor class.
-// The wrapper is generated by CastLoweringPass and invoked by genCast in codegen.
-func FunctorWrapperName(className string) string {
-	return className + "." + token.FUNCTOR_CALL_METHOD_NAME + "_wrapper"
 }
 
 // =============================================================================
@@ -1189,7 +1183,7 @@ func (p *CastLoweringPass) generateFuncWrapper(builder *IRBuilder, c funcCastInf
 	// Replace the CAST instruction in-place with NEW_OBJ
 	c.instr.Type = InstrTypeNewObj
 	c.instr.Input = NewNewObjInstrInput(wrapperClass, []zeus_value.Value{})
-	c.instr.Output.ValueType = zeus_value.NewObjectType(*wrapperClass)
+	c.instr.Output.ValueType = zeus_value.NewObjectType(wrapperClass)
 }
 
 func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_value.Function, fnType zeus_value.FunctionType, className string, span *token.Span) *zeus_value.Class {
@@ -1214,8 +1208,7 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 
 	savedBlock := builder.currentBlock
 	savedIndex := builder.insertionIndex
-	builder.currentBlock = nil
-	builder.insertionIndex = len(builder.instrs)
+	builder.ResetToGlobalEnd()
 
 	// Constructor: empty body
 	constructorBlock := builder.BuildBasicBlock()
@@ -1228,8 +1221,7 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 
 	// Reset to top-level insertion so the __call__ DECL_CLASS_METHOD lands in b.instrs,
 	// not inside constructorBlock (which would prevent Walk from seeing its body).
-	builder.currentBlock = nil
-	builder.insertionIndex = len(builder.instrs)
+	builder.ResetToGlobalEnd()
 
 	// __call__: delegates to the original function
 	callParamDecls := make([]*VarDecl, len(fnType.ParamTypes))

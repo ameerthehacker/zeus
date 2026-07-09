@@ -403,7 +403,7 @@ func AsCastInstrInput(input InstrInput) *CastInstrInput {
 
 type CoerceInstrInput struct {
 	Value      zeus_value.Value
-	TargetType zeus_value.ValueType
+	TargetType zeus_value.ValueType // only used for IR dumps; codegen uses Value's ObjectType directly
 }
 
 func NewCoerceInstrInput(value zeus_value.Value, targetType zeus_value.ValueType) *CoerceInstrInput {

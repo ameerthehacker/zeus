@@ -22,7 +22,7 @@ func resolveUserDefinedType(t zeus_value.ValueType, symTable *symbol_table.Symbo
 		return t
 	}
 	if class := zeus_value.AsClass(sym); class != nil {
-		return zeus_value.NewObjectType(*class)
+		return zeus_value.NewObjectType(class)
 	}
 	return t
 }
@@ -62,7 +62,7 @@ func inferExprType(
 			return nil
 		}
 		if class := zeus_value.AsClass(sym); class != nil {
-			return zeus_value.NewObjectType(*class)
+			return zeus_value.NewObjectType(class)
 		}
 		return nil
 
@@ -86,7 +86,7 @@ func inferExprType(
 		case *zeus_value.Function:
 			return zeus_value.ToFunctionType(*v)
 		case *zeus_value.Class:
-			return zeus_value.NewClassType(*v)
+			return zeus_value.NewClassType(v)
 		case *zeus_value.Constant:
 			return resolveUserDefinedType(v.ValueType, symTable)
 		}
@@ -163,7 +163,7 @@ func inferExprType(
 			return resolveUserDefinedType(ft.ReturnType, symTable)
 		}
 		if ot := zeus_value.AsObjectType(calleeType); ot != nil {
-			if callMethod := zeus_value.GetFunctorCallMethod(&ot.Class); callMethod != nil {
+			if callMethod := zeus_value.GetFunctorCallMethod(ot.Class); callMethod != nil {
 				return resolveUserDefinedType(callMethod.ReturnType, symTable)
 			}
 		}
@@ -193,13 +193,40 @@ func inferExprType(
 		return nil
 
 	case *ast.NewExprNode:
+		// Simple object instantiation: new Foo(...)
 		if ident, ok := e.Callee.(*ast.IdentifierExprNode); ok {
 			sym, ok := symTable.GetSymbol(ident.Name.Value)
 			if !ok {
 				return nil
 			}
 			if class := zeus_value.AsClass(sym); class != nil {
-				return zeus_value.NewObjectType(*class)
+				return zeus_value.NewObjectType(class)
+			}
+		}
+		// Array creation: new Foo[] or new u8[n][]
+		if indexingExpr := ast.AsIndexingExpr(e.Callee); indexingExpr != nil {
+			var baseElemType zeus_value.ValueType
+			if vtNode, ok := indexingExpr.Array.(*ast.ValueTypeNode); ok {
+				baseElemType = vtNode.ValueType
+			} else if identNode, ok := indexingExpr.Array.(*ast.IdentifierExprNode); ok {
+				baseElemType = resolveUserDefinedType(
+					zeus_value.UserDefinedType{Name: identNode.Name.Value}, symTable,
+				)
+			}
+			if baseElemType == nil || zeus_value.IsUndefinedType(baseElemType) {
+				return nil
+			}
+			numDims := len(indexingExpr.IndexingMeta.IndexingExprs)
+			arrayType := baseElemType
+			for i := 0; i < numDims; i++ {
+				arrayType = zeus_value.NewArrayType(arrayType, indexingExpr.GetSpan())
+			}
+			if at, ok := arrayType.(zeus_value.ArrayType); ok {
+				if sym, ok := symTable.GetSymbol(at.String()); ok {
+					if class := zeus_value.AsClass(sym); class != nil {
+						return zeus_value.NewObjectType(class)
+					}
+				}
 			}
 		}
 		return nil
@@ -215,20 +242,23 @@ func inferExprType(
 	}
 }
 
-// inferFunctionLocalTypes scans the function body AST (before any IR is emitted) and
-// returns the pre-inferred type for each escaped var whose type can be determined
-// from its initializer expression. The scan processes statements in source order so
-// that chained declarations (let a = 1; let counter = a + 1) resolve correctly.
+// FunctionTypeEnv holds the types inferred for all local variables in a function
+// body by the AST pre-scan (inferFunctionEnv). It is the primary source of truth for
+// local variable types; the post-IR TypeInferencePass acts only as a fallback.
+type FunctionTypeEnv struct {
+	VarTypes map[string]zeus_value.ValueType
+}
+
+// inferFunctionEnv scans the function body AST (before any IR is emitted) and returns
+// the pre-inferred type for every local variable whose type can be determined from its
+// declaration. The scan processes statements in source order so that chained declarations
+// (let a = 1; let counter = a + 1) resolve correctly.
 //
-// escapedVarNames must be the result of collectEscapedVarNames for this function.
 // symTable must already contain the function's params and captured-var preamble aliases.
-func (g *IRModule) inferFunctionLocalTypes(
-	escapedVarNames map[string]bool,
-	body *ast.BlockStmtNode,
-) map[string]zeus_value.ValueType {
-	result := make(map[string]zeus_value.ValueType)
-	// localTypes accumulates ALL variable types seen during the scan (not just escaped
-	// ones) so that chained declarations resolve correctly.
+func (g *IRModule) inferFunctionEnv(body *ast.BlockStmtNode) *FunctionTypeEnv {
+	env := &FunctionTypeEnv{VarTypes: make(map[string]zeus_value.ValueType)}
+	// localTypes accumulates ALL variable types seen during the scan so that chained
+	// declarations resolve correctly (e.g. let a = 1; let b = a + 1).
 	localTypes := make(map[string]zeus_value.ValueType)
 	symTable := g.symbolTable()
 
@@ -249,9 +279,7 @@ func (g *IRModule) inferFunctionLocalTypes(
 				}
 				if varType != nil && !zeus_value.IsUndefinedType(varType) {
 					localTypes[name] = varType
-					if escapedVarNames[name] {
-						result[name] = varType
-					}
+					env.VarTypes[name] = varType
 				}
 			}
 
@@ -281,9 +309,7 @@ func (g *IRModule) inferFunctionLocalTypes(
 					varType := resolveUserDefinedType(clause.ErrorType.ValueType, symTable)
 					if varType != nil {
 						localTypes[name] = varType
-						if escapedVarNames[name] {
-							result[name] = varType
-						}
+						env.VarTypes[name] = varType
 					}
 				}
 				scanStmt(clause.Body)
@@ -299,5 +325,5 @@ func (g *IRModule) inferFunctionLocalTypes(
 	for _, stmt := range body.Statements {
 		scanStmt(stmt)
 	}
-	return result
+	return env
 }

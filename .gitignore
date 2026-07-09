@@ -159,3 +159,4 @@ public
 # CMake
 build
 third_party
+.claude/worktrees

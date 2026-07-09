@@ -189,7 +189,7 @@ func (f FunctionType) String() string {
 }
 
 type ObjectType struct {
-	Class Class
+	Class *Class
 }
 
 func (o ObjectType) GetSpan() *token.Span {
@@ -200,7 +200,7 @@ func (o ObjectType) String() string {
 	return o.Class.Name
 }
 
-func NewObjectType(class Class) ObjectType {
+func NewObjectType(class *Class) ObjectType {
 	return ObjectType{Class: class}
 }
 
@@ -245,7 +245,7 @@ func AsArrayType(value ValueType) *ArrayType {
 }
 
 type ClassType struct {
-	Class Class
+	Class *Class
 }
 
 func (c ClassType) GetSpan() *token.Span {
@@ -256,7 +256,7 @@ func (c ClassType) String() string {
 	return c.Class.Name
 }
 
-func NewClassType(class Class) ClassType {
+func NewClassType(class *Class) ClassType {
 	return ClassType{Class: class}
 }
 
@@ -540,8 +540,8 @@ func CmpValueType(a, b ValueType) bool {
 			return true
 		}
 		// Two different functor classes are compatible when their __call__ signatures match.
-		aCall := getFunctorCallMethod(&a.Class)
-		bCall := getFunctorCallMethod(&bClassType.Class)
+		aCall := getFunctorCallMethod(a.Class)
+		bCall := getFunctorCallMethod(bClassType.Class)
 		if aCall == nil || bCall == nil {
 			return false
 		}
@@ -564,4 +564,20 @@ func GetFunctorCallMethod(class *Class) *Function {
 // getFunctorCallMethod is the package-private alias used within this package.
 func getFunctorCallMethod(class *Class) *Function {
 	return GetFunctorCallMethod(class)
+}
+
+// TypeVar is a unification variable used during type inference for generics/overloads.
+// It is never emitted to LLVM — the unifier resolves all TypeVars before codegen.
+type TypeVar struct{ ID int }
+
+func (t TypeVar) String() string       { return fmt.Sprintf("T%d", t.ID) }
+func (t TypeVar) GetSpan() *token.Span { return nil }
+
+func IsTypeVar(t ValueType) bool { _, ok := t.(TypeVar); return ok }
+
+func AsTypeVar(t ValueType) *TypeVar {
+	if tv, ok := t.(TypeVar); ok {
+		return &tv
+	}
+	return nil
 }

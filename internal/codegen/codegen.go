@@ -486,7 +486,8 @@ func (c *CodegenModule) getValueType(value zeus_value.Value) zeus_value.ValueTyp
 	valueType := zeus_value.GetValueType(value)
 	switch valueType := valueType.(type) {
 	case zeus_value.UserDefinedType:
-		return zeus_value.NewObjectType(c.getZeusClass(valueType.Name))
+		cls := c.getZeusClass(valueType.Name)
+		return zeus_value.NewObjectType(&cls)
 	default:
 		return valueType
 	}
@@ -1060,7 +1061,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 	span := token.NewSpan(*token.NewPosition(0, 0), *token.NewPosition(0, 0))
 	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, "", nil, span)
-	objectArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.NewArrayType(zeus_value.NewObjectType(*objectClass), span))
+	objectArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.NewArrayType(zeus_value.NewObjectType(objectClass), span))
 
 	if c.zeusClassLLVMStructMap[objectArrayClass.Name] != nil {
 		return c.zeusClassLLVMStructMap[objectArrayClass.Name]
@@ -1308,7 +1309,7 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 		for _, param := range constructorMethod.Params {
 			constructorParamTypes = append(constructorParamTypes, param.ValueType)
 		}
-		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(class))
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(&class))
 		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
 
 		// Get constructor params from factory function params
@@ -1335,7 +1336,7 @@ func (c *CodegenModule) appendThisParamToFunction(method zeus_value.Function, cl
 		method.Params,
 		zeus_value.NewVar(
 			token.THIS_KEYWORD,
-			zeus_value.NewObjectType(class),
+			zeus_value.NewObjectType(&class),
 			false,
 			method.Span,
 		),
@@ -1414,7 +1415,8 @@ func (c *CodegenModule) loadVTableMethodPtr(obj llvm.Value, objType *zeus_value.
 		slotAddr := c.builder.CreateStructGEP(c.getLLVMVTableStruct(className), vtable, slotIndex, name)
 		return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
 	}
-	// Generic opaque-pointer dispatch (class unknown at compile time)
+	// Generic opaque-pointer dispatch (class unknown at compile time).
+	// Field offsets MUST match getLLVMObjHeaderStruct: index 0 = vtable ptr, index 1 = ...
 	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
 	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, 0, "objHeaderPtr")
 	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")

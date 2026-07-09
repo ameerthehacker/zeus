@@ -5,7 +5,7 @@
 Zeus is a compiled language that emits native binaries via LLVM. The pipeline is:
 
 ```
-.zs source  →  Lexer  →  Parser  →  IR gen  →  Lowering  →  Type check  →  Codegen  →  LLVM  →  binary
+.zs source  →  Lexer  →  Parser  →  IR gen  →  Type check  →  Lowering  →  Codegen  →  LLVM  →  binary
 ```
 
 The runtime is written in Zig (`runtime/`). Build tags: `-tags llvm19` are required for all `go` commands.
@@ -23,7 +23,13 @@ internal/
     ir.go             IR generator — walks AST, emits HIR via IRBuilder
     builder.go        IRBuilder — creates BasicBlocks and Instr lists
     instr.go          InstrType enum, VarDecl, input/output structs
-    tc.go             Type-checking passes (ToKnownTypesPass, TypeCheckingPass, UnusedWarningPass)
+    tc.go             Type-checker driver (pass list, context management, shared utilities)
+    tc_type_check.go  TypeCheckingPass — type validation, implicit casts, safety-net resolution
+    tc_unused.go      UnusedWarningPass
+    tc_undefined.go   UndefinedTypeCheckPass
+    type_inference.go TypeInferencePass — NEW_OBJ + OBJECT_PROPERTY_ACCESS bidirectional sync
+    ir_type_infer.go  inferFunctionEnv — AST pre-scan for local var types + return type inference
+    ir_passes.go      DeclCheckPass (pre-IR stub registration) + other pre-IR passes
     lowering.go       HIR → LIR lowering (e.g. array indexing → method calls)
   codegen/
     codegen.go        LIR → LLVM IR via tinygo.org/x/go-llvm
@@ -107,15 +113,14 @@ Add a case in `VisitBinaryExpr` (or `VisitUnaryExpr`, or a new `VisitTernaryExpr
 
 **Power operator special case**: both operands must be cast to f64 before the LLVM `pow` intrinsic. Use the `buildPowerOp` helper.
 
-### Step 7 — Type checker (`internal/ir/tc.go`)
+### Step 7 — Type checker (`internal/ir/tc.go` and `tc_type_check.go`)
 
-Add cases in **all three** of the passes that switch on `InstrType`:
+Add cases in the two passes that switch on `InstrType`:
 
-1. **`TypeCheckingPass.HandleInstruction`** — add the actual type-checking logic (`tcBinaryOp` / `tcUnaryOp`).
-2. **`UnusedWarningPass.HandleInstruction`** — add to the appropriate `handleBinaryOp` / `handleUnaryOp` case list.
-3. If the pass walks block lists (`validateFunctionReturns`, etc.), ensure new instructions are handled.
+1. **`TypeCheckingPass.HandleInstruction`** (`tc_type_check.go`) — add the actual type-checking logic (`tcBinaryOp` / `tcUnaryOp`).
+2. **`UnusedWarningPass.HandleInstruction`** (`tc_unused.go`) — add to the appropriate `handleBinaryOp` / `handleUnaryOp` case list.
 
-**Also check `ToKnownTypesPass`** — it iterates over var decls and resolves `UserDefinedType` → concrete type. If a var decl has `nil` ValueType (like the ternary result var), `resolveVarDecl` skips it and the type is inferred later from the first `Store` into that var.
+There is no `ToKnownTypesPass` — it was removed. Types are resolved inline during IR generation via `resolveTypeForIRGen`. Ternary result vars with `nil` type are handled by `TypeCheckingPass.tcStore` inferring from the first store. See `wiki/type-inference.md` for the full architecture.
 
 ### Step 8 — Codegen (`internal/codegen/codegen.go`)
 
@@ -168,7 +173,7 @@ g.irBuilder.SetInsertionBlock(mergeBlock)
 return g.irBuilder.BuildLoad(resultVar, span)
 ```
 
-When `resultVar` is declared with `nil` type, `ToKnownTypesPass.resolveVarDecl` skips it, and `TypeCheckingPass.tcStore` infers the type from the first store.
+When `resultVar` is declared with `nil` type, `TypeCheckingPass.tcStore` infers the type from the first store.
 
 ### Compound assignments
 
@@ -182,4 +187,6 @@ When `resultVar` is declared with `nil` type, `ToKnownTypesPass.resolveVarDecl` 
 - **Logical operators are short-circuit**: `&&` and `||` emit conditional jumps, not binary IR instructions directly. They're handled in `VisitBinaryExpr` before the right operand is evaluated.
 - **Class methods**: `ir.go` does NOT push class methods to the symbol table (they're scoped to the class).
 - **`ExprVisitor[T]` has only one implementation**: `*IRModule` in `ir.go`. Adding a new AST node requires adding the method there.
-- **Type checker pass order**: `ToKnownTypesPass` → `TypeCheckingPass` → `UnusedWarningPass`. Type inference from stores happens in `TypeCheckingPass.tcStore`. `ToKnownTypesPass` must handle nil ValueType gracefully (skip rather than panic).
+- **Type checker pass order**: `TypeInferencePass` → `TypeCheckingPass` → `UnusedWarningPass` → `UndefinedTypeCheckPass`. Types are resolved inline during IR gen (`resolveTypeForIRGen`); the type checker only validates. See `wiki/type-inference.md` for the full architecture.
+- **Self-referential class properties** (`Node.next: Node`): resolved by stub back-fill at the end of `VisitClassDeclExpr` — after registering the full class, the DeclCheckPass stub's `*Var` objects are updated in-place so all `ObjectType{stub_copy}` instances see the resolved type through shared pointers.
+- **User-defined array element types** (`new Point[]`): `VisitNewExpr` resolves the base element type via `resolveTypeForIRGen` before building the `ArrayType`. This ensures `getOrCreateArrayClass` creates the array class with concrete push/pop/get/set method types.

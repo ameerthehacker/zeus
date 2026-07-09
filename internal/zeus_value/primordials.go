@@ -204,7 +204,7 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 // string is nothing but an array of u8
 // in the runtime constructor we intern the string and return the same pointer
 func GetStringPrimordialClassDefinition(span *token.Span) *Class {
-	u8ArrayObjectType := ObjectType{Class: *GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
+	u8ArrayObjectType := ObjectType{Class: GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
 
 	// Properties
 	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
