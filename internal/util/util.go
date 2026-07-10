@@ -15,10 +15,16 @@ func GetClassMethodName(className string, methodName string) string {
 }
 
 func GetPropertyIndex(class *zeus_value.Class, propertyName string) int {
-	for index, property := range class.Properties {
-		if property.Property.Name == propertyName {
-			return index + 1 // skip the obj header struct
+	// Static properties are not in the instance struct; only count instance properties.
+	instanceIndex := 0
+	for _, property := range class.Properties {
+		if property.IsStatic {
+			continue
 		}
+		if property.Property.Name == propertyName {
+			return instanceIndex + 1 // skip the obj header struct
+		}
+		instanceIndex++
 	}
 	return -1
 }
@@ -31,6 +37,10 @@ func GetMethodIndex(class *zeus_value.Class, methodName string) int {
 		}
 		// Skip lowered methods - they are not in the vtable
 		if method.IsLowered {
+			continue
+		}
+		// Static methods are not in the vtable
+		if method.IsStatic {
 			continue
 		}
 		if method.Method.SourceName() == methodName {

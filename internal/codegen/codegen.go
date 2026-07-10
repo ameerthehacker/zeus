@@ -1039,16 +1039,25 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 	}
 
 	// Now build the class element types - self-references will work because the type is already in the map
+	// Static properties are backed by dedicated globals and must not occupy instance struct slots.
 	classElementTypes := []llvm.Type{llvm.PointerType(objectHeaderStructType, 0)}
 	for _, property := range class.Properties {
+		if property.IsStatic {
+			continue
+		}
 		classElementTypes = append(classElementTypes, c.toLLVMType(property.Property.ValueType))
 	}
 	llvmStructType.StructSetBody(classElementTypes, false)
 
+	// Static methods are emitted as standalone functions (InstrTypeDeclFunc) and are never
+	// dispatched through the vtable — exclude them from vtable slot allocation.
 	vtableElementTypes := []llvm.Type{}
 	for _, method := range class.Methods {
 		// constructor method is not part of the vtable
 		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			continue
+		}
+		if method.IsStatic {
 			continue
 		}
 		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
@@ -1126,13 +1135,16 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		[]llvm.Value{llvmVTable, llvmObjectTypeInfo},
 		false))
 	// initialize the llvm methods array
-	// Count only non-constructor, non-lowered methods for vtable
+	// Count only non-constructor, non-lowered, non-static methods for vtable
 	methodCount := 0
 	for _, method := range class.Methods {
 		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
 			continue
 		}
 		if method.IsLowered {
+			continue
+		}
+		if method.IsStatic {
 			continue
 		}
 		methodCount += 1
@@ -1294,11 +1306,17 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	llvmObjHeader := c.getLLVMObjHeaderPtr(class.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
 
-	// Initialize properties to default values
-	for propertyIndex, property := range class.Properties {
+	// Initialize instance properties to default values.
+	// Static properties are backed by globals and have no slot in the instance struct.
+	instancePropertyIndex := 0
+	for _, property := range class.Properties {
+		if property.IsStatic {
+			continue
+		}
 		defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
-		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, propertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", class.Name, property.Property.Name))
+		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, instancePropertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", class.Name, property.Property.Name))
 		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
+		instancePropertyIndex++
 	}
 
 	// Call constructor if it exists

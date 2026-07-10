@@ -359,6 +359,11 @@ func (p *AccessorLoweringPass) Finalize(l *Lowerer) {
 }
 
 func (p *AccessorLoweringPass) findAccessor(object zeus_value.Value, accessorName string) *zeus_value.ClassAccessor {
+	// Static accessor: object is a *Class
+	if class := zeus_value.AsClass(object); class != nil {
+		return findStaticAccessorInClass(class, accessorName)
+	}
+	// Instance accessor
 	objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
 	if objType == nil {
 		return nil
@@ -379,7 +384,10 @@ func (p *AccessorLoweringPass) lowerGetAccessor(l *Lowerer, instr *Instr, block 
 	setInsertionPoint(builder, block, instr)
 
 	var result zeus_value.Value
-	if acc.IsLowered {
+	if acc.IsStatic {
+		// Static accessor: lower to CALL_FUNC with mangled getter name (no self param).
+		result = builder.BuildCallFunc(acc.Getter, []zeus_value.Value{}, span)
+	} else if acc.IsLowered {
 		// Primordial accessor: lower to direct field access ("_" + accessorName)
 		internalPropName := "_" + input.AccessorName
 		propPtr := builder.BuildObjectPropertyAccess(input.Object, internalPropName, false, span)
@@ -406,7 +414,10 @@ func (p *AccessorLoweringPass) lowerSetAccessor(l *Lowerer, instr *Instr, block 
 	setInsertionPoint(builder, block, instr)
 
 	var result zeus_value.Value
-	if acc.IsLowered {
+	if acc.IsStatic {
+		// Static accessor: lower to CALL_FUNC with mangled setter name (no self param).
+		result = builder.BuildCallFunc(acc.Setter, []zeus_value.Value{input.Value}, span)
+	} else if acc.IsLowered {
 		// Lowered primordial setters — not common, but handle gracefully by direct store.
 		// Currently only IsLowered getters are used (arr.length is read-only).
 		internalPropName := "_" + input.AccessorName

@@ -55,6 +55,9 @@ type IRModule struct {
 	// this flag is set. emitFunction saves/restores it so nested function bodies use
 	// ordinary local vars.
 	isInModuleScope bool
+	// classStack tracks which classes are currently being emitted (instance and static
+	// methods/accessors). Used by isInsideClass for private access enforcement.
+	classStack []*zeus_value.Class
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -723,6 +726,47 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		if asVar := zeus_value.AsVar(object); asVar != nil && asVar.IsPtr {
 			object = g.irBuilder.BuildLoad(asVar, propAccess.GetSpan())
 		}
+
+		// Static method call: object is a *Class (e.g. Counter.increment())
+		if class := zeus_value.AsClass(object); class != nil {
+			methodName := propAccess.Property.Name.Value
+			for cur := class; cur != nil; cur = cur.ParentClass {
+				for _, m := range cur.Methods {
+					if m.IsStatic && m.Method.SourceName() == methodName {
+						if m.AccessModifier != nil && m.AccessModifier.Type != token.TokenTypePublic {
+							if !g.isInsideClass(cur) {
+								g.pushError(&zeus_error.ZeusError{
+									Message: fmt.Sprintf("cannot call private static method '%s' of class '%s'", methodName, cur.SourceName()),
+									Span:    expr.GetSpan(),
+								})
+								return nil
+							}
+						}
+						args := []zeus_value.Value{}
+						for _, param := range expr.Params {
+							args = append(args, param.Accept(g))
+						}
+						return g.irBuilder.BuildCallFunc(m.Method, args, expr.GetSpan())
+					}
+				}
+			}
+			// Not a static method — give a targeted error if it's an instance method
+			for _, m := range class.Methods {
+				if !m.IsStatic && m.Method.SourceName() == methodName {
+					g.pushError(&zeus_error.ZeusError{
+						Message: fmt.Sprintf("'%s' is an instance method of '%s'; call it on an instance", methodName, class.SourceName()),
+						Span:    expr.GetSpan(),
+					})
+					return nil
+				}
+			}
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("static method '%s' not found in class '%s'", methodName, class.SourceName()),
+				Span:    expr.GetSpan(),
+			})
+			return nil
+		}
+
 		if !g.isThisExpression(propAccess.Object) {
 			g.emitNullCheck(object, propAccess.Property.Name.Value, propAccess.GetSpan())
 		}
@@ -756,6 +800,19 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	})
 
 	return nil
+}
+
+// isInsideClass reports whether code is currently being emitted inside a method or accessor
+// of the given class. Searches the full stack so closures inside methods match too.
+// Compares by IR name because the symbol table may return the DeclCheckPass stub (a different
+// pointer than the real class) while method bodies are still being emitted.
+func (g *IRModule) isInsideClass(class *zeus_value.Class) bool {
+	for _, c := range g.classStack {
+		if c.Name == class.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
@@ -795,6 +852,8 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	if class != nil {
+		g.classStack = append(g.classStack, class)
+		defer func() { g.classStack = g.classStack[:len(g.classStack)-1] }()
 		valueType := zeus_value.NewObjectType(class)
 		object := zeus_value.NewObject(token.THIS_KEYWORD, valueType, span)
 		g.symbolTable().DeclareSymbol(token.THIS_KEYWORD, &object)
@@ -963,7 +1022,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 		capturedProps = append(capturedProps, zeus_value.NewClassProperty(
 			zeus_value.NewVar(cap.PropertyName, cap.ValueType, false, span),
 			&token.Token{Type: token.TokenTypePublic, Span: span},
-			false,
+			false, false, nil,
 		))
 	}
 
@@ -1312,10 +1371,40 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	return irClassName
 }
 
+// buildStaticMethods emits IR function bodies for static methods.
+// Static methods are standalone functions with no self parameter (class=nil in emitFunction).
+// They live at class.Methods[offset+i] in the methods slice.
+func (g *IRModule) buildStaticMethods(class *zeus_value.Class, methodASTs []*ast.ClassMethod, offset int) {
+	g.classStack = append(g.classStack, class)
+	defer func() { g.classStack = g.classStack[:len(g.classStack)-1] }()
+
+	for i, method := range methodASTs {
+		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
+		if method.ReturnType != nil {
+			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
+		}
+		irMethodName := g.generateUniqueName("__static_" + class.Name + "_" + method.Name.Name.Value)
+		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, nil, nil, method.Name.Name.Span))
+		if fn != nil {
+			fn.OriginalName = method.Name.Name.Value
+			fn.Class = class // associates static fn with its class for TC context and unused-warning tracking
+			class.Methods[offset+i].Method.Name = irMethodName
+			class.Methods[offset+i].Method.OriginalName = method.Name.Name.Value
+		}
+	}
+}
+
 // buildAccessors emits the IR function bodies for getter/setter accessors.
 // Each accessor body is emitted via emitFunction with a mangled name (__get_X / __set_X).
 // The resulting IR function is written back into class.Accessors so codegen can find it.
 func (g *IRModule) buildAccessors(class *zeus_value.Class, accessorASTs []*ast.ClassMethod) {
+	// Push the class onto the stack for the entire batch. Static accessors need it here
+	// because emitFunction is called with classCtx=nil (no self param). Instance accessors
+	// get it pushed again inside emitFunction — harmless duplication, isInsideClass still works.
+	// Using defer here (unlike the old per-iteration explicit pop) is exception-safe.
+	g.classStack = append(g.classStack, class)
+	defer func() { g.classStack = g.classStack[:len(g.classStack)-1] }()
+
 	for _, method := range accessorASTs {
 		name := method.Name.Name.Value
 		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Span}
@@ -1330,11 +1419,19 @@ func (g *IRModule) buildAccessors(class *zeus_value.Class, accessorASTs []*ast.C
 			mangledName = g.generateUniqueName("#set_" + name)
 		}
 
-		fn := zeus_value.AsFunction(g.emitFunction(mangledName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
+		// Static accessors have no self param (classCtx=nil); instance accessors get class.
+		classCtx := class
+		if method.IsStatic {
+			classCtx = nil
+		}
+		fn := zeus_value.AsFunction(g.emitFunction(mangledName, method.Params, returnType, method.Body, classCtx, nil, method.Name.Name.Span))
 		if fn == nil {
 			continue
 		}
 		fn.OriginalName = method.Name.Name.Value
+		if method.IsStatic {
+			fn.Class = class // associates static accessor fn with its class for TC context
+		}
 
 		// Write mangled name back into the class accessor descriptor.
 		for _, acc := range class.Accessors {
@@ -1546,13 +1643,45 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	for _, property := range expr.Properties {
 		propType := g.resolveTypeForIRGen(property.ValueType.ValueType, false)
 		propVar := zeus_value.NewVar(property.Name.Name.Value, propType, false, property.Name.GetSpan())
-		g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
-		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly))
+
+		if property.IsStatic {
+			globalName := "__static_" + irClassName + "_" + property.Name.Name.Value
+			varDecl := NewVarDecl(globalName, propType, false, nil, property.Name.GetSpan())
+			emittedGlobal := g.irBuilder.BuildGlobalVarDecl(varDecl)
+			emittedGlobal.OriginalName = property.Name.Name.Value
+			properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, true, emittedGlobal))
+		} else {
+			g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
+			properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, false, nil))
+		}
 	}
 
-	methods := []*zeus_value.ClassMethod{}
+	// Back-fill StaticGlobalVar on the DeclCheckPass stub so static method bodies can
+	// access static props through VisitIdentifier("ClassName") → stub → StaticGlobalVar.
+	if stubVal, ok := g.symbolTable().GetSymbol(sourceName); ok {
+		if stubClass := zeus_value.AsClass(stubVal); stubClass != nil {
+			for _, newProp := range properties {
+				if !newProp.IsStatic {
+					continue
+				}
+				for _, stubProp := range stubClass.Properties {
+					if stubProp.Property.Name == newProp.Property.Name {
+						stubProp.StaticGlobalVar = newProp.StaticGlobalVar
+					}
+				}
+			}
+		}
+	}
+
+	// Build regular and static methods into separate slices, then combine them so that
+	// class.Methods is always ordered [regular..., static...]. buildClass uses class.Methods[i]
+	// for regularMethodASTs[i], and buildStaticMethods uses class.Methods[offset+i] for
+	// staticMethodASTs[i] — both assumptions require this sorted order.
+	var regularMethods []*zeus_value.ClassMethod
+	var staticMethods []*zeus_value.ClassMethod
 	accessors := []*zeus_value.ClassAccessor{}
 	var regularMethodASTs []*ast.ClassMethod
+	var staticMethodASTs []*ast.ClassMethod
 	var accessorMethodASTs []*ast.ClassMethod
 
 	for _, method := range expr.Methods {
@@ -1560,7 +1689,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			accessorMethodASTs = append(accessorMethodASTs, method)
 			continue
 		}
-		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
+		if !method.IsStatic && method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
 			if !zeus_value.IsVoidType(method.ReturnType.ValueType) {
 				g.pushError(&zeus_error.ZeusError{
 					Message: "constructor return type must be void",
@@ -1581,12 +1710,18 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			methodReturnType,
 			method.Span,
 		)
-		methods = append(methods, zeus_value.NewClassMethod(
-			function,
-			method.AccessModifier,
-		))
-		regularMethodASTs = append(regularMethodASTs, method)
+		cm := zeus_value.NewClassMethod(function, method.AccessModifier)
+		cm.IsStatic = method.IsStatic
+
+		if method.IsStatic {
+			staticMethods = append(staticMethods, cm)
+			staticMethodASTs = append(staticMethodASTs, method)
+		} else {
+			regularMethods = append(regularMethods, cm)
+			regularMethodASTs = append(regularMethodASTs, method)
+		}
 	}
+	methods := append(regularMethods, staticMethods...)
 
 	// Build ClassAccessor stubs — function bodies are emitted in buildAccessors below.
 	for _, method := range accessorMethodASTs {
@@ -1601,6 +1736,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		}
 		if acc == nil {
 			acc = zeus_value.NewClassAccessor(name, nil, nil, method.AccessModifier)
+			acc.IsStatic = method.IsStatic
 			accessors = append(accessors, acc)
 		}
 
@@ -1623,9 +1759,23 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		}
 	}
 
-	class := zeus_value.NewClass(irClassName, properties, methods, accessors, "", nil, expr.GetSpan())
+	// Resolve parent class for inheritance (extends clause).
+	var parentClass *zeus_value.Class
+	if expr.ParentClass != nil {
+		if parentVal, ok := g.symbolTable().GetSymbol(expr.ParentClass.Name.Value); ok {
+			parentClass = zeus_value.AsClass(parentVal)
+		}
+	}
+
+	var class *zeus_value.Class
+	if parentClass != nil {
+		class = zeus_value.NewClassWithParent(irClassName, parentClass, properties, methods, accessors, "", nil, expr.GetSpan())
+	} else {
+		class = zeus_value.NewClass(irClassName, properties, methods, accessors, "", nil, expr.GetSpan())
+	}
 	class.OriginalName = sourceName
 	g.buildClass(class, regularMethodASTs)
+	g.buildStaticMethods(class, staticMethodASTs, len(regularMethodASTs))
 	g.buildAccessors(class, accessorMethodASTs)
 	g.symbolTable().ExitScope()
 
@@ -1649,6 +1799,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			for i, prop := range class.Properties {
 				if i < len(stubClass.Properties) {
 					stubClass.Properties[i].Property.ValueType = prop.Property.ValueType
+					if prop.IsStatic {
+						stubClass.Properties[i].StaticGlobalVar = prop.StaticGlobalVar
+					}
 				}
 			}
 			for i, method := range class.Methods {
@@ -1682,11 +1835,24 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	return class
 }
 
-// findAccessorInClass searches the class and its parent chain for an accessor by name.
+// findAccessorInClass searches the class and its parent chain for an instance accessor by name.
 func findAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
 	for class != nil {
 		for _, acc := range class.Accessors {
 			if acc.Name == name {
+				return acc
+			}
+		}
+		class = class.ParentClass
+	}
+	return nil
+}
+
+// findStaticAccessorInClass searches the class and its parent chain for a static accessor by name.
+func findStaticAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
+	for class != nil {
+		for _, acc := range class.Accessors {
+			if acc.IsStatic && acc.Name == name {
 				return acc
 			}
 		}
@@ -1703,6 +1869,90 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	// if the object is stored in a pointer variable then dereference it first
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
+	}
+
+	// Static member access: object is a *Class (e.g. Counter.count, Counter.increment())
+	if class := zeus_value.AsClass(object); class != nil {
+		// 1. Walk parent chain for a static data property
+		for cur := class; cur != nil; cur = cur.ParentClass {
+			for _, prop := range cur.Properties {
+				if prop.IsStatic && prop.Property.Name == property {
+					if prop.AccessModifier != nil && prop.AccessModifier.Type != token.TokenTypePublic {
+						if !g.isInsideClass(cur) {
+							g.pushError(&zeus_error.ZeusError{
+								Message: fmt.Sprintf("cannot access private static property '%s' of class '%s'", property, cur.SourceName()),
+								Span:    expr.GetSpan(),
+							})
+							return nil
+						}
+					}
+					if g.isLValueExpr {
+						return prop.StaticGlobalVar
+					}
+					return g.irBuilder.BuildLoad(prop.StaticGlobalVar, expr.GetSpan())
+				}
+			}
+		}
+
+		// 2. Walk parent chain for a static accessor (get/set)
+		for cur := class; cur != nil; cur = cur.ParentClass {
+			for _, acc := range cur.Accessors {
+				if acc.IsStatic && acc.Name == property {
+					if acc.AccessModifier != nil && acc.AccessModifier.Type != token.TokenTypePublic {
+						if !g.isInsideClass(cur) {
+							g.pushError(&zeus_error.ZeusError{
+								Message: fmt.Sprintf("cannot access private static accessor '%s' of class '%s'", property, cur.SourceName()),
+								Span:    expr.GetSpan(),
+							})
+							return nil
+						}
+					}
+					if g.isLValueExpr {
+						if acc.Setter == nil {
+							g.pushError(&zeus_error.ZeusError{
+								Message: fmt.Sprintf("static property '%s' is read-only (no setter)", property),
+								Span:    expr.GetSpan(),
+							})
+							return nil
+						}
+						return zeus_value.NewAccessorLValue(object, property, expr.GetSpan())
+					}
+					if acc.Getter == nil {
+						g.pushError(&zeus_error.ZeusError{
+							Message: fmt.Sprintf("static property '%s' is write-only (no getter)", property),
+							Span:    expr.GetSpan(),
+						})
+						return nil
+					}
+					return g.irBuilder.BuildGetAccessor(object, property, expr.GetSpan())
+				}
+			}
+		}
+
+		// 3. Not a static member — give a targeted error if it's an instance member
+		for _, prop := range class.Properties {
+			if !prop.IsStatic && prop.Property.Name == property {
+				g.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("'%s' is an instance property of '%s'; access it on an instance", property, class.SourceName()),
+					Span:    expr.GetSpan(),
+				})
+				return nil
+			}
+		}
+		for _, m := range class.Methods {
+			if !m.IsStatic && m.Method.SourceName() == property {
+				g.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("'%s' is an instance method of '%s'; it cannot be accessed as a property", property, class.SourceName()),
+					Span:    expr.GetSpan(),
+				})
+				return nil
+			}
+		}
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("static property '%s' not found in class '%s'", property, class.SourceName()),
+			Span:    expr.GetSpan(),
+		})
+		return nil
 	}
 
 	// Null check: if object is null, throw NullReferenceException

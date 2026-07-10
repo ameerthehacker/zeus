@@ -224,6 +224,13 @@ func NewParser(tokens []*token.Token) *Parser {
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
 			accessModifier := parser.consumeAccessModifier()
 
+			// Detect optional 'static' soft keyword
+			isStatic := false
+			if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.STATIC_KEYWORD {
+				isStatic = true
+				parser.consume() // eat 'static'
+			}
+
 			// Detect get/set soft keywords: get name(...) or set name(...)
 			// Distinguishes `get name(` (accessor) from `get(` (regular method named "get").
 			isAccessor := parser.peek().Type == token.TokenTypeIdentifier &&
@@ -261,6 +268,7 @@ func NewParser(tokens []*token.Token) *Parser {
 						ReturnType:     returnType,
 						AccessModifier: accessModifier,
 						Accessor:       ast.AccessorKindGetter,
+						IsStatic:       isStatic,
 						Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 					})
 				} else {
@@ -277,6 +285,7 @@ func NewParser(tokens []*token.Token) *Parser {
 						ReturnType:     nil,
 						AccessModifier: accessModifier,
 						Accessor:       ast.AccessorKindSetter,
+						IsStatic:       isStatic,
 						Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 					})
 				}
@@ -292,6 +301,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					Body:           body,
 					ReturnType:     returnType,
 					AccessModifier: accessModifier,
+					IsStatic:       isStatic,
 					Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 				})
 			} else {
@@ -310,6 +320,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					ValueType:      property.ValueType,
 					AccessModifier: accessModifier,
 					IsReadonly:     isReadonly,
+					IsStatic:       isStatic,
 					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
 				parser.consumeSemicolon()
