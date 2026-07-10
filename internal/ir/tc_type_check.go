@@ -1005,6 +1005,18 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 					isAccessible = false
 				}
 				instr.Output.ValueType = property.Property.ValueType
+				if property.IsReadonly && input.IsLValue {
+					isInConstructor := tc.currentFunction != nil &&
+						tc.currentFunction.OriginalName == token.CONSTRUCTOR_METHOD_NAME &&
+						tc.currentClass != nil &&
+						tc.currentClass.Name == class.Name
+					if !isInConstructor {
+						tc.pushError(&zeus_error.ZeusError{
+							Message: fmt.Sprintf("cannot assign to readonly property '%s'", input.Property),
+							Span:    output.Span,
+						})
+					}
+				}
 			}
 		}
 

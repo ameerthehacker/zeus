@@ -295,6 +295,11 @@ func NewParser(tokens []*token.Token) *Parser {
 					Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
 				})
 			} else {
+				isReadonly := false
+				if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.READONLY_KEYWORD {
+					isReadonly = true
+					parser.consume()
+				}
 				property := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "class property")
 				spanStart := property.Identifier.GetSpan().Start
 				if accessModifier != nil {
@@ -304,6 +309,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					Name:           property.Identifier,
 					ValueType:      property.ValueType,
 					AccessModifier: accessModifier,
+					IsReadonly:     isReadonly,
 					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
 				parser.consumeSemicolon()

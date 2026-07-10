@@ -963,6 +963,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 		capturedProps = append(capturedProps, zeus_value.NewClassProperty(
 			zeus_value.NewVar(cap.PropertyName, cap.ValueType, false, span),
 			&token.Token{Type: token.TokenTypePublic, Span: span},
+			false,
 		))
 	}
 
@@ -1546,7 +1547,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		propType := g.resolveTypeForIRGen(property.ValueType.ValueType, false)
 		propVar := zeus_value.NewVar(property.Name.Name.Value, propType, false, property.Name.GetSpan())
 		g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
-		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier))
+		properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly))
 	}
 
 	methods := []*zeus_value.ClassMethod{}

@@ -418,6 +418,7 @@ type ClassProperty struct {
 	Name           *IdentifierExprNode
 	ValueType      *ValueTypeNode
 	AccessModifier *token.Token
+	IsReadonly     bool
 	Span           *token.Span
 }
 

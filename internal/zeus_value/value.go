@@ -184,17 +184,23 @@ func (a *ClassAccessor) String() string {
 type ClassProperty struct {
 	Property       *Var
 	AccessModifier *token.Token
+	IsReadonly     bool
 }
 
-func NewClassProperty(property *Var, accessModifier *token.Token) *ClassProperty {
+func NewClassProperty(property *Var, accessModifier *token.Token, isReadonly bool) *ClassProperty {
 	return &ClassProperty{
 		Property:       property,
 		AccessModifier: accessModifier,
+		IsReadonly:     isReadonly,
 	}
 }
 
 func (p *ClassProperty) String() string {
-	return fmt.Sprintf("%s %s", p.AccessModifier, p.Property)
+	readonly := ""
+	if p.IsReadonly {
+		readonly = "readonly "
+	}
+	return fmt.Sprintf("%s %s%s", p.AccessModifier, readonly, p.Property)
 }
 
 type ClassMethod struct {

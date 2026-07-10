@@ -437,7 +437,11 @@ func NewDeclClassInstrInput(class *zeus_value.Class) *DeclClassInstrInput {
 func (i DeclClassInstrInput) String() string {
 	properties := []string{}
 	for _, property := range i.Class.Properties {
-		properties = append(properties, fmt.Sprintf("%s: %s", property.Property.Name, property.Property.ValueType))
+		prefix := ""
+		if property.IsReadonly {
+			prefix = "readonly "
+		}
+		properties = append(properties, fmt.Sprintf("%s%s: %s", prefix, property.Property.Name, property.Property.ValueType))
 	}
 	return fmt.Sprintf("%s { %s }", i.Class.Name, strings.Join(properties, ", "))
 }

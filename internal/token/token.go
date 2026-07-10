@@ -13,6 +13,7 @@ const THIS_KEYWORD = "this"
 // Soft keywords: context-sensitive inside class bodies only, not reserved globally.
 const GETTER_KEYWORD = "get"
 const SETTER_KEYWORD = "set"
+const READONLY_KEYWORD = "readonly"
 
 type TokenType int
 

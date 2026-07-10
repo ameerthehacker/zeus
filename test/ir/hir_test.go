@@ -1127,6 +1127,36 @@ function f(): void {
 }`, "immutable")
 }
 
+// ---- Readonly property type-check tests ----
+
+func TestReadonlyPropertyWriteOutsideConstructorIsError(t *testing.T) {
+	runTCExpectError(t, `
+class Point {
+    public readonly x: i32;
+    constructor(x: i32) {
+        this.x = x;
+    }
+}
+function f(): void {
+    let p = new Point(1);
+    p.x = 5;
+}`, "cannot assign to readonly property 'x'")
+}
+
+func TestReadonlyPropertyWriteInConstructorIsAllowed(t *testing.T) {
+	runTC(t, `
+class Point {
+    public readonly x: i32;
+    constructor(x: i32) {
+        this.x = x;
+    }
+}
+function f(): void {
+    let p = new Point(1);
+    let v: i32 = p.x;
+}`)
+}
+
 func TestArrayCreationWithoutNewIsError(t *testing.T) {
 	l := lexer.NewLexer(`
 function f(): void {

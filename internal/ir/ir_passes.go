@@ -319,7 +319,7 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 	properties := make([]*zeus_value.ClassProperty, 0, len(expr.Properties))
 	for _, prop := range expr.Properties {
 		v := zeus_value.NewVar(prop.Name.Name.Value, prop.ValueType.ValueType, false, prop.Name.GetSpan())
-		properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier))
+		properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier, prop.IsReadonly))
 	}
 	methods := make([]*zeus_value.ClassMethod, 0)
 	accessors := make([]*zeus_value.ClassAccessor, 0)
