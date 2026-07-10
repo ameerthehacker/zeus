@@ -340,71 +340,64 @@ func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
 		scopedClassMethod := zeus_value.NewClassMethod(scopedFn, method.AccessModifier)
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
 
-		// Mark primordial wrappers as alwaysinline to eliminate them from binary
-		// These are just thin wrappers around runtime functions, so inlining is beneficial
-		alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
-		classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
-
-		basicBlock := llvm.AddBasicBlock(classFunction, "entry")
-		c.builder.SetInsertPointAtEnd(basicBlock)
-
-		// Get the runtime function
-		runtimeFunction, runtimeFuncType := c.genPrimordialRuntimeFunction(*method.Method, class.PrimordialName)
-
-		// Get the 'this' parameter (last parameter of the function)
-		params := classFunction.Params()
-		thisPtr := params[len(params)-1]
-
-		// Prepare arguments for runtime call: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs]
-		var runtimeArgs []llvm.Value
-		var returnBufferPtrPtr llvm.Value
-
-		// Only allocate return buffer pointer if return type is not void
-		if !zeus_value.IsVoidType(method.Method.ReturnType) {
-			// Allocate a pointer on the stack to hold the address of the result
-			// The runtime will allocate memory and store the pointer to it here
-			voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
-			returnBufferPtrPtr = c.builder.CreateAlloca(voidPtrType, "return_buffer_ptr_ptr")
-			runtimeArgs = []llvm.Value{thisPtr, returnBufferPtrPtr}
-		} else {
-			// For void returns, pass null pointer as return buffer
-			nullPtr := llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
-			runtimeArgs = []llvm.Value{thisPtr, nullPtr}
-		}
-
-		// Allocate stack memory for each method parameter and store values
-		for i, param := range method.Method.Params {
-			paramType := c.toLLVMType(param.ValueType)
-			paramAlloca := c.builder.CreateAlloca(paramType, param.Name+"_alloca")
-			c.builder.CreateStore(params[i], paramAlloca)
-			runtimeArgs = append(runtimeArgs, paramAlloca)
-		}
-
-		// Call the runtime function
-		c.builder.CreateCall(runtimeFuncType, runtimeFunction, runtimeArgs, "")
-
-		// Handle return value
-		if !zeus_value.IsVoidType(method.Method.ReturnType) {
-			// Load the return wrapper pointer from the alloca'd location
-			voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
-			returnWrapperPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "return_wrapper_ptr")
-
-			// Define the result field type
-			returnType := c.toLLVMType(method.Method.ReturnType)
-
-			// Deserialize memory into a Zeus object with the result field
-			zeusObjPtr, zeusObjType := c.deserializeZeusObj(returnWrapperPtr, []llvm.Type{returnType}, "return_wrapper")
-
-			// Extract the result field (index 1, since header is at index 0)
-			resultFieldPtr := c.builder.CreateStructGEP(zeusObjType, zeusObjPtr, 1, "result_field_ptr")
-			returnValue := c.builder.CreateLoad(returnType, resultFieldPtr, "return_value")
-			c.builder.CreateRet(returnValue)
-		} else {
-			// Return void
-			c.builder.CreateRetVoid()
-		}
+		// The method body is an extern call into the Zig runtime.
+		c.emitExternMethodBody(classFunction, method.Method, class.PrimordialName)
 	}
 	c.builder.SetInsertPointAtEnd(currentInsertionBlock)
+}
+
+// emitExternMethodBody fills an already-declared class-method LLVM function with a body that
+// forwards to the Zig runtime: it packs [this, return-buffer, ...arg pointers], calls the
+// runtime function for (primordialName, method), and returns the value the runtime writes
+// back through the buffer. This is the single "a method whose body is a runtime call"
+// primitive that primordial classes are built from — the seed of treating primordials as
+// ordinary classes whose methods happen to be extern.
+func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *zeus_value.Function, primordialName string) {
+	// Thin wrappers around runtime functions; inline them away entirely.
+	alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
+	classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
+
+	basicBlock := llvm.AddBasicBlock(classFunction, "entry")
+	c.builder.SetInsertPointAtEnd(basicBlock)
+
+	runtimeFunction, runtimeFuncType := c.genPrimordialRuntimeFunction(*method, primordialName)
+
+	// 'this' is the last parameter.
+	params := classFunction.Params()
+	thisPtr := params[len(params)-1]
+
+	// Runtime ABI: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs].
+	var runtimeArgs []llvm.Value
+	var returnBufferPtrPtr llvm.Value
+	if !zeus_value.IsVoidType(method.ReturnType) {
+		voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+		returnBufferPtrPtr = c.builder.CreateAlloca(voidPtrType, "return_buffer_ptr_ptr")
+		runtimeArgs = []llvm.Value{thisPtr, returnBufferPtrPtr}
+	} else {
+		nullPtr := llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+		runtimeArgs = []llvm.Value{thisPtr, nullPtr}
+	}
+
+	for i, param := range method.Params {
+		paramType := c.toLLVMType(param.ValueType)
+		paramAlloca := c.builder.CreateAlloca(paramType, param.Name+"_alloca")
+		c.builder.CreateStore(params[i], paramAlloca)
+		runtimeArgs = append(runtimeArgs, paramAlloca)
+	}
+
+	c.builder.CreateCall(runtimeFuncType, runtimeFunction, runtimeArgs, "")
+
+	if !zeus_value.IsVoidType(method.ReturnType) {
+		voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+		returnWrapperPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "return_wrapper_ptr")
+		returnType := c.toLLVMType(method.ReturnType)
+		zeusObjPtr, zeusObjType := c.deserializeZeusObj(returnWrapperPtr, []llvm.Type{returnType}, "return_wrapper")
+		resultFieldPtr := c.builder.CreateStructGEP(zeusObjType, zeusObjPtr, 1, "result_field_ptr")
+		returnValue := c.builder.CreateLoad(returnType, resultFieldPtr, "return_value")
+		c.builder.CreateRet(returnValue)
+	} else {
+		c.builder.CreateRetVoid()
+	}
 }
 
 func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
