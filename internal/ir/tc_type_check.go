@@ -914,6 +914,18 @@ func (p *TypeCheckingPass) tcDeclClass(tc *TypeChecker, instr *Instr) {
 // Pushes an error and returns nil if the object is not a class instance or the accessor doesn't exist.
 // Also pushes an error (but still returns the accessor) when the accessor is private in the wrong scope.
 func (p *TypeCheckingPass) resolveAccessor(tc *TypeChecker, object zeus_value.Value, accessorName string, verb string, span *token.Span) *zeus_value.ClassAccessor {
+	// Static accessor: object is a *Class (already validated at IR gen time)
+	if class := zeus_value.AsClass(object); class != nil {
+		acc := findStaticAccessorInClass(class, accessorName)
+		if acc == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("static accessor '%s' not found in class '%s'", accessorName, class.SourceName()),
+				Span:    span,
+			})
+		}
+		return acc
+	}
+
 	valueType := tc.getValueType(object)
 	objType := zeus_value.AsObjectType(valueType)
 	if objType == nil {
@@ -1054,6 +1066,20 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		isAccessible := false
 		isMethod := false
 
+		// Reject access to static properties on an instance — must use ClassName.x.
+		// Walk the parent chain so inherited statics are caught with a targeted message.
+		for cur := class; cur != nil; cur = cur.ParentClass {
+			for _, prop := range cur.Properties {
+				if prop.IsStatic && prop.Property.Name == input.Property {
+					tc.pushError(&zeus_error.ZeusError{
+						Message: fmt.Sprintf("'%s' is a static property of '%s'; access it as '%s.%s'", input.Property, cur.SourceName(), cur.SourceName(), input.Property),
+						Span:    output.Span,
+					})
+					return
+				}
+			}
+		}
+
 		for _, property := range properties {
 			if property.Property.Name == input.Property {
 				isFound = true
@@ -1152,6 +1178,15 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 			foundMethod = class.Methods[i]
 			break
 		}
+	}
+
+	// Static method called on instance: reject with a targeted error.
+	if foundMethod != nil && foundMethod.IsStatic {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("'%s' is a static method of '%s'; call it as '%s.%s(...)'", input.MethodName, class.SourceName(), class.SourceName(), input.MethodName),
+			Span:    instr.Output.Span,
+		})
+		return
 	}
 
 	if foundMethod == nil {

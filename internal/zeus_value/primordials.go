@@ -61,11 +61,11 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	selfArrayType := NewArrayType(arrayType.ElementType, span)
 
 	// capacity of the array (private - internal implementation detail)
-	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
+	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false, false, nil)
 	// length of the array (public readonly - users can read but not write)
-	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, true)
+	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, true, false, nil)
 	// opaque pointer to the data of the array (private - internal implementation)
-	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
+	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false, false, nil)
 	properties := []*ClassProperty{capacityProperty, lengthProperty, dataProperty}
 
 	// Helper function to create a public method
@@ -207,8 +207,8 @@ func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	u8ArrayObjectType := ObjectType{Class: GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
 
 	// Properties
-	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
-	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, false)
+	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false, false, nil)
+	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, false, false, nil)
 	properties := []*ClassProperty{dataProperty, lengthProperty}
 
 	// Create the string class first (without methods that reference itself)
@@ -262,14 +262,14 @@ func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
 	nameProperty := NewClassProperty(
 		NewVar(ERROR_PROPERTY_NAME, stringType, true, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
-		false,
+		false, false, nil,
 	)
 
 	// message property (public) - the error message
 	messageProperty := NewClassProperty(
 		NewVar(ERROR_PROPERTY_MESSAGE, stringType, true, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
-		false,
+		false, false, nil,
 	)
 	properties := []*ClassProperty{nameProperty, messageProperty}
 
@@ -336,7 +336,7 @@ func GetRefCellClassDefinition(valueType ValueType, span *token.Span) *Class {
 	valueProp := NewClassProperty(
 		NewVar(ZEUS_REF_CELL_VALUE_PROPERTY, valueType, false, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
-		false,
+		false, false, nil,
 	)
 	constructorFn := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{}, VoidType{Span: span}, span)
 	methods := []*ClassMethod{

@@ -303,8 +303,12 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 				}
 			}
 			isEntryFunction := (function.Name == token.MAIN_FUNCTION_NAME || function.Name == token.ZEUS_ENTRY_FUNCTION_NAME) && tc.IsEntryPoint
-			// Check for unused functions, ignore class methods
-			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isEntryFunction {
+			// Skip static methods and static accessors — they are emitted as InstrTypeDeclFunc but
+			// tracked via class.Methods/Accessors in the Finalize loop below; checking them here
+			// would produce spurious "declared but not used" warnings for used statics.
+			isStaticClassFn := function.Class != nil
+			// Check for unused functions, ignore instance class methods and static class functions
+			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isEntryFunction && !isStaticClassFn {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
 					Message:  fmt.Sprintf("function '%s' is declared but not used", function.Name),
@@ -342,9 +346,18 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 
 				// Check all properties in this class
 				for _, classProperty := range class.Properties {
+					if classProperty.IsStatic {
+						// Static property usage is tracked via the backing global var
+						if classProperty.StaticGlobalVar != nil && !classProperty.StaticGlobalVar.IsUsed && class.PrimordialName == "" {
+							tc.pushError(&zeus_error.ZeusError{
+								Severity: zeus_error.ErrorSeverityWarning,
+								Message:  fmt.Sprintf("static property '%s' in class '%s' is declared but not used", classProperty.Property.Name, class.SourceName()),
+								Span:     classProperty.Property.Span,
+							})
+						}
+						continue
+					}
 					property := classProperty.Property
-
-					// Check if the property is unused
 					if !property.IsUsed && class.PrimordialName == "" {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,

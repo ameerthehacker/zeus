@@ -14,6 +14,7 @@ const THIS_KEYWORD = "this"
 const GETTER_KEYWORD = "get"
 const SETTER_KEYWORD = "set"
 const READONLY_KEYWORD = "readonly"
+const STATIC_KEYWORD = "static"
 
 type TokenType int
 

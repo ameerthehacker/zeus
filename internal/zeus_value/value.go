@@ -169,6 +169,7 @@ type ClassAccessor struct {
 	// IsLowered is true for primordial accessors whose bodies are expanded directly
 	// by the lowering pass (no Zig runtime function needed, e.g. arr.length).
 	IsLowered bool
+	IsStatic  bool
 }
 
 func NewClassAccessor(name string, getter *Function, setter *Function, accessModifier *token.Token) *ClassAccessor {
@@ -192,16 +193,20 @@ func (a *ClassAccessor) String() string {
 }
 
 type ClassProperty struct {
-	Property       *Var
-	AccessModifier *token.Token
-	IsReadonly     bool
+	Property        *Var
+	AccessModifier  *token.Token
+	IsReadonly      bool
+	IsStatic        bool
+	StaticGlobalVar *Var // non-nil for static props; the backing LLVM global
 }
 
-func NewClassProperty(property *Var, accessModifier *token.Token, isReadonly bool) *ClassProperty {
+func NewClassProperty(property *Var, accessModifier *token.Token, isReadonly bool, isStatic bool, staticGlobalVar *Var) *ClassProperty {
 	return &ClassProperty{
-		Property:       property,
-		AccessModifier: accessModifier,
-		IsReadonly:     isReadonly,
+		Property:        property,
+		AccessModifier:  accessModifier,
+		IsReadonly:      isReadonly,
+		IsStatic:        isStatic,
+		StaticGlobalVar: staticGlobalVar,
 	}
 }
 
@@ -219,6 +224,7 @@ type ClassMethod struct {
 	// IsLowered indicates that this method is handled entirely by IR lowering
 	// and doesn't need a runtime wrapper function generated
 	IsLowered bool
+	IsStatic  bool
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
