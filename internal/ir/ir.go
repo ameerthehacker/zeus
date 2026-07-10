@@ -1196,7 +1196,15 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	if asVar != nil {
 		if asVar.IsPtr {
-			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+			loaded := g.irBuilder.BuildLoad(asVar, expr.Name.Span)
+			// Carry the variable's (pointee) type onto the loaded value so that member-access
+			// resolution has the receiver's type available at IR-gen time. Without this the
+			// loaded temp is untyped until type-checking, and `obj.accessor` can't be told apart
+			// from a field access. tcLoad re-derives the same type later, so this is idempotent.
+			if lv := zeus_value.AsVar(loaded); lv != nil && lv.ValueType == nil {
+				lv.ValueType = asVar.ValueType
+			}
+			return loaded
 		} else {
 			return asVar
 		}
@@ -1456,17 +1464,18 @@ func (g *IRModule) buildAccessors(class *zeus_value.Class, accessorASTs []*ast.C
 			fn.Class = class // associates static accessor fn with its class for TC context
 		}
 
-		// Write mangled name back into the class accessor descriptor.
+		// Write the mangled name back into the class accessor descriptor. The mangled name is
+		// also the accessor function's SourceName() (OriginalName is left unset) so that vtable
+		// dispatch — BuildMethodCall(obj, acc.Getter.Name) → GetMethodIndex(SourceName) — resolves
+		// the correct getter/setter slot (getter and setter have distinct mangled names).
 		for _, acc := range class.Accessors {
 			if acc.Name != name {
 				continue
 			}
 			if method.Accessor == ast.AccessorKindGetter && acc.Getter != nil {
 				acc.Getter.Name = mangledName
-				acc.Getter.OriginalName = name
 			} else if method.Accessor == ast.AccessorKindSetter && acc.Setter != nil {
 				acc.Setter.Name = mangledName
-				acc.Setter.OriginalName = name
 			}
 			break
 		}
@@ -1751,6 +1760,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	methods := append(regularMethods, staticMethods...)
 
 	// Build ClassAccessor stubs — function bodies are emitted in buildAccessors below.
+	// Instance getters/setters are also appended to class.Methods (below) so they get real
+	// vtable slots; the ClassAccessor descriptor is just a name → getter/setter index.
+	var accessorMethods []*zeus_value.ClassMethod
 	for _, method := range accessorMethodASTs {
 		name := method.Name.Name.Value
 		// Find or create an accessor entry for this name.
@@ -1777,14 +1789,28 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
 		}
 
+		var fn *zeus_value.Function
 		if method.Accessor == ast.AccessorKindGetter {
-			fn := zeus_value.NewFunction("#get_"+name, params, returnType, method.Span)
+			fn = zeus_value.NewFunction("#get_"+name, params, returnType, method.Span)
 			acc.Getter = fn
 		} else {
-			fn := zeus_value.NewFunction("#set_"+name, params, zeus_value.VoidType{Span: method.Span}, method.Span)
+			fn = zeus_value.NewFunction("#set_"+name, params, zeus_value.VoidType{Span: method.Span}, method.Span)
 			acc.Setter = fn
 		}
+
+		// Instance accessors are vtable-dispatched methods (buildAccessors emits them as
+		// DECL_CLASS_METHOD). Give them a slot by putting them in class.Methods, in the same
+		// order buildAccessors emits them, so genClassMethod's slot writes line up. Static
+		// accessors are plain functions (no self, no vtable) and stay out of the list.
+		if !method.IsStatic {
+			cm := zeus_value.NewClassMethod(fn, method.AccessModifier)
+			cm.IsAccessor = true
+			accessorMethods = append(accessorMethods, cm)
+		}
 	}
+	// Append after regular + static so buildClass/buildStaticMethods' index assumptions hold;
+	// non-static enumeration (used by the vtable) becomes [regular…, accessors…].
+	methods = append(methods, accessorMethods...)
 
 	// Resolve parent class for inheritance (extends clause).
 	var parentClass *zeus_value.Class
@@ -1887,6 +1913,12 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	// if the object is stored in a pointer variable then dereference it first
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
+		// Carry the pointee type onto the loaded receiver so accessor-vs-field resolution
+		// below has the object's type (the lvalue path loads here rather than in
+		// VisitIdentifier). tcLoad re-derives the same type, so this is idempotent.
+		if lv := zeus_value.AsVar(object); lv != nil && lv.ValueType == nil {
+			lv.ValueType = asVar.ValueType
+		}
 	}
 
 	// Static member access: object is a *Class (e.g. Counter.count, Counter.increment())

@@ -1,0 +1,6 @@
+[
+    { "name": "Instance getter (computed)", "exit": "25", "entry": "getter.zs" },
+    { "name": "Instance getter + setter pair", "exit": "42", "entry": "getset.zs" },
+    { "name": "Accessor dispatched through a function parameter", "exit": "42", "entry": "via_param.zs" },
+    { "name": "Assigning a getter-only property is rejected", "exit": "1", "entry": "readonly.zs", "compile_error": true, "stderr_contains": ["read-only"] }
+]

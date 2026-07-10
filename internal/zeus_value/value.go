@@ -225,6 +225,10 @@ type ClassMethod struct {
 	// and doesn't need a runtime wrapper function generated
 	IsLowered bool
 	IsStatic  bool
+	// IsAccessor marks a synthesized getter/setter method (mangled name #get_/#set_).
+	// It occupies a vtable slot like any instance method, but is not user-callable by
+	// name and is excluded from "unused method" diagnostics.
+	IsAccessor bool
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
