@@ -1060,7 +1060,7 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 
 func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 	span := token.NewSpan(*token.NewPosition(0, 0), *token.NewPosition(0, 0))
-	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, "", nil, span)
+	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, nil, "", nil, span)
 	objectArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.NewArrayType(zeus_value.NewObjectType(objectClass), span))
 
 	if c.zeusClassLLVMStructMap[objectArrayClass.Name] != nil {

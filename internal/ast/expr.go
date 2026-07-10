@@ -421,12 +421,21 @@ type ClassProperty struct {
 	Span           *token.Span
 }
 
+type AccessorKind int
+
+const (
+	AccessorKindNone   AccessorKind = iota // ordinary method
+	AccessorKindGetter                     // get name(): T { ... }
+	AccessorKindSetter                     // set name(value: T) { ... }
+)
+
 type ClassMethod struct {
 	Name           *IdentifierExprNode
 	Params         []*VarDeclNode
 	Body           *BlockStmtNode
 	ReturnType     *ValueTypeNode
 	AccessModifier *token.Token
+	Accessor       AccessorKind
 	Span           *token.Span
 }
 

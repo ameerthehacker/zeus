@@ -546,6 +546,53 @@ func (i MethodCallInstrInput) String() string {
 	return fmt.Sprintf("%s, %q, [%s]", i.Object, i.MethodName, strings.Join(args, ", "))
 }
 
+type GetAccessorInstrInput struct {
+	Object       zeus_value.Value
+	AccessorName string
+}
+
+func NewGetAccessorInstrInput(object zeus_value.Value, accessorName string) *GetAccessorInstrInput {
+	return &GetAccessorInstrInput{Object: object, AccessorName: accessorName}
+}
+
+func AsGetAccessorInstrInput(input InstrInput) *GetAccessorInstrInput {
+	switch input := input.(type) {
+	case *GetAccessorInstrInput:
+		return input
+	default:
+		panicInvalidInputType("GetAccessorInstrInput", input)
+	}
+	return nil
+}
+
+func (i GetAccessorInstrInput) String() string {
+	return fmt.Sprintf("%s, %q", i.Object, i.AccessorName)
+}
+
+type SetAccessorInstrInput struct {
+	Object       zeus_value.Value
+	AccessorName string
+	Value        zeus_value.Value
+}
+
+func NewSetAccessorInstrInput(object zeus_value.Value, accessorName string, value zeus_value.Value) *SetAccessorInstrInput {
+	return &SetAccessorInstrInput{Object: object, AccessorName: accessorName, Value: value}
+}
+
+func AsSetAccessorInstrInput(input InstrInput) *SetAccessorInstrInput {
+	switch input := input.(type) {
+	case *SetAccessorInstrInput:
+		return input
+	default:
+		panicInvalidInputType("SetAccessorInstrInput", input)
+	}
+	return nil
+}
+
+func (i SetAccessorInstrInput) String() string {
+	return fmt.Sprintf("%s, %q, %s", i.Object, i.AccessorName, i.Value)
+}
+
 type IndirectFuncCallInstrInput struct {
 	Function zeus_value.Value
 	Args     []zeus_value.Value
@@ -830,6 +877,9 @@ const (
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
 	InstrTypeMethodCall
+	// accessor invocation (HIR - lowered before codegen)
+	InstrTypeGetAccessor // read via getter: obj.name
+	InstrTypeSetAccessor // write via setter: obj.name = value
 	// array indexing (HIR - lowered before codegen)
 	InstrTypeGetIndex
 	// array element assignment (HIR - lowered before codegen)
@@ -930,6 +980,10 @@ func (i InstrType) String() string {
 		return "CALL_METHOD"
 	case InstrTypeDeclClassMethod:
 		return "DECLARE_CLASS_METHOD"
+	case InstrTypeGetAccessor:
+		return "GET_ACCESSOR"
+	case InstrTypeSetAccessor:
+		return "SET_ACCESSOR"
 	case InstrTypeGetIndex:
 		return "GET_INDEX"
 	case InstrTypeSetIndex:

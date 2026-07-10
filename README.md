@@ -29,9 +29,7 @@ brew install zeus
 ## Quick Example
 
 ```typescript
-function main() {
-  log("Hello World 👋!")
-}
+console.log("Hello World 👋!")
 ```
 
 ```bash

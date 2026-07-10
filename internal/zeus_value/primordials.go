@@ -36,7 +36,7 @@ const (
 // Array property names
 const (
 	ARRAY_PROPERTY_CAPACITY = "capacity"
-	ARRAY_PROPERTY_LENGTH   = "length"
+	ARRAY_PROPERTY_LENGTH   = "_length"
 	ARRAY_PROPERTY_DATA     = "data"
 )
 
@@ -62,8 +62,8 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 
 	// capacity of the array (private - internal implementation detail)
 	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
-	// length of the array (public - commonly accessed property)
-	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
+	// _length of the array (private - exposed via getter accessor "length")
+	lengthProperty := NewClassProperty(NewVar("_length", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
 	// opaque pointer to the data of the array (private - internal implementation)
 	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
 	properties := []*ClassProperty{capacityProperty, lengthProperty, dataProperty}
@@ -198,7 +198,14 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 		publicMethod(isEmptyMethod),
 	}
 
-	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
+	// length getter: exposes the private _length field as a read-only accessor.
+	// IsLowered=true means AccessorLoweringPass expands it to OBJECT_PROPERTY_ACCESS(_length)+LOAD
+	// without needing a Zig runtime function.
+	lengthGetterFn := NewFunction("#get_length", []*Var{}, i32Type, span)
+	lengthAccessor := NewClassAccessor("length", lengthGetterFn, nil, &token.Token{Type: token.TokenTypePublic, Span: span})
+	lengthAccessor.IsLowered = true
+
+	return NewClass(arrayType.String(), properties, methods, []*ClassAccessor{lengthAccessor}, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
 }
 
 // string is nothing but an array of u8
@@ -212,7 +219,7 @@ func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	properties := []*ClassProperty{dataProperty, lengthProperty}
 
 	// Create the string class first (without methods that reference itself)
-	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
+	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
 
 	// Methods - use UserDefinedType for self-reference to avoid copy issues
 	// The type checker will resolve "string" to the actual string ObjectType
@@ -314,7 +321,7 @@ func GetConsolePrimordialClassDefinition(span *token.Span) *Class {
 		publicMethod(logMethod),
 		publicMethod(errorMethod),
 		publicMethod(infoMethod),
-	}, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
+	}, nil, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
 }
 
 // Ref cell class naming constants
@@ -339,7 +346,7 @@ func GetRefCellClassDefinition(valueType ValueType, span *token.Span) *Class {
 	methods := []*ClassMethod{
 		NewClassMethod(constructorFn, &token.Token{Type: token.TokenTypePublic, Span: span}),
 	}
-	return NewClass(RefCellClassName(valueType), []*ClassProperty{valueProp}, methods, "", nil, span)
+	return NewClass(RefCellClassName(valueType), []*ClassProperty{valueProp}, methods, nil, "", nil, span)
 }
 
 // IsErrorClass checks if a class is the Error class or derives from it

@@ -115,6 +115,14 @@ func parseTemplateLiteral(parser *Parser, firstStrToken *token.Token) ast.ExprNo
 	return node
 }
 
+func isVoidValueType(vt *ast.ValueTypeNode) bool {
+	if vt == nil {
+		return true
+	}
+	_, ok := vt.ValueType.(zeus_value.VoidType)
+	return ok
+}
+
 func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode, *ast.BlockStmtNode) {
 	fnType := "function"
 	if isClassMethod {
@@ -215,7 +223,64 @@ func NewParser(tokens []*token.Token) *Parser {
 
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
 			accessModifier := parser.consumeAccessModifier()
-			if parser.checkToken(token.TokenTypeIdentifier, "in class property or method declaration") && parser.lookahead(1, token.TokenTypeLeftParen) {
+
+			// Detect get/set soft keywords: get name(...) or set name(...)
+			// Distinguishes `get name(` (accessor) from `get(` (regular method named "get").
+			isAccessor := parser.peek().Type == token.TokenTypeIdentifier &&
+				(parser.peek().Value == token.GETTER_KEYWORD || parser.peek().Value == token.SETTER_KEYWORD) &&
+				parser.lookahead(1, token.TokenTypeIdentifier) &&
+				parser.lookahead(2, token.TokenTypeLeftParen)
+
+			if isAccessor {
+				accessorKw := parser.consume()
+				isGetter := accessorKw.Value == token.GETTER_KEYWORD
+				spanStart := accessorKw.Span.Start
+				if accessModifier != nil {
+					spanStart = accessModifier.Span.Start
+				}
+				accessorName := parser.consumeIdentifier("accessor name")
+				_, params, returnType, body := parser.parseFunctionSignatureAndBody(accessorName, true)
+
+				if isGetter {
+					if returnType == nil || isVoidValueType(returnType) {
+						parser.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+							fmt.Sprintf("getter '%s' must have a non-void return type", accessorName.Name.Value),
+							accessorName.GetSpan(),
+						))
+					}
+					if len(params) != 0 {
+						parser.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+							fmt.Sprintf("getter '%s' must have no parameters", accessorName.Name.Value),
+							accessorName.GetSpan(),
+						))
+					}
+					methods = append(methods, &ast.ClassMethod{
+						Name:           accessorName,
+						Params:         []*ast.VarDeclNode{},
+						Body:           body,
+						ReturnType:     returnType,
+						AccessModifier: accessModifier,
+						Accessor:       ast.AccessorKindGetter,
+						Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
+					})
+				} else {
+					if len(params) != 1 {
+						parser.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+							fmt.Sprintf("setter '%s' must have exactly one parameter", accessorName.Name.Value),
+							accessorName.GetSpan(),
+						))
+					}
+					methods = append(methods, &ast.ClassMethod{
+						Name:           accessorName,
+						Params:         params,
+						Body:           body,
+						ReturnType:     nil,
+						AccessModifier: accessModifier,
+						Accessor:       ast.AccessorKindSetter,
+						Span:           &token.Span{Start: spanStart, End: body.GetSpan().End},
+					})
+				}
+			} else if parser.checkToken(token.TokenTypeIdentifier, "in class property or method declaration") && parser.lookahead(1, token.TokenTypeLeftParen) {
 				methodName, params, returnType, body := parser.parseFunctionSignatureAndBody(parser.consumeIdentifier("method name"), true)
 				spanStart := methodName.GetSpan().Start
 				if accessModifier != nil {

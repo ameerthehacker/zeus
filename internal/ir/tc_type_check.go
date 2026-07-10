@@ -323,6 +323,10 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcCoerce(tc, instr)
 	case InstrTypeDeclPrimordialFunc:
 		// no type checking for primordial functions
+	case InstrTypeGetAccessor:
+		p.tcGetAccessor(tc, instr)
+	case InstrTypeSetAccessor:
+		p.tcSetAccessor(tc, instr)
 	case InstrTypeGetIndex:
 		p.tcGetIndex(tc, instr)
 	case InstrTypeSetIndex:
@@ -798,7 +802,133 @@ func (p *TypeCheckingPass) tcCallFunc(tc *TypeChecker, instr *Instr) {
 	instr.Output.ValueType = functionType.ReturnType
 }
 
-func (p *TypeCheckingPass) tcDeclClass(tc *TypeChecker, instr *Instr) {}
+func (p *TypeCheckingPass) tcDeclClass(tc *TypeChecker, instr *Instr) {
+	input := AsDeclClassInstrInput(instr.Input)
+	class := input.Class
+
+	for _, acc := range class.Accessors {
+		// Accessor name must not clash with a data property
+		for _, prop := range class.Properties {
+			if prop.Property.Name == acc.Name {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("accessor '%s' conflicts with a data property of the same name in class '%s'", acc.Name, class.SourceName()),
+					Span:    class.Span,
+				})
+			}
+		}
+
+		if acc.Getter != nil {
+			if len(acc.Getter.Params) != 0 {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("getter '%s' must have no parameters", acc.Name),
+					Span:    class.Span,
+				})
+			}
+			if zeus_value.IsVoidType(acc.Getter.ReturnType) {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("getter '%s' must have a non-void return type", acc.Name),
+					Span:    class.Span,
+				})
+			}
+		}
+
+		if acc.Setter != nil {
+			if len(acc.Setter.Params) != 1 {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("setter '%s' must have exactly one parameter", acc.Name),
+					Span:    class.Span,
+				})
+			}
+		}
+
+		if acc.Getter != nil && acc.Setter != nil && len(acc.Setter.Params) == 1 {
+			if !zeus_value.CmpValueType(acc.Getter.ReturnType, acc.Setter.Params[0].ValueType) {
+				tc.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("getter and setter for '%s' have incompatible types: getter returns '%s', setter expects '%s'", acc.Name, acc.Getter.ReturnType, acc.Setter.Params[0].ValueType),
+					Span:    class.Span,
+				})
+			}
+		}
+	}
+}
+
+// resolveAccessor resolves the object type and finds the named accessor.
+// Pushes an error and returns nil if the object is not a class instance or the accessor doesn't exist.
+// Also pushes an error (but still returns the accessor) when the accessor is private in the wrong scope.
+func (p *TypeCheckingPass) resolveAccessor(tc *TypeChecker, object zeus_value.Value, accessorName string, verb string, span *token.Span) *zeus_value.ClassAccessor {
+	valueType := tc.getValueType(object)
+	objType := zeus_value.AsObjectType(valueType)
+	if objType == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot %s property '%s' on non-object type '%s'", verb, accessorName, valueType),
+			Span:    span,
+		})
+		return nil
+	}
+	acc := findAccessorInClass(objType.Class, accessorName)
+	if acc == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("property '%s' not found in class '%s'", accessorName, objType.Class.SourceName()),
+			Span:    span,
+		})
+		return nil
+	}
+	propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == objType.Class.Name
+	if acc.AccessModifier != nil && acc.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("accessor '%s' is not accessible in class '%s'", accessorName, objType.Class.SourceName()),
+			Span:    span,
+		})
+	}
+	return acc
+}
+
+func (p *TypeCheckingPass) tcGetAccessor(tc *TypeChecker, instr *Instr) {
+	input := AsGetAccessorInstrInput(instr.Input)
+	acc := p.resolveAccessor(tc, input.Object, input.AccessorName, "access", instr.Output.Span)
+	if acc == nil {
+		return
+	}
+	if acc.Getter == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("property '%s' is write-only (no getter defined)", input.AccessorName),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	acc.Getter.IsUsed = true
+	instr.Output.ValueType = acc.Getter.ReturnType
+}
+
+func (p *TypeCheckingPass) tcSetAccessor(tc *TypeChecker, instr *Instr) {
+	input := AsSetAccessorInstrInput(instr.Input)
+	acc := p.resolveAccessor(tc, input.Object, input.AccessorName, "set", instr.Output.Span)
+	if acc == nil {
+		return
+	}
+	if acc.Setter == nil {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("property '%s' is read-only (no setter defined)", input.AccessorName),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	// Implicit cast: if value type differs from setter param type, insert a cast.
+	if len(acc.Setter.Params) == 1 {
+		expectedType := acc.Setter.Params[0].ValueType
+		castedValue, ok := p.tryImplicitCast(tc, instr, input.Value, expectedType)
+		if !ok {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot assign value of type '%s' to accessor '%s' which expects '%s'", tc.getValueType(input.Value), input.AccessorName, expectedType),
+				Span:    instr.Output.Span,
+			})
+		}
+		input.Value = castedValue
+		instr.Input = NewSetAccessorInstrInput(input.Object, input.AccessorName, input.Value)
+	}
+	acc.Setter.IsUsed = true
+	instr.Output.ValueType = tc.getValueType(input.Value)
+}
 
 func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)

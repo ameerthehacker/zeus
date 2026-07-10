@@ -559,6 +559,19 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			return newValue
 		}
 
+		// Check if this is an accessor compound assignment (obj.prop += value)
+		if accLVal := zeus_value.AsAccessorLValue(left); accLVal != nil {
+			currentValue := g.irBuilder.BuildGetAccessor(accLVal.Object, accLVal.AccessorName, expr.GetSpan())
+			op := g.getCompoundAssignmentOp(expr.Operator.Type)
+			var newValue zeus_value.Value
+			if op == InstrTypePower {
+				newValue = g.buildPowerOp(currentValue, right, nil, expr.GetSpan())
+			} else {
+				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+			}
+			return g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, newValue, expr.GetSpan())
+		}
+
 		// Regular variable compound assignment
 		addr := zeus_value.AsVar(left)
 		if addr == nil {
@@ -636,6 +649,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			// Emit SET_INDEX HIR instruction; lowering pass converts to .set() method call
 			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, right, expr.GetSpan())
 			return right
+		}
+
+		// Check if this is a setter accessor assignment (obj.prop = value)
+		if accLVal := zeus_value.AsAccessorLValue(left); accLVal != nil {
+			return g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, right, expr.GetSpan())
 		}
 
 		// Regular variable assignment
@@ -960,7 +978,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 		[]*zeus_value.ClassMethod{
 			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
 			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
-		}, "", nil, span)
+		}, nil, "", nil, span)
 	g.irBuilder.EmitClassDeclAtStart(functorClass)
 
 	// Constructor: no AST body, just a return. Use BuildFuncDecl with a unique IR name
@@ -1149,6 +1167,15 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 		target := expr.Expr.Accept(g)
 		g.isLValueExpr = false
 
+		one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
+
+		// Check accessor lvalue first
+		if accLVal := zeus_value.AsAccessorLValue(target); accLVal != nil {
+			currentValue := g.irBuilder.BuildGetAccessor(accLVal.Object, accLVal.AccessorName, expr.GetSpan())
+			newValue := g.buildIncrDecrOp(expr.Operator.Type, currentValue, one, expr.GetSpan())
+			return g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, newValue, expr.GetSpan())
+		}
+
 		addr := zeus_value.AsVar(target)
 		if addr == nil {
 			g.pushError(&zeus_error.ZeusError{
@@ -1164,20 +1191,9 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 		// Use u8 for the constant so it is implicitly promoted to whatever numeric type
 		// the operand has (int or float). addr.ValueType is nil for class field pointers
 		// at IR generation time (resolved later by tcObjectPropertyAccess).
-		one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
 
-		// Apply increment/decrement
-		var newValue zeus_value.Value
-		if expr.Operator.Type == token.TokenTypePlusPlus {
-			newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeAdd, expr.GetSpan())
-		} else {
-			newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeSub, expr.GetSpan())
-		}
-
-		// Store new value
+		newValue := g.buildIncrDecrOp(expr.Operator.Type, currentValue, one, expr.GetSpan())
 		g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
-
-		// Prefix returns the new value
 		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
 	}
 
@@ -1201,6 +1217,16 @@ func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value 
 	target := expr.Expr.Accept(g)
 	g.isLValueExpr = false
 
+	one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
+
+	// Handle accessor lvalue (obj.prop++)
+	if accLVal := zeus_value.AsAccessorLValue(target); accLVal != nil {
+		currentValue := g.irBuilder.BuildGetAccessor(accLVal.Object, accLVal.AccessorName, expr.GetSpan())
+		newValue := g.buildIncrDecrOp(expr.Operator.Type, currentValue, one, expr.GetSpan())
+		g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, newValue, expr.GetSpan())
+		return currentValue // postfix returns old value
+	}
+
 	addr := zeus_value.AsVar(target)
 	if addr == nil {
 		g.pushError(&zeus_error.ZeusError{
@@ -1216,21 +1242,18 @@ func (g *IRModule) VisitPostfixExpr(expr *ast.PostfixExprNode) zeus_value.Value 
 	// Use u8 for the constant so it is implicitly promoted to whatever numeric type
 	// the operand has (int or float). addr.ValueType is nil for class field pointers
 	// at IR generation time (resolved later by tcObjectPropertyAccess).
-	one := zeus_value.NewConstant("1", zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: expr.Operator.Span}, expr.Operator.Span)
 
-	// Apply increment/decrement
-	var newValue zeus_value.Value
-	if expr.Operator.Type == token.TokenTypePlusPlus {
-		newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeAdd, expr.GetSpan())
-	} else {
-		newValue = g.irBuilder.BuildBinaryOp(currentValue, one, InstrTypeSub, expr.GetSpan())
-	}
-
-	// Store new value
+	newValue := g.buildIncrDecrOp(expr.Operator.Type, currentValue, one, expr.GetSpan())
 	g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
+	return currentValue // postfix returns old value
+}
 
-	// Postfix returns the OLD value (before increment/decrement)
-	return currentValue
+// buildIncrDecrOp returns current + 1 or current - 1 depending on the operator.
+func (g *IRModule) buildIncrDecrOp(opType token.TokenType, current, one zeus_value.Value, span *token.Span) zeus_value.Value {
+	if opType == token.TokenTypePlusPlus {
+		return g.irBuilder.BuildBinaryOp(current, one, InstrTypeAdd, span)
+	}
+	return g.irBuilder.BuildBinaryOp(current, one, InstrTypeSub, span)
 }
 
 // getOrCreateArrayClass gets or creates an array primordial class from the registry.
@@ -1286,6 +1309,47 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	}
 
 	return irClassName
+}
+
+// buildAccessors emits the IR function bodies for getter/setter accessors.
+// Each accessor body is emitted via emitFunction with a mangled name (__get_X / __set_X).
+// The resulting IR function is written back into class.Accessors so codegen can find it.
+func (g *IRModule) buildAccessors(class *zeus_value.Class, accessorASTs []*ast.ClassMethod) {
+	for _, method := range accessorASTs {
+		name := method.Name.Name.Value
+		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Span}
+		if method.ReturnType != nil {
+			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
+		}
+
+		var mangledName string
+		if method.Accessor == ast.AccessorKindGetter {
+			mangledName = g.generateUniqueName("#get_" + name)
+		} else {
+			mangledName = g.generateUniqueName("#set_" + name)
+		}
+
+		fn := zeus_value.AsFunction(g.emitFunction(mangledName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
+		if fn == nil {
+			continue
+		}
+		fn.OriginalName = method.Name.Name.Value
+
+		// Write mangled name back into the class accessor descriptor.
+		for _, acc := range class.Accessors {
+			if acc.Name != name {
+				continue
+			}
+			if method.Accessor == ast.AccessorKindGetter && acc.Getter != nil {
+				acc.Getter.Name = mangledName
+				acc.Getter.OriginalName = name
+			} else if method.Accessor == ast.AccessorKindSetter && acc.Setter != nil {
+				acc.Setter.Name = mangledName
+				acc.Setter.OriginalName = name
+			}
+			break
+		}
+	}
 }
 
 func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_value.Value {
@@ -1486,7 +1550,15 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	}
 
 	methods := []*zeus_value.ClassMethod{}
+	accessors := []*zeus_value.ClassAccessor{}
+	var regularMethodASTs []*ast.ClassMethod
+	var accessorMethodASTs []*ast.ClassMethod
+
 	for _, method := range expr.Methods {
+		if method.Accessor != ast.AccessorKindNone {
+			accessorMethodASTs = append(accessorMethodASTs, method)
+			continue
+		}
 		if method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
 			if !zeus_value.IsVoidType(method.ReturnType.ValueType) {
 				g.pushError(&zeus_error.ZeusError{
@@ -1512,11 +1584,48 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			function,
 			method.AccessModifier,
 		))
+		regularMethodASTs = append(regularMethodASTs, method)
 	}
 
-	class := zeus_value.NewClass(irClassName, properties, methods, "", nil, expr.GetSpan())
+	// Build ClassAccessor stubs — function bodies are emitted in buildAccessors below.
+	for _, method := range accessorMethodASTs {
+		name := method.Name.Name.Value
+		// Find or create an accessor entry for this name.
+		var acc *zeus_value.ClassAccessor
+		for _, a := range accessors {
+			if a.Name == name {
+				acc = a
+				break
+			}
+		}
+		if acc == nil {
+			acc = zeus_value.NewClassAccessor(name, nil, nil, method.AccessModifier)
+			accessors = append(accessors, acc)
+		}
+
+		params := []*zeus_value.Var{}
+		for _, param := range method.Params {
+			paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span))
+		}
+		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Span}
+		if method.ReturnType != nil {
+			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
+		}
+
+		if method.Accessor == ast.AccessorKindGetter {
+			fn := zeus_value.NewFunction("#get_"+name, params, returnType, method.Span)
+			acc.Getter = fn
+		} else {
+			fn := zeus_value.NewFunction("#set_"+name, params, zeus_value.VoidType{Span: method.Span}, method.Span)
+			acc.Setter = fn
+		}
+	}
+
+	class := zeus_value.NewClass(irClassName, properties, methods, accessors, "", nil, expr.GetSpan())
 	class.OriginalName = sourceName
-	g.buildClass(class, expr.Methods)
+	g.buildClass(class, regularMethodASTs)
+	g.buildAccessors(class, accessorMethodASTs)
 	g.symbolTable().ExitScope()
 
 	// Register by source name so VisitIdentifier resolves correctly.
@@ -1551,11 +1660,38 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 					}
 				}
 			}
+			for i, acc := range class.Accessors {
+				if i < len(stubClass.Accessors) {
+					if acc.Getter != nil && stubClass.Accessors[i].Getter != nil {
+						stubClass.Accessors[i].Getter.ReturnType = acc.Getter.ReturnType
+					}
+					if acc.Setter != nil && stubClass.Accessors[i].Setter != nil {
+						for j, param := range acc.Setter.Params {
+							if j < len(stubClass.Accessors[i].Setter.Params) {
+								stubClass.Accessors[i].Setter.Params[j].ValueType = param.ValueType
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
 	g.symbolTable().DeclareSymbol(registerName, class)
 	return class
+}
+
+// findAccessorInClass searches the class and its parent chain for an accessor by name.
+func findAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
+	for class != nil {
+		for _, acc := range class.Accessors {
+			if acc.Name == name {
+				return acc
+			}
+		}
+		class = class.ParentClass
+	}
+	return nil
 }
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
@@ -1572,6 +1708,27 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	// Skip null check for 'this' expressions since 'this' is never null inside a class
 	if !g.isThisExpression(expr.Object) {
 		g.emitNullCheck(object, property, expr.GetSpan())
+	}
+
+	// For non-this objects, check if the property is backed by a getter/setter accessor.
+	// Inside getter/setter bodies, 'this.x' bypasses the accessor to avoid infinite recursion.
+	if !g.isThisExpression(expr.Object) {
+		objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
+		if objType != nil {
+			if acc := findAccessorInClass(objType.Class, property); acc != nil {
+				if g.isLValueExpr {
+					return zeus_value.NewAccessorLValue(object, property, expr.GetSpan())
+				}
+				if acc.Getter == nil {
+					g.pushError(&zeus_error.ZeusError{
+						Message: fmt.Sprintf("property '%s' is write-only (no getter)", property),
+						Span:    expr.GetSpan(),
+					})
+					return nil
+				}
+				return g.irBuilder.BuildGetAccessor(object, property, expr.GetSpan())
+			}
+		}
 	}
 
 	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, g.isLValueExpr, expr.GetSpan())
@@ -1669,10 +1826,9 @@ func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Valu
 	throwBlock := g.irBuilder.BuildSuccessorBlock()
 	continueBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// Get array length
+	// Get array length via the public "length" accessor (lowered to _length field access by AccessorLoweringPass)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
-	lengthPtr := g.irBuilder.BuildObjectPropertyAccess(array, zeus_value.ARRAY_PROPERTY_LENGTH, false, span)
-	length := g.irBuilder.BuildLoad(zeus_value.AsVar(lengthPtr), span)
+	length := g.irBuilder.BuildGetAccessor(array, "length", span)
 
 	// Check if index < 0
 	zero := zeus_value.NewConstant("0", i32Type, span)

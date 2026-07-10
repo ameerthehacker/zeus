@@ -10,6 +10,10 @@ const CONSTRUCTOR_METHOD_NAME = "constructor"
 const FUNCTOR_CALL_METHOD_NAME = "__call__"
 const THIS_KEYWORD = "this"
 
+// Soft keywords: context-sensitive inside class bodies only, not reserved globally.
+const GETTER_KEYWORD = "get"
+const SETTER_KEYWORD = "set"
+
 type TokenType int
 
 const (

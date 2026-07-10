@@ -142,6 +142,45 @@ func (f Function) String() string {
 	return fmt.Sprintf("%s(%s) %s", f.Name, strings.Join(params, ", "), f.ReturnType)
 }
 
+type AccessorKind int
+
+const (
+	AccessorKindNone   AccessorKind = iota
+	AccessorKindGetter
+	AccessorKindSetter
+)
+
+// ClassAccessor holds the getter and/or setter function for a named accessor property.
+type ClassAccessor struct {
+	Name           string
+	Getter         *Function    // nil if setter-only
+	Setter         *Function    // nil if getter-only
+	AccessModifier *token.Token
+	// IsLowered is true for primordial accessors whose bodies are expanded directly
+	// by the lowering pass (no Zig runtime function needed, e.g. arr.length).
+	IsLowered bool
+}
+
+func NewClassAccessor(name string, getter *Function, setter *Function, accessModifier *token.Token) *ClassAccessor {
+	return &ClassAccessor{
+		Name:           name,
+		Getter:         getter,
+		Setter:         setter,
+		AccessModifier: accessModifier,
+	}
+}
+
+func (a *ClassAccessor) String() string {
+	parts := []string{}
+	if a.Getter != nil {
+		parts = append(parts, fmt.Sprintf("get %s(): %s", a.Name, a.Getter.ReturnType))
+	}
+	if a.Setter != nil && len(a.Setter.Params) > 0 {
+		parts = append(parts, fmt.Sprintf("set %s(%s)", a.Name, a.Setter.Params[0].ValueType))
+	}
+	return strings.Join(parts, ", ")
+}
+
 type ClassProperty struct {
 	Property       *Var
 	AccessModifier *token.Token
@@ -195,6 +234,7 @@ type Class struct {
 	ParentClass      *Class // Parent class for inheritance (nil if no parent)
 	Properties       []*ClassProperty
 	Methods          []*ClassMethod
+	Accessors        []*ClassAccessor
 	IsUsed           bool
 	PrimordialName   string
 	ArrayElementType ValueType
@@ -211,7 +251,7 @@ func (c Class) SourceName() string {
 	return c.Name
 }
 
-func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
+func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, accessors []*ClassAccessor, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
 	classIdCounter += 1
 	return &Class{
 		Id:               classIdCounter,
@@ -219,6 +259,7 @@ func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, 
 		ParentClass:      nil,
 		Properties:       properties,
 		Methods:          methods,
+		Accessors:        accessors,
 		IsUsed:           false,
 		PrimordialName:   primordialName,
 		ArrayElementType: arrayElementType,
@@ -227,7 +268,7 @@ func NewClass(name string, properties []*ClassProperty, methods []*ClassMethod, 
 }
 
 // NewClassWithParent creates a new class that inherits from a parent class
-func NewClassWithParent(name string, parentClass *Class, properties []*ClassProperty, methods []*ClassMethod, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
+func NewClassWithParent(name string, parentClass *Class, properties []*ClassProperty, methods []*ClassMethod, accessors []*ClassAccessor, primordialName string, arrayElementType ValueType, span *token.Span) *Class {
 	classIdCounter += 1
 	return &Class{
 		Id:               classIdCounter,
@@ -235,6 +276,7 @@ func NewClassWithParent(name string, parentClass *Class, properties []*ClassProp
 		ParentClass:      parentClass,
 		Properties:       properties,
 		Methods:          methods,
+		Accessors:        accessors,
 		IsUsed:           false,
 		PrimordialName:   primordialName,
 		ArrayElementType: arrayElementType,
@@ -250,6 +292,7 @@ func NewClassWithId(id int, name string, properties []*ClassProperty, methods []
 		ParentClass:      nil,
 		Properties:       properties,
 		Methods:          methods,
+		Accessors:        nil,
 		IsUsed:           false,
 		PrimordialName:   primordialName,
 		ArrayElementType: nil,
@@ -454,6 +497,40 @@ func (a ArrayElementRef) String() string {
 func AsArrayElementRef(value Value) *ArrayElementRef {
 	switch value := value.(type) {
 	case *ArrayElementRef:
+		return value
+	default:
+		return nil
+	}
+}
+
+// AccessorLValue is a transient sentinel returned by VisitObjectPropertyAccessExpr
+// when isLValueExpr=true and the property is backed by a setter accessor.
+// It is never emitted as an IR instruction; VisitBinaryExpr/VisitUnaryExpr consume it.
+type AccessorLValue struct {
+	Object       Value
+	AccessorName string
+	Span         *token.Span
+}
+
+func NewAccessorLValue(object Value, accessorName string, span *token.Span) *AccessorLValue {
+	return &AccessorLValue{
+		Object:       object,
+		AccessorName: accessorName,
+		Span:         span,
+	}
+}
+
+func (a *AccessorLValue) GetSpan() *token.Span {
+	return a.Span
+}
+
+func (a *AccessorLValue) String() string {
+	return fmt.Sprintf("AccessorLValue(%s.%s)", a.Object, a.AccessorName)
+}
+
+func AsAccessorLValue(value Value) *AccessorLValue {
+	switch value := value.(type) {
+	case *AccessorLValue:
 		return value
 	default:
 		return nil

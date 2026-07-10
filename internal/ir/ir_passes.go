@@ -321,8 +321,40 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 		v := zeus_value.NewVar(prop.Name.Name.Value, prop.ValueType.ValueType, false, prop.Name.GetSpan())
 		properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier))
 	}
-	methods := make([]*zeus_value.ClassMethod, 0, len(expr.Methods))
+	methods := make([]*zeus_value.ClassMethod, 0)
+	accessors := make([]*zeus_value.ClassAccessor, 0)
 	for _, method := range expr.Methods {
+		if method.Accessor != ast.AccessorKindNone {
+			// Build accessor stub
+			accName := method.Name.Name.Value
+			var acc *zeus_value.ClassAccessor
+			for _, a := range accessors {
+				if a.Name == accName {
+					acc = a
+					break
+				}
+			}
+			if acc == nil {
+				acc = zeus_value.NewClassAccessor(accName, nil, nil, method.AccessModifier)
+				accessors = append(accessors, acc)
+			}
+			mParams := make([]*zeus_value.Var, 0, len(method.Params))
+			for _, mp := range method.Params {
+				mParams = append(mParams, zeus_value.NewVar(mp.Identifier.Name.Value, mp.ValueType.ValueType, false, mp.Identifier.Name.Span))
+			}
+			var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Span}
+			if method.ReturnType != nil {
+				returnType = method.ReturnType.ValueType
+			}
+			fn := zeus_value.NewFunction("#get_"+accName, mParams, returnType, method.Name.Name.Span)
+			if method.Accessor == ast.AccessorKindGetter {
+				acc.Getter = fn
+			} else {
+				fn.Name = "#set_" + accName
+				acc.Setter = fn
+			}
+			continue
+		}
 		mParams := make([]*zeus_value.Var, 0, len(method.Params))
 		for _, mp := range method.Params {
 			mParams = append(mParams, zeus_value.NewVar(
@@ -340,7 +372,7 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 		fn.OriginalName = method.Name.Name.Value
 		methods = append(methods, zeus_value.NewClassMethod(fn, method.AccessModifier))
 	}
-	class := zeus_value.NewClass(name, properties, methods, "", nil, expr.GetSpan())
+	class := zeus_value.NewClass(name, properties, methods, accessors, "", nil, expr.GetSpan())
 	class.OriginalName = name
 	g.irBuilder.symbolTable.DeclareGlobalSymbol(name, class)
 }
