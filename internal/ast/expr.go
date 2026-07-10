@@ -419,6 +419,7 @@ type ClassProperty struct {
 	ValueType      *ValueTypeNode
 	AccessModifier *token.Token
 	IsReadonly     bool
+	IsStatic       bool
 	Span           *token.Span
 }
 
@@ -437,6 +438,7 @@ type ClassMethod struct {
 	ReturnType     *ValueTypeNode
 	AccessModifier *token.Token
 	Accessor       AccessorKind
+	IsStatic       bool
 	Span           *token.Span
 }
 

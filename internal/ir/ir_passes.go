@@ -282,7 +282,16 @@ func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool
 			p.checkAndDeclare(prop.Name.Name.Value, prop.Name.GetSpan())
 		}
 		for _, method := range e.Methods {
-			p.checkAndDeclare(method.Name.Name.Value, method.Name.GetSpan())
+			// Use mangled names for accessors so getter+setter pair for the same name
+			// can coexist without triggering the redeclaration check.
+			declName := method.Name.Name.Value
+			switch method.Accessor {
+			case ast.AccessorKindGetter:
+				declName = "#get_" + declName
+			case ast.AccessorKindSetter:
+				declName = "#set_" + declName
+			}
+			p.checkAndDeclare(declName, method.Name.GetSpan())
 			p.st.EnterScope()
 			for _, param := range method.Params {
 				p.checkAndDeclare(param.Identifier.Name.Value, param.Identifier.Name.Span)
@@ -319,7 +328,9 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 	properties := make([]*zeus_value.ClassProperty, 0, len(expr.Properties))
 	for _, prop := range expr.Properties {
 		v := zeus_value.NewVar(prop.Name.Name.Value, prop.ValueType.ValueType, false, prop.Name.GetSpan())
-		properties = append(properties, zeus_value.NewClassProperty(v, prop.AccessModifier, prop.IsReadonly))
+		// StaticGlobalVar stays nil here — back-filled by VisitClassDeclExpr before method bodies are emitted
+		cp := zeus_value.NewClassProperty(v, prop.AccessModifier, prop.IsReadonly, prop.IsStatic, nil)
+		properties = append(properties, cp)
 	}
 	methods := make([]*zeus_value.ClassMethod, 0)
 	accessors := make([]*zeus_value.ClassAccessor, 0)
@@ -336,6 +347,7 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 			}
 			if acc == nil {
 				acc = zeus_value.NewClassAccessor(accName, nil, nil, method.AccessModifier)
+				acc.IsStatic = method.IsStatic
 				accessors = append(accessors, acc)
 			}
 			mParams := make([]*zeus_value.Var, 0, len(method.Params))
@@ -370,9 +382,23 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 		}
 		fn := zeus_value.NewFunction(method.Name.Name.Value, mParams, returnType, method.Name.Name.Span)
 		fn.OriginalName = method.Name.Name.Value
-		methods = append(methods, zeus_value.NewClassMethod(fn, method.AccessModifier))
+		cm := zeus_value.NewClassMethod(fn, method.AccessModifier)
+		cm.IsStatic = method.IsStatic
+		methods = append(methods, cm)
 	}
-	class := zeus_value.NewClass(name, properties, methods, accessors, "", nil, expr.GetSpan())
+	// Wire up parent class so the stub's parent chain is valid during static method body emission.
+	var parentClass *zeus_value.Class
+	if expr.ParentClass != nil {
+		if parentVal, ok := g.irBuilder.symbolTable.GetSymbol(expr.ParentClass.Name.Value); ok {
+			parentClass = zeus_value.AsClass(parentVal)
+		}
+	}
+	var class *zeus_value.Class
+	if parentClass != nil {
+		class = zeus_value.NewClassWithParent(name, parentClass, properties, methods, accessors, "", nil, expr.GetSpan())
+	} else {
+		class = zeus_value.NewClass(name, properties, methods, accessors, "", nil, expr.GetSpan())
+	}
 	class.OriginalName = name
 	g.irBuilder.symbolTable.DeclareGlobalSymbol(name, class)
 }

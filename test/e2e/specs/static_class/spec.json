@@ -1,0 +1,58 @@
+[
+    {
+        "name": "Static counter with increment method",
+        "exit": "2",
+        "entry": "counter.zs"
+    },
+    {
+        "name": "Two classes with same-named static property",
+        "exit": "30",
+        "entry": "multiple_classes.zs"
+    },
+    {
+        "name": "Static getter and setter",
+        "exit": "5",
+        "entry": "static_accessor.zs"
+    },
+    {
+        "name": "Child class inherits static property from parent",
+        "exit": "42",
+        "entry": "inherited_static.zs"
+    },
+    {
+        "name": "Static property accessed on instance is a compile error",
+        "compile_error": true,
+        "entry": "error_static_prop_on_instance.zs",
+        "stderr_contains": ["is a static property", "Foo.count"]
+    },
+    {
+        "name": "this.staticProp inside a method is a compile error",
+        "compile_error": true,
+        "entry": "error_this_static_prop.zs",
+        "stderr_contains": ["is a static property", "Foo.count"]
+    },
+    {
+        "name": "Static method called on instance is a compile error",
+        "compile_error": true,
+        "entry": "error_static_method_on_instance.zs",
+        "stderr_contains": ["is a static method", "Foo.greet"]
+    },
+    {
+        "name": "Instance property accessed via class name is a compile error",
+        "compile_error": true,
+        "entry": "error_instance_prop_via_class.zs",
+        "stderr_contains": ["instance property"]
+    },
+    {
+        "name": "Instance method called via class name is a compile error",
+        "compile_error": true,
+        "entry": "error_instance_method_via_class.zs",
+        "stderr_contains": ["instance method"]
+    },
+    {
+        "name": "Private static property accessed from outside class is a compile error",
+        "compile_error": true,
+        "entry": "error_private_static_from_outside.zs",
+        "stderr_contains": ["cannot access private static property", "Vault"]
+    }
+]

@@ -95,7 +95,9 @@ func (tc *TypeChecker) updateContext(instr *Instr) {
 	case InstrTypeDeclFunc:
 		input := AsDeclFuncInstrInput(instr.Input)
 		tc.currentFunction = input.Function
-		tc.currentClass = nil
+		// Static methods emit InstrTypeDeclFunc (not InstrTypeDeclClassMethod).
+		// Function.Class is set by buildStaticMethods/buildAccessors for statics; nil for regular fns.
+		tc.currentClass = input.Function.Class
 	case InstrTypeDeclClassMethod:
 		input := AsDeclClassMethodInstrInput(instr.Input)
 		tc.currentClass = input.Class
