@@ -101,7 +101,7 @@ Add a `case char == 'X':` branch in the main `Lex()` switch. For multi-character
 
 ### Step 4 — AST node (only for non-binary operators)
 
-If the operator requires a new AST shape (e.g. `TernaryExprNode` with three children), add the node in `internal/ast/expr.go` and add the corresponding `VisitXxx(*XxxNode) T` method to the `ExprVisitor[T]` interface. The only existing implementation is `*IRModule` in `ir.go`.
+If the operator requires a new AST shape (e.g. `TernaryExprNode` with three children), add the node in `internal/ast/expr.go` and add the corresponding `VisitXxx(*XxxNode) T` method to the `ExprVisitor[T]` interface. There are two implementations to update: `*IRModule` in `ir.go` (full IR emission) and `astWalker` in `ir/closure.go` (closure analysis — add a stub that walks any sub-expressions via `w.walkExpr`).
 
 ### Step 5 — IR instruction (`internal/ir/instr.go`)
 
@@ -186,7 +186,7 @@ When `resultVar` is declared with `nil` type, `TypeCheckingPass.tcStore` infers 
 - **Float→Int cast**: `genCast` in codegen uses `CreateFPToSI` / `CreateFPToUI` for float-to-int (not `CreateFPExt` which is float-to-wider-float).
 - **Logical operators are short-circuit**: `&&` and `||` emit conditional jumps, not binary IR instructions directly. They're handled in `VisitBinaryExpr` before the right operand is evaluated.
 - **Class methods**: `ir.go` does NOT push class methods to the symbol table (they're scoped to the class).
-- **`ExprVisitor[T]` has only one implementation**: `*IRModule` in `ir.go`. Adding a new AST node requires adding the method there.
+- **`ExprVisitor[T]` has two implementations**: `*IRModule` in `ir.go` (full IR emission) and `astWalker` in `ir/closure.go` (closure analysis — add a stub that walks any sub-expressions via `w.walkExpr`). Adding a new AST node requires updating both.
 - **Type checker pass order**: `TypeInferencePass` → `TypeCheckingPass` → `UnusedWarningPass` → `UndefinedTypeCheckPass`. Types are resolved inline during IR gen (`resolveTypeForIRGen`); the type checker only validates. See `wiki/type-inference.md` for the full architecture.
 - **Self-referential class properties** (`Node.next: Node`): resolved by stub back-fill at the end of `VisitClassDeclExpr` — after registering the full class, the DeclCheckPass stub's `*Var` objects are updated in-place so all `ObjectType{stub_copy}` instances see the resolved type through shared pointers.
 - **User-defined array element types** (`new Point[]`): `VisitNewExpr` resolves the base element type via `resolveTypeForIRGen` before building the `ArrayType`. This ensures `getOrCreateArrayClass` creates the array class with concrete push/pop/get/set method types.

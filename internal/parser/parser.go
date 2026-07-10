@@ -95,6 +95,26 @@ func getPrecedence(token *token.Token) int {
 	return precedence
 }
 
+func parseTemplateLiteral(parser *Parser, firstStrToken *token.Token) ast.ExprNode {
+	node := &ast.TemplateStringExprNode{
+		Span: firstStrToken.Span,
+	}
+	node.Parts = append(node.Parts, &ast.TemplateStringPart{IsExpr: false, Str: firstStrToken.Value})
+
+	for parser.peek().Type == token.TokenTypeTemplateLiteralExprStart {
+		parser.consume() // consume ExprStart
+		expr := parser.parseExprOfPrecedence(0, false)
+		parser.consumeToken(token.TokenTypeTemplateLiteralExprEnd, "to close template expression")
+		strToken := parser.consumeToken(token.TokenTypeTemplateLiteralStr, "after template expression")
+		node.Parts = append(node.Parts, &ast.TemplateStringPart{IsExpr: true, Expr: expr})
+		node.Parts = append(node.Parts, &ast.TemplateStringPart{IsExpr: false, Str: strToken.Value})
+	}
+
+	endToken := parser.consumeToken(token.TokenTypeTemplateLiteralEnd, "to close template literal")
+	node.Span = &token.Span{Start: firstStrToken.Span.Start, End: endToken.Span.End}
+	return node
+}
+
 func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode, *ast.BlockStmtNode) {
 	fnType := "function"
 	if isClassMethod {
@@ -301,6 +321,9 @@ func NewParser(tokens []*token.Token) *Parser {
 		},
 		token.TokenTypeString: func(parser *Parser, stringToken *token.Token) ast.ExprNode {
 			return &ast.StringConstantExprNode{Value: stringToken}
+		},
+		token.TokenTypeTemplateLiteralStr: func(parser *Parser, strToken *token.Token) ast.ExprNode {
+			return parseTemplateLiteral(parser, strToken)
 		},
 		token.TokenTypeNew: func(parser *Parser, newKeyword *token.Token) ast.ExprNode {
 			callee := parser.parseExprOfPrecedence(NewOperatorPrecedence, false)

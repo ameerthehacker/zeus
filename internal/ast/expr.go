@@ -520,6 +520,47 @@ func (s *StringConstantExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) z
 	return visitor.VisitStringConstant(s)
 }
 
+// TemplateStringPart is one segment of a template literal — either a static string or an interpolated expression.
+type TemplateStringPart struct {
+	IsExpr bool
+	Str    string
+	Expr   ExprNode
+}
+
+// TemplateStringExprNode represents a backtick template literal: `Hello ${name}!`
+type TemplateStringExprNode struct {
+	Parts []*TemplateStringPart
+	Span  *token.Span
+}
+
+func (t *TemplateStringExprNode) GetSpan() *token.Span {
+	return t.Span
+}
+
+func (t *TemplateStringExprNode) PrettyString() string {
+	var sb strings.Builder
+	sb.WriteRune('`')
+	for _, p := range t.Parts {
+		if p.IsExpr {
+			sb.WriteString("${")
+			sb.WriteString(p.Expr.PrettyString())
+			sb.WriteRune('}')
+		} else {
+			sb.WriteString(p.Str)
+		}
+	}
+	sb.WriteRune('`')
+	return sb.String()
+}
+
+func (t *TemplateStringExprNode) String() string {
+	return fmt.Sprintf("{ type: TemplateStringExprNode, Span: %s }", t.Span)
+}
+
+func (t *TemplateStringExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitTemplateString(t)
+}
+
 // TernaryExprNode represents the ternary conditional: cond ? then : else
 type TernaryExprNode struct {
 	Condition ExprNode
@@ -562,6 +603,7 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitObjectPropertyAccessExpr(node *ObjectPropertyAccessExprNode) T
 	VisitNull(node *NullExprNode) T
 	VisitStringConstant(node *StringConstantExprNode) T
+	VisitTemplateString(node *TemplateStringExprNode) T
 	VisitValueType(node *ValueTypeNode) T
 	VisitTernaryExpr(node *TernaryExprNode) T
 }

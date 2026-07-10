@@ -45,5 +45,16 @@
         "entry": "string-operators.zs",
         "exit": "0",
         "stdout": "hello world\na == c: true\na != b: true\na < b: true\nb > a: true\na <= c: true\na >= c: true\n"
+    },
+    {
+        "name": "template string literals",
+        "entry": "template-strings.zs",
+        "exit": "0"
+    },
+    {
+        "name": "template string type error",
+        "entry": "template-strings-err.zs",
+        "compile_error": true,
+        "stderr_contains": ["invalid operands"]
     }
 ]
