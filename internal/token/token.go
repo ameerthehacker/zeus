@@ -119,6 +119,11 @@ const (
 	// null type
 	TokenTypeNull
 	datatype_end
+	// template literal markers
+	TokenTypeTemplateLiteralStr       // static segment (always emitted, possibly "")
+	TokenTypeTemplateLiteralExprStart // ${
+	TokenTypeTemplateLiteralExprEnd   // } closing interpolation
+	TokenTypeTemplateLiteralEnd       // closing backtick
 	// EOF
 	TokenTypeEOF
 )
@@ -301,6 +306,14 @@ func (t TokenType) String() string {
 		return "null"
 	case TokenTypeChar:
 		return "char"
+	case TokenTypeTemplateLiteralStr:
+		return "template-literal-str"
+	case TokenTypeTemplateLiteralExprStart:
+		return "${"
+	case TokenTypeTemplateLiteralExprEnd:
+		return "template-literal-expr-end"
+	case TokenTypeTemplateLiteralEnd:
+		return "template-literal-end"
 	case TokenTypeEOF:
 		return "EOF"
 	}

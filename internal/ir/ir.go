@@ -1800,6 +1800,37 @@ func (g *IRModule) getOrCreateStringClass() *zeus_value.Class {
 	return nil
 }
 
+func (g *IRModule) VisitTemplateString(expr *ast.TemplateStringExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+
+	var acc zeus_value.Value
+	for _, part := range expr.Parts {
+		var val zeus_value.Value
+		if part.IsExpr {
+			val = part.Expr.Accept(g)
+		} else if part.Str != "" {
+			val = g.VisitStringConstant(&ast.StringConstantExprNode{
+				Value: &token.Token{Value: part.Str, Span: span},
+			})
+		} else {
+			continue
+		}
+		if acc == nil {
+			acc = val
+		} else {
+			acc = g.irBuilder.BuildBinaryOp(acc, val, InstrTypeAdd, span)
+		}
+	}
+
+	if acc == nil {
+		// All parts were empty static strings — return an empty string.
+		return g.VisitStringConstant(&ast.StringConstantExprNode{
+			Value: &token.Token{Value: "", Span: span},
+		})
+	}
+	return acc
+}
+
 func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_value.Value {
 	// Get or create the string class
 	stringClass := g.getOrCreateStringClass()

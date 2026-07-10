@@ -9,13 +9,17 @@ import (
 )
 
 type Lexer struct {
-	source    []rune
-	cursor    int
-	tokens    []*token.Token
-	errors    []*zeus_error.ZeusError
-	line      int
-	column    int
-	lastToken *token.Token
+	source              []rune
+	cursor              int
+	tokens              []*token.Token
+	errors              []*zeus_error.ZeusError
+	line                int
+	column              int
+	lastToken           *token.Token
+	// templateBraceStack tracks open-brace depth inside template string expressions.
+	// Each entry corresponds to one active interpolation; the value is the depth of
+	// nested '{' seen so far. When it hits 0 and we see '}', the interpolation ends.
+	templateBraceStack  []int
 }
 
 func NewLexer(source string) *Lexer {
@@ -56,7 +60,8 @@ func (l *Lexer) shouldInsertSemicolon() bool {
 		token.TokenTypeRightParen,
 		token.TokenTypeRightBracket,
 		token.TokenTypePlusPlus,
-		token.TokenTypeMinusMinus:
+		token.TokenTypeMinusMinus,
+		token.TokenTypeTemplateLiteralEnd:
 		return true
 	}
 	return false
@@ -208,6 +213,55 @@ func (l *Lexer) eatStringOrChar(isChar bool) {
 	l.pushToken(token.NewTokenWithValue(tokenType, stringLiteral, token.NewSpan(*startPosition, *endPosition)))
 }
 
+func (l *Lexer) eatTemplateLiteral() {
+	l.advance() // consume opening backtick
+	l.eatTemplateLiteralParts()
+}
+
+// eatTemplateLiteralParts scans the static portion of a template literal, emitting
+// a TemplateLiteralStr token (possibly empty) followed by either ExprStart+push or End.
+// It is also called after each ExprEnd to continue scanning the rest of the literal.
+func (l *Lexer) eatTemplateLiteralParts() {
+	startPosition := l.getCurrentPosition()
+	var result []rune
+
+	for {
+		if l.isEOF(0) {
+			l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated template literal", token.NewSpan(*startPosition, *startPosition)))
+			return
+		}
+		ch := l.source[l.cursor]
+		if ch == '`' {
+			endPosition := l.getCurrentPosition()
+			l.pushToken(token.NewTokenWithValue(token.TokenTypeTemplateLiteralStr, string(result), token.NewSpan(*startPosition, *endPosition)))
+			l.advance() // consume closing backtick
+			closePosition := l.getCurrentPosition()
+			l.pushToken(token.NewToken(token.TokenTypeTemplateLiteralEnd, token.NewSpan(*closePosition, *closePosition)))
+			return
+		}
+		if ch == '$' && !l.isEOF(1) && l.source[l.cursor+1] == '{' {
+			endPosition := l.getCurrentPosition()
+			l.pushToken(token.NewTokenWithValue(token.TokenTypeTemplateLiteralStr, string(result), token.NewSpan(*startPosition, *endPosition)))
+			l.advance() // consume '$'
+			l.advance() // consume '{'
+			exprStartPos := l.getCurrentPosition()
+			l.pushToken(token.NewToken(token.TokenTypeTemplateLiteralExprStart, token.NewSpan(*exprStartPos, *exprStartPos)))
+			l.templateBraceStack = append(l.templateBraceStack, 0)
+			return // main Lex() loop takes over for the expression tokens
+		}
+		if ch == '\\' && !l.isEOF(1) {
+			l.advance() // consume backslash
+			result = append(result, l.processEscapeSequence())
+		} else {
+			result = append(result, ch)
+			l.advance()
+			if l.isNewLine() {
+				l.newLine()
+			}
+		}
+	}
+}
+
 // processEscapeSequence processes an escape sequence after the backslash has been consumed
 func (l *Lexer) processEscapeSequence() rune {
 	if l.isEOF(0) {
@@ -294,10 +348,29 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			l.advance()
 		case char == '{':
 			l.pushToken(token.NewToken(token.TokenTypeLeftBrace, token.NewSpan(*position, *position)))
+			if len(l.templateBraceStack) > 0 {
+				l.templateBraceStack[len(l.templateBraceStack)-1]++
+			}
 			l.advance()
 		case char == '}':
-			l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*position, *position)))
-			l.advance()
+			if len(l.templateBraceStack) > 0 {
+				top := l.templateBraceStack[len(l.templateBraceStack)-1]
+				if top > 0 {
+					l.templateBraceStack[len(l.templateBraceStack)-1]--
+					l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*position, *position)))
+					l.advance()
+				} else {
+					l.templateBraceStack = l.templateBraceStack[:len(l.templateBraceStack)-1]
+					l.advance()
+					l.pushToken(token.NewToken(token.TokenTypeTemplateLiteralExprEnd, token.NewSpan(*position, *position)))
+					l.eatTemplateLiteralParts()
+				}
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypeRightBrace, token.NewSpan(*position, *position)))
+				l.advance()
+			}
+		case char == '`':
+			l.eatTemplateLiteral()
 		case char == ';':
 			l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*position, *position)))
 			l.advance()

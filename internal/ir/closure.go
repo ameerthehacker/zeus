@@ -166,6 +166,14 @@ func (w *astWalker) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value        {
 func (w *astWalker) VisitNull(*ast.NullExprNode) zeus_value.Value              { return nil }
 func (w *astWalker) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value { return nil }
 func (w *astWalker) VisitValueType(*ast.ValueTypeNode) zeus_value.Value        { return nil }
+func (w *astWalker) VisitTemplateString(node *ast.TemplateStringExprNode) zeus_value.Value {
+	for _, part := range node.Parts {
+		if part.IsExpr {
+			w.walkExpr(part.Expr)
+		}
+	}
+	return nil
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // freeVarCollector — finds variables referenced inside a closure body that

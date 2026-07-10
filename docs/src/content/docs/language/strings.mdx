@@ -339,6 +339,25 @@ let emoji = "👋";
 let emojiLen = emoji.length;  // 4
 ```
 
+## Template String Literals
+
+Template string literals use backticks and `${expression}` placeholders to embed string values inline:
+
+```zeus
+let name = "Zeus";
+let version = "1.0";
+
+let greeting = `Hello, ${name}!`;         // "Hello, Zeus!"
+let info = `${name} v${version}`;         // "Zeus v1.0"
+let plain = `no interpolation here`;      // "no interpolation here"
+```
+
+Each `${...}` expression must be of type `string`. Segments are concatenated left-to-right using the same `+` operator as explicit string concatenation, so all the same type rules apply.
+
+<Aside type="caution" title="String expressions only">
+  Interpolated expressions must be of type `string`. To embed a number, convert it to a string first using a method or format it via another string variable.
+</Aside>
+
 ## Future Features
 
 <Aside type="note" title="String Interning">
@@ -349,7 +368,6 @@ The following features are planned for future releases:
 
 - Substring extraction
 - Search and replace
-- String interpolation (`${expression}`)
 - Character iteration
 
 ---
