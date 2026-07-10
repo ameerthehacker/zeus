@@ -99,39 +99,21 @@ The mangled name is written back into `ClassAccessor.Getter.Name` / `.Setter.Nam
 | `GET_ACCESSOR(obj, "radius")` | `CALL_METHOD(obj, "#get_radius", [])` |
 | `SET_ACCESSOR(obj, "radius", v)` | `CALL_METHOD(obj, "#set_radius", [v])` |
 
-**Primordial accessors** (`IsLowered = true`) skip the `CALL_METHOD` path and expand directly to field access — no Zig runtime function is needed:
-
-| HIR | LIR |
-|-----|-----|
-| `GET_ACCESSOR(arr, "length")` | `OBJECT_PROPERTY_ACCESS(arr, "_length")` → `LOAD` |
-
 ### `this` bypass
 
 Inside a getter or setter body, `this.propName` bypasses the accessor lookup entirely (`isThisExpression` check in `VisitObjectPropertyAccessExpr`). This prevents infinite recursion when the getter reads the backing field by name.
 
 ---
 
-## Array `length` primordial accessor
+## Array `length` property
 
-The built-in array type exposes `length` as a read-only accessor backed by the private `_length` field:
+The built-in array type exposes `length` as a `public readonly` property:
 
 ```zeus
 let arr = new i32[](4);
 arr.push(1);
-let n = arr.length;   // calls the length getter → reads _length directly
-// arr.length = 5;    // type error: property 'length' is read-only
+let n = arr.length;   // direct property read
+// arr.length = 5;    // type error: cannot assign to readonly property 'length'
 ```
 
-Internal compiler code (bounds checks, lowering passes) accesses `_length` directly via `ARRAY_PROPERTY_LENGTH` constant — it never goes through the getter.
-
----
-
-## Adding a new primordial accessor
-
-1. Add a private backing property (e.g. `_foo`) to the class definition in `primordials.go`.
-2. Create a `*Function` with name `#get_foo` and the desired return type.
-3. Create a `ClassAccessor{Name: "foo", Getter: fn, IsLowered: true}`.
-4. Pass the accessor slice to `NewClass`.
-5. The `AccessorLoweringPass` will automatically expand `GET_ACCESSOR(obj, "foo")` to `OBJECT_PROPERTY_ACCESS(obj, "_foo") + LOAD`.
-
-No Zig runtime function or codegen case is needed.
+Internal compiler code (bounds checks, lowering passes) accesses it directly via `ARRAY_PROPERTY_LENGTH` constant — no accessor indirection needed.

@@ -36,7 +36,7 @@ const (
 // Array property names
 const (
 	ARRAY_PROPERTY_CAPACITY = "capacity"
-	ARRAY_PROPERTY_LENGTH   = "_length"
+	ARRAY_PROPERTY_LENGTH   = "length"
 	ARRAY_PROPERTY_DATA     = "data"
 )
 
@@ -62,8 +62,8 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 
 	// capacity of the array (private - internal implementation detail)
 	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
-	// _length of the array (private - exposed via getter accessor "length")
-	lengthProperty := NewClassProperty(NewVar("_length", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
+	// length of the array (public readonly - users can read but not write)
+	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, true)
 	// opaque pointer to the data of the array (private - internal implementation)
 	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
 	properties := []*ClassProperty{capacityProperty, lengthProperty, dataProperty}
@@ -198,14 +198,7 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 		publicMethod(isEmptyMethod),
 	}
 
-	// length getter: exposes the private _length field as a read-only accessor.
-	// IsLowered=true means AccessorLoweringPass expands it to OBJECT_PROPERTY_ACCESS(_length)+LOAD
-	// without needing a Zig runtime function.
-	lengthGetterFn := NewFunction("#get_length", []*Var{}, i32Type, span)
-	lengthAccessor := NewClassAccessor("length", lengthGetterFn, nil, &token.Token{Type: token.TokenTypePublic, Span: span})
-	lengthAccessor.IsLowered = true
-
-	return NewClass(arrayType.String(), properties, methods, []*ClassAccessor{lengthAccessor}, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
+	return NewClass(arrayType.String(), properties, methods, nil, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
 }
 
 // string is nothing but an array of u8

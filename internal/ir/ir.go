@@ -1827,9 +1827,9 @@ func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Valu
 	throwBlock := g.irBuilder.BuildSuccessorBlock()
 	continueBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// Get array length via the public "length" accessor (lowered to _length field access by AccessorLoweringPass)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
-	length := g.irBuilder.BuildGetAccessor(array, "length", span)
+	lengthPtr := g.irBuilder.BuildObjectPropertyAccess(array, zeus_value.ARRAY_PROPERTY_LENGTH, false, span)
+	length := g.irBuilder.BuildLoad(zeus_value.AsVar(lengthPtr), span)
 
 	// Check if index < 0
 	zero := zeus_value.NewConstant("0", i32Type, span)
