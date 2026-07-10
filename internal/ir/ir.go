@@ -1196,15 +1196,7 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 
 	if asVar != nil {
 		if asVar.IsPtr {
-			loaded := g.irBuilder.BuildLoad(asVar, expr.Name.Span)
-			// Carry the variable's (pointee) type onto the loaded value so that member-access
-			// resolution has the receiver's type available at IR-gen time. Without this the
-			// loaded temp is untyped until type-checking, and `obj.accessor` can't be told apart
-			// from a field access. tcLoad re-derives the same type later, so this is idempotent.
-			if lv := zeus_value.AsVar(loaded); lv != nil && lv.ValueType == nil {
-				lv.ValueType = asVar.ValueType
-			}
-			return loaded
+			return g.irBuilder.BuildLoad(asVar, expr.Name.Span)
 		} else {
 			return asVar
 		}
@@ -1913,12 +1905,6 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	// if the object is stored in a pointer variable then dereference it first
 	if asVar != nil && asVar.IsPtr {
 		object = g.irBuilder.BuildLoad(asVar, expr.GetSpan())
-		// Carry the pointee type onto the loaded receiver so accessor-vs-field resolution
-		// below has the object's type (the lvalue path loads here rather than in
-		// VisitIdentifier). tcLoad re-derives the same type, so this is idempotent.
-		if lv := zeus_value.AsVar(object); lv != nil && lv.ValueType == nil {
-			lv.ValueType = asVar.ValueType
-		}
 	}
 
 	// Static member access: object is a *Class (e.g. Counter.count, Counter.increment())
@@ -2033,6 +2019,17 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	}
 
 	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, g.isLValueExpr, expr.GetSpan())
+
+	// Type the field pointer from the receiver's (now-known) type so a chained access on the
+	// loaded field — e.g. `o.inner.value` — has the intermediate type at IR-gen. BuildLoad then
+	// carries this onto the loaded value.
+	if objType := zeus_value.AsObjectType(zeus_value.GetValueType(object)); objType != nil {
+		if prop := zeus_value.LookupInstanceProperty(objType.Class, property); prop != nil {
+			if pv := zeus_value.AsVar(propertyPtr); pv != nil && pv.ValueType == nil {
+				pv.ValueType = prop.Property.ValueType
+			}
+		}
+	}
 
 	if g.isLValueExpr {
 		return propertyPtr

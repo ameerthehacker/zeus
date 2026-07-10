@@ -379,6 +379,19 @@ func AsClass(value Value) *Class {
 	}
 }
 
+// LookupInstanceProperty finds a non-static data field by name on the class or any ancestor.
+// Returns nil if there is no such field (e.g. the name belongs to a method or accessor).
+func LookupInstanceProperty(class *Class, name string) *ClassProperty {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, prop := range c.Properties {
+			if !prop.IsStatic && prop.Property.Name == name {
+				return prop
+			}
+		}
+	}
+	return nil
+}
+
 func AsObject(value Value) *Object {
 	switch value := value.(type) {
 	case *Object:

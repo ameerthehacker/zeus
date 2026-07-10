@@ -318,6 +318,10 @@ func (b *IRBuilder) BuildExport(modulePath string, value zeus_value.Value, span 
 
 func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(addr.Span)
+	// Carry the address's (pointee) type onto the loaded value at IR-gen so that member-access
+	// resolution — which runs during IR-gen — has the receiver's type available instead of an
+	// untyped temp. tcLoad derives the same type from addr later, so this is idempotent.
+	result.ValueType = addr.ValueType
 
 	b.pushInstr(&Instr{
 		Type:   InstrTypeLoad,
