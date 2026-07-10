@@ -117,6 +117,10 @@ type Function struct {
 	Class        *Class // non-nil when this function is a class method
 	// IsVariadic is true when the final parameter is a rest parameter (`...args: T[]`).
 	IsVariadic bool
+	// ExternRuntimeName, when non-empty, is the Zig runtime symbol this method's body
+	// forwards to (see ClassMethod.IsExtern). It makes an extern method self-describing —
+	// codegen no longer needs the primordial name to derive the runtime symbol.
+	ExternRuntimeName string
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {

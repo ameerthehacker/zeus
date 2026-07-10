@@ -1,6 +1,7 @@
 package zeus_value
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -82,12 +83,15 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 }
 
 // MarkExternMethods flags a primordial class's methods (except IsLowered ones, which are
-// expanded by IR lowering) as extern — their bodies forward to the Zig runtime.
+// expanded by IR lowering) as extern — their bodies forward to the Zig runtime function
+// zeus_<primordial>_<method>, recorded on the method so codegen needs no primordial context.
 func MarkExternMethods(class *Class) {
 	for _, method := range class.Methods {
-		if !method.IsLowered {
-			method.IsExtern = true
+		if method.IsLowered {
+			continue
 		}
+		method.IsExtern = true
+		method.Method.ExternRuntimeName = fmt.Sprintf("zeus_%s_%s", class.PrimordialName, method.Method.Name)
 	}
 }
 

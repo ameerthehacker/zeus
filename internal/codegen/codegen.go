@@ -281,10 +281,6 @@ func (c *CodegenModule) getSizeOfClass(class zeus_value.Class) uint64 {
 	return size
 }
 
-func (c *CodegenModule) getPrimordialRuntimeFunctionName(methodName string, primordialName string) string {
-	return fmt.Sprintf("%s_%s_%s", "zeus", primordialName, methodName)
-}
-
 func (c *CodegenModule) genExternalRuntimeFunction(functionName string, numParams int, hasThisPtr bool) (llvm.Value, llvm.Type) {
 	// Check if function already exists in global functions
 	if globalFunc, exists := c.globalLLVMFunctions[functionName]; exists {
@@ -314,11 +310,6 @@ func (c *CodegenModule) genExternalRuntimeFunction(functionName string, numParam
 	return function, functionType
 }
 
-func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function, primordialName string) (llvm.Value, llvm.Type) {
-	functionName := c.getPrimordialRuntimeFunctionName(method.Name, primordialName)
-	return c.genExternalRuntimeFunction(functionName, len(method.Params), true)
-}
-
 // emitExternMethods generates the runtime-forwarding body for every extern method on the
 // class (see ClassMethod.IsExtern). Non-extern methods (user-defined and lowered) are
 // skipped, so this runs harmlessly for every class — primordials are just the classes that
@@ -343,7 +334,7 @@ func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
 
 		// The method body is an extern call into the Zig runtime.
-		c.emitExternMethodBody(classFunction, method.Method, class.PrimordialName)
+		c.emitExternMethodBody(classFunction, method.Method)
 	}
 	c.builder.SetInsertPointAtEnd(currentInsertionBlock)
 }
@@ -354,7 +345,7 @@ func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 // back through the buffer. This is the single "a method whose body is a runtime call"
 // primitive that primordial classes are built from — the seed of treating primordials as
 // ordinary classes whose methods happen to be extern.
-func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *zeus_value.Function, primordialName string) {
+func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *zeus_value.Function) {
 	// Thin wrappers around runtime functions; inline them away entirely.
 	alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
 	classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
@@ -362,7 +353,8 @@ func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *z
 	basicBlock := llvm.AddBasicBlock(classFunction, "entry")
 	c.builder.SetInsertPointAtEnd(basicBlock)
 
-	runtimeFunction, runtimeFuncType := c.genPrimordialRuntimeFunction(*method, primordialName)
+	// The runtime symbol is recorded on the method itself (self-describing extern method).
+	runtimeFunction, runtimeFuncType := c.genExternalRuntimeFunction(method.ExternRuntimeName, len(method.Params), true)
 
 	// 'this' is the last parameter.
 	params := classFunction.Params()
