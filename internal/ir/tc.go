@@ -156,6 +156,21 @@ func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
 }
 
+// variadicElementType returns the value type each trailing argument of a variadic call
+// must match, given the rest parameter's (array) type. A nested array element type is
+// normalised to its object form so it compares against array-valued arguments.
+func (tc *TypeChecker) variadicElementType(restParamType zeus_value.ValueType) zeus_value.ValueType {
+	objType := zeus_value.AsObjectType(restParamType)
+	if objType == nil {
+		return restParamType
+	}
+	elementType := objType.Class.ArrayElementType
+	if arrayType, ok := elementType.(zeus_value.ArrayType); ok {
+		return zeus_value.NewObjectType(tc.getClassFromArrayType(arrayType))
+	}
+	return elementType
+}
+
 // getClassFromArrayType looks up (or creates on demand) the array primordial class.
 func (tc *TypeChecker) getClassFromArrayType(arrayType zeus_value.ArrayType) *zeus_value.Class {
 	arrayTypeClassName := arrayType.String()

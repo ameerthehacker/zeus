@@ -47,6 +47,8 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	// converts CALL_METHOD instructions (for fn-type properties) into INDIRECT_FUNC_CALL,
 	// which is what the null-check pass watches for.
 	l.passes = []LowerPass{
+		// Runs first so all later passes see a normalized fixed-arity argument list.
+		NewVariadicCallLoweringPass(),
 		NewArrayMethodLoweringPass(),
 		NewIndexLoweringPass(),
 		NewStringOperatorLoweringPass(),
@@ -578,6 +580,202 @@ func (p *IndexLoweringPass) lowerSetIndex(l *Lowerer, instr *Instr, input *SetIn
 		span)
 
 	builder.DeleteInstr(block, instr)
+}
+
+// =============================================================================
+// VariadicCallLoweringPass - collapses the trailing arguments of variadic calls
+// into a freshly-created Zeus array, so a variadic callee always receives an array.
+// =============================================================================
+
+type variadicCallToLower struct {
+	instr      *Instr
+	block      *BasicBlock
+	fixedCount int
+	restType   zeus_value.ValueType
+}
+
+// VariadicCallLoweringPass rewrites calls to variadic functions/methods. Trailing
+// arguments (those past the fixed parameters) are pushed into a new Zeus array and the
+// call's argument list becomes [fixed..., restArray]. It handles direct calls
+// (CALL_FUNC), indirect/functor calls (INDIRECT_FUNC_CALL) and method calls
+// (METHOD_CALL). It runs first so every later pass observes a fixed-arity argument list.
+type VariadicCallLoweringPass struct {
+	callsToLower []variadicCallToLower
+}
+
+func NewVariadicCallLoweringPass() *VariadicCallLoweringPass {
+	return &VariadicCallLoweringPass{}
+}
+
+func (p *VariadicCallLoweringPass) GetName() string {
+	return "VariadicCallLowering"
+}
+
+func (p *VariadicCallLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	fixedCount, restType, ok := variadicCallTarget(instr)
+	if !ok {
+		return
+	}
+	p.callsToLower = append(p.callsToLower, variadicCallToLower{instr, l.GetCurrentBlock(), fixedCount, restType})
+}
+
+func (p *VariadicCallLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, call := range p.callsToLower {
+		lowerVariadicCall(builder, call)
+	}
+}
+
+// variadicCallTarget reports the fixed-parameter count and rest parameter type when
+// instr is a call to a variadic callee; ok is false otherwise.
+func variadicCallTarget(instr *Instr) (int, zeus_value.ValueType, bool) {
+	switch instr.Type {
+	case InstrTypeCallFunc:
+		callee := zeus_value.AsFunction(AsCallFuncInstrInput(instr.Input).Callee)
+		if callee == nil || !callee.IsVariadic {
+			return 0, nil, false
+		}
+		return restFromParams(callee.Params)
+	case InstrTypeIndirectFuncCall:
+		calleeType := zeus_value.GetValueType(AsIndirectFuncCallInstrInput(instr.Input).Function)
+		if ft := zeus_value.AsFunctionType(calleeType); ft != nil {
+			if !ft.IsVariadic {
+				return 0, nil, false
+			}
+			return restFromParamTypes(ft.ParamTypes)
+		}
+		// Functor/closure object callee (e.g. `f(args)` where f is a functor instance).
+		// The call is still INDIRECT here — FunctorCallLoweringPass rewrites it to a
+		// __call__ method call later, after this pass has collapsed the trailing args.
+		if objType := zeus_value.AsObjectType(calleeType); objType != nil {
+			if params, ok := variadicMethodParams(objType.Class, token.FUNCTOR_CALL_METHOD_NAME); ok {
+				return restFromParams(params)
+			}
+		}
+	case InstrTypeMethodCall:
+		input := AsMethodCallInstrInput(instr.Input)
+		objType := zeus_value.AsObjectType(zeus_value.GetValueType(input.Object))
+		if objType == nil {
+			return 0, nil, false
+		}
+		// Real class method.
+		if params, ok := variadicMethodParams(objType.Class, input.MethodName); ok {
+			return restFromParams(params)
+		}
+		// Function-typed property invoked as a method: obj.fnProp(args).
+		for _, property := range objType.Class.Properties {
+			if property.Property.Name == input.MethodName {
+				if ft, ok := property.Property.ValueType.(zeus_value.FunctionType); ok && ft.IsVariadic {
+					return restFromParamTypes(ft.ParamTypes)
+				}
+			}
+		}
+	}
+	return 0, nil, false
+}
+
+// variadicMethodParams returns the parameters of a class method matched by source name
+// when that method is variadic.
+func variadicMethodParams(class *zeus_value.Class, name string) ([]*zeus_value.Var, bool) {
+	for _, method := range class.Methods {
+		if method.Method.SourceName() == name && method.Method.IsVariadic {
+			return method.Method.Params, true
+		}
+	}
+	return nil, false
+}
+
+func restFromParams(params []*zeus_value.Var) (int, zeus_value.ValueType, bool) {
+	if len(params) == 0 {
+		return 0, nil, false
+	}
+	fixedCount := len(params) - 1
+	return fixedCount, params[fixedCount].ValueType, true
+}
+
+func restFromParamTypes(paramTypes []zeus_value.ValueType) (int, zeus_value.ValueType, bool) {
+	if len(paramTypes) == 0 {
+		return 0, nil, false
+	}
+	fixedCount := len(paramTypes) - 1
+	return fixedCount, paramTypes[fixedCount], true
+}
+
+// arrayClassFromType resolves the array primordial class for a rest parameter's type.
+// Rest parameters resolved during IR gen are ObjectTypes; a rest parameter coming from a
+// function-type annotation (e.g. `(...xs: i32[]) => i32`) is a raw ArrayType that must be
+// looked up (or created) from the array class registry.
+func arrayClassFromType(builder *IRBuilder, valueType zeus_value.ValueType) *zeus_value.Class {
+	if objType := zeus_value.AsObjectType(valueType); objType != nil && objType.Class.ArrayElementType != nil {
+		return objType.Class
+	}
+	arrayType, ok := valueType.(zeus_value.ArrayType)
+	if !ok {
+		return nil
+	}
+	className := arrayType.String()
+	if sym, ok := builder.symbolTable.GetSymbol(className); ok {
+		return zeus_value.AsClass(sym)
+	}
+	arrayClass := zeus_value.Registry.GetOrCreateArrayClass(arrayType)
+	builder.symbolTable.DeclareGlobalSymbol(className, arrayClass)
+	builder.EmitClassDeclAtStart(arrayClass)
+	return arrayClass
+}
+
+func lowerVariadicCall(builder *IRBuilder, call variadicCallToLower) {
+	instr := call.instr
+	span := instr.Span
+	args := variadicCallArgs(instr)
+
+	arrayClass := arrayClassFromType(builder, call.restType)
+	zeus_error.Assert(arrayClass != nil, "variadic rest parameter is not an array type - type checking should have caught this")
+
+	setInsertionPoint(builder, call.block, instr)
+
+	// Build an empty rest array (always created, even with zero trailing args) and push
+	// each trailing argument into it. The array is created empty (length 0) and grown by
+	// push — the constructor argument is the initial length, so it must start at 0.
+	zero := zeus_value.NewConstant("0", zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span)
+	arrayObj := createTypedNewObj(builder, arrayClass, []zeus_value.Value{zero}, span)
+
+	elementType := arrayClass.ArrayElementType
+	for _, arg := range args[call.fixedCount:] {
+		builder.BuildMethodCall(arrayObj, zeus_value.ARRAY_METHOD_PUSH,
+			[]zeus_value.Value{arg},
+			zeus_value.VoidType{Span: span},
+			[]zeus_value.ValueType{elementType},
+			span)
+	}
+
+	// Rewrite the call arguments to [fixed..., restArray].
+	newArgs := append(append([]zeus_value.Value{}, args[:call.fixedCount]...), arrayObj)
+	setVariadicCallArgs(instr, newArgs)
+}
+
+// variadicCallArgs returns the argument slice of a call instruction.
+func variadicCallArgs(instr *Instr) []zeus_value.Value {
+	switch instr.Type {
+	case InstrTypeCallFunc:
+		return AsCallFuncInstrInput(instr.Input).Args
+	case InstrTypeIndirectFuncCall:
+		return AsIndirectFuncCallInstrInput(instr.Input).Args
+	case InstrTypeMethodCall:
+		return AsMethodCallInstrInput(instr.Input).Args
+	}
+	return nil
+}
+
+// setVariadicCallArgs replaces the argument slice of a call instruction in place.
+func setVariadicCallArgs(instr *Instr, args []zeus_value.Value) {
+	switch instr.Type {
+	case InstrTypeCallFunc:
+		AsCallFuncInstrInput(instr.Input).Args = args
+	case InstrTypeIndirectFuncCall:
+		AsIndirectFuncCallInstrInput(instr.Input).Args = args
+	case InstrTypeMethodCall:
+		AsMethodCallInstrInput(instr.Input).Args = args
+	}
 }
 
 // =============================================================================

@@ -501,7 +501,20 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			l.pushToken(token.NewToken(token.TokenTypeColon, token.NewSpan(*position, *position)))
 			l.advance()
 		case char == '.':
-			l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(*position, *position)))
+			startPosition := position
+			if l.matchNextRune('.') {
+				l.advance()
+				if l.matchNextRune('.') {
+					l.advance()
+					endPosition := l.getCurrentPosition()
+					l.pushToken(token.NewToken(token.TokenTypeEllipsis, token.NewSpan(*startPosition, *endPosition)))
+				} else {
+					endPosition := l.getCurrentPosition()
+					l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unexpected '..'; did you mean '...'?", token.NewSpan(*startPosition, *endPosition)))
+				}
+			} else {
+				l.pushToken(token.NewToken(token.TokenTypeDot, token.NewSpan(*startPosition, *startPosition)))
+			}
 			l.advance()
 		case char == '=':
 			startPosition := position

@@ -37,6 +37,9 @@ type VarDeclNode struct {
 	ValueType   *ValueTypeNode
 	DeclType    VarDeclType
 	Initializer ExprNode
+	// IsVariadic marks a rest parameter (`...args: T[]`). Only meaningful for
+	// function/method parameters; always false for let/const declarations.
+	IsVariadic bool
 }
 
 type VarDeclStmtNode struct {

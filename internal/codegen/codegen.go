@@ -59,6 +59,11 @@ type CodegenModule struct {
 	builder                llvm.Builder
 	cxt                    llvm.Context
 	llvmValues             map[string]llvm.Value
+	// llvmFunctions is a separate namespace for functions so their (uniquified) IR names
+	// can never collide with parameter/variable names in llvmValues — primordial method
+	// params use non-unique literal names (e.g. "count", "value") that would otherwise
+	// shadow a user function of the same name and crash codegen.
+	llvmFunctions          map[string]llvm.Value
 	basicBlocks            map[int]llvm.BasicBlock
 	isEntryPoint           bool
 	exportedClasses        map[string]ZeusClassModule
@@ -157,6 +162,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		builder:                builder,
 		cxt:                    c.cxt,
 		llvmValues:             make(map[string]llvm.Value),
+		llvmFunctions:          make(map[string]llvm.Value),
 		basicBlocks:            make(map[int]llvm.BasicBlock),
 		isEntryPoint:           isEntryPoint,
 		exportedClasses:        make(map[string]ZeusClassModule),
@@ -254,6 +260,14 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 	v, ok := c.llvmValues[name]
 	if !ok {
 		panic(fmt.Sprintf("symbol %s not found", name))
+	}
+	return v
+}
+
+func (c *CodegenModule) getFunctionSymbol(name string) llvm.Value {
+	v, ok := c.llvmFunctions[name]
+	if !ok {
+		panic(fmt.Sprintf("function %s not found", name))
 	}
 	return v
 }
@@ -500,7 +514,7 @@ func (c *CodegenModule) toLLVMValue(value zeus_value.Value) llvm.Value {
 	case *zeus_value.Var:
 		return c.getSymbol(value.Name)
 	case *zeus_value.Function:
-		return c.getSymbol(value.Name)
+		return c.getFunctionSymbol(value.Name)
 	case *zeus_value.Object:
 		return c.getSymbol(value.Name)
 	default:
@@ -563,7 +577,7 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 	// If the function was already pre-declared (by the forward-declaration phase),
 	// return the existing LLVM value — calling AddFunction again would cause LLVM
 	// to rename the second call to "name.1", producing a body-less stub.
-	if existing, ok := c.llvmValues[function.Name]; ok {
+	if existing, ok := c.llvmFunctions[function.Name]; ok {
 		for index, param := range existing.Params() {
 			c.llvmValues[function.Params[index].Name] = param
 		}
@@ -579,7 +593,7 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 
 	c.addFramePointerAttr(llvmFunc)
 
-	c.llvmValues[function.Name] = llvmFunc
+	c.llvmFunctions[function.Name] = llvmFunc
 
 	return llvmFunc
 }
@@ -951,7 +965,7 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	case *zeus_value.Function:
 		importedFunc := llvm.AddFunction(c.module, module.GetModuleScopedName(input.ModulePath, importedValue.Name), c.toLLVMFunctionType(zeus_value.ToFunctionType(*importedValue)))
 		c.addFramePointerAttr(importedFunc)
-		c.llvmValues[importedValue.Name] = importedFunc
+		c.llvmFunctions[importedValue.Name] = importedFunc
 	case *zeus_value.Class:
 		c.genImportedClass(*importedValue, input.ModulePath)
 	default:

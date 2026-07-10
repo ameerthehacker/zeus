@@ -73,6 +73,29 @@ let a: f64 = rect.area();       // 50.0
 let p: f64 = rect.perimeter();  // 30.0
 ```
 
+Methods support [rest parameters](/language/functions/#rest-parameters) too — prefix the final parameter with `...`:
+
+```zeus
+class Accumulator {
+  public base: i32;
+
+  constructor(base: i32) {
+    this.base = base;
+  }
+
+  public sum(...nums: i32[]): i32 {
+    let total: i32 = this.base;
+    for (let i: i32 = 0; i < nums.length; i++) {
+      total += nums[i];
+    }
+    return total;
+  }
+}
+
+let acc: Accumulator = new Accumulator(10);
+let total: i32 = acc.sum(1, 2, 3);  // 16
+```
+
 ## The `this` Keyword
 
 Inside a class, `this` refers to the current instance:

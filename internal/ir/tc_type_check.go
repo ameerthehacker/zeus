@@ -411,6 +411,19 @@ func (p *TypeCheckingPass) tcDeclVar(tc *TypeChecker, instr *Instr) {
 func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Instr, targetType zeus_value.ValueType, b zeus_value.Value) zeus_value.Value {
 	bType := tc.getValueType(b)
 
+	// A raw function assigned to a function-type slot must be wrapped in a functor object,
+	// even though its type already matches (all FunctionType values are functor objects at
+	// runtime). This must run before the CmpValueType short-circuit below — same ordering
+	// as tryImplicitCast — so property stores and returns wrap the function, not just var
+	// initializers (which are wrapped during IR generation).
+	if zeus_value.AsFunction(b) != nil {
+		if _, ok := targetType.(zeus_value.FunctionType); ok {
+			if casted, ok := p.tryImplicitCast(tc, instr, b, targetType); ok {
+				return casted
+			}
+		}
+	}
+
 	if !zeus_value.CmpValueType(targetType, bType) {
 		castedB, ok := p.tryImplicitCast(tc, instr, b, targetType)
 
@@ -757,6 +770,10 @@ func (p *TypeCheckingPass) tcImport(tc *TypeChecker, instr *Instr) {
 // tcFunctionCall performs common type checking logic for function calls
 // It validates arguments and performs implicit casting based on function signature
 func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
+	if functionType.IsVariadic {
+		return p.tcVariadicFunctionCall(tc, instr, functionType, args, calleeSpan)
+	}
+
 	if len(args) != len(functionType.ParamTypes) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("expected %d arguments for function, but found %d", len(functionType.ParamTypes), len(args)),
@@ -772,6 +789,47 @@ func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functio
 		if !ok {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), functionType.ParamTypes[i]),
+				Span:    args[i].GetSpan(),
+			})
+		}
+	}
+
+	return args
+}
+
+// tcVariadicFunctionCall type-checks a call to a variadic function. The fixed leading
+// parameters are checked positionally; every trailing argument is checked against the
+// rest parameter's array element type. Arguments are returned unchanged in shape — the
+// VariadicCallLoweringPass later collapses the trailing arguments into an array.
+func (p *TypeCheckingPass) tcVariadicFunctionCall(tc *TypeChecker, instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
+	fixedCount := len(functionType.ParamTypes) - 1
+
+	if len(args) < fixedCount {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("expected at least %d arguments for function, but found %d", fixedCount, len(args)),
+			Span:    calleeSpan,
+		})
+		return args
+	}
+
+	elementType := tc.variadicElementType(functionType.ParamTypes[fixedCount])
+	// elementType is nil only when the rest parameter is not an array — that error is
+	// already reported during IR gen (checkVariadicParamType), so skip the trailing-arg
+	// checks to avoid cascading "<nil>" type errors.
+	checkTrailing := elementType != nil
+
+	for i := range args {
+		expected := elementType
+		if i < fixedCount {
+			expected = functionType.ParamTypes[i]
+		} else if !checkTrailing {
+			continue
+		}
+		castedArg, ok := p.tryImplicitCast(tc, instr, args[i], expected)
+		args[i] = castedArg
+		if !ok {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), expected),
 				Span:    args[i].GetSpan(),
 			})
 		}
@@ -1139,6 +1197,11 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 		for _, property := range class.Properties {
 			if property.Property.Name == input.MethodName {
 				if ft, ok := property.Property.ValueType.(zeus_value.FunctionType); ok {
+					// Type-check the arguments against the property's function type
+					// (arity + variadic element types + implicit casts), same as a
+					// direct/indirect call, before the lowering pass rewrites this.
+					input.Args = p.tcFunctionCall(tc, instr, ft, input.Args, instr.Output.Span)
+					instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
 					instr.Output.ValueType = ft.ReturnType
 					return
 				}

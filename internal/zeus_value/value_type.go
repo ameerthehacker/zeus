@@ -155,6 +155,9 @@ type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
 	Span       *token.Span
+	// IsVariadic is true when the final entry of ParamTypes is a rest parameter
+	// (an array type whose element type accepts the trailing call arguments).
+	IsVariadic bool
 }
 
 func (f FunctionType) GetSpan() *token.Span {
@@ -351,6 +354,7 @@ func ToFunctionType(value Function) FunctionType {
 	return FunctionType{
 		ReturnType: value.ReturnType,
 		ParamTypes: param_types,
+		IsVariadic: value.IsVariadic,
 	}
 }
 
@@ -513,7 +517,7 @@ func CmpValueType(a, b ValueType) bool {
 		return ok
 	case FunctionType:
 		b, ok := b.(FunctionType)
-		if !ok || len(a.ParamTypes) != len(b.ParamTypes) {
+		if !ok || len(a.ParamTypes) != len(b.ParamTypes) || a.IsVariadic != b.IsVariadic {
 			return false
 		}
 

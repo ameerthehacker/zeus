@@ -419,22 +419,27 @@ func (b *IRBuilder) BuildFuncDecl(name string, args []*VarDecl, body *BasicBlock
 	b.symbolTable.EnterScope()
 	params := []*zeus_value.Var{}
 	for _, arg := range args {
-		variable := zeus_value.NewVar(b.generateUniqueGlobalName(arg.Name), arg.ValueType, false, arg.Span)
+		variable := zeus_value.NewVar(b.generateUniqueGlobalName(arg.Name), arg.ValueType, false, arg.Span, arg.IsVariadic)
 		b.symbolTable.DeclareSymbol(arg.Name, variable)
 
 		params = append(params, variable)
 	}
+
+	// A function is variadic when its final parameter is a rest parameter.
+	isVariadic := len(params) > 0 && params[len(params)-1].IsVariadic
 
 	var fn *zeus_value.Function
 	if existingStub != nil {
 		// Update stub in place so forward-call references remain valid
 		existingStub.Params = params
 		existingStub.ReturnType = return_type
+		existingStub.IsVariadic = isVariadic
 		fn = existingStub
 		b.usedFuncIRNames[fn.Name] = true
 	} else {
 		irName := b.generateUniqueFuncIRName(name)
 		fn = zeus_value.NewFunction(irName, params, return_type, span)
+		fn.IsVariadic = isVariadic
 		if irName != name {
 			fn.OriginalName = name
 		}

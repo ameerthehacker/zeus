@@ -49,6 +49,75 @@ function calculate(x: f64, y: f64, z: f64): f64 {
   All parameters require explicit type annotations.
 </Aside>
 
+## Rest Parameters
+
+A rest parameter collects a variable number of trailing arguments into an array. Prefix the final parameter with `...` and give it an array type:
+
+```zeus
+function sum(...nums: i32[]): i32 {
+  let total: i32 = 0;
+  for (let i: i32 = 0; i < nums.length; i++) {
+    total += nums[i];
+  }
+  return total;
+}
+
+function main(): i32 {
+  return sum(1, 2, 3, 4, 5);  // 15
+}
+```
+
+Inside the function the rest parameter is an ordinary array, so `.length`, indexing, and the other array methods are all available. Each argument you pass is type-checked against the array's element type.
+
+A rest parameter can follow any number of fixed parameters. The fixed arguments are matched first, and everything after them is collected:
+
+```zeus
+function sumFrom(base: i32, ...rest: i32[]): i32 {
+  let total: i32 = base;
+  for (let i: i32 = 0; i < rest.length; i++) {
+    total += rest[i];
+  }
+  return total;
+}
+
+function main(): i32 {
+  return sumFrom(100, 1, 2, 3);  // 106
+}
+```
+
+Calling with no trailing arguments produces an empty array:
+
+```zeus
+function count(...items: i32[]): i32 {
+  return items.length;
+}
+
+function main(): i32 {
+  return count();  // 0
+}
+```
+
+Rest parameters work everywhere functions do — including class methods, anonymous functions, fat arrows, and function references. For example, calling a variadic function through a function-typed value:
+
+```zeus
+function sum(...nums: i32[]): i32 {
+  let total: i32 = 0;
+  for (let i: i32 = 0; i < nums.length; i++) {
+    total += nums[i];
+  }
+  return total;
+}
+
+function main(): i32 {
+  let f: (...nums: i32[]) => i32 = sum;
+  return f(2, 4, 6);  // 12
+}
+```
+
+<Aside type="note">
+  A rest parameter must be the **last** parameter, and its type must be an array (`T[]`).
+</Aside>
+
 ## Return Types
 
 The return type is specified after the parameter list:

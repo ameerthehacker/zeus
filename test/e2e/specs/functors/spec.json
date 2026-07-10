@@ -8,5 +8,10 @@
         "name": "Functor cast to function type",
         "exit": "0",
         "entry": "cast-to-fn-type.zs"
+    },
+    {
+        "name": "Top-level function assigned to a function-typed property",
+        "exit": "0",
+        "entry": "fn-into-property.zs"
     }
 ]

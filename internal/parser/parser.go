@@ -138,6 +138,11 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 		param := p.parseVarDecl(false, false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
 		p.consumeOptionalToken(token.TokenTypeComma)
+
+		// A rest parameter must be the final parameter.
+		if param.IsVariadic && p.peek().Type != token.TokenTypeRightParen {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "rest parameter must be the last parameter", param.Identifier.GetSpan()))
+		}
 	}
 
 	p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("after %s parameters", fnType))
@@ -685,7 +690,13 @@ func (p *Parser) consumeFunctionType(cxt string) *ast.ValueTypeNode {
 	p.consumeToken(token.TokenTypeLeftParen, fmt.Sprintf("in %s", cxt))
 
 	paramTypes := []zeus_value.ValueType{}
+	isVariadic := false
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
+		// a leading `...` marks the rest parameter of the function type
+		if p.peek().Type == token.TokenTypeEllipsis {
+			p.consume()
+			isVariadic = true
+		}
 		// optional parameter name followed by ':'
 		if p.peek().Type == token.TokenTypeIdentifier && p.lookahead(1, token.TokenTypeColon) {
 			p.consume() // name
@@ -694,6 +705,10 @@ func (p *Parser) consumeFunctionType(cxt string) *ast.ValueTypeNode {
 		paramType := p.consumeDataType("parameter type", cxt)
 		paramTypes = append(paramTypes, paramType.ValueType)
 		p.consumeOptionalToken(token.TokenTypeComma)
+
+		if isVariadic && p.peek().Type != token.TokenTypeRightParen {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "rest parameter must be the last parameter", startToken.Span))
+		}
 	}
 
 	p.consumeToken(token.TokenTypeRightParen, fmt.Sprintf("in %s", cxt))
@@ -701,6 +716,7 @@ func (p *Parser) consumeFunctionType(cxt string) *ast.ValueTypeNode {
 	returnType := p.consumeDataType("return type", cxt)
 
 	fnType := zeus_value.NewFunctionType(returnType.ValueType, paramTypes)
+	fnType.IsVariadic = isVariadic
 	return &ast.ValueTypeNode{ValueType: fnType, Span: startToken.Span}
 }
 
@@ -969,6 +985,13 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 func (p *Parser) parseVarDecl(allowInitializer bool, optionalDataType bool, declType ast.VarDeclType, cxt string) *ast.VarDeclNode {
 	var initializer ast.ExprNode
 
+	// A leading `...` marks a rest/variadic parameter (`...args: T[]`).
+	isVariadic := false
+	if p.peek().Type == token.TokenTypeEllipsis {
+		p.consume()
+		isVariadic = true
+	}
+
 	identifier := p.consumeIdentifier(fmt.Sprintf("in %s", cxt))
 	var dataType *ast.ValueTypeNode
 	if !optionalDataType || p.peek().Type == token.TokenTypeColon {
@@ -982,7 +1005,7 @@ func (p *Parser) parseVarDecl(allowInitializer bool, optionalDataType bool, decl
 		initializer = p.ParseExpr("for variable initializer")
 	}
 
-	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, ValueType: dataType}
+	return &ast.VarDeclNode{DeclType: declType, Identifier: identifier, Initializer: initializer, ValueType: dataType, IsVariadic: isVariadic}
 }
 
 func (p *Parser) parseArgumentList() ([]ast.ExprNode, *token.Token) {
