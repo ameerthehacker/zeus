@@ -1456,17 +1456,18 @@ func (g *IRModule) buildAccessors(class *zeus_value.Class, accessorASTs []*ast.C
 			fn.Class = class // associates static accessor fn with its class for TC context
 		}
 
-		// Write mangled name back into the class accessor descriptor.
+		// Write the mangled name back into the class accessor descriptor. The mangled name is
+		// also the accessor function's SourceName() (OriginalName is left unset) so that vtable
+		// dispatch — BuildMethodCall(obj, acc.Getter.Name) → GetMethodIndex(SourceName) — resolves
+		// the correct getter/setter slot (getter and setter have distinct mangled names).
 		for _, acc := range class.Accessors {
 			if acc.Name != name {
 				continue
 			}
 			if method.Accessor == ast.AccessorKindGetter && acc.Getter != nil {
 				acc.Getter.Name = mangledName
-				acc.Getter.OriginalName = name
 			} else if method.Accessor == ast.AccessorKindSetter && acc.Setter != nil {
 				acc.Setter.Name = mangledName
-				acc.Setter.OriginalName = name
 			}
 			break
 		}
@@ -1751,6 +1752,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	methods := append(regularMethods, staticMethods...)
 
 	// Build ClassAccessor stubs — function bodies are emitted in buildAccessors below.
+	// Instance getters/setters are also appended to class.Methods (below) so they get real
+	// vtable slots; the ClassAccessor descriptor is just a name → getter/setter index.
+	var accessorMethods []*zeus_value.ClassMethod
 	for _, method := range accessorMethodASTs {
 		name := method.Name.Name.Value
 		// Find or create an accessor entry for this name.
@@ -1777,14 +1781,28 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
 		}
 
+		var fn *zeus_value.Function
 		if method.Accessor == ast.AccessorKindGetter {
-			fn := zeus_value.NewFunction("#get_"+name, params, returnType, method.Span)
+			fn = zeus_value.NewFunction("#get_"+name, params, returnType, method.Span)
 			acc.Getter = fn
 		} else {
-			fn := zeus_value.NewFunction("#set_"+name, params, zeus_value.VoidType{Span: method.Span}, method.Span)
+			fn = zeus_value.NewFunction("#set_"+name, params, zeus_value.VoidType{Span: method.Span}, method.Span)
 			acc.Setter = fn
 		}
+
+		// Instance accessors are vtable-dispatched methods (buildAccessors emits them as
+		// DECL_CLASS_METHOD). Give them a slot by putting them in class.Methods, in the same
+		// order buildAccessors emits them, so genClassMethod's slot writes line up. Static
+		// accessors are plain functions (no self, no vtable) and stay out of the list.
+		if !method.IsStatic {
+			cm := zeus_value.NewClassMethod(fn, method.AccessModifier)
+			cm.IsAccessor = true
+			accessorMethods = append(accessorMethods, cm)
+		}
 	}
+	// Append after regular + static so buildClass/buildStaticMethods' index assumptions hold;
+	// non-static enumeration (used by the vtable) becomes [regular…, accessors…].
+	methods = append(methods, accessorMethods...)
 
 	// Resolve parent class for inheritance (extends clause).
 	var parentClass *zeus_value.Class
@@ -1853,31 +1871,6 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	return class
 }
 
-// findAccessorInClass searches the class and its parent chain for an instance accessor by name.
-func findAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
-	for class != nil {
-		for _, acc := range class.Accessors {
-			if acc.Name == name {
-				return acc
-			}
-		}
-		class = class.ParentClass
-	}
-	return nil
-}
-
-// findStaticAccessorInClass searches the class and its parent chain for a static accessor by name.
-func findStaticAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
-	for class != nil {
-		for _, acc := range class.Accessors {
-			if acc.IsStatic && acc.Name == name {
-				return acc
-			}
-		}
-		class = class.ParentClass
-	}
-	return nil
-}
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
@@ -1984,7 +1977,7 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	if !g.isThisExpression(expr.Object) {
 		objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
 		if objType != nil {
-			if acc := findAccessorInClass(objType.Class, property); acc != nil {
+			if acc := zeus_value.LookupAccessor(objType.Class, property); acc != nil {
 				if g.isLValueExpr {
 					return zeus_value.NewAccessorLValue(object, property, expr.GetSpan())
 				}
@@ -2001,6 +1994,17 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	}
 
 	propertyPtr := g.irBuilder.BuildObjectPropertyAccess(object, property, g.isLValueExpr, expr.GetSpan())
+
+	// Type the field pointer from the receiver's (now-known) type so a chained access on the
+	// loaded field — e.g. `o.inner.value` — has the intermediate type at IR-gen. BuildLoad then
+	// carries this onto the loaded value.
+	if objType := zeus_value.AsObjectType(zeus_value.GetValueType(object)); objType != nil {
+		if prop := zeus_value.LookupInstanceProperty(objType.Class, property); prop != nil {
+			if pv := zeus_value.AsVar(propertyPtr); pv != nil && pv.ValueType == nil {
+				pv.ValueType = prop.Property.ValueType
+			}
+		}
+	}
 
 	if g.isLValueExpr {
 		return propertyPtr

@@ -363,14 +363,14 @@ func (p *AccessorLoweringPass) Finalize(l *Lowerer) {
 func (p *AccessorLoweringPass) findAccessor(object zeus_value.Value, accessorName string) *zeus_value.ClassAccessor {
 	// Static accessor: object is a *Class
 	if class := zeus_value.AsClass(object); class != nil {
-		return findStaticAccessorInClass(class, accessorName)
+		return zeus_value.LookupStaticAccessor(class, accessorName)
 	}
 	// Instance accessor
 	objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
 	if objType == nil {
 		return nil
 	}
-	return findAccessorInClass(objType.Class, accessorName)
+	return zeus_value.LookupAccessor(objType.Class, accessorName)
 }
 
 func (p *AccessorLoweringPass) lowerGetAccessor(l *Lowerer, instr *Instr, block *BasicBlock) {

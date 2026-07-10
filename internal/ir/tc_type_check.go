@@ -916,7 +916,7 @@ func (p *TypeCheckingPass) tcDeclClass(tc *TypeChecker, instr *Instr) {
 func (p *TypeCheckingPass) resolveAccessor(tc *TypeChecker, object zeus_value.Value, accessorName string, verb string, span *token.Span) *zeus_value.ClassAccessor {
 	// Static accessor: object is a *Class (already validated at IR gen time)
 	if class := zeus_value.AsClass(object); class != nil {
-		acc := findStaticAccessorInClass(class, accessorName)
+		acc := zeus_value.LookupStaticAccessor(class, accessorName)
 		if acc == nil {
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("static accessor '%s' not found in class '%s'", accessorName, class.SourceName()),
@@ -935,7 +935,7 @@ func (p *TypeCheckingPass) resolveAccessor(tc *TypeChecker, object zeus_value.Va
 		})
 		return nil
 	}
-	acc := findAccessorInClass(objType.Class, accessorName)
+	acc := zeus_value.LookupAccessor(objType.Class, accessorName)
 	if acc == nil {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("property '%s' not found in class '%s'", accessorName, objType.Class.SourceName()),

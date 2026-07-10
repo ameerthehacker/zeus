@@ -1,6 +1,7 @@
 package zeus_value
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -73,6 +74,25 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 	// method signatures. Primordial definitions use UserDefinedType as a placeholder to avoid
 	// forward-reference issues; now that string is registered we can resolve them.
 	r.resolveStringRefs()
+
+	// Every non-lowered primordial method is backed by a Zig runtime function; mark them extern
+	// so codegen emits their bodies through the shared extern-method path (not a special case).
+	for _, class := range r.classes {
+		MarkExternMethods(class)
+	}
+}
+
+// MarkExternMethods flags a primordial class's methods (except IsLowered ones, which are
+// expanded by IR lowering) as extern — their bodies forward to the Zig runtime function
+// zeus_<primordial>_<method>, recorded on the method so codegen needs no primordial context.
+func MarkExternMethods(class *Class) {
+	for _, method := range class.Methods {
+		if method.IsLowered {
+			continue
+		}
+		method.IsExtern = true
+		method.Method.ExternRuntimeName = fmt.Sprintf("zeus_%s_%s", class.PrimordialName, method.Method.Name)
+	}
 }
 
 // resolveStringRefs rewrites every UserDefinedType{"string"} in all registered primordial
@@ -194,6 +214,7 @@ func (r *PrimordialRegistry) getOrCreateArrayClassUnsafe(arrayType ArrayType) *C
 	r.classOrder = append(r.classOrder, className)
 	// Resolve raw ArrayType signatures now that all nested classes are registered.
 	r.resolveArrayMethodTypes(class)
+	MarkExternMethods(class)
 	return class
 }
 
@@ -218,6 +239,7 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 	r.classOrder = append(r.classOrder, className)
 	// Resolve raw ArrayType signatures now that all nested classes are registered.
 	r.resolveArrayMethodTypes(class)
+	MarkExternMethods(class)
 	return class
 }
 

@@ -117,6 +117,10 @@ type Function struct {
 	Class        *Class // non-nil when this function is a class method
 	// IsVariadic is true when the final parameter is a rest parameter (`...args: T[]`).
 	IsVariadic bool
+	// ExternRuntimeName, when non-empty, is the Zig runtime symbol this method's body
+	// forwards to (see ClassMethod.IsExtern). It makes an extern method self-describing —
+	// codegen no longer needs the primordial name to derive the runtime symbol.
+	ExternRuntimeName string
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {
@@ -225,6 +229,14 @@ type ClassMethod struct {
 	// and doesn't need a runtime wrapper function generated
 	IsLowered bool
 	IsStatic  bool
+	// IsAccessor marks a synthesized getter/setter method (mangled name #get_/#set_).
+	// It occupies a vtable slot like any instance method, but is not user-callable by
+	// name and is excluded from "unused method" diagnostics.
+	IsAccessor bool
+	// IsExtern marks a method whose body is not user IR but a forwarding call into the Zig
+	// runtime (codegen emits it via emitExternMethodBody). This is how primordial classes
+	// are built — they are ordinary classes whose methods happen to be extern.
+	IsExtern bool
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
@@ -373,6 +385,43 @@ func AsClass(value Value) *Class {
 	default:
 		return nil
 	}
+}
+
+// LookupInstanceProperty finds a non-static data field by name on the class or any ancestor.
+// Returns nil if there is no such field (e.g. the name belongs to a method or accessor).
+func LookupInstanceProperty(class *Class, name string) *ClassProperty {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, prop := range c.Properties {
+			if !prop.IsStatic && prop.Property.Name == name {
+				return prop
+			}
+		}
+	}
+	return nil
+}
+
+// LookupAccessor finds an accessor (get/set) by name on the class or any ancestor.
+func LookupAccessor(class *Class, name string) *ClassAccessor {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, acc := range c.Accessors {
+			if acc.Name == name {
+				return acc
+			}
+		}
+	}
+	return nil
+}
+
+// LookupStaticAccessor finds a static accessor by name on the class or any ancestor.
+func LookupStaticAccessor(class *Class, name string) *ClassAccessor {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, acc := range c.Accessors {
+			if acc.IsStatic && acc.Name == name {
+				return acc
+			}
+		}
+	}
+	return nil
 }
 
 func AsObject(value Value) *Object {
