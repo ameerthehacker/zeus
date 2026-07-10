@@ -319,13 +319,15 @@ func (c *CodegenModule) genPrimordialRuntimeFunction(method zeus_value.Function,
 	return c.genExternalRuntimeFunction(functionName, len(method.Params), true)
 }
 
-func (c *CodegenModule) genPrimordialClassMethods(class zeus_value.Class) {
+// emitExternMethods generates the runtime-forwarding body for every extern method on the
+// class (see ClassMethod.IsExtern). Non-extern methods (user-defined and lowered) are
+// skipped, so this runs harmlessly for every class — primordials are just the classes that
+// happen to have extern methods.
+func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 	currentInsertionBlock := c.builder.GetInsertBlock()
 
 	for _, method := range class.Methods {
-		// Skip lowered methods - they are handled entirely by IR lowering
-		// and don't need runtime wrapper functions
-		if method.IsLowered {
+		if !method.IsExtern {
 			continue
 		}
 
@@ -1078,6 +1080,9 @@ func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 	span := token.NewSpan(*token.NewPosition(0, 0), *token.NewPosition(0, 0))
 	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, nil, "", nil, span)
 	objectArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.NewArrayType(zeus_value.NewObjectType(objectClass), span))
+	// This array class is built outside the registry, so mark its runtime-backed methods extern
+	// (as the registry does for the classes it creates) — see emitExternMethods.
+	zeus_value.MarkExternMethods(objectArrayClass)
 
 	if c.zeusClassLLVMStructMap[objectArrayClass.Name] != nil {
 		return c.zeusClassLLVMStructMap[objectArrayClass.Name]
@@ -1168,10 +1173,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 
 	c.zeusClassLLVMStructMap[class.Name] = zeusClassLLVMStruct
 
-	// if it is a primordial class, generate the primordial class
-	if class.PrimordialName != "" {
-		c.genPrimordialClassMethods(class)
-	}
+	// Emit bodies for extern methods (forward to the Zig runtime). No-op for classes with no
+	// extern methods, so this needs no "is this a primordial" special-case.
+	c.emitExternMethods(class)
 
 	// Declare factory function signature (body will be generated in Phase 3)
 	c.declareFactoryFunction(class)

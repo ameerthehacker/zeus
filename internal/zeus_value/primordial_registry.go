@@ -73,6 +73,22 @@ func (r *PrimordialRegistry) registerBaseClasses() {
 	// method signatures. Primordial definitions use UserDefinedType as a placeholder to avoid
 	// forward-reference issues; now that string is registered we can resolve them.
 	r.resolveStringRefs()
+
+	// Every non-lowered primordial method is backed by a Zig runtime function; mark them extern
+	// so codegen emits their bodies through the shared extern-method path (not a special case).
+	for _, class := range r.classes {
+		MarkExternMethods(class)
+	}
+}
+
+// MarkExternMethods flags a primordial class's methods (except IsLowered ones, which are
+// expanded by IR lowering) as extern — their bodies forward to the Zig runtime.
+func MarkExternMethods(class *Class) {
+	for _, method := range class.Methods {
+		if !method.IsLowered {
+			method.IsExtern = true
+		}
+	}
 }
 
 // resolveStringRefs rewrites every UserDefinedType{"string"} in all registered primordial
@@ -194,6 +210,7 @@ func (r *PrimordialRegistry) getOrCreateArrayClassUnsafe(arrayType ArrayType) *C
 	r.classOrder = append(r.classOrder, className)
 	// Resolve raw ArrayType signatures now that all nested classes are registered.
 	r.resolveArrayMethodTypes(class)
+	MarkExternMethods(class)
 	return class
 }
 
@@ -218,6 +235,7 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 	r.classOrder = append(r.classOrder, className)
 	// Resolve raw ArrayType signatures now that all nested classes are registered.
 	r.resolveArrayMethodTypes(class)
+	MarkExternMethods(class)
 	return class
 }
 

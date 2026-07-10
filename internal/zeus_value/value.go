@@ -229,6 +229,10 @@ type ClassMethod struct {
 	// It occupies a vtable slot like any instance method, but is not user-callable by
 	// name and is excluded from "unused method" diagnostics.
 	IsAccessor bool
+	// IsExtern marks a method whose body is not user IR but a forwarding call into the Zig
+	// runtime (codegen emits it via emitExternMethodBody). This is how primordial classes
+	// are built — they are ordinary classes whose methods happen to be extern.
+	IsExtern bool
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
