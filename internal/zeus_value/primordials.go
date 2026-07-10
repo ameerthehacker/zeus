@@ -61,11 +61,11 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	selfArrayType := NewArrayType(arrayType.ElementType, span)
 
 	// capacity of the array (private - internal implementation detail)
-	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
-	// length of the array (public - commonly accessed property)
-	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
+	capacityProperty := NewClassProperty(NewVar("capacity", i32Type, false, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
+	// length of the array (public readonly - users can read but not write)
+	lengthProperty := NewClassProperty(NewVar("length", i32Type, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, true)
 	// opaque pointer to the data of the array (private - internal implementation)
-	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
+	dataProperty := NewClassProperty(NewVar("data", OpaqueType{Span: span}, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
 	properties := []*ClassProperty{capacityProperty, lengthProperty, dataProperty}
 
 	// Helper function to create a public method
@@ -198,7 +198,7 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 		publicMethod(isEmptyMethod),
 	}
 
-	return NewClass(arrayType.String(), properties, methods, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
+	return NewClass(arrayType.String(), properties, methods, nil, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
 }
 
 // string is nothing but an array of u8
@@ -207,12 +207,12 @@ func GetStringPrimordialClassDefinition(span *token.Span) *Class {
 	u8ArrayObjectType := ObjectType{Class: GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
 
 	// Properties
-	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span})
-	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span})
+	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false)
+	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, false)
 	properties := []*ClassProperty{dataProperty, lengthProperty}
 
 	// Create the string class first (without methods that reference itself)
-	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
+	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
 
 	// Methods - use UserDefinedType for self-reference to avoid copy issues
 	// The type checker will resolve "string" to the actual string ObjectType
@@ -262,12 +262,14 @@ func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
 	nameProperty := NewClassProperty(
 		NewVar(ERROR_PROPERTY_NAME, stringType, true, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
+		false,
 	)
 
 	// message property (public) - the error message
 	messageProperty := NewClassProperty(
 		NewVar(ERROR_PROPERTY_MESSAGE, stringType, true, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
+		false,
 	)
 	properties := []*ClassProperty{nameProperty, messageProperty}
 
@@ -314,7 +316,7 @@ func GetConsolePrimordialClassDefinition(span *token.Span) *Class {
 		publicMethod(logMethod),
 		publicMethod(errorMethod),
 		publicMethod(infoMethod),
-	}, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
+	}, nil, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
 }
 
 // Ref cell class naming constants
@@ -334,12 +336,13 @@ func GetRefCellClassDefinition(valueType ValueType, span *token.Span) *Class {
 	valueProp := NewClassProperty(
 		NewVar(ZEUS_REF_CELL_VALUE_PROPERTY, valueType, false, span),
 		&token.Token{Type: token.TokenTypePublic, Span: span},
+		false,
 	)
 	constructorFn := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{}, VoidType{Span: span}, span)
 	methods := []*ClassMethod{
 		NewClassMethod(constructorFn, &token.Token{Type: token.TokenTypePublic, Span: span}),
 	}
-	return NewClass(RefCellClassName(valueType), []*ClassProperty{valueProp}, methods, "", nil, span)
+	return NewClass(RefCellClassName(valueType), []*ClassProperty{valueProp}, methods, nil, "", nil, span)
 }
 
 // IsErrorClass checks if a class is the Error class or derives from it

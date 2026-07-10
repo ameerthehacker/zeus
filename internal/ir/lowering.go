@@ -51,6 +51,7 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 		NewIndexLoweringPass(),
 		NewStringOperatorLoweringPass(),
 		NewStringCastLoweringPass(),
+		NewAccessorLoweringPass(), // must run before FuncTypePropCallLoweringPass
 		NewFuncTypePropCallLoweringPass(),
 		NewCastLoweringPass(),
 		NewFunctorCallLoweringPass(),
@@ -319,6 +320,108 @@ func updateOutputVar(output *zeus_value.Var, result zeus_value.Value, resultType
 }
 
 // =============================================================================
+// AccessorLoweringPass - Lowers GET_ACCESSOR/SET_ACCESSOR instructions.
+// User-defined accessors lower to CALL_METHOD with mangled names (#get_X / #set_X).
+// Primordial IsLowered accessors (e.g. arr.length) lower to direct field access.
+type accessorOp struct {
+	instr *Instr
+	block *BasicBlock
+	isGet bool
+}
+
+type AccessorLoweringPass struct {
+	ops []accessorOp
+}
+
+func NewAccessorLoweringPass() *AccessorLoweringPass {
+	return &AccessorLoweringPass{}
+}
+
+func (p *AccessorLoweringPass) GetName() string { return "AccessorLowering" }
+
+func (p *AccessorLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	switch instr.Type {
+	case InstrTypeGetAccessor:
+		p.ops = append(p.ops, accessorOp{instr, l.GetCurrentBlock(), true})
+	case InstrTypeSetAccessor:
+		p.ops = append(p.ops, accessorOp{instr, l.GetCurrentBlock(), false})
+	}
+}
+
+func (p *AccessorLoweringPass) Finalize(l *Lowerer) {
+	for _, op := range p.ops {
+		if op.isGet {
+			p.lowerGetAccessor(l, op.instr, op.block)
+		} else {
+			p.lowerSetAccessor(l, op.instr, op.block)
+		}
+	}
+}
+
+func (p *AccessorLoweringPass) findAccessor(object zeus_value.Value, accessorName string) *zeus_value.ClassAccessor {
+	objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
+	if objType == nil {
+		return nil
+	}
+	return findAccessorInClass(objType.Class, accessorName)
+}
+
+func (p *AccessorLoweringPass) lowerGetAccessor(l *Lowerer, instr *Instr, block *BasicBlock) {
+	input := AsGetAccessorInstrInput(instr.Input)
+	builder := l.GetBuilder()
+	span := instr.Span
+
+	acc := p.findAccessor(input.Object, input.AccessorName)
+	if acc == nil || acc.Getter == nil {
+		return
+	}
+
+	setInsertionPoint(builder, block, instr)
+
+	var result zeus_value.Value
+	if acc.IsLowered {
+		// Primordial accessor: lower to direct field access ("_" + accessorName)
+		internalPropName := "_" + input.AccessorName
+		propPtr := builder.BuildObjectPropertyAccess(input.Object, internalPropName, false, span)
+		result = builder.BuildLoad(zeus_value.AsVar(propPtr), span)
+	} else {
+		// User-defined accessor: lower to CALL_METHOD with mangled getter name.
+		result = builder.BuildMethodCall(input.Object, acc.Getter.Name, []zeus_value.Value{}, acc.Getter.ReturnType, []zeus_value.ValueType{}, span)
+	}
+
+	updateOutputVar(instr.Output, result, acc.Getter.ReturnType)
+	builder.DeleteInstr(block, instr)
+}
+
+func (p *AccessorLoweringPass) lowerSetAccessor(l *Lowerer, instr *Instr, block *BasicBlock) {
+	input := AsSetAccessorInstrInput(instr.Input)
+	builder := l.GetBuilder()
+	span := instr.Span
+
+	acc := p.findAccessor(input.Object, input.AccessorName)
+	if acc == nil || acc.Setter == nil {
+		return
+	}
+
+	setInsertionPoint(builder, block, instr)
+
+	var result zeus_value.Value
+	if acc.IsLowered {
+		// Lowered primordial setters — not common, but handle gracefully by direct store.
+		// Currently only IsLowered getters are used (arr.length is read-only).
+		internalPropName := "_" + input.AccessorName
+		propPtr := builder.BuildObjectPropertyAccess(input.Object, internalPropName, true, span)
+		builder.BuildStore(zeus_value.AsVar(propPtr), input.Value, span)
+		result = input.Value
+	} else {
+		// User-defined setter: lower to CALL_METHOD with mangled setter name.
+		result = builder.BuildMethodCall(input.Object, acc.Setter.Name, []zeus_value.Value{input.Value}, zeus_value.VoidType{Span: span}, []zeus_value.ValueType{}, span)
+	}
+
+	updateOutputVar(instr.Output, result, zeus_value.GetValueType(input.Value))
+	builder.DeleteInstr(block, instr)
+}
+
 // IndexLoweringPass - Lowers GET_INDEX/SET_INDEX instructions to method calls
 // =============================================================================
 
@@ -1202,7 +1305,7 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
 			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
 		},
-		"", nil, span,
+		nil, "", nil, span,
 	)
 	builder.EmitClassDeclAtStart(wrapperClass)
 

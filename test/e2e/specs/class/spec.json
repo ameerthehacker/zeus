@@ -13,5 +13,10 @@
         "name": "Class declared inside function body",
         "exit": "10",
         "entry": "nested.zs"
+    },
+    {
+        "name": "Readonly class properties",
+        "exit": "0",
+        "entry": "readonly_property.zs"
     }
 ]

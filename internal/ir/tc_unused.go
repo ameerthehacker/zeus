@@ -67,6 +67,13 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleDeclPrimordialFunc(instr)
 	case InstrTypeExport:
 		p.handleExport(instr)
+	case InstrTypeGetAccessor:
+		input := AsGetAccessorInstrInput(instr.Input)
+		markValueAsUsed(input.Object)
+	case InstrTypeSetAccessor:
+		input := AsSetAccessorInstrInput(instr.Input)
+		markValueAsUsed(input.Object)
+		markValueAsUsed(input.Value)
 	case InstrTypeGetIndex:
 		p.handleGetIndex(instr)
 	case InstrTypeSetIndex:

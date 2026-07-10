@@ -770,6 +770,28 @@ func (b *IRBuilder) BuildMethodCall(object zeus_value.Value, methodName string, 
 	return result
 }
 
+func (b *IRBuilder) BuildGetAccessor(object zeus_value.Value, accessorName string, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	b.pushInstr(&Instr{
+		Type:   InstrTypeGetAccessor,
+		Output: result,
+		Input:  NewGetAccessorInstrInput(object, accessorName),
+		Span:   span,
+	})
+	return result
+}
+
+func (b *IRBuilder) BuildSetAccessor(object zeus_value.Value, accessorName string, value zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	b.pushInstr(&Instr{
+		Type:   InstrTypeSetAccessor,
+		Output: result,
+		Input:  NewSetAccessorInstrInput(object, accessorName, value),
+		Span:   span,
+	})
+	return result
+}
+
 // BuildThrow builds a THROW instruction
 func (b *IRBuilder) BuildThrow(classId int, objectPtr zeus_value.Value, sourceFile string, span *token.Span) {
 	sourceLine := 0

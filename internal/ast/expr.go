@@ -418,8 +418,17 @@ type ClassProperty struct {
 	Name           *IdentifierExprNode
 	ValueType      *ValueTypeNode
 	AccessModifier *token.Token
+	IsReadonly     bool
 	Span           *token.Span
 }
+
+type AccessorKind int
+
+const (
+	AccessorKindNone   AccessorKind = iota // ordinary method
+	AccessorKindGetter                     // get name(): T { ... }
+	AccessorKindSetter                     // set name(value: T) { ... }
+)
 
 type ClassMethod struct {
 	Name           *IdentifierExprNode
@@ -427,6 +436,7 @@ type ClassMethod struct {
 	Body           *BlockStmtNode
 	ReturnType     *ValueTypeNode
 	AccessModifier *token.Token
+	Accessor       AccessorKind
 	Span           *token.Span
 }
 
