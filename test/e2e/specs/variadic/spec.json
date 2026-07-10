@@ -1,0 +1,56 @@
+[
+    {
+        "name": "Variadic basic sum",
+        "exit": "0",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "Fixed + variadic params",
+        "exit": "0",
+        "entry": "fixed.zs"
+    },
+    {
+        "name": "Empty variadic",
+        "exit": "0",
+        "entry": "empty.zs"
+    },
+    {
+        "name": "Variadic class method",
+        "exit": "0",
+        "entry": "method.zs"
+    },
+    {
+        "name": "Variadic indirect call",
+        "exit": "0",
+        "entry": "indirect.zs"
+    },
+    {
+        "name": "Variadic functor __call__",
+        "exit": "0",
+        "entry": "functor.zs"
+    },
+    {
+        "name": "Forward-referenced variadic method",
+        "exit": "0",
+        "entry": "forward-method.zs"
+    },
+    {
+        "name": "Variadic anonymous function and arrow",
+        "exit": "0",
+        "entry": "closure.zs"
+    },
+    {
+        "name": "Rest parameter must be last",
+        "exit": "1",
+        "entry": "rest-not-last.zs",
+        "compile_error": true,
+        "stderr_contains": ["rest parameter must be the last parameter"]
+    },
+    {
+        "name": "Rest parameter must be an array type",
+        "exit": "1",
+        "entry": "rest-not-array.zs",
+        "compile_error": true,
+        "stderr_contains": ["rest parameter 'a' must have an array type"]
+    }
+]

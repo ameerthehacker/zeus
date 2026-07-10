@@ -72,15 +72,23 @@ type Var struct {
 	IsConst      bool
 	Span         *token.Span
 	IsUsed       bool
+	// IsVariadic marks a function's rest parameter (its type is an array; trailing
+	// call arguments are collected into it during lowering).
+	IsVariadic bool
 }
 
-func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span) *Var {
+func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span, isVariadic ...bool) *Var {
+	variadic := false
+	if len(isVariadic) > 0 {
+		variadic = isVariadic[0]
+	}
 	return &Var{
-		Name:      name,
-		ValueType: valueType,
-		IsPtr:     isPtr,
-		Span:      span,
-		IsUsed:    false,
+		Name:       name,
+		ValueType:  valueType,
+		IsPtr:      isPtr,
+		Span:       span,
+		IsUsed:     false,
+		IsVariadic: variadic,
 	}
 }
 
@@ -107,6 +115,8 @@ type Function struct {
 	IsUsed       bool
 	Span         *token.Span
 	Class        *Class // non-nil when this function is a class method
+	// IsVariadic is true when the final parameter is a rest parameter (`...args: T[]`).
+	IsVariadic bool
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {
@@ -334,15 +344,7 @@ func GetValueType(value Value) ValueType {
 	case *Class:
 		return NewClassType(value)
 	case *Function:
-		param_types := []ValueType{}
-		for _, param := range value.Params {
-			param_types = append(param_types, param.ValueType)
-		}
-
-		return FunctionType{
-			ReturnType: value.ReturnType,
-			ParamTypes: param_types,
-		}
+		return ToFunctionType(*value)
 	case *ArrayElementRef:
 		// For array element refs, get the type of the array object and extract element type
 		arrayType := GetValueType(value.ArrayObject)

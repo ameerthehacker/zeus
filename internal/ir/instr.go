@@ -20,6 +20,8 @@ type VarDecl struct {
 	IsConst     bool
 	Initializer zeus_value.Value
 	Span        *token.Span
+	// IsVariadic marks a function's rest parameter; propagated onto the built Var.
+	IsVariadic bool
 }
 
 func NewVarDecl(name string, valueType zeus_value.ValueType, isConst bool, initializer zeus_value.Value, span *token.Span) *VarDecl {

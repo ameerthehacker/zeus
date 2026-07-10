@@ -33,5 +33,10 @@
         "name": "Forward call chain across multiple functions",
         "exit": "42",
         "entry": "forward-call-chain.zs"
+    },
+    {
+        "name": "Function names may match primordial parameter names",
+        "exit": "0",
+        "entry": "reserved-primordial-names.zs"
     }
 ]

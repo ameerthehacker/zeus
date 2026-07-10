@@ -758,18 +758,37 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	return nil
 }
 
+// checkVariadicParamType reports an error when a rest parameter's resolved type is not
+// an array. Rest parameters are collected into a Zeus array during lowering, so the
+// declared type must be an array (e.g. `...args: i32[]`).
+func (g *IRModule) checkVariadicParamType(param *ast.VarDeclNode, paramType zeus_value.ValueType) {
+	objType := zeus_value.AsObjectType(paramType)
+	if objType == nil || objType.Class.ArrayElementType == nil {
+		g.pushError(zeus_error.NewZeusError(
+			zeus_error.ErrorSeverityError,
+			fmt.Sprintf("rest parameter '%s' must have an array type", param.Identifier.Name.Value),
+			param.Identifier.Name.Span,
+		))
+	}
+}
+
 func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
 	params := []*VarDecl{}
 
 	for _, param := range fnParams {
 		paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
-		params = append(params, NewVarDecl(
+		varDecl := NewVarDecl(
 			param.Identifier.Name.Value,
 			paramType,
 			true,
 			nil,
 			param.Identifier.Name.Span,
-		))
+		)
+		if param.IsVariadic {
+			g.checkVariadicParamType(param, paramType)
+			varDecl.IsVariadic = true
+		}
+		params = append(params, varDecl)
 	}
 
 	// Escape analysis: determine which params/vars in this scope are referenced by
@@ -784,6 +803,9 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	// functions are global
 	g.irBuilder.SetInsertionBlock(nil)
 	body := g.irBuilder.BuildBasicBlock()
+	// BuildFuncDecl carries the rest-parameter flag from the VarDecls onto the built
+	// Vars and the Function, so both direct and forward references observe variadic-ness
+	// by the time type checking runs.
 	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
 	g.symbolTable().EnterScope()
 
@@ -975,11 +997,14 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	}
 	constructorStub := zeus_value.NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*zeus_value.Var{}, zeus_value.VoidType{Span: span}, span)
 	callStub := zeus_value.NewFunction(token.FUNCTOR_CALL_METHOD_NAME, methodParams, returnType, span)
+	// These stubs are placeholders: once BuildFuncDecl/emitFunction produce the real
+	// constructor and __call__ Functions below, callMethod/constructorMethod are repointed
+	// to share those pointers, so the emitted Function is the single source of truth for
+	// signature, return type and variadic-ness (no per-field copying to keep in sync).
+	constructorMethod := zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span})
+	callMethod := zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span})
 	functorClass := zeus_value.NewClass(functorClassName, capturedProps,
-		[]*zeus_value.ClassMethod{
-			zeus_value.NewClassMethod(constructorStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
-			zeus_value.NewClassMethod(callStub, &token.Token{Type: token.TokenTypePublic, Span: span}),
-		}, nil, "", nil, span)
+		[]*zeus_value.ClassMethod{constructorMethod, callMethod}, nil, "", nil, span)
 	g.irBuilder.EmitClassDeclAtStart(functorClass)
 
 	// Constructor: no AST body, just a return. Use BuildFuncDecl with a unique IR name
@@ -990,8 +1015,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	constructorBlock := g.irBuilder.BuildBasicBlock()
 	constructorFn := g.irBuilder.BuildFuncDecl(constructorIRName, []*VarDecl{}, constructorBlock, zeus_value.VoidType{Span: span}, functorClass, span)
 	constructorFn.OriginalName = token.CONSTRUCTOR_METHOD_NAME
-	constructorStub.Name = constructorFn.Name
-	constructorStub.OriginalName = token.CONSTRUCTOR_METHOD_NAME
+	constructorMethod.Method = constructorFn
 	g.irBuilder.SetInsertionBlock(constructorBlock)
 	g.irBuilder.BuildReturn(nil, span)
 	g.irBuilder.SetInsertionBlock(savedBlock)
@@ -1010,8 +1034,7 @@ func (g *IRModule) emitFunctorClass(fnName string, fnParams []*ast.VarDeclNode, 
 	callFn := zeus_value.AsFunction(g.emitFunction(callIRName, fnParams, returnType, fnBody, functorClass, capturedVars, span))
 	if callFn != nil {
 		callFn.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
-		callStub.Name = callFn.Name
-		callStub.OriginalName = token.FUNCTOR_CALL_METHOD_NAME
+		callMethod.Method = callFn
 	}
 
 	// Overwrite the selfRef entry with the actual functor object so the name is usable
@@ -1571,7 +1594,10 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		params := []*zeus_value.Var{}
 		for _, param := range method.Params {
 			paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
-			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span))
+			if param.IsVariadic {
+				g.checkVariadicParamType(param, paramType)
+			}
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span, param.IsVariadic))
 		}
 
 		methodReturnType := g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
@@ -1581,6 +1607,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			methodReturnType,
 			method.Span,
 		)
+		function.IsVariadic = len(params) > 0 && params[len(params)-1].IsVariadic
 		methods = append(methods, zeus_value.NewClassMethod(
 			function,
 			method.AccessModifier,
@@ -1646,33 +1673,24 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	// properties through the stub returns the resolved type (e.g. current.next.next works).
 	if oldVal, ok := g.symbolTable().GetSymbol(registerName); ok {
 		if stubClass := zeus_value.AsClass(oldVal); stubClass != nil && stubClass != class {
+			// Repoint the stub's members at the fully-resolved ones so the stub (which may
+			// be embedded in self-referential ObjectType values) shares a single source of
+			// truth. Sharing the pointers avoids per-field copying that silently drops
+			// newly-added fields (e.g. a Function's IsVariadic, a Var's flags).
 			for i, prop := range class.Properties {
 				if i < len(stubClass.Properties) {
-					stubClass.Properties[i].Property.ValueType = prop.Property.ValueType
+					stubClass.Properties[i].Property = prop.Property
 				}
 			}
 			for i, method := range class.Methods {
 				if i < len(stubClass.Methods) {
-					stubClass.Methods[i].Method.ReturnType = method.Method.ReturnType
-					for j, param := range method.Method.Params {
-						if j < len(stubClass.Methods[i].Method.Params) {
-							stubClass.Methods[i].Method.Params[j].ValueType = param.ValueType
-						}
-					}
+					stubClass.Methods[i].Method = method.Method
 				}
 			}
 			for i, acc := range class.Accessors {
 				if i < len(stubClass.Accessors) {
-					if acc.Getter != nil && stubClass.Accessors[i].Getter != nil {
-						stubClass.Accessors[i].Getter.ReturnType = acc.Getter.ReturnType
-					}
-					if acc.Setter != nil && stubClass.Accessors[i].Setter != nil {
-						for j, param := range acc.Setter.Params {
-							if j < len(stubClass.Accessors[i].Setter.Params) {
-								stubClass.Accessors[i].Setter.Params[j].ValueType = param.ValueType
-							}
-						}
-					}
+					stubClass.Accessors[i].Getter = acc.Getter
+					stubClass.Accessors[i].Setter = acc.Setter
 				}
 			}
 		}
