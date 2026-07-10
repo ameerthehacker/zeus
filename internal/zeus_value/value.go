@@ -392,6 +392,30 @@ func LookupInstanceProperty(class *Class, name string) *ClassProperty {
 	return nil
 }
 
+// LookupAccessor finds an accessor (get/set) by name on the class or any ancestor.
+func LookupAccessor(class *Class, name string) *ClassAccessor {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, acc := range c.Accessors {
+			if acc.Name == name {
+				return acc
+			}
+		}
+	}
+	return nil
+}
+
+// LookupStaticAccessor finds a static accessor by name on the class or any ancestor.
+func LookupStaticAccessor(class *Class, name string) *ClassAccessor {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, acc := range c.Accessors {
+			if acc.IsStatic && acc.Name == name {
+				return acc
+			}
+		}
+	}
+	return nil
+}
+
 func AsObject(value Value) *Object {
 	switch value := value.(type) {
 	case *Object:

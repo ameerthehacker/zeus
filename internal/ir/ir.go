@@ -1871,31 +1871,6 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	return class
 }
 
-// findAccessorInClass searches the class and its parent chain for an instance accessor by name.
-func findAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
-	for class != nil {
-		for _, acc := range class.Accessors {
-			if acc.Name == name {
-				return acc
-			}
-		}
-		class = class.ParentClass
-	}
-	return nil
-}
-
-// findStaticAccessorInClass searches the class and its parent chain for a static accessor by name.
-func findStaticAccessorInClass(class *zeus_value.Class, name string) *zeus_value.ClassAccessor {
-	for class != nil {
-		for _, acc := range class.Accessors {
-			if acc.IsStatic && acc.Name == name {
-				return acc
-			}
-		}
-		class = class.ParentClass
-	}
-	return nil
-}
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
@@ -2002,7 +1977,7 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	if !g.isThisExpression(expr.Object) {
 		objType := zeus_value.AsObjectType(zeus_value.GetValueType(object))
 		if objType != nil {
-			if acc := findAccessorInClass(objType.Class, property); acc != nil {
+			if acc := zeus_value.LookupAccessor(objType.Class, property); acc != nil {
 				if g.isLValueExpr {
 					return zeus_value.NewAccessorLValue(object, property, expr.GetSpan())
 				}
