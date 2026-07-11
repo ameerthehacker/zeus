@@ -1,0 +1,37 @@
+[
+    {
+        "name": "Inherited and own fields",
+        "exit": "42",
+        "entry": "fields.zs"
+    },
+    {
+        "name": "Inherited method",
+        "exit": "42",
+        "entry": "method.zs"
+    },
+    {
+        "name": "Overridden method dispatched dynamically",
+        "exit": "42",
+        "entry": "override.zs"
+    },
+    {
+        "name": "Multi-level inheritance with override",
+        "exit": "42",
+        "entry": "multi_level.zs"
+    },
+    {
+        "name": "Polymorphism through a base-typed parameter",
+        "exit": "42",
+        "entry": "polymorphism.zs"
+    },
+    {
+        "name": "Inherited getter and setter",
+        "exit": "42",
+        "entry": "accessor.zs"
+    },
+    {
+        "name": "Base method mutates an inherited field",
+        "exit": "42",
+        "entry": "base_method_field.zs"
+    }
+]
