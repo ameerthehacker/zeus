@@ -1,0 +1,7 @@
+[
+    {
+        "name": "Same-named methods/functions across classes and scopes resolve independently",
+        "exit": "0",
+        "entry": "name_collision.zs"
+    }
+]

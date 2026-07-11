@@ -1420,9 +1420,10 @@ func (c *CodegenModule) fillVTables() {
 			if entry.Method.IsExtern {
 				fnName = util.GetClassMethodName(entry.DefiningClass.Name, entry.Method.Method.Name)
 			}
-			fn := c.module.NamedFunction(fnName)
-			zeus_error.Assert(!fn.IsNil(), fmt.Sprintf("vtable method %s not found for class %s", fnName, class.Name))
-			vtable[slot] = fn
+			// Resolve via our controlled IR-name→function map (getFunctionSymbol), not
+			// module.NamedFunction which queries LLVM's global symbol table and could return a
+			// collision-renamed or non-method symbol. Panics on a genuine miss.
+			vtable[slot] = c.getFunctionSymbol(fnName)
 		}
 		c.getLLVMVTablePtr(class.Name).SetInitializer(llvm.ConstStruct(vtable, true))
 	}
@@ -1595,8 +1596,10 @@ func (c *CodegenModule) genStaticMethodCall(input ir.MethodCallInstrInput, outpu
 	if foundMethod.IsExtern {
 		fnName = util.GetClassMethodName(definingClass.Name, foundMethod.Method.Name)
 	}
-	llvmFn := c.module.NamedFunction(fnName)
-	zeus_error.Assert(!llvmFn.IsNil(), fmt.Sprintf("super method function %s not found", fnName))
+	// Resolve via our own IR-name→function map, not module.NamedFunction: the latter queries LLVM's
+	// global symbol table (which also holds runtime, factory, and global symbols) and would silently
+	// return a collision-renamed or non-method function. getFunctionSymbol panics on a genuine miss.
+	llvmFn := c.getFunctionSymbol(fnName)
 
 	paramTypes := make([]zeus_value.ValueType, len(foundMethod.Method.Params))
 	for i, p := range foundMethod.Method.Params {
