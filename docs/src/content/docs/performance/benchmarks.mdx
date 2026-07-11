@@ -1,0 +1,88 @@
+---
+title: Benchmarks
+description: How Zeus compares to Go and Node.js on basic CPU-bound algorithms.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus compiles to native code through LLVM, so a fair question is: how fast is it
+today? This page tracks Zeus against **Go** (an optimized native compiler) and
+**Node.js** (a mature JIT) on a small set of basic, CPU-bound algorithms.
+
+<Aside type="note" title="How these are measured">
+Each benchmark is written three times — in Zeus, Go and JavaScript — running the
+**same algorithm on the same input**. We measure **whole-process wall-clock
+time** with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warm-up runs
+followed by at least 10 timed runs).
+
+- **Zeus** and **Go** are compiled optimized (`zeus build --release`, `go build`).
+- **Node.js** runs the source under the V8 JIT; numeric arrays use typed arrays
+  (`Int32Array` / `Uint8Array`), the idiomatic fast path.
+- Whole-process timing is used because Zeus has no in-program clock. Every
+  program is sized so its computation dwarfs process startup, and each one
+  self-verifies its result (it exits non-zero on a wrong answer), so all three
+  implementations are proven to compute the same thing.
+
+The suite lives in [`bench/`](https://github.com/ameerthehacker/zeus/tree/main/bench)
+— run `bash bench/run.sh` to reproduce these numbers on your machine.
+</Aside>
+
+{/* BENCH:RESULTS:START */}
+
+_Measured 2026-07-11T09:57:48Z on Apple M1 Pro, Darwin 26.5.2 (arm64). Go go1.26.3 darwin/arm64, Node v22.22.2, hyperfine 1.20.0. Zeus `v0.0.21-alpha-28-gfc5c343`._
+
+## Summary
+
+Wall-clock time per run — **lower is better**. `Zeus vs Go` / `Zeus vs Node` are Zeus's time divided by the other language's: below 1× means Zeus is faster, above 1× means slower.
+
+| Benchmark | Zeus | Go | Node.js | Zeus vs Go | Zeus vs Node |
+|-----------|------|----|---------|-----------|--------------|
+| Recursive Fibonacci | 315 ± 12 ms | 343 ± 2 ms | 970 ± 25 ms | 0.92× | 0.32× |
+| Loop Sum | 220 ± 2 ms | 481 ± 12 ms | 984 ± 17 ms | 0.46× | 0.22× |
+| Prime Sieve | 98 ± 3 ms | 87 ± 7 ms | 150 ± 2 ms | 1.13× | 0.66× |
+| Insertion Sort | 68 ± 1 ms | 37 ± 2 ms | 120 ± 15 ms | 1.84× | 0.56× |
+| Matrix Multiply | 96 ± 8 ms | 98 ± 3 ms | 270 ± 1 ms | 0.98× | 0.36× |
+
+## Results by benchmark
+
+### Recursive Fibonacci
+
+Naive recursive fib(40). Dominated by function-call overhead and integer addition.
+
+![Recursive Fibonacci benchmark chart](/bench/fib-recursive.svg)
+
+### Loop Sum
+
+Tight loop summing (i & 1023) over 1..1e9 in a 64-bit accumulator. Measures raw loop and integer-ALU throughput.
+
+![Loop Sum benchmark chart](/bench/loop-sum.svg)
+
+### Prime Sieve
+
+Sieve of Eratosthenes up to 30,000,000. Exercises large array allocation, indexing and nested loops.
+
+![Prime Sieve benchmark chart](/bench/prime-sieve.svg)
+
+### Insertion Sort
+
+O(n^2) insertion sort of a 20,000-element LCG-filled array. Exercises array get/set and comparisons.
+
+![Insertion Sort benchmark chart](/bench/sort.svg)
+
+### Matrix Multiply
+
+Naive 512x512 integer matrix multiplication. Exercises 2D arrays and a memory-bound triple-nested loop.
+
+![Matrix Multiply benchmark chart](/bench/matmul.svg)
+
+{/* BENCH:RESULTS:END */}
+
+<Aside type="caution" title="Read these as a snapshot, not a verdict">
+Zeus is a young language and these are single-machine numbers, not a definitive
+ranking. That said, on this suite Zeus is **faster than Node.js on every benchmark**
+and at parity with (or ahead of) Go on the scalar loops and matrix multiply.
+Primitive array reads and writes compile straight to a load/store, so array-heavy
+code (sort, sieve) is now competitive with Go rather than an order of magnitude
+behind. Where Go still leads (insertion sort), the gap is auto-vectorization and
+instruction scheduling — a natural next optimization target.
+</Aside>

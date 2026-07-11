@@ -152,6 +152,12 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Performance',
+          items: [
+            { label: 'Benchmarks', slug: 'performance/benchmarks' },
+          ],
+        },
+        {
           label: 'Planned Features',
           badge: { text: 'Planned', variant: 'note' },
           items: [

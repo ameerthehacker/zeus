@@ -200,7 +200,9 @@ function test(a: string, b: string): boolean {
 
 // ---- Array Index Lowering Tests ----
 
-// TestArrayIndexLowering verifies that arr[i] (GET_INDEX in HIR) is lowered to arr.get(i).
+// TestArrayIndexLowering verifies that arr[i] on a primitive-element array (GET_INDEX in
+// HIR) is lowered to a direct ELEM_LOAD on the array's data buffer, bypassing the get()
+// method call / vtable dispatch / runtime round-trip.
 func TestArrayIndexLowering(t *testing.T) {
 	builder, _ := generateLIR(t, `
 function test(arr: i32[]): i32 {
@@ -218,10 +220,42 @@ function test(arr: i32[]): i32 {
 		t.Errorf("expected 0 GET_INDEX instructions after lowering, got %d", len(gets))
 	}
 
-	// .get() must be called via CALL_METHOD
+	// The primitive single-index read must lower to a direct ELEM_LOAD...
+	elemLoads := findInstrs(all, ir.InstrTypeElemLoad)
+	if len(elemLoads) == 0 {
+		t.Error("expected ELEM_LOAD for lowered primitive array indexing")
+	}
+
+	// ...and must NOT emit a get() method call.
 	getAccess := findMethodCalls(all, "get")
-	if len(getAccess) == 0 {
-		t.Error("expected CALL_METHOD('get') for lowered array indexing")
+	if len(getAccess) != 0 {
+		t.Errorf("expected 0 CALL_METHOD('get') for primitive array indexing, got %d", len(getAccess))
+	}
+}
+
+// TestArraySetIndexLowering verifies that arr[i] = v on a primitive-element array lowers
+// to a guarded direct ELEM_STORE (data-buffer store) rather than only a set() method call.
+func TestArraySetIndexLowering(t *testing.T) {
+	builder, _ := generateLIR(t, `
+function test(arr: i32[], v: i32): void {
+    arr[0] = v
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	all := allBlockInstrs(entry)
+
+	// No SET_INDEX should remain after lowering
+	sets := findInstrs(all, ir.InstrTypeSetIndex)
+	if len(sets) != 0 {
+		t.Errorf("expected 0 SET_INDEX instructions after lowering, got %d", len(sets))
+	}
+
+	// The in-bounds branch must contain a direct ELEM_STORE.
+	stores := findInstrs(all, ir.InstrTypeElemStore)
+	if len(stores) == 0 {
+		t.Error("expected ELEM_STORE for lowered primitive array assignment")
 	}
 }
 

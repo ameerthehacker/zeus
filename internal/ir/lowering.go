@@ -524,6 +524,24 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 		return
 	}
 
+	// Fast path: a single-index read of a primitive-element array lowers to a direct
+	// load from the array's raw `data` buffer, skipping the get() method call, its
+	// vtable dispatch and the runtime round-trip. This read is already bounds-checked
+	// upstream by emitBoundsCheck (see internal/ir/ir.go, VisitIndex rvalue path), so
+	// the index is guaranteed in range here. Non-primitive elements (nested arrays /
+	// object elements) and multi-index accesses keep the method-call path below.
+	if len(input.Indices) == 1 {
+		if objType := zeus_value.AsObjectType(zeus_value.GetValueType(currentValue)); objType != nil &&
+			objType.Class.ArrayElementType != nil && zeus_value.IsPrimitiveType(objType.Class.ArrayElementType) {
+			elementType := objType.Class.ArrayElementType
+			data := builder.BuildLoadProperty(currentValue, zeus_value.ARRAY_PROPERTY_DATA, zeus_value.OpaqueType{Span: span}, span)
+			result := builder.BuildElemLoad(data, input.Indices[0], elementType, span)
+			updateOutputVar(instr.Output, result, elementType)
+			builder.DeleteInstr(block, instr)
+			return
+		}
+	}
+
 	// Process each index, calling .get() method for each one
 	for _, index := range input.Indices {
 		arrayType := zeus_value.GetValueType(currentValue)
@@ -559,11 +577,18 @@ func (p *IndexLoweringPass) lowerGetIndex(l *Lowerer, instr *Instr, input *GetIn
 	builder.DeleteInstr(block, instr)
 }
 
-// lowerSetIndex converts SET_INDEX into array.set() method call
+// lowerSetIndex converts SET_INDEX into either a direct data-buffer store (for
+// primitive-element arrays) guarded by a bounds check, or an array.set() method call.
+//
+// Bracket writes auto-extend the array on an out-of-range index (a documented feature),
+// so the fast path only takes the in-bounds case and falls back to the runtime set() —
+// which grows the array — for out-of-range or negative indices:
+//
+//	if (0 <= index < length) data[index] = value      // fast: direct store
+//	else                     array.set(index, value)  // runtime: auto-extend
 func (p *IndexLoweringPass) lowerSetIndex(l *Lowerer, instr *Instr, input *SetIndexInstrInput, block *BasicBlock) {
 	span := instr.Span
 	builder := l.GetBuilder()
-	setInsertionPoint(builder, block, instr)
 
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
 	valueType := zeus_value.GetValueType(input.Value)
@@ -572,14 +597,70 @@ func (p *IndexLoweringPass) lowerSetIndex(l *Lowerer, instr *Instr, input *SetIn
 	objType := zeus_value.AsObjectType(arrayType)
 	zeus_error.Assert(objType != nil && objType.Class.ArrayElementType != nil,
 		"SET_INDEX lowering requires array type with element type - type checking should have caught this")
+	elementType := objType.Class.ArrayElementType
 
+	// An earlier fast-pathed write may have split this instruction into a new tail block,
+	// so locate its current block rather than trusting the one captured at collection time.
+	curBlock := builder.FindBlockContaining(instr)
+	if curBlock == nil {
+		curBlock = block
+	}
+
+	// Fast path: primitive-element arrays store directly into the `data` buffer, guarded so
+	// out-of-range writes still auto-extend via the runtime set().
+	if zeus_value.IsPrimitiveType(elementType) {
+		if tail := builder.SplitBlockBefore(curBlock, instr); tail != nil {
+			inBoundsBlock := builder.BuildBasicBlock()
+			fallbackBlock := builder.BuildBasicBlock()
+			curBlock.Successors = []*BasicBlock{inBoundsBlock, fallbackBlock}
+
+			// curBlock: outOfBounds = index < 0 || index >= length
+			builder.ResetBlockInsertionToEnd(curBlock)
+			length := builder.BuildLoadProperty(input.Array, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
+			zero := zeus_value.NewConstant("0", i32Type, span)
+			isNegative := builder.BuildBinaryOp(input.Index, zero, InstrTypeLessThan, span)
+			isOverflow := builder.BuildBinaryOp(input.Index, length, InstrTypeGreaterThanEq, span)
+			outOfBounds := builder.BuildBinaryOp(isNegative, isOverflow, InstrTypeOr, span)
+			builder.BuildCondJmp(fallbackBlock, inBoundsBlock, outOfBounds, span)
+
+			// inBoundsBlock: direct store into the data buffer. The value must be converted
+			// to the element type first: SET_INDEX values are not pre-cast (the runtime set()
+			// normally handles element-width conversion), so storing e.g. an i8 literal into an
+			// i32[] slot would otherwise emit a 1-byte store and corrupt the upper bytes.
+			builder.ResetBlockInsertionToEnd(inBoundsBlock)
+			value := input.Value
+			if zeus_value.GetValueType(value).String() != elementType.String() {
+				value = builder.BuildCast(value, elementType, span)
+			}
+			data := builder.BuildLoadProperty(input.Array, zeus_value.ARRAY_PROPERTY_DATA, zeus_value.OpaqueType{Span: span}, span)
+			builder.BuildElemStore(data, input.Index, value, elementType, span)
+			builder.BuildJmp(tail, span)
+			inBoundsBlock.Successors = []*BasicBlock{tail}
+
+			// fallbackBlock: runtime set() (auto-extend / negative indices).
+			builder.ResetBlockInsertionToEnd(fallbackBlock)
+			builder.BuildMethodCall(input.Array, zeus_value.ARRAY_METHOD_SET,
+				[]zeus_value.Value{input.Index, input.Value},
+				zeus_value.VoidType{Span: span},
+				[]zeus_value.ValueType{i32Type, valueType},
+				span)
+			builder.BuildJmp(tail, span)
+			fallbackBlock.Successors = []*BasicBlock{tail}
+
+			builder.DeleteInstr(tail, instr)
+			return
+		}
+	}
+
+	// Method-call path: non-primitive elements, or the block could not be split.
+	setInsertionPoint(builder, curBlock, instr)
 	builder.BuildMethodCall(input.Array, zeus_value.ARRAY_METHOD_SET,
 		[]zeus_value.Value{input.Index, input.Value},
 		zeus_value.VoidType{Span: span},
 		[]zeus_value.ValueType{i32Type, valueType},
 		span)
 
-	builder.DeleteInstr(block, instr)
+	builder.DeleteInstr(curBlock, instr)
 }
 
 // =============================================================================

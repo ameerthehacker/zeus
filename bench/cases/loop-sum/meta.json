@@ -1,0 +1,7 @@
+{
+  "slug": "loop-sum",
+  "name": "Loop Sum",
+  "description": "Tight loop summing (i & 1023) over 1..1e9 in a 64-bit accumulator. Measures raw loop and integer-ALU throughput.",
+  "param": "N = 1e9",
+  "expectedExit": 0
+}

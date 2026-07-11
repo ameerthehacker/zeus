@@ -779,6 +779,42 @@ func (b *IRBuilder) BuildMethodCall(object zeus_value.Value, methodName string, 
 	return result
 }
 
+// BuildElemLoad emits a primitive array element read (result = data[index], typed as
+// elemType), skipping the array get() method for primitive-element arrays.
+func (b *IRBuilder) BuildElemLoad(data, index zeus_value.Value, elemType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = elemType
+	b.pushInstr(&Instr{
+		Type:   InstrTypeElemLoad,
+		Output: result,
+		Input:  NewElemLoadInstrInput(data, index, elemType),
+		Span:   span,
+	})
+	return result
+}
+
+// BuildElemStore emits a primitive array element write (data[index] = value), skipping
+// the array set() method for the in-bounds branch of a primitive-element array write.
+func (b *IRBuilder) BuildElemStore(data, index, value zeus_value.Value, elemType zeus_value.ValueType, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypeElemStore,
+		Input: NewElemStoreInstrInput(data, index, value, elemType),
+		Span:  span,
+	})
+}
+
+// FindBlockContaining returns the basic block that currently holds instr, or nil. Lowering
+// passes that split blocks use this: an instruction can move to a freshly-created tail
+// block, so the block captured when the instruction was first visited may be stale.
+func (b *IRBuilder) FindBlockContaining(instr *Instr) *BasicBlock {
+	for _, blk := range b.blocks {
+		if slices.Index(blk.Instrs, instr) != -1 {
+			return blk
+		}
+	}
+	return nil
+}
+
 // BuildSuperConstructorCall emits `super(...)` — a direct call to the base constructor. It has
 // no useful result (constructors return void), so the temp output is a void placeholder.
 func (b *IRBuilder) BuildSuperConstructorCall(parentClass *zeus_value.Class, thisObject zeus_value.Value, args []zeus_value.Value, span *token.Span) zeus_value.Value {

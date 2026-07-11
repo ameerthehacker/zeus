@@ -1,0 +1,7 @@
+{
+  "slug": "fib-recursive",
+  "name": "Recursive Fibonacci",
+  "description": "Naive recursive fib(40). Dominated by function-call overhead and integer addition.",
+  "param": "fib(40)",
+  "expectedExit": 0
+}

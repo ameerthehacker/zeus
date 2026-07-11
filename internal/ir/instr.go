@@ -761,6 +761,63 @@ func AsSetIndexInstrInput(input InstrInput) *SetIndexInstrInput {
 	return nil
 }
 
+// ElemLoadInstrInput is a lowered, primitive array element read: load the element at
+// Index from the raw element buffer Data (the array's opaque `data` pointer), yielding
+// a value of ElemType. Emitted by IndexLoweringPass; codegen lowers it to a GEP + load.
+type ElemLoadInstrInput struct {
+	Data     zeus_value.Value
+	Index    zeus_value.Value
+	ElemType zeus_value.ValueType
+}
+
+func (i ElemLoadInstrInput) String() string {
+	return fmt.Sprintf("%s[%s]", i.Data.String(), i.Index.String())
+}
+
+func NewElemLoadInstrInput(data, index zeus_value.Value, elemType zeus_value.ValueType) *ElemLoadInstrInput {
+	return &ElemLoadInstrInput{Data: data, Index: index, ElemType: elemType}
+}
+
+func AsElemLoadInstrInput(input InstrInput) *ElemLoadInstrInput {
+	switch input := input.(type) {
+	case *ElemLoadInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ElemLoadInstrInput", input)
+	}
+
+	return nil
+}
+
+// ElemStoreInstrInput is a lowered, primitive array element write: store Value (of
+// ElemType) at Index into the raw element buffer Data (the array's opaque `data`
+// pointer). Emitted by IndexLoweringPass; codegen lowers it to a GEP + store.
+type ElemStoreInstrInput struct {
+	Data     zeus_value.Value
+	Index    zeus_value.Value
+	Value    zeus_value.Value
+	ElemType zeus_value.ValueType
+}
+
+func (i ElemStoreInstrInput) String() string {
+	return fmt.Sprintf("%s[%s] = %s", i.Data.String(), i.Index.String(), i.Value.String())
+}
+
+func NewElemStoreInstrInput(data, index, value zeus_value.Value, elemType zeus_value.ValueType) *ElemStoreInstrInput {
+	return &ElemStoreInstrInput{Data: data, Index: index, Value: value, ElemType: elemType}
+}
+
+func AsElemStoreInstrInput(input InstrInput) *ElemStoreInstrInput {
+	switch input := input.(type) {
+	case *ElemStoreInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ElemStoreInstrInput", input)
+	}
+
+	return nil
+}
+
 type DeclPrimordialFuncInstrInput struct {
 	Function *zeus_value.Function
 }
@@ -948,6 +1005,14 @@ const (
 	// type coercion: ObjectType value whose __call__ is compatible with the target FunctionType;
 	// output has the source ObjectType so FunctorCallLoweringPass handles downstream calls naturally.
 	InstrTypeCoerce
+	// primitive array element read: value = data[index] (LIR only). Emitted by
+	// IndexLoweringPass for primitive-element arrays to skip the get() method call,
+	// vtable dispatch and runtime round-trip; codegen lowers it to a GEP + load.
+	InstrTypeElemLoad
+	// primitive array element write: data[index] = value (LIR only). Emitted by
+	// IndexLoweringPass on the in-bounds branch of a primitive-element array write;
+	// codegen lowers it to a GEP + store.
+	InstrTypeElemStore
 )
 
 func (i InstrType) String() string {
@@ -1044,6 +1109,10 @@ func (i InstrType) String() string {
 		return "GET_INDEX"
 	case InstrTypeSetIndex:
 		return "SET_INDEX"
+	case InstrTypeElemLoad:
+		return "ELEM_LOAD"
+	case InstrTypeElemStore:
+		return "ELEM_STORE"
 	case InstrTypeThrow:
 		return "THROW"
 	case InstrTypePushHandler:
