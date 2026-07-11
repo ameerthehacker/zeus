@@ -28,7 +28,6 @@ type ZeusClassLLVMStruct struct {
 	LLVMObjHeaderInstance    llvm.Value
 	LLVMConstructorMethod    *llvm.Value
 	LLVMFactoryFunction      *llvm.Value
-	CurrentVTableMethodIndex int
 }
 
 type ZeusClassModule struct {
@@ -46,7 +45,7 @@ func NewZeusClassModule(modulePath string, class zeus_value.Class) ZeusClassModu
 }
 
 func NewZeusClassLLVMStruct(zeusClass zeus_value.Class, llvmStruct llvm.Type, llvmVTableStruct llvm.Type, llvmVTableMethods []llvm.Value, llvmObjHeaderStruct llvm.Type, llvmVTableInstance *llvm.Value, llvmObjHeaderInstance llvm.Value, llvmConstructorMethod *llvm.Value) *ZeusClassLLVMStruct {
-	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTableMethods, llvmObjHeaderStruct, llvmVTableInstance, llvmObjHeaderInstance, llvmConstructorMethod, nil, 0}
+	return &ZeusClassLLVMStruct{zeusClass, llvmStruct, llvmVTableStruct, llvmVTableMethods, llvmObjHeaderStruct, llvmVTableInstance, llvmObjHeaderInstance, llvmConstructorMethod, nil}
 }
 
 const MemAllocFunctionName = "zeus_gc_alloc"
@@ -1041,26 +1040,19 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 
 	// Now build the class element types - self-references will work because the type is already in the map
 	// Static properties are backed by dedicated globals and must not occupy instance struct slots.
+	// Inherited fields come first (FlattenedInstanceProperties is base-first) so a derived object
+	// begins with its base's layout and a derived pointer doubles as a base pointer.
 	classElementTypes := []llvm.Type{llvm.PointerType(objectHeaderStructType, 0)}
-	for _, property := range class.Properties {
-		if property.IsStatic {
-			continue
-		}
+	for _, property := range zeus_value.FlattenedInstanceProperties(&class) {
 		classElementTypes = append(classElementTypes, c.toLLVMType(property.Property.ValueType))
 	}
 	llvmStructType.StructSetBody(classElementTypes, false)
 
-	// Static methods are emitted as standalone functions (InstrTypeDeclFunc) and are never
-	// dispatched through the vtable — exclude them from vtable slot allocation.
+	// The vtable mirrors the flattened method layout (base slots first, overrides in the base's
+	// slot). Static methods are standalone functions and the constructor is called directly, so
+	// FlattenedVTableMethods already excludes both.
 	vtableElementTypes := []llvm.Type{}
-	for _, method := range class.Methods {
-		// constructor method is not part of the vtable
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			continue
-		}
-		if method.IsStatic {
-			continue
-		}
+	for _, method := range zeus_value.FlattenedVTableMethods(&class) {
 		vtableElementTypes = append(vtableElementTypes, llvm.PointerType(c.toLLVMClassMethodType(*method, llvmStructType), 0))
 	}
 	vtableStructType.StructSetBody(vtableElementTypes, false)
@@ -1138,21 +1130,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	llvmObjectHeader.SetInitializer(llvm.ConstStruct(
 		[]llvm.Value{llvmVTable, llvmObjectTypeInfo},
 		false))
-	// initialize the llvm methods array
-	// Count only non-constructor, non-lowered, non-static methods for vtable
-	methodCount := 0
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			continue
-		}
-		if method.IsLowered {
-			continue
-		}
-		if method.IsStatic {
-			continue
-		}
-		methodCount += 1
-	}
+	// initialize the llvm methods array — one slot per flattened vtable method (inherited
+	// base methods + this class's own instance methods, overrides sharing the base's slot).
+	methodCount := len(zeus_value.FlattenedVTableMethods(&class))
 	llvmVTableMethods := make([]llvm.Value, methodCount)
 	zeusClassLLVMStruct := NewZeusClassLLVMStruct(class, llvmStructType, vtableStructType, llvmVTableMethods, objectHeaderStructType, &llvmVTable, llvmObjectHeader, nil)
 
@@ -1227,6 +1207,22 @@ func getFactoryFunctionName(className string) string {
 	return FactoryFunctionPrefix + mangledName
 }
 
+// effectiveConstructor returns the constructor a `new`/factory call should run for `class` and
+// the class that declares it: the class's own constructor if it has one, otherwise the nearest
+// inherited constructor (so a derived class without its own constructor forwards to the base's).
+func (c *CodegenModule) effectiveConstructor(class zeus_value.Class) (*zeus_value.Function, *zeus_value.Class) {
+	ctorClass := zeus_value.LookupConstructorClass(&class)
+	if ctorClass == nil {
+		return nil, nil
+	}
+	for _, method := range ctorClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			return method.Method, ctorClass
+		}
+	}
+	return nil, nil
+}
+
 // declareFactoryFunction declares the factory function signature for a class
 // This is called in Phase 1 before NEW_OBJ instructions are processed
 func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Value {
@@ -1238,14 +1234,8 @@ func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Valu
 		return existingFunc
 	}
 
-	// Find constructor method to get parameter types
-	var constructorMethod *zeus_value.Function
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			break
-		}
-	}
+	// The factory's parameters mirror the effective constructor (own or nearest inherited).
+	constructorMethod, _ := c.effectiveConstructor(class)
 
 	// Build parameter types for factory function (same as constructor params)
 	paramTypes := []llvm.Type{}
@@ -1286,14 +1276,8 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	factoryFunction := c.module.NamedFunction(factoryFunctionName)
 	zeus_error.Assert(!factoryFunction.IsNil(), fmt.Sprintf("factory function %s not declared", factoryFunctionName))
 
-	// Find constructor method to get parameter types
-	var constructorMethod *zeus_value.Function
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			break
-		}
-	}
+	// The effective constructor (own or nearest inherited) drives the factory's params and call.
+	constructorMethod, constructorClass := c.effectiveConstructor(class)
 
 	// Create the function body
 	entryBlock := llvm.AddBasicBlock(factoryFunction, "entry")
@@ -1309,28 +1293,29 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	llvmObjHeader := c.getLLVMObjHeaderPtr(class.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
 
-	// Initialize instance properties to default values.
+	// Initialize instance properties (inherited + own, base-first) to default values.
 	// Static properties are backed by globals and have no slot in the instance struct.
-	instancePropertyIndex := 0
-	for _, property := range class.Properties {
-		if property.IsStatic {
-			continue
-		}
+	for instancePropertyIndex, property := range zeus_value.FlattenedInstanceProperties(&class) {
 		defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
 		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, instancePropertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", class.Name, property.Property.Name))
 		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
-		instancePropertyIndex++
 	}
 
-	// Call constructor if it exists
-	llvmConstructorMethod := c.getLLVMConstructorMethod(class.Name)
+	// Call the effective constructor if the class (or an ancestor) has one. When it belongs to a
+	// base class, call that class's constructor (its LLVM function) — with the object as `this`,
+	// it initializes the inherited fields; a derived class with its own constructor chains via
+	// super(...) instead.
+	var llvmConstructorMethod *llvm.Value
+	if constructorClass != nil {
+		llvmConstructorMethod = c.getLLVMConstructorMethod(constructorClass.Name)
+	}
 	if llvmConstructorMethod != nil && constructorMethod != nil {
 		constructorFunc := *llvmConstructorMethod
 		constructorParamTypes := []zeus_value.ValueType{}
 		for _, param := range constructorMethod.Params {
 			constructorParamTypes = append(constructorParamTypes, param.ValueType)
 		}
-		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(&class))
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(constructorClass))
 		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
 
 		// Get constructor params from factory function params
@@ -1403,10 +1388,15 @@ func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_va
 	function.SetLinkage(llvm.InternalLinkage)
 
 	if !isConstructor {
-		// update the vtable global initializer
+		// Write this method into its flattened vtable slot. Using the name-resolved slot (rather
+		// than an incrementing counter) places an override into the base method's slot and a new
+		// method after the inherited ones — the layout genClass sized the vtable for. Inherited,
+		// non-overridden slots are filled from the base's vtable in finalizeInheritedVTables.
 		structInfo := c.zeusClassLLVMStructMap[class.Name]
-		structInfo.LLVMVTableMethods[structInfo.CurrentVTableMethodIndex] = function
-		structInfo.CurrentVTableMethodIndex += 1
+		slot := util.GetVTableSlot(&class, &method)
+		if slot >= 0 {
+			structInfo.LLVMVTableMethods[slot] = function
+		}
 		c.getLLVMVTablePtr(class.Name).SetInitializer(llvm.ConstStruct(structInfo.LLVMVTableMethods, true))
 	} else {
 		// store the constructor method reference
@@ -1419,6 +1409,35 @@ func (c *CodegenModule) genClassMethod(method zeus_value.Function, class zeus_va
 
 func (c *CodegenModule) genDeclClassMethod(input ir.DeclClassMethodInstrInput) llvm.Value {
 	return c.genClassMethod(*input.Method, *input.Class)
+}
+
+// finalizeInheritedVTables copies each base method's compiled function pointer into the derived
+// class's corresponding vtable slot for methods the derived class does not override. Own methods
+// and overrides were written by genClassMethod during body generation; only inherited slots are
+// still null. Classes are visited base-before-derived so a base vtable (including its own
+// inherited slots) is complete before a derived class reads from it.
+func (c *CodegenModule) finalizeInheritedVTables(classes []*zeus_value.Class) {
+	for _, class := range classes {
+		if class.ParentClass == nil {
+			continue
+		}
+		childInfo := c.zeusClassLLVMStructMap[class.Name]
+		parentInfo := c.zeusClassLLVMStructMap[class.ParentClass.Name]
+		if childInfo == nil || parentInfo == nil {
+			continue
+		}
+		parentFlat := zeus_value.FlattenedVTableMethods(class.ParentClass)
+		childFlat := zeus_value.FlattenedVTableMethods(class)
+		for i := range parentFlat {
+			// A non-overridden slot still references the same *ClassMethod as the base; copy the
+			// base's compiled function. An override yields a different *ClassMethod and is left as
+			// genClassMethod wrote it.
+			if i < len(childFlat) && childFlat[i] == parentFlat[i] {
+				childInfo.LLVMVTableMethods[i] = parentInfo.LLVMVTableMethods[i]
+			}
+		}
+		c.getLLVMVTablePtr(class.Name).SetInitializer(llvm.ConstStruct(childInfo.LLVMVTableMethods, true))
+	}
 }
 
 // loadVTableMethodPtr navigates obj → header → vtable → slot[slotIndex] and returns the fn ptr.
@@ -1495,6 +1514,12 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 }
 
 func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
+	// super.method() — a non-virtual call resolved directly on the base class.
+	if input.StaticClass != nil {
+		c.genStaticMethodCall(input, output)
+		return
+	}
+
 	objectType := c.getValueType(input.Object)
 	llvmObject := c.toLLVMValue(input.Object)
 	objectClass := zeus_value.AsObjectType(objectType)
@@ -1511,12 +1536,12 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	}
 	functionArgs = append(functionArgs, llvmObject)
 
+	// Resolve the method through the inheritance chain (it may be defined on a base class).
+	// The signature drives the call type; dispatch itself goes through the vtable slot above,
+	// which for an overridden method holds the derived implementation.
 	var foundMethod *zeus_value.Function
-	for _, m := range objectClass.Class.Methods {
-		if m.Method.SourceName() == input.MethodName {
-			foundMethod = m.Method
-			break
-		}
+	if m := zeus_value.LookupMethod(objectClass.Class, input.MethodName); m != nil {
+		foundMethod = m.Method
 	}
 	zeus_error.Assert(foundMethod != nil, fmt.Sprintf("method %s not found in class %s for codegen", input.MethodName, objectClass.Class.Name))
 
@@ -1532,6 +1557,88 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 
 	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(fullFunctionType), methodPtr, functionArgs, fmt.Sprintf("%s_result", input.MethodName))
 	c.llvmValues[output.Name] = llvmValue
+}
+
+// genStaticMethodCall emits super.method(): a non-virtual call. The method is resolved on the
+// base class chain (StaticClass) and called by its symbol directly — never through the vtable —
+// so an override on the receiver is bypassed. `this` is passed unchanged as the receiver.
+func (c *CodegenModule) genStaticMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
+	llvmObject := c.toLLVMValue(input.Object)
+
+	// Resolve the method (and the class that defines it) by walking the base chain.
+	var foundMethod *zeus_value.ClassMethod
+	definingClass := input.StaticClass
+	for cur := input.StaticClass; cur != nil; cur = cur.ParentClass {
+		for _, m := range cur.Methods {
+			if m.Method.SourceName() == input.MethodName {
+				foundMethod, definingClass = m, cur
+				break
+			}
+		}
+		if foundMethod != nil {
+			break
+		}
+	}
+	zeus_error.Assert(foundMethod != nil, fmt.Sprintf("super method %s not found in class %s", input.MethodName, input.StaticClass.Name))
+
+	// User methods are named by their IR name; extern (primordial) methods are class-scoped.
+	fnName := foundMethod.Method.Name
+	if foundMethod.IsExtern {
+		fnName = util.GetClassMethodName(definingClass.Name, foundMethod.Method.Name)
+	}
+	llvmFn := c.module.NamedFunction(fnName)
+	zeus_error.Assert(!llvmFn.IsNil(), fmt.Sprintf("super method function %s not found", fnName))
+
+	paramTypes := make([]zeus_value.ValueType, len(foundMethod.Method.Params))
+	for i, p := range foundMethod.Method.Params {
+		paramTypes[i] = p.ValueType
+	}
+	paramTypes = append(paramTypes, zeus_value.NewObjectType(definingClass))
+	fnType := c.toLLVMFunctionType(zeus_value.FunctionType{ReturnType: foundMethod.Method.ReturnType, ParamTypes: paramTypes})
+
+	args := []llvm.Value{}
+	for _, arg := range input.Args {
+		args = append(args, c.toLLVMValue(arg))
+	}
+	args = append(args, llvmObject)
+
+	llvmValue := c.builder.CreateCall(fnType, llvmFn, args, fmt.Sprintf("%s_super_result", input.MethodName))
+	c.llvmValues[output.Name] = llvmValue
+}
+
+// genSuperConstructorCall emits `super(...)`: a direct (non-virtual) call to the base class's
+// constructor with the current object as `this`. ParentClass is the nearest ancestor that
+// declares a constructor, so its LLVMConstructorMethod is available.
+func (c *CodegenModule) genSuperConstructorCall(input ir.SuperConstructorCallInstrInput) {
+	parentClass := input.ParentClass
+	llvmConstructor := c.getLLVMConstructorMethod(parentClass.Name)
+	zeus_error.Assert(llvmConstructor != nil, fmt.Sprintf("constructor for base class %s not found", parentClass.Name))
+
+	// Locate the base constructor descriptor to build the call's function type.
+	var constructor *zeus_value.Function
+	for _, method := range parentClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			constructor = method.Method
+			break
+		}
+	}
+	zeus_error.Assert(constructor != nil, fmt.Sprintf("constructor descriptor for base class %s not found", parentClass.Name))
+
+	paramTypes := []zeus_value.ValueType{}
+	for _, param := range constructor.Params {
+		paramTypes = append(paramTypes, param.ValueType)
+	}
+	paramTypes = append(paramTypes, zeus_value.NewObjectType(parentClass))
+	constructorType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, paramTypes))
+
+	// Arguments are the super(...) args followed by `this`.
+	args := []llvm.Value{}
+	for _, arg := range input.Args {
+		args = append(args, c.toLLVMValue(arg))
+	}
+	args = append(args, c.toLLVMValue(input.ThisObject))
+
+	c.builder.CreateCall(constructorType, *llvmConstructor, args, "")
 }
 
 func (c *CodegenModule) genDeclPrimordialFunc(input ir.DeclPrimordialFuncInstrInput) {
@@ -1606,9 +1713,14 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 	// Phase 1: Process all DECL_CLASS instructions first
 	// This ensures all LLVM struct types are created before they're used
 	processedClassIds := make(map[int]bool)
+	// Declaration order is base-before-derived (a class references its already-declared parent),
+	// which finalizeInheritedVTables relies on to fill derived vtables from completed base ones.
+	var declaredClasses []*zeus_value.Class
 	for _, instr := range irBuilder.GetInstrs() {
 		if instr.Type == ir.InstrTypeDeclClass {
-			c.genDeclClass(*ir.AsDeclClassInstrInput(instr.Input), *instr.Output)
+			input := ir.AsDeclClassInstrInput(instr.Input)
+			c.genDeclClass(*input, *instr.Output)
+			declaredClasses = append(declaredClasses, input.Class)
 			processedClassIds[instr.Id] = true
 		}
 	}
@@ -1729,6 +1841,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeMethodCall:
 			c.setDebugLocation(instr.Span)
 			c.genMethodCall(*ir.AsMethodCallInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeSuperConstructorCall:
+			c.setDebugLocation(instr.Span)
+			c.genSuperConstructorCall(*ir.AsSuperConstructorCallInstrInput(instr.Input))
 		case ir.InstrTypeDeclPrimordialFunc:
 			c.genDeclPrimordialFunc(*ir.AsDeclPrimordialFuncInstrInput(instr.Input))
 		// Exception handling instructions
@@ -1758,6 +1873,10 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		basicBlock := c.getOrCreateBasicBlock(block.Id, currentFunction)
 		c.builder.SetInsertPointAtEnd(basicBlock)
 	})
+
+	// Fill each derived class's inherited (non-overridden) vtable slots with the base's compiled
+	// method — the derived class emits no method body for those, so their slots are still null.
+	c.finalizeInheritedVTables(declaredClasses)
 
 	// Phase 3: Generate factory function bodies for locally-defined classes only.
 	// Imported classes already have their factory bodies in the exporting module.

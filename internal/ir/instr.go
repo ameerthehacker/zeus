@@ -523,6 +523,11 @@ type MethodCallInstrInput struct {
 	Object     zeus_value.Value
 	MethodName string
 	Args       []zeus_value.Value
+	// StaticClass, when set, makes this a non-virtual call: the method is resolved on (and called
+	// directly from) StaticClass rather than dispatched through the receiver's vtable. This is how
+	// super.method() reaches a base implementation even when the object overrides it. nil = the
+	// usual virtual (vtable) dispatch.
+	StaticClass *zeus_value.Class
 }
 
 func NewMethodCallInstrInput(object zeus_value.Value, methodName string, args []zeus_value.Value) *MethodCallInstrInput {
@@ -530,6 +535,16 @@ func NewMethodCallInstrInput(object zeus_value.Value, methodName string, args []
 		Object:     object,
 		MethodName: methodName,
 		Args:       args,
+	}
+}
+
+// NewStaticMethodCallInstrInput builds a non-virtual (super.method()) call resolved on staticClass.
+func NewStaticMethodCallInstrInput(object zeus_value.Value, methodName string, args []zeus_value.Value, staticClass *zeus_value.Class) *MethodCallInstrInput {
+	return &MethodCallInstrInput{
+		Object:      object,
+		MethodName:  methodName,
+		Args:        args,
+		StaticClass: staticClass,
 	}
 }
 
@@ -550,6 +565,37 @@ func (i MethodCallInstrInput) String() string {
 		args = append(args, arg.String())
 	}
 	return fmt.Sprintf("%s, %q, [%s]", i.Object, i.MethodName, strings.Join(args, ", "))
+}
+
+// SuperConstructorCallInstrInput represents `super(...)` inside a derived class's constructor.
+// ThisObject is the current instance; ParentClass is the base class whose constructor runs.
+type SuperConstructorCallInstrInput struct {
+	ParentClass *zeus_value.Class
+	ThisObject  zeus_value.Value
+	Args        []zeus_value.Value
+}
+
+func NewSuperConstructorCallInstrInput(parentClass *zeus_value.Class, thisObject zeus_value.Value, args []zeus_value.Value) *SuperConstructorCallInstrInput {
+	return &SuperConstructorCallInstrInput{ParentClass: parentClass, ThisObject: thisObject, Args: args}
+}
+
+func AsSuperConstructorCallInstrInput(input InstrInput) *SuperConstructorCallInstrInput {
+	switch input := input.(type) {
+	case *SuperConstructorCallInstrInput:
+		return input
+	default:
+		panicInvalidInputType("SuperConstructorCallInstrInput", input)
+	}
+
+	return nil
+}
+
+func (i SuperConstructorCallInstrInput) String() string {
+	args := []string{}
+	for _, arg := range i.Args {
+		args = append(args, arg.String())
+	}
+	return fmt.Sprintf("%s, [%s]", i.ParentClass.Name, strings.Join(args, ", "))
 }
 
 type GetAccessorInstrInput struct {
@@ -883,6 +929,8 @@ const (
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
 	InstrTypeMethodCall
+	// super(...) — direct (non-virtual) call to the base class constructor with `this`
+	InstrTypeSuperConstructorCall
 	// accessor invocation (HIR - lowered before codegen)
 	InstrTypeGetAccessor // read via getter: obj.name
 	InstrTypeSetAccessor // write via setter: obj.name = value
@@ -984,6 +1032,8 @@ func (i InstrType) String() string {
 		return "OBJECT_PROPERTY_ACCESS"
 	case InstrTypeMethodCall:
 		return "CALL_METHOD"
+	case InstrTypeSuperConstructorCall:
+		return "CALL_SUPER_CONSTRUCTOR"
 	case InstrTypeDeclClassMethod:
 		return "DECLARE_CLASS_METHOD"
 	case InstrTypeGetAccessor:

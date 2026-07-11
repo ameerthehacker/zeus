@@ -424,6 +424,106 @@ func LookupStaticAccessor(class *Class, name string) *ClassAccessor {
 	return nil
 }
 
+// LookupMethod finds a method by (source) name on the class or any ancestor. A method on a
+// derived class shadows a same-named method on a base class (the walk starts at `class`).
+func LookupMethod(class *Class, name string) *ClassMethod {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, m := range c.Methods {
+			if m.Method.SourceName() == name {
+				return m
+			}
+		}
+	}
+	return nil
+}
+
+// LookupConstructorClass returns the nearest class in the chain (starting at `class`) that
+// declares its own constructor, or nil if no class in the chain has one. This is the class
+// whose constructor a `super(...)`/factory call should target and forward arguments to.
+func LookupConstructorClass(class *Class) *Class {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, m := range c.Methods {
+			if m.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+				return c
+			}
+		}
+	}
+	return nil
+}
+
+// IsSubclassOf reports whether `class` is `ancestor` or transitively derives from it.
+func IsSubclassOf(class *Class, ancestor *Class) bool {
+	for c := class; c != nil; c = c.ParentClass {
+		if c == ancestor || c.Name == ancestor.Name {
+			return true
+		}
+	}
+	return false
+}
+
+// FlattenedInstanceProperties returns a class's instance (non-static) data fields ordered
+// base-first, then own — the physical order of fields in the object struct. A derived object
+// therefore begins with its base's fields, so a derived pointer is a valid base pointer.
+func FlattenedInstanceProperties(class *Class) []*ClassProperty {
+	var result []*ClassProperty
+	if class.ParentClass != nil {
+		result = FlattenedInstanceProperties(class.ParentClass)
+	}
+	for _, prop := range class.Properties {
+		if prop.IsStatic {
+			continue
+		}
+		result = append(result, prop)
+	}
+	return result
+}
+
+// isVTableMethod reports whether a method occupies a vtable slot (instance, non-constructor,
+// non-lowered). Static methods, the constructor, and lowered methods are dispatched directly.
+func isVTableMethod(m *ClassMethod) bool {
+	return m.Method.SourceName() != token.CONSTRUCTOR_METHOD_NAME && !m.IsLowered && !m.IsStatic
+}
+
+// FlattenedVTableMethods returns a class's vtable methods in physical slot order: the base's
+// vtable methods first (an override replaces its base method in-place, keeping the slot index),
+// then the derived class's newly-introduced methods. Because a slot index is stable across the
+// hierarchy, dispatching an inherited slot through a derived object's vtable reaches the
+// override — the essence of dynamic dispatch.
+func FlattenedVTableMethods(class *Class) []*ClassMethod {
+	var result []*ClassMethod
+	if class.ParentClass != nil {
+		result = FlattenedVTableMethods(class.ParentClass)
+	}
+	for _, m := range class.Methods {
+		if !isVTableMethod(m) {
+			continue
+		}
+		overridden := false
+		for i, existing := range result {
+			if existing.Method.SourceName() == m.Method.SourceName() {
+				result[i] = m
+				overridden = true
+				break
+			}
+		}
+		if !overridden {
+			result = append(result, m)
+		}
+	}
+	return result
+}
+
+// FlattenedMethods returns all of a class's methods (any kind) base-first, then own — so a
+// member lookup that scans the result sees a derived method after (and thus shadowing) a
+// same-named base method. Used for name-based member resolution, not vtable layout.
+func FlattenedMethods(class *Class) []*ClassMethod {
+	var result []*ClassMethod
+	if class.ParentClass != nil {
+		result = FlattenedMethods(class.ParentClass)
+	}
+	return append(result, class.Methods...)
+}
+
 func AsObject(value Value) *Object {
 	switch value := value.(type) {
 	case *Object:

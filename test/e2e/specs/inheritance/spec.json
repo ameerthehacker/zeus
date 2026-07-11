@@ -1,0 +1,95 @@
+[
+    {
+        "name": "Inherited and own fields",
+        "exit": "42",
+        "entry": "fields.zs"
+    },
+    {
+        "name": "Inherited method",
+        "exit": "42",
+        "entry": "method.zs"
+    },
+    {
+        "name": "Overridden method dispatched dynamically",
+        "exit": "42",
+        "entry": "override.zs"
+    },
+    {
+        "name": "Multi-level inheritance with override",
+        "exit": "42",
+        "entry": "multi_level.zs"
+    },
+    {
+        "name": "Polymorphism through a base-typed parameter",
+        "exit": "42",
+        "entry": "polymorphism.zs"
+    },
+    {
+        "name": "Inherited getter and setter",
+        "exit": "42",
+        "entry": "accessor.zs"
+    },
+    {
+        "name": "Base method mutates an inherited field",
+        "exit": "42",
+        "entry": "base_method_field.zs"
+    },
+    {
+        "name": "super(...) chains to the base constructor",
+        "exit": "42",
+        "entry": "super_ctor.zs"
+    },
+    {
+        "name": "super(...) through a three-level chain",
+        "exit": "42",
+        "entry": "super_chain.zs"
+    },
+    {
+        "name": "Derived without a constructor forwards to the base",
+        "exit": "42",
+        "entry": "super_inherited_ctor.zs"
+    },
+    {
+        "name": "Missing super(...) is rejected",
+        "exit": "1",
+        "entry": "super_missing.zs",
+        "compile_error": true,
+        "stderr_contains": ["must call super"]
+    },
+    {
+        "name": "Using this before super(...) is rejected",
+        "exit": "1",
+        "entry": "super_before_this.zs",
+        "compile_error": true,
+        "stderr_contains": ["before calling super"]
+    },
+    {
+        "name": "Wrong super(...) argument count is rejected",
+        "exit": "1",
+        "entry": "super_wrong_args.zs",
+        "compile_error": true,
+        "stderr_contains": ["arguments for super"]
+    },
+    {
+        "name": "super.method() calls the base implementation",
+        "exit": "42",
+        "entry": "super_method.zs"
+    },
+    {
+        "name": "super.method() is non-virtual under dynamic dispatch",
+        "exit": "42",
+        "entry": "super_method_dispatch.zs"
+    },
+    {
+        "name": "super.method() resolves up the inheritance chain",
+        "exit": "42",
+        "entry": "super_method_inherited.zs"
+    },
+    {
+        "name": "super.method() without a base class is rejected",
+        "exit": "1",
+        "entry": "super_method_no_base.zs",
+        "compile_error": true,
+        "stderr_contains": ["requires a base class"]
+    }
+]

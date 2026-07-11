@@ -315,6 +315,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
 		p.tcMethodCall(tc, instr)
+	case InstrTypeSuperConstructorCall:
+		p.tcSuperConstructorCall(tc, instr)
 	case InstrTypeDeclClassMethod:
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
@@ -531,6 +533,13 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
 		case zeus_value.ObjectType:
+			// Upcast: a derived object is assignable to a base reference. Fields are laid out
+			// base-first, so the pointer is already a valid base pointer — no cast instruction,
+			// just retype the value. Dynamic dispatch still reaches overrides via the object's
+			// own vtable pointer.
+			if zeus_value.IsSubclassOf(valueType.Class, targetType.Class) {
+				return value, true
+			}
 			// Handle ObjectType -> ObjectType casts (after ToKnownTypesPass converts ArrayType to ObjectType)
 			// string -> u8[] (as ObjectType) implicit cast: emit CAST instruction (lowered in separate pass)
 			if valueType.Class.Name == zeus_value.ZEUS_PRIMORDIAL_STRING && targetType.Class.Name == "u8[]" {
@@ -1015,13 +1024,12 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 	var constructorMethod *zeus_value.Function = nil
 	var constructorAccessModifier token.TokenType = token.TokenTypePublic
 
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			if method.AccessModifier != nil {
-				constructorAccessModifier = method.AccessModifier.Type
-			}
-			break
+	// Resolve the effective constructor: the class's own, or the nearest inherited one so a
+	// derived class without its own constructor forwards to (and is `new`-ed with) the base's.
+	if ctorMethod := zeus_value.LookupMethod(class, token.CONSTRUCTOR_METHOD_NAME); ctorMethod != nil {
+		constructorMethod = ctorMethod.Method
+		if ctorMethod.AccessModifier != nil {
+			constructorAccessModifier = ctorMethod.AccessModifier.Type
 		}
 	}
 
@@ -1060,8 +1068,10 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 
 	if zeus_value.IsObjectType(valueType) {
 		class := zeus_value.AsObjectType(valueType).Class
-		properties := class.Properties
-		methods := class.Methods
+		// Inherited members are resolvable: base-first flattened views let a derived class see
+		// (and, for same-named members, shadow) its base's fields and methods.
+		properties := zeus_value.FlattenedInstanceProperties(class)
+		methods := zeus_value.FlattenedMethods(class)
 		isFound := false
 		isAccessible := false
 		isMethod := false
@@ -1171,14 +1181,13 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	class := zeus_value.AsObjectType(valueType).Class
-	var foundMethod *zeus_value.ClassMethod
-
-	for i := range class.Methods {
-		if class.Methods[i].Method.SourceName() == input.MethodName {
-			foundMethod = class.Methods[i]
-			break
-		}
+	// super.method() resolves non-virtually on the base class, not the receiver's dynamic class.
+	if input.StaticClass != nil {
+		class = input.StaticClass
 	}
+	// Walk the inheritance chain so an inherited (or overridden) method is found; a derived
+	// method shadows a same-named base method.
+	foundMethod := zeus_value.LookupMethod(class, input.MethodName)
 
 	// Static method called on instance: reject with a targeted error.
 	if foundMethod != nil && foundMethod.IsStatic {
@@ -1194,17 +1203,15 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 		// The IR generator cannot distinguish methods from function-type properties at gen time,
 		// so it always emits CALL_METHOD for obj.x(args). The lowering pass rewrites these
 		// to OBJ_PROP_ACCESS + INDIRECT_CALL after type checking.
-		for _, property := range class.Properties {
-			if property.Property.Name == input.MethodName {
-				if ft, ok := property.Property.ValueType.(zeus_value.FunctionType); ok {
-					// Type-check the arguments against the property's function type
-					// (arity + variadic element types + implicit casts), same as a
-					// direct/indirect call, before the lowering pass rewrites this.
-					input.Args = p.tcFunctionCall(tc, instr, ft, input.Args, instr.Output.Span)
-					instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
-					instr.Output.ValueType = ft.ReturnType
-					return
-				}
+		if property := zeus_value.LookupInstanceProperty(class, input.MethodName); property != nil {
+			if ft, ok := property.Property.ValueType.(zeus_value.FunctionType); ok {
+				// Type-check the arguments against the property's function type
+				// (arity + variadic element types + implicit casts), same as a
+				// direct/indirect call, before the lowering pass rewrites this.
+				input.Args = p.tcFunctionCall(tc, instr, ft, input.Args, instr.Output.Span)
+				instr.Input = NewStaticMethodCallInstrInput(input.Object, input.MethodName, input.Args, input.StaticClass)
+				instr.Output.ValueType = ft.ReturnType
+				return
 			}
 		}
 		tc.pushError(&zeus_error.ZeusError{
@@ -1232,9 +1239,38 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 
 	functionType := zeus_value.ToFunctionType(*foundMethod.Method)
 	input.Args = p.tcFunctionCall(tc, instr, functionType, input.Args, instr.Output.Span)
-	instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
+	instr.Input = NewStaticMethodCallInstrInput(input.Object, input.MethodName, input.Args, input.StaticClass)
 
 	instr.Output.ValueType = foundMethod.Method.ReturnType
+}
+
+// tcSuperConstructorCall type-checks super(...) arguments against the base constructor's
+// parameters. ParentClass is the nearest ancestor that declares a constructor (set at IR gen).
+func (p *TypeCheckingPass) tcSuperConstructorCall(tc *TypeChecker, instr *Instr) {
+	input := AsSuperConstructorCallInstrInput(instr.Input)
+
+	var constructor *zeus_value.Function
+	for _, method := range input.ParentClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			constructor = method.Method
+			break
+		}
+	}
+	if constructor == nil {
+		return // IR gen guarantees ParentClass has a constructor; nothing to check otherwise
+	}
+
+	if len(input.Args) != len(constructor.Params) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("expected %d arguments for super(...), but found %d", len(constructor.Params), len(input.Args)),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	for i := range input.Args {
+		input.Args[i] = p.cmpValueWithImplicitCast(tc, instr, constructor.Params[i].ValueType, input.Args[i])
+	}
+	instr.Input = NewSuperConstructorCallInstrInput(input.ParentClass, input.ThisObject, input.Args)
 }
 
 func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {
