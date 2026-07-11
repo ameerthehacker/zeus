@@ -1,0 +1,7 @@
+{
+  "slug": "sort",
+  "name": "Insertion Sort",
+  "description": "O(n^2) insertion sort of a 20,000-element LCG-filled array. Exercises array get/set and comparisons.",
+  "param": "N = 20000",
+  "expectedExit": 0
+}

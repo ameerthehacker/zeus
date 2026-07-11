@@ -1,0 +1,7 @@
+{
+  "slug": "matmul",
+  "name": "Matrix Multiply",
+  "description": "Naive 512x512 integer matrix multiplication. Exercises 2D arrays and a memory-bound triple-nested loop.",
+  "param": "512 x 512",
+  "expectedExit": 0
+}

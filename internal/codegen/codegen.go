@@ -1487,6 +1487,27 @@ func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessIns
 	c.llvmValues[output.Name] = llvmValue
 }
 
+// genElemLoad lowers a primitive array element read to a direct GEP + load on the
+// array's raw element buffer: value = data[index]. No vtable dispatch, no runtime call.
+func (c *CodegenModule) genElemLoad(input ir.ElemLoadInstrInput, output zeus_value.Var) {
+	dataPtr := c.toLLVMValue(input.Data)
+	index := c.toLLVMValue(input.Index)
+	elemType := c.toLLVMType(input.ElemType)
+	elemPtr := c.builder.CreateInBoundsGEP(elemType, dataPtr, []llvm.Value{index}, "elem_ptr")
+	c.llvmValues[output.Name] = c.builder.CreateLoad(elemType, elemPtr, "elem_val")
+}
+
+// genElemStore lowers a primitive array element write to a direct GEP + store on the
+// array's raw element buffer: data[index] = value. No vtable dispatch, no runtime call.
+func (c *CodegenModule) genElemStore(input ir.ElemStoreInstrInput) {
+	dataPtr := c.toLLVMValue(input.Data)
+	index := c.toLLVMValue(input.Index)
+	value := c.toLLVMValue(input.Value)
+	elemType := c.toLLVMType(input.ElemType)
+	elemPtr := c.builder.CreateInBoundsGEP(elemType, dataPtr, []llvm.Value{index}, "elem_ptr")
+	c.builder.CreateStore(value, elemPtr)
+}
+
 func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput, output zeus_value.Var) {
 	functionType := zeus_value.AsFunctionType(zeus_value.GetValueType(input.Function))
 	zeus_error.Assert(functionType != nil, fmt.Sprintf("INDIRECT_FUNC_CALL: %s is not a FunctionType", input.Function))
@@ -1841,6 +1862,12 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeMethodCall:
 			c.setDebugLocation(instr.Span)
 			c.genMethodCall(*ir.AsMethodCallInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeElemLoad:
+			c.setDebugLocation(instr.Span)
+			c.genElemLoad(*ir.AsElemLoadInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeElemStore:
+			c.setDebugLocation(instr.Span)
+			c.genElemStore(*ir.AsElemStoreInstrInput(instr.Input))
 		case ir.InstrTypeSuperConstructorCall:
 			c.setDebugLocation(instr.Span)
 			c.genSuperConstructorCall(*ir.AsSuperConstructorCallInstrInput(instr.Input))

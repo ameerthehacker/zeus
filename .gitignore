@@ -129,6 +129,10 @@ dist
 # Gatsby files
 .cache/
 public
+# Astro docs static assets (e.g. generated benchmark charts) live in docs/public/
+# and must be tracked despite the generic `public` rule above.
+!docs/public/
+!docs/public/**
 
 # Vuepress build output
 .vuepress/dist

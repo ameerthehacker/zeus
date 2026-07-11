@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 188" width="540" height="188" font-family="ui-sans-serif, system-ui, sans-serif" role="img" aria-label="Insertion Sort benchmark: wall-clock time, lower is better">
+    <text x="16" y="26" font-size="16" font-weight="600" fill="#cbd5e1">Insertion Sort</text>
+    <text x="16" y="44" font-size="12" fill="#64748b">mean wall-clock time — lower is better (N = 20000)</text>
+    <text x="72" y="71" text-anchor="end" font-size="14" fill="#94a3b8">Zeus</text>
+    <rect x="84" y="55" width="180.5" height="24" rx="4" fill="#f59e0b" />
+    <text x="272.5" y="72" font-size="13" fill="#94a3b8">68 ms</text>
+    <text x="72" y="111" text-anchor="end" font-size="14" fill="#94a3b8">Go</text>
+    <rect x="84" y="95" width="97.9" height="24" rx="4" fill="#00add8" />
+    <text x="189.9" y="112" font-size="13" fill="#94a3b8">37 ms</text>
+    <text x="72" y="151" text-anchor="end" font-size="14" fill="#94a3b8">Node.js</text>
+    <rect x="84" y="135" width="320.0" height="24" rx="4" fill="#57a548" />
+    <text x="412.0" y="152" font-size="13" fill="#94a3b8">120 ms</text>
+  </svg>

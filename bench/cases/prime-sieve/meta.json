@@ -1,0 +1,7 @@
+{
+  "slug": "prime-sieve",
+  "name": "Prime Sieve",
+  "description": "Sieve of Eratosthenes up to 30,000,000. Exercises large array allocation, indexing and nested loops.",
+  "param": "limit = 3e7",
+  "expectedExit": 0
+}
