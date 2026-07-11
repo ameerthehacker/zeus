@@ -17,6 +17,10 @@ const SETTER_KEYWORD = "set"
 const READONLY_KEYWORD = "readonly"
 const STATIC_KEYWORD = "static"
 
+// EXTERN_KEYWORD marks a class method whose body forwards to a named Zig runtime symbol
+// (`extern("zeus_...") name(...): T;`). Used by prelude/primordial classes; no user body.
+const EXTERN_KEYWORD = "extern"
+
 type TokenType int
 
 const (

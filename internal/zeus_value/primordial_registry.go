@@ -45,41 +45,23 @@ func newPrimordialRegistry() *PrimordialRegistry {
 	}
 
 	r.registerBaseClasses()
-	r.registerFunctions()
+	// Primordial functions (timers) are compiled from prelude/timers.zs and self-register via
+	// RegisterFunction when preludes load (ir.loadPreludes).
 
 	return r
 }
 
 func (r *PrimordialRegistry) registerBaseClasses() {
-	// u8[] is fundamental - needed by string
+	// u8[] is fundamental — the string prelude references it. Every other primordial class
+	// (string, Error, Console) is compiled from prelude/*.zs and injected via RegisterClass when
+	// preludes load (ir.loadPreludes); u8[] must exist first so the string prelude resolves it.
+	// getOrCreateArrayClassUnsafe registers the array class and marks its runtime-backed methods
+	// extern, so no further per-class setup is needed here.
 	u8ArrayType := ArrayType{
 		ElementType: IntType{Size: I8, Signed: false, Span: r.defaultSpan},
 		Span:        r.defaultSpan,
 	}
 	r.getOrCreateArrayClassUnsafe(u8ArrayType)
-
-	// string class - reuse the existing definition
-	r.classes[ZEUS_PRIMORDIAL_STRING] = GetStringPrimordialClassDefinition(r.defaultSpan)
-	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_STRING)
-
-	// Error class - base class for all exceptions (must be registered before any Error subclasses)
-	r.classes[ZEUS_PRIMORDIAL_ERROR] = GetErrorPrimordialClassDefinition(r.defaultSpan)
-	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_ERROR)
-
-	// Console class - global console object (log/error/info)
-	r.classes[ZEUS_PRIMORDIAL_CONSOLE] = GetConsolePrimordialClassDefinition(r.defaultSpan)
-	r.classOrder = append(r.classOrder, ZEUS_PRIMORDIAL_CONSOLE)
-
-	// Resolve UserDefinedType{"string"} to ObjectType{*stringClass} in all registered class
-	// method signatures. Primordial definitions use UserDefinedType as a placeholder to avoid
-	// forward-reference issues; now that string is registered we can resolve them.
-	r.resolveStringRefs()
-
-	// Every non-lowered primordial method is backed by a Zig runtime function; mark them extern
-	// so codegen emits their bodies through the shared extern-method path (not a special case).
-	for _, class := range r.classes {
-		MarkExternMethods(class)
-	}
 }
 
 // MarkExternMethods flags a primordial class's methods (except IsLowered ones, which are
@@ -95,73 +77,6 @@ func MarkExternMethods(class *Class) {
 	}
 }
 
-// resolveStringRefs rewrites every UserDefinedType{"string"} in all registered primordial
-// class property/method signatures to ObjectType{*stringClass}. Called once after all base
-// classes are registered so the type checker sees concrete ObjectType values, not raw
-// UserDefinedType placeholders.
-func (r *PrimordialRegistry) resolveStringRefs() {
-	stringClass := r.classes[ZEUS_PRIMORDIAL_STRING]
-	if stringClass == nil {
-		return
-	}
-
-	resolveType := func(t ValueType) ValueType {
-		if t == nil {
-			return t
-		}
-		if udt, ok := t.(UserDefinedType); ok && udt.Name == ZEUS_PRIMORDIAL_STRING {
-			return NewObjectType(stringClass)
-		}
-		return t
-	}
-
-	resolveClass := func(class *Class) {
-		for _, prop := range class.Properties {
-			prop.Property.ValueType = resolveType(prop.Property.ValueType)
-		}
-		for _, method := range class.Methods {
-			method.Method.ReturnType = resolveType(method.Method.ReturnType)
-			for _, param := range method.Method.Params {
-				param.ValueType = resolveType(param.ValueType)
-			}
-		}
-	}
-
-	for _, class := range r.classes {
-		resolveClass(class)
-	}
-	for _, class := range r.arrayClasses {
-		resolveClass(class)
-	}
-}
-
-func (r *PrimordialRegistry) registerFunctions() {
-	span := r.defaultSpan
-	r.functions["setTimeout"] = NewFunction(
-		"setTimeout",
-		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
-		IntType{Size: I32, Signed: true, Span: span},
-		span,
-	)
-	r.functions["clearTimeout"] = NewFunction(
-		"clearTimeout",
-		[]*Var{NewVar("id", IntType{Size: I32, Signed: true, Span: span}, false, span)},
-		VoidType{Span: span},
-		span,
-	)
-	r.functions["setInterval"] = NewFunction(
-		"setInterval",
-		[]*Var{NewVar("callback", FunctionType{ParamTypes: []ValueType{}, ReturnType: VoidType{Span: span}, Span: span}, false, span), NewVar("delay", IntType{Size: I32, Signed: true, Span: span}, false, span)},
-		IntType{Size: I32, Signed: true, Span: span},
-		span,
-	)
-	r.functions["clearInterval"] = NewFunction(
-		"clearInterval",
-		[]*Var{NewVar("id", IntType{Size: I32, Signed: true, Span: span}, false, span)},
-		VoidType{Span: span},
-		span,
-	)
-}
 
 // resolveArrayMethodTypes replaces raw ArrayType values in a class's ArrayElementType,
 // method parameter/return types, and property types with ObjectType{*registeredClass}.
@@ -241,6 +156,26 @@ func (r *PrimordialRegistry) GetOrCreateArrayClass(arrayType ArrayType) *Class {
 	r.resolveArrayMethodTypes(class)
 	MarkExternMethods(class)
 	return class
+}
+
+// RegisterClass registers (or replaces) a fixed primordial class — e.g. one compiled from a
+// prelude source file at compiler startup. It appends to classOrder on first registration so
+// GetAllClasses emits it in a dependency-safe position (after the base classes it may reference).
+func (r *PrimordialRegistry) RegisterClass(class *Class) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.classes[class.Name]; !exists {
+		r.classOrder = append(r.classOrder, class.Name)
+	}
+	r.classes[class.Name] = class
+}
+
+// RegisterFunction registers a primordial free function — e.g. an extern function compiled from a
+// prelude (setTimeout, …). It is then emitted into every module via initializePrimordialFunctions.
+func (r *PrimordialRegistry) RegisterFunction(fn *Function) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.functions[fn.Name] = fn
 }
 
 // GetClass returns a fixed primordial class by name (string, error, Console, ...).

@@ -1,0 +1,119 @@
+---
+title: Static Members
+description: Class-level properties and methods shared across all instances, declared with static.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A `static` member belongs to the class itself rather than to any instance. Static properties hold
+shared state; static methods run without creating an object. You reach both through the class name:
+`ClassName.member`.
+
+## Static properties and methods
+
+Mark a member `static` and access it via the class name:
+
+```zeus
+class Counter {
+  public static count: i32;
+
+  public static increment(): void {
+    Counter.count = Counter.count + 1;
+  }
+
+  public static getCount(): i32 {
+    return Counter.count;
+  }
+}
+
+function main(): i32 {
+  Counter.count = 0;
+  Counter.increment();
+  Counter.increment();
+  return Counter.getCount();   // => 2
+}
+```
+
+There is exactly one `Counter.count`, no matter how many `Counter` objects exist — static state is
+shared across the whole program.
+
+<Aside type="caution" title="No this in static methods">
+  A static method has no instance, so it cannot use `this`. Refer to static members through the
+  class name (`Counter.count`), never `this.count`.
+</Aside>
+
+## Static vs. instance access
+
+Static and instance members live in separate namespaces, and Zeus keeps them apart:
+
+- Reach static members **through the class**: `Counter.count`, `Counter.increment()`.
+- Reach instance members **through an object**: `obj.field`, `obj.method()`.
+
+Crossing the two is a compile error — you can't read a static member off an instance, or call an
+instance method off the class:
+
+```zeus
+class Foo {
+  public static count: i32;
+  public value: i32;
+}
+
+function main(): i32 {
+  let f: Foo = new Foo();
+  // f.count;    // error: 'count' is static — use Foo.count
+  // Foo.value;  // error: 'value' is an instance member
+  return 0;
+}
+```
+
+## Private static members
+
+`static` combines with access modifiers. A `private static` member is shared across instances but
+reachable only from inside the class:
+
+```zeus
+class Config {
+  private static _value: i32;
+
+  public static get value(): i32 {
+    return Config._value;
+  }
+  public static set value(v: i32): void {
+    Config._value = v;
+  }
+}
+
+function main(): i32 {
+  Config.value = 5;      // through the static setter
+  return Config.value;   // through the static getter => 5
+}
+```
+
+This also shows **static accessors** — `get`/`set` work at the class level just as they do on
+instances (see [Encapsulation & Accessors](/language/encapsulation/)).
+
+## Inherited statics
+
+A subclass shares its base class's static members. Reading or writing `Child.member` refers to the
+same storage as `Base.member`:
+
+```zeus
+class Base {
+  public static value: i32;
+}
+
+class Child extends Base { }
+
+function main(): i32 {
+  Base.value = 42;
+  return Child.value;   // same storage => 42
+}
+```
+
+## When to use statics
+
+Reach for static members when state or behavior belongs to the *type* rather than any single object:
+
+- Global counters or ID generators.
+- Shared configuration and constants.
+- Utility or factory methods that don't need an instance.

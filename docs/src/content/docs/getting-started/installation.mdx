@@ -3,17 +3,17 @@ title: Installation
 description: Install the Zeus compiler on your system.
 ---
 
-import { Aside, Steps, Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
+import { Aside, Steps, Card, CardGrid } from '@astrojs/starlight/components';
 
-Get Zeus up and running on your machine in minutes.
+Get the Zeus compiler running on your machine in a couple of minutes.
 
 <Aside type="note">
-  Zeus currently supports **macOS** (Intel and Apple Silicon). Linux support is coming soon.
+  Zeus currently supports **macOS** (Intel and Apple Silicon). Linux support is on the way.
 </Aside>
 
-## Install via Homebrew (Recommended)
+## Install via Homebrew (recommended)
 
-The easiest way to install Zeus is via Homebrew:
+The easiest way to install Zeus is with Homebrew:
 
 <Steps>
 
@@ -37,66 +37,47 @@ The easiest way to install Zeus is via Homebrew:
 
 </Steps>
 
-That's it! You're ready to start writing Zeus code.
+That's it — you're ready to write Zeus code.
 
----
+## Updating
 
-## Updating Zeus
-
-To update to the latest version:
+Upgrade to the latest release with:
 
 ```bash
 brew upgrade zeus
 ```
 
----
-
 ## Uninstalling
 
-To remove Zeus from your system:
+To remove Zeus completely:
 
 ```bash
 brew uninstall zeus
 brew untap ameerthehacker/zeus
 ```
 
----
-
-## Alternative Installation Methods
+## Other installation methods
 
 <CardGrid>
   <Card title="Build from Source" icon="setting">
-    Want to contribute or customize Zeus? Build from source with full development setup.
-    
-    [View Guide →](/getting-started/building-from-source/)
+    Want to contribute or customize the compiler? Build Zeus from source with a full development
+    setup.
+
+    [View the guide →](/developer/building-from-source/)
   </Card>
-  <Card title="Download Binary" icon="document">
-    Download pre-built binaries from GitHub Releases.
-    
+  <Card title="Download a Binary" icon="document">
+    Grab a pre-built binary from GitHub Releases.
+
     [GitHub Releases →](https://github.com/ameerthehacker/zeus/releases)
   </Card>
 </CardGrid>
 
----
-
-## Platform Support
+## Platform support
 
 | Platform | Status | Notes |
 |----------|--------|-------|
 | macOS (Apple Silicon) | ✅ Supported | Recommended |
 | macOS (Intel) | ✅ Supported | |
-| Linux (x86_64) | 🔜 Coming Soon | |
-| Linux (ARM64) | 🔜 Coming Soon | |
+| Linux (x86_64) | 🔜 Coming soon | |
+| Linux (ARM64) | 🔜 Coming soon | |
 | Windows | 🔜 Planned | WSL recommended for now |
-
----
-
-## Next Steps
-
-Now that Zeus is installed, let's write your first program:
-
-<div style="text-align: center; margin-top: 2rem;">
-  <a href="/getting-started/hello-world/" class="sl-link-button primary" style="display: inline-block; padding: 0.75rem 1.5rem;">
-    Write Your First Zeus Program →
-  </a>
-</div>

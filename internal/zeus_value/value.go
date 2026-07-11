@@ -273,6 +273,10 @@ type Class struct {
 	PrimordialName   string
 	ArrayElementType ValueType
 	Span             *token.Span
+	// layout memoizes the physical class layout (see Layout). Built lazily on first access,
+	// always after the class is finalized. Because Class is often copied by value, this cache
+	// is effectively per-copy; that is harmless since the builder is idempotent and cheap.
+	layout *ClassLayout
 }
 
 // SourceName returns the user-visible class name. For user-defined classes,
@@ -522,6 +526,79 @@ func FlattenedMethods(class *Class) []*ClassMethod {
 		result = FlattenedMethods(class.ParentClass)
 	}
 	return append(result, class.Methods...)
+}
+
+// VTableEntry is one slot of a class's vtable: the method that fills the slot (an override or an
+// inherited method) together with the class whose method list contributed it. DefiningClass is
+// needed to name extern (primordial) methods, which are compiled under a class-scoped symbol.
+type VTableEntry struct {
+	Method        *ClassMethod
+	DefiningClass *Class
+}
+
+// ClassLayout is a class's physical layout computed once as explicit data: base-first instance
+// fields, base-first vtable slots (an override sharing the base slot), and the effective
+// constructor. Codegen, util, and the type checker read this instead of re-deriving layout from
+// the Flattened* helpers, so layout policy lives here (Zeus semantics) rather than in the LLVM
+// backend. It is unit-testable without LLVM.
+type ClassLayout struct {
+	Fields           []*ClassProperty // base-first instance fields; instance struct slot = index+1
+	VTable           []VTableEntry    // base-first vtable slots; slot = index
+	Constructor      *Function        // effective constructor (own or nearest inherited), or nil
+	ConstructorClass *Class           // class that declares Constructor, or nil
+}
+
+// Layout returns the class's physical layout, building and memoizing it on first access. It must
+// only be called after the class is finalized (post IR-gen); IR-gen itself uses the name-resolution
+// Lookup* helpers, never Layout, so the memoized result is always built against a complete class.
+func (c *Class) Layout() *ClassLayout {
+	if c.layout != nil {
+		return c.layout
+	}
+	layout := &ClassLayout{
+		Fields: FlattenedInstanceProperties(c),
+		VTable: flattenedVTableEntries(c),
+	}
+	// Effective constructor: the nearest class in the chain declaring its own constructor.
+	if ctorClass := LookupConstructorClass(c); ctorClass != nil {
+		for _, m := range ctorClass.Methods {
+			if m.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+				layout.Constructor = m.Method
+				layout.ConstructorClass = ctorClass
+				break
+			}
+		}
+	}
+	c.layout = layout
+	return c.layout
+}
+
+// flattenedVTableEntries mirrors FlattenedVTableMethods but also records, per slot, the class whose
+// method list contributed the method (DefiningClass): an override records the derived class, an
+// inherited-not-overridden slot keeps the base. Each recursive frame builds a fresh slice (via
+// append), so overwriting result[i] for an override is safe.
+func flattenedVTableEntries(class *Class) []VTableEntry {
+	var result []VTableEntry
+	if class.ParentClass != nil {
+		result = flattenedVTableEntries(class.ParentClass)
+	}
+	for _, m := range class.Methods {
+		if !isVTableMethod(m) {
+			continue
+		}
+		overridden := false
+		for i, existing := range result {
+			if existing.Method.Method.SourceName() == m.Method.SourceName() {
+				result[i] = VTableEntry{Method: m, DefiningClass: class}
+				overridden = true
+				break
+			}
+		}
+		if !overridden {
+			result = append(result, VTableEntry{Method: m, DefiningClass: class})
+		}
+	}
+	return result
 }
 
 func AsObject(value Value) *Object {

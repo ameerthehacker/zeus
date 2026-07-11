@@ -123,7 +123,10 @@ func isVoidValueType(vt *ast.ValueTypeNode) bool {
 	return ok
 }
 
-func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode, *ast.BlockStmtNode) {
+// parseFunctionSignature parses the parameter list and optional return type of a function/method
+// (everything up to but not including the body). Shared by normal methods (which then parse a
+// body) and extern methods (which are body-less, terminated by `;`).
+func (p *Parser) parseFunctionSignature(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode) {
 	fnType := "function"
 	if isClassMethod {
 		fnType = "method"
@@ -157,10 +160,16 @@ func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprN
 		// consume the return type
 		dataType = p.consumeDataType("return type", fmt.Sprintf("%s declaration", fnType))
 	}
+
+	return functionName, params, dataType
+}
+
+func (p *Parser) parseFunctionSignatureAndBody(functionName *ast.IdentifierExprNode, isClassMethod bool) (*ast.IdentifierExprNode, []*ast.VarDeclNode, *ast.ValueTypeNode, *ast.BlockStmtNode) {
+	name, params, dataType := p.parseFunctionSignature(functionName, isClassMethod)
 	// consume the body
 	body := p.parseBlockStmt()
 
-	return functionName, params, dataType, body
+	return name, params, dataType, body
 }
 
 func NewParser(tokens []*token.Token) *Parser {
@@ -234,6 +243,38 @@ func NewParser(tokens []*token.Token) *Parser {
 			if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.STATIC_KEYWORD {
 				isStatic = true
 				parser.consume() // eat 'static'
+			}
+
+			// Detect an extern method: `extern("runtime_symbol") name(params): Ret;` — a body-less
+			// method whose body forwards to a Zig runtime symbol (used by prelude/primordial
+			// classes). `extern` + `(` + string literal disambiguates it from a method named
+			// `extern`.
+			if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.EXTERN_KEYWORD &&
+				parser.lookahead(1, token.TokenTypeLeftParen) && parser.lookahead(2, token.TokenTypeString) {
+				externKw := parser.consume() // eat 'extern'
+				parser.consumeToken(token.TokenTypeLeftParen, "after 'extern'")
+				symbolToken := parser.consumeToken(token.TokenTypeString, "extern runtime symbol")
+				parser.consumeToken(token.TokenTypeRightParen, "after extern symbol")
+
+				methodName := parser.consumeIdentifier("method name")
+				name, params, returnType := parser.parseFunctionSignature(methodName, true)
+				semi := parser.consumeToken(token.TokenTypeSemicolon, "after extern method signature")
+
+				spanStart := externKw.Span.Start
+				if accessModifier != nil {
+					spanStart = accessModifier.Span.Start
+				}
+				methods = append(methods, &ast.ClassMethod{
+					Name:           name,
+					Params:         params,
+					Body:           nil,
+					ReturnType:     returnType,
+					AccessModifier: accessModifier,
+					IsStatic:       isStatic,
+					ExternSymbol:   symbolToken.Value,
+					Span:           &token.Span{Start: spanStart, End: semi.Span.End},
+				})
+				continue
 			}
 
 			// Detect get/set soft keywords: get name(...) or set name(...)
@@ -1198,9 +1239,38 @@ func (p *Parser) handlePanic() {
 	}
 }
 
+// parseExternFunctionStmt parses `extern("runtime_symbol") function name(params): Ret;` — a
+// body-less free function that forwards to a Zig runtime symbol (used by prelude/primordial fns).
+func (p *Parser) parseExternFunctionStmt() ast.StmtNode {
+	externKw := p.consume() // 'extern'
+	p.consumeToken(token.TokenTypeLeftParen, "after 'extern'")
+	symbolToken := p.consumeToken(token.TokenTypeString, "extern runtime symbol")
+	p.consumeToken(token.TokenTypeRightParen, "after extern symbol")
+	p.consumeToken(token.TokenTypeFunction, "'function' after extern(...)")
+
+	functionName := p.consumeIdentifier("for function name")
+	name, params, returnType := p.parseFunctionSignature(functionName, false)
+	semi := p.consumeToken(token.TokenTypeSemicolon, "after extern function signature")
+
+	return &ast.ExprStmtNode{Expr: &ast.FunctionDeclExprNode{
+		Name:         name,
+		Params:       params,
+		Body:         nil,
+		ReturnType:   returnType,
+		ExternSymbol: symbolToken.Value,
+		Span:         &token.Span{Start: externKw.Span.Start, End: semi.Span.End},
+	}}
+}
+
 func (p *Parser) ParseStmt() ast.StmtNode {
 	// handle panics and synchronize the parser
 	defer p.handlePanic()
+
+	// extern free function (prelude/primordial): `extern("sym") function name(params): Ret;`
+	if p.peek().Type == token.TokenTypeIdentifier && p.peek().Value == token.EXTERN_KEYWORD &&
+		p.lookahead(1, token.TokenTypeLeftParen) && p.lookahead(2, token.TokenTypeString) {
+		return p.parseExternFunctionStmt()
+	}
 
 	switch p.peek().Type {
 	case token.TokenTypeLet:

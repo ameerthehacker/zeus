@@ -1,0 +1,162 @@
+---
+const features = [
+  {
+    title: 'TypeScript-Inspired',
+    body: 'Familiar syntax for millions of developers. If you know TypeScript, you already know 80% of Zeus.',
+    icon: 'ts',
+  },
+  {
+    title: 'Native Compilation',
+    body: 'LLVM-powered compilation to native machine code. No interpreter, no runtime overhead.',
+    icon: 'bolt',
+  },
+  {
+    title: 'Automatic GC',
+    body: 'Focus on your logic, not memory management. Precise garbage collection handles the rest.',
+    icon: 'gc',
+  },
+  {
+    title: 'IDE Ready',
+    body: 'First-class Language Server Protocol support. Real-time diagnostics and completions in VS Code.',
+    icon: 'ide',
+  },
+];
+---
+
+<section class="features">
+  <div class="container">
+    <div class="section-head">
+      <p class="kicker">Why Zeus?</p>
+      <h2 class="section-title">The developer experience of TypeScript, the speed of native.</h2>
+      <p class="section-sub">
+        Zeus bridges the gap between developer experience and performance. Write code that feels
+        like TypeScript, but compiles to blazing-fast native binaries.
+      </p>
+    </div>
+
+    <div class="grid">
+      {
+        features.map((f) => (
+          <article class="card">
+            <span class="card-icon">
+              {f.icon === 'ts' && (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="3" />
+                  <path d="M8 12h5M10.5 12v5M15 16.5c.5.5 1.2.8 2 .8 1.1 0 1.8-.6 1.8-1.4 0-1.9-3.4-1.2-3.4-3 0-.8.7-1.4 1.7-1.4.7 0 1.3.2 1.7.6" />
+                </svg>
+              )}
+              {f.icon === 'bolt' && (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" />
+                </svg>
+              )}
+              {f.icon === 'gc' && (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+                </svg>
+              )}
+              {f.icon === 'ide' && (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <path d="M8 21h8M12 17v4M7 8l3 2-3 2M13 12h4" />
+                </svg>
+              )}
+            </span>
+            <h3 class="card-title">{f.title}</h3>
+            <p class="card-body">{f.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<style>
+  .features {
+    padding: clamp(3rem, 7vw, 6rem) 0;
+  }
+
+  .section-head {
+    max-width: 40rem;
+    margin-bottom: clamp(2rem, 4vw, 3rem);
+  }
+
+  .kicker {
+    margin: 0 0 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--accent);
+  }
+
+  .section-title {
+    font-size: clamp(1.6rem, 3.4vw, 2.3rem);
+    color: var(--text);
+  }
+
+  .section-sub {
+    margin: 1rem 0 0;
+    color: var(--text-dim);
+    font-size: 1.02rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.1rem;
+  }
+
+  .card {
+    padding: 1.5rem;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: var(--border-strong);
+    box-shadow: 0 16px 40px -14px rgba(234, 179, 8, 0.22);
+  }
+
+  .card-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.7rem;
+    height: 2.7rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    color: var(--zeus-yellow-400);
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.22);
+  }
+  :global(:root[data-theme='light']) .card-icon {
+    color: var(--zeus-yellow-600);
+  }
+
+  .card-title {
+    font-size: 1.08rem;
+    margin-bottom: 0.4rem;
+    color: var(--text);
+  }
+
+  .card-body {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--text-dim);
+  }
+
+  @media (max-width: 60rem) {
+    .grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 34rem) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

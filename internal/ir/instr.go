@@ -486,6 +486,32 @@ func AsNewObjInstrInput(input InstrInput) *NewObjInstrInput {
 	default:
 		panicInvalidInputType("NewObjInstrInput", input)
 	}
+	return nil
+}
+
+// AllocObjInstrInput allocates a zeroed instance of Class and installs its header/type-info,
+// yielding the object pointer. It is the mechanism half of object creation (no field-init — the
+// GC allocator zeroes memory — and no constructor call). FactoryLoweringPass emits it as the first
+// instruction of a synthesized zeus_new_<Class> factory function.
+type AllocObjInstrInput struct {
+	Class *zeus_value.Class
+}
+
+func NewAllocObjInstrInput(class *zeus_value.Class) *AllocObjInstrInput {
+	return &AllocObjInstrInput{Class: class}
+}
+
+func (i AllocObjInstrInput) String() string {
+	return fmt.Sprintf("alloc %s", i.Class.Name)
+}
+
+func AsAllocObjInstrInput(input InstrInput) *AllocObjInstrInput {
+	switch input := input.(type) {
+	case *AllocObjInstrInput:
+		return input
+	default:
+		panicInvalidInputType("AllocObjInstrInput", input)
+	}
 
 	return nil
 }
@@ -982,6 +1008,9 @@ const (
 	InstrTypeDeclClass
 	InstrTypeDeclClassMethod
 	InstrTypeNewObj
+	// allocate a zeroed object of a class + install its header (mechanism half of NEW_OBJ,
+	// synthesized by FactoryLoweringPass into a class's zeus_new_<Class> factory function)
+	InstrTypeAllocObj
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1091,6 +1120,8 @@ func (i InstrType) String() string {
 		return "DECLARE_CLASS"
 	case InstrTypeNewObj:
 		return "NEW_OBJ"
+	case InstrTypeAllocObj:
+		return "ALLOC_OBJ"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

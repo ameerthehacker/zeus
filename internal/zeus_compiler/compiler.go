@@ -200,7 +200,7 @@ func (c *Compiler) ReadSourceFile(path string) (*SourceFile, *SourceFileError) {
 // copy and the linker keeps exactly one). Detecting by name is more explicit than
 // relying solely on linkage type.
 func isPrimordialFactoryFunction(fn llvm.Value) bool {
-	return strings.HasPrefix(fn.Name(), codegen.FactoryFunctionPrefix) &&
+	return strings.HasPrefix(fn.Name(), util.FactoryFunctionPrefix) &&
 		fn.Linkage() == llvm.LinkOnceODRLinkage &&
 		!fn.IsDeclaration()
 }

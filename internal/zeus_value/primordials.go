@@ -201,49 +201,9 @@ func GetArrayPrimordialClassDefinition(arrayType ArrayType) *Class {
 	return NewClass(arrayType.String(), properties, methods, nil, ZEUS_PRIMORDIAL_ARRAY, arrayType.ElementType, span)
 }
 
-// string is nothing but an array of u8
-// in the runtime constructor we intern the string and return the same pointer
-func GetStringPrimordialClassDefinition(span *token.Span) *Class {
-	u8ArrayObjectType := ObjectType{Class: GetArrayPrimordialClassDefinition(ArrayType{ElementType: IntType{Size: I8, Signed: false, Span: span}, Span: span})}
-
-	// Properties
-	dataProperty := NewClassProperty(NewVar(STRING_PROPERTY_DATA, u8ArrayObjectType, true, span), &token.Token{Type: token.TokenTypePrivate, Span: span}, false, false, nil)
-	lengthProperty := NewClassProperty(NewVar(STRING_PROPERTY_LENGTH, IntType{Size: I32, Signed: true, Span: span}, false, span), &token.Token{Type: token.TokenTypePublic, Span: span}, false, false, nil)
-	properties := []*ClassProperty{dataProperty, lengthProperty}
-
-	// Create the string class first (without methods that reference itself)
-	stringClass := NewClass(ZEUS_PRIMORDIAL_STRING, properties, nil, nil, ZEUS_PRIMORDIAL_STRING, nil, span)
-
-	// Methods - use UserDefinedType for self-reference to avoid copy issues
-	// The type checker will resolve "string" to the actual string ObjectType
-	selfType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
-
-	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
-		NewVar("bytes", u8ArrayObjectType, true, span),
-	}, VoidType{Span: span}, span)
-	// compare: returns -1 if this < other, 0 if equal, 1 if this > other
-	compareMethod := NewFunction(STRING_METHOD_COMPARE, []*Var{
-		NewVar("other", selfType, true, span),
-	}, IntType{Size: I8, Signed: true, Span: span}, span)
-	// equals: returns true if strings are equal, false otherwise
-	equalsMethod := NewFunction(STRING_METHOD_EQUALS, []*Var{
-		NewVar("other", selfType, true, span),
-	}, BoolType{Span: span}, span)
-	// concat: returns a new string with the other string appended
-	concatMethod := NewFunction(STRING_METHOD_CONCAT, []*Var{
-		NewVar("other", selfType, true, span),
-	}, selfType, span)
-
-	// Update the class with methods
-	stringClass.Methods = []*ClassMethod{
-		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
-		NewClassMethod(compareMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
-		NewClassMethod(equalsMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
-		NewClassMethod(concatMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
-	}
-
-	return stringClass
-}
+// string is defined in prelude/string.zs (a length-prefixed u8 array with runtime-backed extern
+// methods) and injected via the registry when preludes load. The STRING_* name constants above
+// stay because the type checker and string lowering reference them.
 
 // Error property names
 const (
@@ -251,73 +211,13 @@ const (
 	ERROR_PROPERTY_MESSAGE = "message"
 )
 
-// GetErrorPrimordialClassDefinition returns the built-in Error class definition
-// Error is the base class for all exception types in Zeus
-// It has a reserved class ID (1) for efficient exception type matching at runtime
-func GetErrorPrimordialClassDefinition(span *token.Span) *Class {
-	// Error class has name and message properties which are strings
-	stringType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
+// Error is defined in prelude/error.zs and injected via the registry at prelude-load time; its
+// reserved class ID (ERROR_CLASS_ID) is stamped on there. The property-name constants above and
+// ERROR_CLASS_ID / IsErrorClass remain here because the type checker and lowering reference them.
 
-	// name property (public) - the error type name (e.g., "Error", "IndexOutOfBoundsException")
-	nameProperty := NewClassProperty(
-		NewVar(ERROR_PROPERTY_NAME, stringType, true, span),
-		&token.Token{Type: token.TokenTypePublic, Span: span},
-		false, false, nil,
-	)
-
-	// message property (public) - the error message
-	messageProperty := NewClassProperty(
-		NewVar(ERROR_PROPERTY_MESSAGE, stringType, true, span),
-		&token.Token{Type: token.TokenTypePublic, Span: span},
-		false, false, nil,
-	)
-	properties := []*ClassProperty{nameProperty, messageProperty}
-
-	// Constructor takes name and message strings
-	constructorMethod := NewFunction(token.CONSTRUCTOR_METHOD_NAME, []*Var{
-		NewVar("name", stringType, true, span),
-		NewVar("msg", stringType, true, span),
-	}, VoidType{Span: span}, span)
-
-	methods := []*ClassMethod{
-		NewClassMethod(constructorMethod, &token.Token{Type: token.TokenTypePublic, Span: span}),
-	}
-
-	// Use reserved class ID for Error class
-	return NewClassWithId(ERROR_CLASS_ID, "Error", properties, methods, ZEUS_PRIMORDIAL_ERROR, span)
-}
-
+// ZEUS_PRIMORDIAL_CONSOLE is the Console class name / primordial tag. The class itself is now
+// defined in prelude/console.zs (compiled + registered at compiler startup), not built here.
 const ZEUS_PRIMORDIAL_CONSOLE = "Console"
-
-// Console method names
-const (
-	CONSOLE_METHOD_LOG   = "log"
-	CONSOLE_METHOD_ERROR = "error"
-	CONSOLE_METHOD_INFO  = "info"
-)
-
-// GetConsolePrimordialClassDefinition returns the built-in Console class definition.
-// It has no properties and no constructor; methods are backed by runtime ABI functions.
-func GetConsolePrimordialClassDefinition(span *token.Span) *Class {
-	stringType := UserDefinedType{Name: ZEUS_PRIMORDIAL_STRING, Span: span}
-	publicMethod := func(fn *Function) *ClassMethod {
-		return NewClassMethod(fn, &token.Token{Type: token.TokenTypePublic, Span: span})
-	}
-	logMethod := NewFunction(CONSOLE_METHOD_LOG, []*Var{
-		NewVar("message", stringType, true, span),
-	}, VoidType{Span: span}, span)
-	errorMethod := NewFunction(CONSOLE_METHOD_ERROR, []*Var{
-		NewVar("message", stringType, true, span),
-	}, VoidType{Span: span}, span)
-	infoMethod := NewFunction(CONSOLE_METHOD_INFO, []*Var{
-		NewVar("message", stringType, true, span),
-	}, VoidType{Span: span}, span)
-	return NewClass(ZEUS_PRIMORDIAL_CONSOLE, []*ClassProperty{}, []*ClassMethod{
-		publicMethod(logMethod),
-		publicMethod(errorMethod),
-		publicMethod(infoMethod),
-	}, nil, ZEUS_PRIMORDIAL_CONSOLE, nil, span)
-}
 
 // Ref cell class naming constants
 const ZEUS_REF_CELL_CLASS_PREFIX = "__ref_cell_"

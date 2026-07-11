@@ -261,7 +261,10 @@ func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool
 		for _, param := range e.Params {
 			p.checkAndDeclare(param.Identifier.Name.Value, param.Identifier.Name.Span)
 		}
-		p.walkStmt(g, e.Body, false)
+		// Extern functions (prelude/primordial) have no body.
+		if e.Body != nil {
+			p.walkStmt(g, e.Body, false)
+		}
 		p.st.ExitScope()
 
 	case *ast.ClassDeclExprNode:
@@ -296,7 +299,10 @@ func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool
 			for _, param := range method.Params {
 				p.checkAndDeclare(param.Identifier.Name.Value, param.Identifier.Name.Span)
 			}
-			p.walkStmt(g, method.Body, false)
+			// Extern methods have no body (they forward to a runtime symbol).
+			if method.Body != nil {
+				p.walkStmt(g, method.Body, false)
+			}
 			p.st.ExitScope()
 		}
 		p.st.ExitScope()

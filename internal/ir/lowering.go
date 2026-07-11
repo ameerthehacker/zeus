@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -58,6 +59,9 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 		NewCastLoweringPass(),
 		NewFunctorCallLoweringPass(),
 		NewFuncPtrNullCheckPass(),
+		// Runs last: synthesizes user-class (and functor-wrapper) factory functions, so it must
+		// see every class — including the wrappers CastLoweringPass emits.
+		NewFactoryLoweringPass(),
 	}
 
 	return l
@@ -1599,8 +1603,7 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 	)
 	builder.EmitClassDeclAtStart(wrapperClass)
 
-	savedBlock := builder.currentBlock
-	savedIndex := builder.insertionIndex
+	saved := builder.SaveInsertionPoint()
 	builder.ResetToGlobalEnd()
 
 	// Constructor: empty body
@@ -1640,8 +1643,104 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 		builder.BuildReturn(callResult, span)
 	}
 
-	builder.currentBlock = savedBlock
-	builder.insertionIndex = savedIndex
+	builder.RestoreInsertionPoint(saved)
 
 	return wrapperClass
+}
+
+// =============================================================================
+// FactoryLoweringPass — synthesizes each user class's zeus_new_<Class> factory as
+// real IR (ALLOC_OBJ + optional constructor call + RETURN), so object-construction
+// policy lives in the IR rather than being re-derived in codegen. Primordial and
+// array factories keep their codegen-synthesized bodies (genFactoryFunctionBody).
+// =============================================================================
+
+type FactoryLoweringPass struct {
+	classes []*zeus_value.Class
+	seen    map[string]bool
+	// ctorEmitted holds classes that have an actually-emitted constructor (a DECL_CLASS_METHOD
+	// with a body). Some synthesized classes — e.g. ref cells — carry a no-op constructor
+	// descriptor with no emitted body; the factory must not try to call one.
+	ctorEmitted map[string]bool
+}
+
+func NewFactoryLoweringPass() *FactoryLoweringPass {
+	return &FactoryLoweringPass{seen: make(map[string]bool), ctorEmitted: make(map[string]bool)}
+}
+
+func (p *FactoryLoweringPass) GetName() string { return "FactoryLowering" }
+
+func (p *FactoryLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	switch instr.Type {
+	case InstrTypeDeclClassMethod:
+		// Record classes whose constructor is actually compiled, mirroring codegen's old
+		// "getLLVMConstructorMethod != nil" guard so the factory only calls a real constructor.
+		in := AsDeclClassMethodInstrInput(instr.Input)
+		if in.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			p.ctorEmitted[in.Class.Name] = true
+		}
+	case InstrTypeDeclClass:
+		class := AsDeclClassInstrInput(instr.Input).Class
+		// Primordials (string, Error) and arrays keep their codegen-synthesized factory for now;
+		// they are runtime-called by name and have finicky internals (a follow-up PR moves them here).
+		if class.PrimordialName != "" || p.seen[class.Name] {
+			return
+		}
+		p.seen[class.Name] = true
+		p.classes = append(p.classes, class)
+	}
+}
+
+func (p *FactoryLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, class := range p.classes {
+		p.synthesizeFactory(builder, class)
+	}
+}
+
+// synthesizeFactory emits, at top level, a standalone function
+//
+//	zeus_new_<Class>(p0, p1, …):
+//	    %obj = ALLOC_OBJ <Class>                    // GC-zeroed alloc + header; fields default to zero
+//	    SUPER_CONSTRUCTOR_CALL(<ctorClass>, %obj, [p0, p1, …])   // only if the class has an effective ctor
+//	    return %obj
+//
+// It reuses SUPER_CONSTRUCTOR_CALL (the exact "call class C's constructor on an object with args"
+// mechanism used by super(...)) so no new constructor-call codegen is needed. Positioning mirrors
+// createFuncWrapperClass.
+func (p *FactoryLoweringPass) synthesizeFactory(builder *IRBuilder, class *zeus_value.Class) {
+	span := class.Span
+	layout := class.Layout()
+	factoryName := util.GetFactoryFunctionName(class.Name)
+
+	// Factory params mirror the effective constructor's params (none when the class has no ctor).
+	var paramDecls []*VarDecl
+	if layout.Constructor != nil {
+		paramDecls = make([]*VarDecl, len(layout.Constructor.Params))
+		for i, param := range layout.Constructor.Params {
+			paramDecls[i] = NewVarDecl(fmt.Sprintf("p%d", i), param.ValueType, false, nil, span)
+		}
+	}
+
+	saved := builder.SaveInsertionPoint()
+	builder.ResetToGlobalEnd()
+
+	body := builder.BuildBasicBlock()
+	factoryFn := builder.BuildFuncDecl(factoryName, paramDecls, body, zeus_value.NewObjectType(class), nil, span)
+	builder.SetInsertionBlock(body)
+
+	obj := builder.BuildAllocObj(class, span)
+	// Call the effective constructor only when it is actually compiled. A class may carry a no-op
+	// constructor descriptor with no emitted body (e.g. ref cells); calling it would reference a
+	// non-existent function, so we skip it — matching the old codegen factory's leniency.
+	if layout.Constructor != nil && layout.ConstructorClass != nil && p.ctorEmitted[layout.ConstructorClass.Name] {
+		args := make([]zeus_value.Value, len(factoryFn.Params))
+		for i, param := range factoryFn.Params {
+			args[i] = param
+		}
+		builder.BuildSuperConstructorCall(layout.ConstructorClass, obj, args, span)
+	}
+	builder.BuildReturn(obj, span)
+
+	builder.RestoreInsertionPoint(saved)
 }
