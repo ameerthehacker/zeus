@@ -2334,47 +2334,13 @@ func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
 	return zeus_value.Registry.GetClass("Error")
 }
 
-// getOrCreateConsoleClass returns the Console primordial class, registering it if needed.
-func (g *IRModule) getOrCreateConsoleClass() *zeus_value.Class {
-	consoleClassName := zeus_value.ZEUS_PRIMORDIAL_CONSOLE
-
-	if class := g.primordialClassInScope(consoleClassName); class != nil {
-		return class
-	}
-
-	consoleClass := zeus_value.Registry.GetClass(consoleClassName)
-	zeus_error.Assert(consoleClass != nil, "Console class not found in registry - this is a bug")
-
-	g.symbolTable().DeclareGlobalSymbol(consoleClassName, consoleClass)
-	g.irBuilder.EmitClassDeclAtStart(consoleClass)
-
-	return consoleClass
-}
-
-// getOrCreateMathClass returns the Math primordial class. Like getOrCreateConsoleClass it falls back
-// to the registry when the symbol table lookup fails — which also covers the case where the `Math`
-// symbol has been shadowed by the `Math` singleton instance declared in initPrimordialGlobals.
-func (g *IRModule) getOrCreateMathClass() *zeus_value.Class {
-	mathClassName := zeus_value.ZEUS_PRIMORDIAL_MATH
-
-	if class := g.primordialClassInScope(mathClassName); class != nil {
-		return class
-	}
-
-	mathClass := zeus_value.Registry.GetClass(mathClassName)
-	zeus_error.Assert(mathClass != nil, "Math class not found in registry - this is a bug")
-
-	g.symbolTable().DeclareGlobalSymbol(mathClassName, mathClass)
-	g.irBuilder.EmitClassDeclAtStart(mathClass)
-
-	return mathClass
-}
-
 // initPrimordialGlobals creates the `console` and `Math` global objects inside the entry function
-// body. Must be called while the insertion block is set to the entry function's body block
-// and isInModuleScope is true.
+// body. `Console`/`Math` are ordinary registered class symbols (declared by initializePrimordials),
+// so they resolve through primordialClassInScope — no dedicated get-or-create helper is needed. This
+// runs before any user statement, so the names cannot be shadowed yet. Must be called while the
+// insertion block is set to the entry function's body block and isInModuleScope is true.
 func (g *IRModule) initPrimordialGlobals(span *token.Span) {
-	consoleClass := g.getOrCreateConsoleClass()
+	consoleClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_CONSOLE)
 	consoleObj := g.irBuilder.BuildNewObj(consoleClass, []zeus_value.Value{}, span)
 
 	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(consoleClass), true, consoleObj, span)
@@ -2386,7 +2352,7 @@ func (g *IRModule) initPrimordialGlobals(span *token.Span) {
 	// `Math` is a singleton instance (JS parity: Math.sqrt/Math.PI). Declaring the instance under
 	// "Math" intentionally shadows the class symbol of the same name — user code only ever
 	// references the instance; the class stays reachable via the object type and the registry.
-	mathClass := g.getOrCreateMathClass()
+	mathClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_MATH)
 	mathObj := g.irBuilder.BuildNewObj(mathClass, []zeus_value.Value{}, span)
 
 	mathVarDecl := NewVarDecl(zeus_value.ZEUS_PRIMORDIAL_MATH, zeus_value.NewObjectType(mathClass), true, mathObj, span)
