@@ -1,0 +1,12 @@
+[
+    {
+        "name": "Math exact-valued methods (sqrt, floor, pow, ...)",
+        "exit": "0",
+        "entry": "math_basic.zs"
+    },
+    {
+        "name": "Math constants and transcendental methods",
+        "exit": "0",
+        "entry": "math_transcendental.zs"
+    }
+]

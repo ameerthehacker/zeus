@@ -32,12 +32,15 @@ String literals support escape sequences for special characters:
 | `\"` | Double quote |
 | `\'` | Single quote |
 | `\0` | Null character |
+| `\e` | Escape (ESC, `0x1b`) |
+| `\xHH` | Byte from two hex digits (e.g. `\x1b`) |
 
 ```zeus
 console.log("Line 1\nLine 2");     // Two lines
 console.log("Col1\tCol2\tCol3");   // Tab-separated
 console.log("Say \"Hello\"");      // Embedded quotes
 console.log("Path: C:\\Users");    // Backslash
+console.log("\e[31mred\e[0m");     // ANSI-colored text (see Colors)
 ```
 
 **Output:**

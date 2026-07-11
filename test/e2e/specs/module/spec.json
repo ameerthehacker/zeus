@@ -47,7 +47,7 @@
     },
     {
         "name": "Import from stdlib using @ prefix",
-        "exit": "42",
+        "exit": "19",
         "entry": "stdlib-main.zs"
     }
 ]

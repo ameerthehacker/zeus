@@ -143,6 +143,8 @@ export default defineConfig({
           label: 'Standard Library',
           items: [
             { label: 'Console', slug: 'language/console' },
+            { label: 'Math', slug: 'language/math' },
+            { label: 'Colors', slug: 'language/colors' },
             { label: 'Timers', slug: 'language/timers' },
           ],
         },
