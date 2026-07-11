@@ -437,6 +437,20 @@ func LookupMethod(class *Class, name string) *ClassMethod {
 	return nil
 }
 
+// LookupConstructorClass returns the nearest class in the chain (starting at `class`) that
+// declares its own constructor, or nil if no class in the chain has one. This is the class
+// whose constructor a `super(...)`/factory call should target and forward arguments to.
+func LookupConstructorClass(class *Class) *Class {
+	for c := class; c != nil; c = c.ParentClass {
+		for _, m := range c.Methods {
+			if m.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+				return c
+			}
+		}
+	}
+	return nil
+}
+
 // IsSubclassOf reports whether `class` is `ancestor` or transitively derives from it.
 func IsSubclassOf(class *Class, ancestor *Class) bool {
 	for c := class; c != nil; c = c.ParentClass {

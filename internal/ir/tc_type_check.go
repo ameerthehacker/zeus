@@ -315,6 +315,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
 		p.tcMethodCall(tc, instr)
+	case InstrTypeSuperConstructorCall:
+		p.tcSuperConstructorCall(tc, instr)
 	case InstrTypeDeclClassMethod:
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
@@ -1022,13 +1024,12 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 	var constructorMethod *zeus_value.Function = nil
 	var constructorAccessModifier token.TokenType = token.TokenTypePublic
 
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			if method.AccessModifier != nil {
-				constructorAccessModifier = method.AccessModifier.Type
-			}
-			break
+	// Resolve the effective constructor: the class's own, or the nearest inherited one so a
+	// derived class without its own constructor forwards to (and is `new`-ed with) the base's.
+	if ctorMethod := zeus_value.LookupMethod(class, token.CONSTRUCTOR_METHOD_NAME); ctorMethod != nil {
+		constructorMethod = ctorMethod.Method
+		if ctorMethod.AccessModifier != nil {
+			constructorAccessModifier = ctorMethod.AccessModifier.Type
 		}
 	}
 
@@ -1237,6 +1238,35 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
 
 	instr.Output.ValueType = foundMethod.Method.ReturnType
+}
+
+// tcSuperConstructorCall type-checks super(...) arguments against the base constructor's
+// parameters. ParentClass is the nearest ancestor that declares a constructor (set at IR gen).
+func (p *TypeCheckingPass) tcSuperConstructorCall(tc *TypeChecker, instr *Instr) {
+	input := AsSuperConstructorCallInstrInput(instr.Input)
+
+	var constructor *zeus_value.Function
+	for _, method := range input.ParentClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			constructor = method.Method
+			break
+		}
+	}
+	if constructor == nil {
+		return // IR gen guarantees ParentClass has a constructor; nothing to check otherwise
+	}
+
+	if len(input.Args) != len(constructor.Params) {
+		tc.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("expected %d arguments for super(...), but found %d", len(constructor.Params), len(input.Args)),
+			Span:    instr.Output.Span,
+		})
+		return
+	}
+	for i := range input.Args {
+		input.Args[i] = p.cmpValueWithImplicitCast(tc, instr, constructor.Params[i].ValueType, input.Args[i])
+	}
+	instr.Input = NewSuperConstructorCallInstrInput(input.ParentClass, input.ThisObject, input.Args)
 }
 
 func (p *TypeCheckingPass) tcGetIndex(tc *TypeChecker, instr *Instr) {

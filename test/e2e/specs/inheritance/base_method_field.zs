@@ -11,7 +11,8 @@ class Counter {
 class Fancy extends Counter {
   public tag: i32;
   constructor() {
-    this.count = 41; // inherited field
+    super();         // base constructor runs first
+    this.count = 41; // then override the inherited field
     this.tag = 7;    // own field
   }
 }

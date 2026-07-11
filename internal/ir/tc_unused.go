@@ -63,6 +63,10 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.handleObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
 		p.handleMethodCall(tc, instr)
+	case InstrTypeSuperConstructorCall:
+		input := AsSuperConstructorCallInstrInput(instr.Input)
+		markValueAsUsed(input.ThisObject)
+		markValuesAsUsed(input.Args)
 	case InstrTypeDeclPrimordialFunc:
 		p.handleDeclPrimordialFunc(instr)
 	case InstrTypeExport:

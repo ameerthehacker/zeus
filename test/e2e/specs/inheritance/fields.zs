@@ -1,4 +1,5 @@
-// A derived class can read and write both inherited and own fields.
+// A derived class reads and writes both inherited and own fields; the base constructor
+// runs via super(...).
 class Base {
   public a: i32;
   constructor(a: i32) { this.a = a; }
@@ -6,7 +7,7 @@ class Base {
 class Derived extends Base {
   public b: i32;
   constructor(a: i32, b: i32) {
-    this.a = a; // inherited field
+    super(a);   // base constructor sets the inherited field
     this.b = b; // own field
   }
 }

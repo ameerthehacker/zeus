@@ -40,7 +40,8 @@ a.sound();                               // 42 — Dog.sound via dynamic dispatc
 | Upcast (derived → base) assignment | ✅ |
 | Inherited getter/setter accessors | ✅ |
 | Inherited static members | ✅ (pre-existing) |
-| `super(...)` / `super.method()` | ❌ — Phase 2 (see [Limitations](#limitations)) |
+| `super(...)` constructor chaining | ✅ (see [super](#super-constructor-chaining)) |
+| `super.method()` (non-virtual base call) | ❌ — follow-up |
 
 `extends` accepts a single base class. There are no interfaces here (those are a separate
 feature) and no multiple inheritance.
@@ -261,23 +262,67 @@ existed before this work — they were the unused scaffolding this feature wired
 
 ---
 
+## `super` constructor chaining
+
+A derived constructor invokes its base constructor with `super(...)`, so base initialization runs
+before the derived constructor continues:
+
+```zeus
+class Animal {
+    public legs: i32;
+    constructor(legs: i32) { this.legs = legs; }
+}
+class Dog extends Animal {
+    public tail: i32;
+    constructor(legs: i32, tail: i32) {
+        super(legs);      // runs Animal's constructor with `this`
+        this.tail = tail;
+    }
+}
+```
+
+### Rules (JavaScript semantics)
+
+| Rule | Where enforced |
+|------|----------------|
+| A derived constructor **must** call `super(...)` when the base chain has a constructor | IR gen (`buildClass`) |
+| `super(...)` must run **before** any use of `this` (non-`this` statements may precede it) | IR gen (`VisitIdentifier`, source-order traversal) |
+| `super(...)` arguments must match the base constructor's parameters | Type checker (`tcSuperConstructorCall`) |
+| `super(...)` is only valid inside a constructor of a class with a base constructor | IR gen (`emitSuperConstructorCall`) |
+| A derived class with **no** constructor forwards `new Derived(args)` to the base constructor | Codegen (`effectiveConstructor`) |
+
+`super` is not a reserved token — like `this`, it is an identifier recognized at IR gen. The
+"before `this`" rule is enforced by riding IR generation's source-order traversal: a
+`currentConstructorClass`/`superCalledInCtor` flag pair errors if `this` resolves before the
+`super(...)` call is emitted, so no separate flow-analysis pass is needed.
+
+### How it lowers
+
+`super(a)` becomes a `CALL_SUPER_CONSTRUCTOR` HIR instruction carrying the target base class, the
+current `this`, and the arguments. Codegen (`genSuperConstructorCall`) emits a **direct** call to
+the base constructor's LLVM function (via `getLLVMConstructorMethod`) with `(args…, this)` — the
+constructor is not in the vtable, so this is a non-virtual call. The target is the *nearest*
+ancestor that declares a constructor (`zeus_value.LookupConstructorClass`), matching JS's behavior
+when an intermediate class omits its constructor.
+
+The object factory (`genFactoryFunctionBody`) default-initializes all fields base-first
+(`FlattenedInstanceProperties`) and calls the **effective constructor** — the class's own, or the
+nearest inherited one so a derived class without a constructor forwards to the base.
+
+---
+
 ## Limitations
 
-Deferred to **Phase 2** (`super`):
-
-- **No `super`.** `super(...)` constructor chaining and `super.method()` are not implemented; there
-  is no `super` token yet. A derived constructor initializes inherited fields by assigning them
-  directly (`this.name = name`).
-- **Inherited constructor.** A derived class with *no* constructor but a base constructor that
-  takes arguments is not wired — a derived class that needs constructor arguments must define its
-  own constructor.
-
-Other open edges:
-
+- **No `super.method()`.** Non-virtual calls to a base method's implementation
+  (`super.eat()` running `Base.eat` even when overridden) are a deliberate follow-up; bare `super`
+  and `super.member` are rejected with a targeted error.
 - **Field shadowing.** A derived field with the same name as a base field is not diagnosed; the
   field lookup and the struct layout can disagree on which slot it means. Avoid shadowing names.
 - **Override signature compatibility** (parameter/return variance) is not checked; an override may
   differ from the base signature without an error.
+- **`super(...)` placement.** It must be a top-level statement of the constructor (not nested in an
+  `if`/loop); a nested `super(...)` reads as "absent" and triggers the must-call-super error. Full
+  all-paths flow analysis is out of scope.
 
 ---
 
@@ -285,7 +330,10 @@ Other open edges:
 
 End-to-end specs live in `test/e2e/specs/inheritance/`: inherited + own fields, inherited methods,
 overrides dispatched dynamically, multi-level chains, polymorphism through a base-typed parameter,
-inherited accessors, and a base method mutating an inherited field on a derived instance.
+inherited accessors, a base method mutating an inherited field, `super(...)` chaining (single and
+multi-level), a derived class forwarding to the base constructor, and compile-error cases (missing
+`super`, `this` before `super`, wrong `super` arg count). HIR-level unit tests for `super` live in
+`test/ir/inheritance_test.go`.
 
 > **Runtime note.** Validate with the e2e harness
 > (`ZEUS_HOME=/path/to/zeus go test -tags llvm19 ./test/e2e/... -count=1`), not by directly running

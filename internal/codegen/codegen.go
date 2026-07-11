@@ -1207,6 +1207,22 @@ func getFactoryFunctionName(className string) string {
 	return FactoryFunctionPrefix + mangledName
 }
 
+// effectiveConstructor returns the constructor a `new`/factory call should run for `class` and
+// the class that declares it: the class's own constructor if it has one, otherwise the nearest
+// inherited constructor (so a derived class without its own constructor forwards to the base's).
+func (c *CodegenModule) effectiveConstructor(class zeus_value.Class) (*zeus_value.Function, *zeus_value.Class) {
+	ctorClass := zeus_value.LookupConstructorClass(&class)
+	if ctorClass == nil {
+		return nil, nil
+	}
+	for _, method := range ctorClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			return method.Method, ctorClass
+		}
+	}
+	return nil, nil
+}
+
 // declareFactoryFunction declares the factory function signature for a class
 // This is called in Phase 1 before NEW_OBJ instructions are processed
 func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Value {
@@ -1218,14 +1234,8 @@ func (c *CodegenModule) declareFactoryFunction(class zeus_value.Class) llvm.Valu
 		return existingFunc
 	}
 
-	// Find constructor method to get parameter types
-	var constructorMethod *zeus_value.Function
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			break
-		}
-	}
+	// The factory's parameters mirror the effective constructor (own or nearest inherited).
+	constructorMethod, _ := c.effectiveConstructor(class)
 
 	// Build parameter types for factory function (same as constructor params)
 	paramTypes := []llvm.Type{}
@@ -1266,14 +1276,8 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	factoryFunction := c.module.NamedFunction(factoryFunctionName)
 	zeus_error.Assert(!factoryFunction.IsNil(), fmt.Sprintf("factory function %s not declared", factoryFunctionName))
 
-	// Find constructor method to get parameter types
-	var constructorMethod *zeus_value.Function
-	for _, method := range class.Methods {
-		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
-			constructorMethod = method.Method
-			break
-		}
-	}
+	// The effective constructor (own or nearest inherited) drives the factory's params and call.
+	constructorMethod, constructorClass := c.effectiveConstructor(class)
 
 	// Create the function body
 	entryBlock := llvm.AddBasicBlock(factoryFunction, "entry")
@@ -1289,28 +1293,29 @@ func (c *CodegenModule) genFactoryFunctionBody(class zeus_value.Class) {
 	llvmObjHeader := c.getLLVMObjHeaderPtr(class.Name)
 	c.builder.CreateStore(llvmObjHeader, llvmStructObjHeaderField)
 
-	// Initialize instance properties to default values.
+	// Initialize instance properties (inherited + own, base-first) to default values.
 	// Static properties are backed by globals and have no slot in the instance struct.
-	instancePropertyIndex := 0
-	for _, property := range class.Properties {
-		if property.IsStatic {
-			continue
-		}
+	for instancePropertyIndex, property := range zeus_value.FlattenedInstanceProperties(&class) {
 		defaultLLVMValue := c.getDefaultLLVMValue(property.Property.ValueType)
 		llvmPropertyField := c.builder.CreateStructGEP(llvmStructType, llvmStruct, instancePropertyIndex+1, fmt.Sprintf("%s_property_%s_default_value", class.Name, property.Property.Name))
 		c.builder.CreateStore(defaultLLVMValue, llvmPropertyField)
-		instancePropertyIndex++
 	}
 
-	// Call constructor if it exists
-	llvmConstructorMethod := c.getLLVMConstructorMethod(class.Name)
+	// Call the effective constructor if the class (or an ancestor) has one. When it belongs to a
+	// base class, call that class's constructor (its LLVM function) — with the object as `this`,
+	// it initializes the inherited fields; a derived class with its own constructor chains via
+	// super(...) instead.
+	var llvmConstructorMethod *llvm.Value
+	if constructorClass != nil {
+		llvmConstructorMethod = c.getLLVMConstructorMethod(constructorClass.Name)
+	}
 	if llvmConstructorMethod != nil && constructorMethod != nil {
 		constructorFunc := *llvmConstructorMethod
 		constructorParamTypes := []zeus_value.ValueType{}
 		for _, param := range constructorMethod.Params {
 			constructorParamTypes = append(constructorParamTypes, param.ValueType)
 		}
-		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(&class))
+		constructorParamTypes = append(constructorParamTypes, zeus_value.NewObjectType(constructorClass))
 		constructorMethodType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, constructorParamTypes))
 
 		// Get constructor params from factory function params
@@ -1548,6 +1553,41 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	c.llvmValues[output.Name] = llvmValue
 }
 
+// genSuperConstructorCall emits `super(...)`: a direct (non-virtual) call to the base class's
+// constructor with the current object as `this`. ParentClass is the nearest ancestor that
+// declares a constructor, so its LLVMConstructorMethod is available.
+func (c *CodegenModule) genSuperConstructorCall(input ir.SuperConstructorCallInstrInput) {
+	parentClass := input.ParentClass
+	llvmConstructor := c.getLLVMConstructorMethod(parentClass.Name)
+	zeus_error.Assert(llvmConstructor != nil, fmt.Sprintf("constructor for base class %s not found", parentClass.Name))
+
+	// Locate the base constructor descriptor to build the call's function type.
+	var constructor *zeus_value.Function
+	for _, method := range parentClass.Methods {
+		if method.Method.SourceName() == token.CONSTRUCTOR_METHOD_NAME {
+			constructor = method.Method
+			break
+		}
+	}
+	zeus_error.Assert(constructor != nil, fmt.Sprintf("constructor descriptor for base class %s not found", parentClass.Name))
+
+	paramTypes := []zeus_value.ValueType{}
+	for _, param := range constructor.Params {
+		paramTypes = append(paramTypes, param.ValueType)
+	}
+	paramTypes = append(paramTypes, zeus_value.NewObjectType(parentClass))
+	constructorType := c.toLLVMFunctionType(zeus_value.NewFunctionType(zeus_value.VoidType{}, paramTypes))
+
+	// Arguments are the super(...) args followed by `this`.
+	args := []llvm.Value{}
+	for _, arg := range input.Args {
+		args = append(args, c.toLLVMValue(arg))
+	}
+	args = append(args, c.toLLVMValue(input.ThisObject))
+
+	c.builder.CreateCall(constructorType, *llvmConstructor, args, "")
+}
+
 func (c *CodegenModule) genDeclPrimordialFunc(input ir.DeclPrimordialFuncInstrInput) {
 	function := input.Function
 	functionType := zeus_value.ToFunctionType(*function)
@@ -1748,6 +1788,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeMethodCall:
 			c.setDebugLocation(instr.Span)
 			c.genMethodCall(*ir.AsMethodCallInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeSuperConstructorCall:
+			c.setDebugLocation(instr.Span)
+			c.genSuperConstructorCall(*ir.AsSuperConstructorCallInstrInput(instr.Input))
 		case ir.InstrTypeDeclPrimordialFunc:
 			c.genDeclPrimordialFunc(*ir.AsDeclPrimordialFuncInstrInput(instr.Input))
 		// Exception handling instructions

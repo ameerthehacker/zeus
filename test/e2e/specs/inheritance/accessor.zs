@@ -6,7 +6,7 @@ class Base {
   set value(x: i32) { this._v = x; }
 }
 class Derived extends Base {
-  constructor(v: i32) { this._v = v; }
+  constructor(v: i32) { super(v); }
 }
 function main(): i32 {
   let d: Derived = new Derived(40);

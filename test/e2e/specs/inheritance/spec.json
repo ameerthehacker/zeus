@@ -33,5 +33,41 @@
         "name": "Base method mutates an inherited field",
         "exit": "42",
         "entry": "base_method_field.zs"
+    },
+    {
+        "name": "super(...) chains to the base constructor",
+        "exit": "42",
+        "entry": "super_ctor.zs"
+    },
+    {
+        "name": "super(...) through a three-level chain",
+        "exit": "42",
+        "entry": "super_chain.zs"
+    },
+    {
+        "name": "Derived without a constructor forwards to the base",
+        "exit": "42",
+        "entry": "super_inherited_ctor.zs"
+    },
+    {
+        "name": "Missing super(...) is rejected",
+        "exit": "1",
+        "entry": "super_missing.zs",
+        "compile_error": true,
+        "stderr_contains": ["must call super"]
+    },
+    {
+        "name": "Using this before super(...) is rejected",
+        "exit": "1",
+        "entry": "super_before_this.zs",
+        "compile_error": true,
+        "stderr_contains": ["before calling super"]
+    },
+    {
+        "name": "Wrong super(...) argument count is rejected",
+        "exit": "1",
+        "entry": "super_wrong_args.zs",
+        "compile_error": true,
+        "stderr_contains": ["arguments for super"]
     }
 ]

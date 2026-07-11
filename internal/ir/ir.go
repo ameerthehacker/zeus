@@ -58,6 +58,13 @@ type IRModule struct {
 	// classStack tracks which classes are currently being emitted (instance and static
 	// methods/accessors). Used by isInsideClass for private access enforcement.
 	classStack []*zeus_value.Class
+	// currentConstructorClass is the class whose constructor body is currently being emitted
+	// (nil otherwise). super(...) is only valid here; superRequiredInCtor is true when the base
+	// chain has a constructor (so super(...) is mandatory), and superCalledInCtor records whether
+	// it has been emitted yet — together they enforce the JS rule "call super before using this".
+	currentConstructorClass *zeus_value.Class
+	superRequiredInCtor     bool
+	superCalledInCtor       bool
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -719,9 +726,22 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 }
 
 func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
+	// super(...) — direct call to the base constructor inside a derived constructor.
+	if ident, ok := expr.Callee.(*ast.IdentifierExprNode); ok && ident.Name.Value == token.SUPER_KEYWORD {
+		return g.emitSuperConstructorCall(expr)
+	}
+
 	// Detect method call: callee is obj.method — emit a single CALL_METHOD instead of the
 	// OBJECT_PROPERTY_ACCESS + LOAD + CALL_INDIRECT_FUNC chain.
 	if propAccess, ok := expr.Callee.(*ast.ObjectPropertyAccessExprNode); ok {
+		// super.method() (non-virtual base call) is a deliberate follow-up; reject it cleanly.
+		if superIdent, ok := propAccess.Object.(*ast.IdentifierExprNode); ok && superIdent.Name.Value == token.SUPER_KEYWORD {
+			g.pushError(&zeus_error.ZeusError{
+				Message: "super.method() is not supported yet (only super(...) constructor calls)",
+				Span:    expr.GetSpan(),
+			})
+			return nil
+		}
 		object := propAccess.Object.Accept(g)
 		if asVar := zeus_value.AsVar(object); asVar != nil && asVar.IsPtr {
 			object = g.irBuilder.BuildLoad(asVar, propAccess.GetSpan())
@@ -800,6 +820,50 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	})
 
 	return nil
+}
+
+// emitSuperConstructorCall handles `super(...)`. It validates that we are inside a derived
+// class's constructor whose base chain has a constructor, then emits a direct call to that base
+// constructor with the current `this`. It also records that super() has run so the
+// "this before super" check in VisitIdentifier passes for subsequent `this` uses.
+func (g *IRModule) emitSuperConstructorCall(expr *ast.FunctionCallExprNode) zeus_value.Value {
+	if g.currentConstructorClass == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: "super(...) can only be called inside a constructor",
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+	parent := g.currentConstructorClass.ParentClass
+	if parent == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("super(...) requires a base class; '%s' does not extend another class", g.currentConstructorClass.SourceName()),
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+	ctorClass := zeus_value.LookupConstructorClass(parent)
+	if ctorClass == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("base class '%s' has no constructor to call via super(...)", parent.SourceName()),
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+
+	thisSym, ok := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+	if !ok {
+		g.pushError(&zeus_error.ZeusError{Message: "super(...) has no 'this' in scope", Span: expr.GetSpan()})
+		return nil
+	}
+
+	args := []zeus_value.Value{}
+	for _, param := range expr.Params {
+		args = append(args, param.Accept(g))
+	}
+
+	g.superCalledInCtor = true
+	return g.irBuilder.BuildSuperConstructorCall(ctorClass, thisSym, args, expr.GetSpan())
 }
 
 // checkVariadicParamType reports an error when a rest parameter's resolved type is not
@@ -1160,6 +1224,25 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
+	// `super` is only meaningful as `super(...)` (handled in VisitFunctionCallExpr). Reaching it
+	// here means it was used as a value or as `super.member`, which is not supported in this phase.
+	if expr.Name.Value == token.SUPER_KEYWORD {
+		g.pushError(&zeus_error.ZeusError{
+			Message: "super is only valid as super(...) inside a constructor (super.member is not supported yet)",
+			Span:    expr.Name.Span,
+		})
+		return nil
+	}
+
+	// JS rule: a derived constructor must call super(...) before using `this`.
+	if expr.Name.Value == token.THIS_KEYWORD && g.currentConstructorClass != nil &&
+		g.superRequiredInCtor && !g.superCalledInCtor {
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("cannot use 'this' before calling super(...) in the constructor of '%s'", g.currentConstructorClass.SourceName()),
+			Span:    expr.Name.Span,
+		})
+	}
+
 	variable, ok := g.symbolTable().GetSymbol(expr.Name.Value)
 
 	if !ok {
@@ -1376,18 +1459,44 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	// "constructor1") without class-name prefixing. We write the IR name back into
 	// class.Methods[i].Method so that codegen and imports can look it up via Method.Name,
 	// and keep the source name in OriginalName for constructor detection and error messages.
+	// super(...) is mandatory in a derived class's constructor when the base chain has a
+	// constructor; this drives the "must call super" / "this before super" checks below.
+	superRequired := class.ParentClass != nil && zeus_value.LookupConstructorClass(class.ParentClass) != nil
+
 	for i, method := range methodASTs {
 		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
 		if method.ReturnType != nil {
 			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
 		}
 		irMethodName := g.generateUniqueName(method.Name.Name.Value)
+
+		// Track constructor context so super(...) resolves and the "this before super" rule is
+		// enforced during body emission (IR-gen visits statements in source order).
+		isConstructor := method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME
+		if isConstructor {
+			g.currentConstructorClass = class
+			g.superRequiredInCtor = superRequired
+			g.superCalledInCtor = false
+		}
+
 		fn := zeus_value.AsFunction(g.emitFunction(irMethodName, method.Params, returnType, method.Body, class, nil, method.Name.Name.Span))
 		if fn != nil {
 			fn.OriginalName = method.Name.Name.Value
 			// Sync the class method descriptor so downstream passes see the IR name.
 			class.Methods[i].Method.Name = irMethodName
 			class.Methods[i].Method.OriginalName = method.Name.Name.Value
+		}
+
+		if isConstructor {
+			if superRequired && !g.superCalledInCtor {
+				g.pushError(&zeus_error.ZeusError{
+					Message: fmt.Sprintf("constructor of '%s' must call super(...) because base class '%s' has a constructor", class.SourceName(), class.ParentClass.SourceName()),
+					Span:    method.Name.Name.Span,
+				})
+			}
+			g.currentConstructorClass = nil
+			g.superRequiredInCtor = false
+			g.superCalledInCtor = false
 		}
 	}
 
