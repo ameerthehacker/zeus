@@ -793,6 +793,19 @@ func (b *IRBuilder) BuildSuperConstructorCall(parentClass *zeus_value.Class, thi
 	return result
 }
 
+// BuildStaticMethodCall emits a non-virtual method call (super.method()): the method is resolved
+// on and called directly from staticClass, bypassing the receiver's vtable.
+func (b *IRBuilder) BuildStaticMethodCall(object zeus_value.Value, methodName string, args []zeus_value.Value, staticClass *zeus_value.Class, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	b.pushInstr(&Instr{
+		Type:   InstrTypeMethodCall,
+		Output: result,
+		Input:  NewStaticMethodCallInstrInput(object, methodName, args, staticClass),
+		Span:   span,
+	})
+	return result
+}
+
 func (b *IRBuilder) BuildGetAccessor(object zeus_value.Value, accessorName string, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 	b.pushInstr(&Instr{

@@ -523,6 +523,11 @@ type MethodCallInstrInput struct {
 	Object     zeus_value.Value
 	MethodName string
 	Args       []zeus_value.Value
+	// StaticClass, when set, makes this a non-virtual call: the method is resolved on (and called
+	// directly from) StaticClass rather than dispatched through the receiver's vtable. This is how
+	// super.method() reaches a base implementation even when the object overrides it. nil = the
+	// usual virtual (vtable) dispatch.
+	StaticClass *zeus_value.Class
 }
 
 func NewMethodCallInstrInput(object zeus_value.Value, methodName string, args []zeus_value.Value) *MethodCallInstrInput {
@@ -530,6 +535,16 @@ func NewMethodCallInstrInput(object zeus_value.Value, methodName string, args []
 		Object:     object,
 		MethodName: methodName,
 		Args:       args,
+	}
+}
+
+// NewStaticMethodCallInstrInput builds a non-virtual (super.method()) call resolved on staticClass.
+func NewStaticMethodCallInstrInput(object zeus_value.Value, methodName string, args []zeus_value.Value, staticClass *zeus_value.Class) *MethodCallInstrInput {
+	return &MethodCallInstrInput{
+		Object:      object,
+		MethodName:  methodName,
+		Args:        args,
+		StaticClass: staticClass,
 	}
 }
 

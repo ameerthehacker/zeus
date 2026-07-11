@@ -734,13 +734,9 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 	// Detect method call: callee is obj.method — emit a single CALL_METHOD instead of the
 	// OBJECT_PROPERTY_ACCESS + LOAD + CALL_INDIRECT_FUNC chain.
 	if propAccess, ok := expr.Callee.(*ast.ObjectPropertyAccessExprNode); ok {
-		// super.method() (non-virtual base call) is a deliberate follow-up; reject it cleanly.
+		// super.method(...) — a non-virtual call to the base class's implementation.
 		if superIdent, ok := propAccess.Object.(*ast.IdentifierExprNode); ok && superIdent.Name.Value == token.SUPER_KEYWORD {
-			g.pushError(&zeus_error.ZeusError{
-				Message: "super.method() is not supported yet (only super(...) constructor calls)",
-				Span:    expr.GetSpan(),
-			})
-			return nil
+			return g.emitSuperMethodCall(expr, propAccess)
 		}
 		object := propAccess.Object.Accept(g)
 		if asVar := zeus_value.AsVar(object); asVar != nil && asVar.IsPtr {
@@ -864,6 +860,47 @@ func (g *IRModule) emitSuperConstructorCall(expr *ast.FunctionCallExprNode) zeus
 
 	g.superCalledInCtor = true
 	return g.irBuilder.BuildSuperConstructorCall(ctorClass, thisSym, args, expr.GetSpan())
+}
+
+// emitSuperMethodCall handles `super.method(...)` — a non-virtual call to a base class's
+// implementation, passing the current `this` as receiver. Valid inside an instance method of a
+// class whose base chain defines the method. The receiver keeps its dynamic type, but dispatch is
+// resolved statically on the base (`StaticClass`), so an override on the object is bypassed.
+func (g *IRModule) emitSuperMethodCall(expr *ast.FunctionCallExprNode, propAccess *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
+	if len(g.classStack) == 0 {
+		g.pushError(&zeus_error.ZeusError{Message: "super.method() can only be used inside a class method", Span: expr.GetSpan()})
+		return nil
+	}
+	currentClass := g.classStack[len(g.classStack)-1]
+	parent := currentClass.ParentClass
+	if parent == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("super.method() requires a base class; '%s' does not extend another class", currentClass.SourceName()),
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+
+	methodName := propAccess.Property.Name.Value
+	if zeus_value.LookupMethod(parent, methodName) == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: fmt.Sprintf("base class '%s' has no method '%s' to call via super", parent.SourceName(), methodName),
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+
+	thisSym, ok := g.symbolTable().GetSymbol(token.THIS_KEYWORD)
+	if !ok {
+		g.pushError(&zeus_error.ZeusError{Message: "super.method() has no 'this' in scope (not valid in a static method)", Span: expr.GetSpan()})
+		return nil
+	}
+
+	args := []zeus_value.Value{}
+	for _, param := range expr.Params {
+		args = append(args, param.Accept(g))
+	}
+	return g.irBuilder.BuildStaticMethodCall(thisSym, methodName, args, parent, expr.GetSpan())
 }
 
 // checkVariadicParamType reports an error when a rest parameter's resolved type is not
@@ -1224,11 +1261,12 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 }
 
 func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Value {
-	// `super` is only meaningful as `super(...)` (handled in VisitFunctionCallExpr). Reaching it
-	// here means it was used as a value or as `super.member`, which is not supported in this phase.
+	// `super` is only meaningful as `super(...)` or `super.method(...)` (both handled in
+	// VisitFunctionCallExpr). Reaching it here means it was used as a value or as a `super.property`
+	// read, which is not supported.
 	if expr.Name.Value == token.SUPER_KEYWORD {
 		g.pushError(&zeus_error.ZeusError{
-			Message: "super is only valid as super(...) inside a constructor (super.member is not supported yet)",
+			Message: "super is only valid as super(...) or super.method(...); reading super.property is not supported",
 			Span:    expr.Name.Span,
 		})
 		return nil

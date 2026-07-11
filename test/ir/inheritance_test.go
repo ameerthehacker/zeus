@@ -155,6 +155,51 @@ class Derived extends Base {
 	}
 }
 
+func TestSuperMethodCallIsNonVirtual(t *testing.T) {
+	// super.sound() emits a CALL_METHOD whose StaticClass is the base class (non-virtual),
+	// so codegen dispatches directly rather than through the vtable.
+	_, instrs := generateHIR(t, `
+class Animal {
+    public sound(): i32 { return 10; }
+}
+class Dog extends Animal {
+    public sound(): i32 { return super.sound() + 1; }
+}`)
+	var superCall *ir.MethodCallInstrInput
+	for _, instr := range filterUserInstrs(instrs) {
+		if instr.Type == ir.InstrTypeDeclClassMethod {
+			body := ir.AsDeclClassMethodInstrInput(instr.Input).Body
+			for _, bi := range allBlockInstrs(body) {
+				if bi.Type == ir.InstrTypeMethodCall {
+					in := ir.AsMethodCallInstrInput(bi.Input)
+					if in.StaticClass != nil {
+						superCall = in
+					}
+				}
+			}
+		}
+	}
+	if superCall == nil {
+		t.Fatal("expected a CALL_METHOD with a non-nil StaticClass for super.sound()")
+	}
+	if superCall.MethodName != "sound" {
+		t.Errorf("expected super call to method 'sound', got '%s'", superCall.MethodName)
+	}
+	if superCall.StaticClass.Name != "Animal" {
+		t.Errorf("expected super call resolved on base 'Animal', got '%s'", superCall.StaticClass.Name)
+	}
+}
+
+func TestSuperMethodWithoutBaseIsError(t *testing.T) {
+	errs := generateHIRErrors(t, `
+class Solo {
+    public go(): i32 { return super.foo(); }
+}`)
+	if !hasErrorContaining(errs, "requires a base class") {
+		t.Errorf("expected a 'super.method requires a base class' error, got: %v", errs)
+	}
+}
+
 func TestSuperOutsideConstructorIsError(t *testing.T) {
 	errs := generateHIRErrors(t, `
 class Base {

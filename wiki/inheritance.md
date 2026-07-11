@@ -41,7 +41,7 @@ a.sound();                               // 42 — Dog.sound via dynamic dispatc
 | Inherited getter/setter accessors | ✅ |
 | Inherited static members | ✅ (pre-existing) |
 | `super(...)` constructor chaining | ✅ (see [super](#super-constructor-chaining)) |
-| `super.method()` (non-virtual base call) | ❌ — follow-up |
+| `super.method()` (non-virtual base call) | ✅ (see [super](#super-constructor-chaining)) |
 
 `extends` accepts a single base class. There are no interfaces here (those are a separate
 feature) and no multiple inheritance.
@@ -309,13 +309,34 @@ The object factory (`genFactoryFunctionBody`) default-initializes all fields bas
 (`FlattenedInstanceProperties`) and calls the **effective constructor** — the class's own, or the
 nearest inherited one so a derived class without a constructor forwards to the base.
 
+### `super.method()` — non-virtual base calls
+
+`super.method(...)` inside an instance method calls the **base** implementation directly, even if
+the object overrides it — so an override can extend the base behavior:
+
+```zeus
+class Animal {
+    public sound(): i32 { return 10; }
+}
+class Dog extends Animal {
+    public sound(): i32 { return super.sound() + 32; } // 10 + 32
+}
+```
+
+This is the counterpart to normal method dispatch, which is *virtual* (through the object's
+vtable). A `super.method()` call carries a `StaticClass` on the `CALL_METHOD` instruction; codegen
+(`genStaticMethodCall`) resolves the method up the base chain and calls it **by symbol**, never
+through the vtable. Passing the object through a base-typed reference still dispatches virtually to
+the override, and the override's `super.sound()` reaches the base without recursing — the two
+mechanisms compose. `super` is bound lexically to the *enclosing method's* class, not the
+receiver's dynamic type. Reading `super.property` (non-call) is not supported.
+
 ---
 
 ## Limitations
 
-- **No `super.method()`.** Non-virtual calls to a base method's implementation
-  (`super.eat()` running `Base.eat` even when overridden) are a deliberate follow-up; bare `super`
-  and `super.member` are rejected with a targeted error.
+- **`super.property` read.** Only `super.method(...)` calls are supported, not `super.field` /
+  `super.getter` reads (rejected with a targeted error).
 - **Field shadowing.** A derived field with the same name as a base field is not diagnosed; the
   field lookup and the struct layout can disagree on which slot it means. Avoid shadowing names.
 - **Override signature compatibility** (parameter/return variance) is not checked; an override may
@@ -331,9 +352,10 @@ nearest inherited one so a derived class without a constructor forwards to the b
 End-to-end specs live in `test/e2e/specs/inheritance/`: inherited + own fields, inherited methods,
 overrides dispatched dynamically, multi-level chains, polymorphism through a base-typed parameter,
 inherited accessors, a base method mutating an inherited field, `super(...)` chaining (single and
-multi-level), a derived class forwarding to the base constructor, and compile-error cases (missing
-`super`, `this` before `super`, wrong `super` arg count). HIR-level unit tests for `super` live in
-`test/ir/inheritance_test.go`.
+multi-level), a derived class forwarding to the base constructor, `super.method()` (extending the
+base, non-virtual under dynamic dispatch, and resolving up the chain), and compile-error cases
+(missing `super`, `this` before `super`, wrong `super` arg count, `super.method()` with no base).
+HIR-level unit tests for `super` live in `test/ir/inheritance_test.go`.
 
 > **Runtime note.** Validate with the e2e harness
 > (`ZEUS_HOME=/path/to/zeus go test -tags llvm19 ./test/e2e/... -count=1`), not by directly running

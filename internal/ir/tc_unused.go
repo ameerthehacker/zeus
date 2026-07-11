@@ -184,14 +184,17 @@ func (p *UnusedWarningPass) handleMethodCall(tc *TypeChecker, instr *Instr) {
 	markValueAsUsed(input.Object)
 	markValuesAsUsed(input.Args)
 
-	objectType := tc.getValueType(input.Object)
-	if zeus_value.IsObjectType(objectType) {
-		class := zeus_value.AsObjectType(objectType).Class
-		for _, classMethod := range class.Methods {
-			if classMethod.Method.SourceName() == input.MethodName {
-				classMethod.Method.IsUsed = true
-				return
-			}
+	// Resolve on the base class for super.method(), otherwise the receiver's class; walk the chain
+	// (LookupMethod) so an inherited or super-invoked base method is correctly marked used.
+	class := input.StaticClass
+	if class == nil {
+		if objectType := tc.getValueType(input.Object); zeus_value.IsObjectType(objectType) {
+			class = zeus_value.AsObjectType(objectType).Class
+		}
+	}
+	if class != nil {
+		if m := zeus_value.LookupMethod(class, input.MethodName); m != nil {
+			m.Method.IsUsed = true
 		}
 	}
 }

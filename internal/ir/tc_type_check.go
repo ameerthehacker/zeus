@@ -1181,6 +1181,10 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	class := zeus_value.AsObjectType(valueType).Class
+	// super.method() resolves non-virtually on the base class, not the receiver's dynamic class.
+	if input.StaticClass != nil {
+		class = input.StaticClass
+	}
 	// Walk the inheritance chain so an inherited (or overridden) method is found; a derived
 	// method shadows a same-named base method.
 	foundMethod := zeus_value.LookupMethod(class, input.MethodName)
@@ -1205,7 +1209,7 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 				// (arity + variadic element types + implicit casts), same as a
 				// direct/indirect call, before the lowering pass rewrites this.
 				input.Args = p.tcFunctionCall(tc, instr, ft, input.Args, instr.Output.Span)
-				instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
+				instr.Input = NewStaticMethodCallInstrInput(input.Object, input.MethodName, input.Args, input.StaticClass)
 				instr.Output.ValueType = ft.ReturnType
 				return
 			}
@@ -1235,7 +1239,7 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 
 	functionType := zeus_value.ToFunctionType(*foundMethod.Method)
 	input.Args = p.tcFunctionCall(tc, instr, functionType, input.Args, instr.Output.Span)
-	instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
+	instr.Input = NewStaticMethodCallInstrInput(input.Object, input.MethodName, input.Args, input.StaticClass)
 
 	instr.Output.ValueType = foundMethod.Method.ReturnType
 }

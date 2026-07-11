@@ -1514,6 +1514,12 @@ func (c *CodegenModule) genIndirectFuncCall(input ir.IndirectFuncCallInstrInput,
 }
 
 func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
+	// super.method() — a non-virtual call resolved directly on the base class.
+	if input.StaticClass != nil {
+		c.genStaticMethodCall(input, output)
+		return
+	}
+
 	objectType := c.getValueType(input.Object)
 	llvmObject := c.toLLVMValue(input.Object)
 	objectClass := zeus_value.AsObjectType(objectType)
@@ -1550,6 +1556,53 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	}
 
 	llvmValue := c.builder.CreateCall(c.toLLVMFunctionType(fullFunctionType), methodPtr, functionArgs, fmt.Sprintf("%s_result", input.MethodName))
+	c.llvmValues[output.Name] = llvmValue
+}
+
+// genStaticMethodCall emits super.method(): a non-virtual call. The method is resolved on the
+// base class chain (StaticClass) and called by its symbol directly — never through the vtable —
+// so an override on the receiver is bypassed. `this` is passed unchanged as the receiver.
+func (c *CodegenModule) genStaticMethodCall(input ir.MethodCallInstrInput, output zeus_value.Var) {
+	llvmObject := c.toLLVMValue(input.Object)
+
+	// Resolve the method (and the class that defines it) by walking the base chain.
+	var foundMethod *zeus_value.ClassMethod
+	definingClass := input.StaticClass
+	for cur := input.StaticClass; cur != nil; cur = cur.ParentClass {
+		for _, m := range cur.Methods {
+			if m.Method.SourceName() == input.MethodName {
+				foundMethod, definingClass = m, cur
+				break
+			}
+		}
+		if foundMethod != nil {
+			break
+		}
+	}
+	zeus_error.Assert(foundMethod != nil, fmt.Sprintf("super method %s not found in class %s", input.MethodName, input.StaticClass.Name))
+
+	// User methods are named by their IR name; extern (primordial) methods are class-scoped.
+	fnName := foundMethod.Method.Name
+	if foundMethod.IsExtern {
+		fnName = util.GetClassMethodName(definingClass.Name, foundMethod.Method.Name)
+	}
+	llvmFn := c.module.NamedFunction(fnName)
+	zeus_error.Assert(!llvmFn.IsNil(), fmt.Sprintf("super method function %s not found", fnName))
+
+	paramTypes := make([]zeus_value.ValueType, len(foundMethod.Method.Params))
+	for i, p := range foundMethod.Method.Params {
+		paramTypes[i] = p.ValueType
+	}
+	paramTypes = append(paramTypes, zeus_value.NewObjectType(definingClass))
+	fnType := c.toLLVMFunctionType(zeus_value.FunctionType{ReturnType: foundMethod.Method.ReturnType, ParamTypes: paramTypes})
+
+	args := []llvm.Value{}
+	for _, arg := range input.Args {
+		args = append(args, c.toLLVMValue(arg))
+	}
+	args = append(args, llvmObject)
+
+	llvmValue := c.builder.CreateCall(fnType, llvmFn, args, fmt.Sprintf("%s_super_result", input.MethodName))
 	c.llvmValues[output.Name] = llvmValue
 }
 
