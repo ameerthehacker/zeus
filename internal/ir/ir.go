@@ -1241,6 +1241,21 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		returnType = g.resolveTypeForIRGen(expr.ReturnType.ValueType, true)
 	}
 
+	// Extern free function (prelude/primordial): a body-less function forwarding to a Zig runtime
+	// symbol. Register it as a primordial function so every module emits it through the existing
+	// primordial-function path (initializePrimordialFunctions → genDeclPrimordialFunc).
+	if expr.ExternSymbol != "" {
+		params := []*zeus_value.Var{}
+		for _, param := range expr.Params {
+			paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span, param.IsVariadic))
+		}
+		fn := zeus_value.NewFunction(expr.Name.Name.Value, params, returnType, expr.Name.GetSpan())
+		fn.ExternRuntimeName = expr.ExternSymbol
+		zeus_value.Registry.RegisterFunction(fn)
+		return fn
+	}
+
 	fnName := ""
 	var fnSpan *token.Span
 	if expr.Name == nil {
@@ -1253,7 +1268,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 
 	// When inside a function body that is NOT the module-level scope, create a closure.
 	// When at module level (isInModuleScope) or truly outside any block, emit as global function.
-	if g.irBuilder.currentBlock != nil && !g.isInModuleScope {
+	if g.irBuilder.GetInsertionBlock() != nil && !g.isInModuleScope {
 		return g.emitFunctorClass(fnName, expr.Params, returnType, expr.Body, fnSpan)
 	}
 
@@ -1502,6 +1517,12 @@ func (g *IRModule) buildClass(class *zeus_value.Class, methodASTs []*ast.ClassMe
 	superRequired := class.ParentClass != nil && zeus_value.LookupConstructorClass(class.ParentClass) != nil
 
 	for i, method := range methodASTs {
+		// Extern methods have no Zeus body — their descriptor (IsExtern + ExternRuntimeName) is set
+		// when the method list is built; codegen synthesizes the runtime-forwarding body. Their
+		// descriptor Name stays the source name (like Go-built primordials), so nothing to emit here.
+		if method.ExternSymbol != "" {
+			continue
+		}
 		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
 		if method.ReturnType != nil {
 			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
@@ -1887,6 +1908,12 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 		function.IsVariadic = len(params) > 0 && params[len(params)-1].IsVariadic
 		cm := zeus_value.NewClassMethod(function, method.AccessModifier)
 		cm.IsStatic = method.IsStatic
+		// Extern methods forward to a Zig runtime symbol; codegen emits their body via the shared
+		// extern-method path (emitExternMethods), so no Zeus body is emitted for them.
+		if method.ExternSymbol != "" {
+			cm.IsExtern = true
+			function.ExternRuntimeName = method.ExternSymbol
+		}
 
 		if method.IsStatic {
 			staticMethods = append(staticMethods, cm)

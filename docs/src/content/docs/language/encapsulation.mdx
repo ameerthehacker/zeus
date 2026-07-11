@@ -1,0 +1,136 @@
+---
+title: Encapsulation & Accessors
+description: Control access to class internals with public and private, and expose computed properties with get/set accessors.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Encapsulation hides a class's internal state behind a controlled surface. Zeus gives you access
+modifiers to mark what's internal, and accessors (`get`/`set`) to expose properties that run code
+instead of touching a field directly.
+
+## Access modifiers
+
+Every field and method is either `public` or `private`:
+
+- **`public`** — reachable from anywhere.
+- **`private`** — reachable only from within the same class.
+
+```zeus
+class Account {
+  private balance: i32;
+  public id: i32;
+
+  constructor(id: i32) {
+    this.id = id;
+    this.balance = 0;
+  }
+
+  public deposit(amount: i32): void {
+    this.balance = this.balance + amount;
+  }
+
+  public getBalance(): i32 {
+    return this.balance;
+  }
+}
+
+function main(): i32 {
+  let a: Account = new Account(1);
+  a.deposit(42);
+  // a.balance = 0;   // error: 'balance' is private
+  return a.getBalance();   // => 42
+}
+```
+
+Keeping `balance` private means it can only change through `deposit`, so the class controls its own
+invariants.
+
+## Getters
+
+A getter is a method declared with `get` that you read like a field. It's ideal for values
+*computed* from internal state rather than stored directly:
+
+```zeus
+class Circle {
+  private r: i32;
+  constructor(r: i32) { this.r = r; }
+
+  get area(): i32 {
+    return this.r * this.r;   // computed on each read
+  }
+}
+
+function main(): i32 {
+  let c: Circle = new Circle(5);
+  return c.area;   // read like a field, no parentheses => 25
+}
+```
+
+## Setters
+
+Pair a getter with a `set` accessor to make an assignable property. The setter receives the assigned
+value as its parameter:
+
+```zeus
+class Temp {
+  private c: i32;
+  constructor(c: i32) { this.c = c; }
+
+  get celsius(): i32 { return this.c; }
+  set celsius(v: i32) { this.c = v; }
+}
+
+function main(): i32 {
+  let t: Temp = new Temp(20);
+  let a: i32 = t.celsius;   // getter => 20
+  t.celsius = 22;           // setter
+  return a + t.celsius;     // => 42
+}
+```
+
+## Read-only properties
+
+A getter *without* a matching setter is read-only. Assigning to it is a compile error:
+
+```zeus
+class Id {
+  private n: i32;
+  constructor(n: i32) { this.n = n; }
+
+  get id(): i32 { return this.n; }   // no setter
+}
+
+function main(): i32 {
+  let x: Id = new Id(1);
+  // x.id = 5;   // error: 'id' has no setter
+  return x.id;   // => 1
+}
+```
+
+## Accessors through references
+
+Accessors resolve on the receiver's declared type, so they also work through parameters and nested
+fields — not just local variables:
+
+```zeus
+class Box {
+  private v: i32;
+  constructor(v: i32) { this.v = v; }
+  get value(): i32 { return this.v; }
+}
+
+function readIt(b: Box): i32 {
+  return b.value;   // getter dispatched via the parameter's type
+}
+
+function main(): i32 {
+  let b: Box = new Box(42);
+  return readIt(b);   // => 42
+}
+```
+
+<Aside type="note" title="Static accessors">
+  `get`/`set` can also be `static`, exposing computed class-level properties. See
+  [Static Members](/language/static-members/).
+</Aside>

@@ -1,0 +1,64 @@
+---
+title: Console
+description: Print to standard output and standard error with the global console object.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The global `console` object is available in every program without an import. Each method prints a
+string followed by a newline.
+
+## console.log
+
+Writes a string to standard output.
+
+```zeus
+console.log("Hello, World!");
+console.log("Zeus supports UTF-8 🚀");
+
+let greeting: string = "Welcome to Zeus!";
+console.log(greeting);
+```
+
+Output:
+
+```
+Hello, World!
+Zeus supports UTF-8 🚀
+Welcome to Zeus!
+```
+
+<Aside type="tip">
+  `console.log` fully supports UTF-8 — emojis and international characters included — and appends a
+  newline to every call.
+</Aside>
+
+## console.error and console.info
+
+`console.error` writes to standard error; `console.info` writes to standard output. Both otherwise
+behave like `console.log`.
+
+```zeus
+console.log("normal output");    // stdout
+console.info("informational");   // stdout
+console.error("went wrong");     // stderr
+```
+
+## Logging byte arrays
+
+A `u8[]` converts implicitly to `string`, so you can print raw bytes by assigning them to a string
+first:
+
+```zeus
+let bytes: u8[] = new u8[];
+bytes[0] = 'H';
+bytes[1] = 'i';
+
+let text: string = bytes;   // u8[] -> string
+console.log(text);          // "Hi"
+```
+
+<Aside type="note">
+  `console` methods accept a **string** only. To print a number, convert it to a string first — see
+  [Strings](/language/strings/).
+</Aside>

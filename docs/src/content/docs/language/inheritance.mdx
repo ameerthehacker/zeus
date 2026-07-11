@@ -1,0 +1,192 @@
+---
+title: Inheritance
+description: Extend classes with extends, override methods with dynamic dispatch, and chain constructors with super.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A class can build on another with `extends`, inheriting its fields and methods while adding or
+overriding behavior. Zeus uses **single inheritance** with **dynamic dispatch** — a method call
+through a base-typed reference always runs the most-derived override.
+
+## Extending a class
+
+Use `extends` to derive one class from another. The derived class inherits every field and method
+of its base:
+
+```zeus
+class Counter {
+  public count: i32;
+  constructor() { this.count = 0; }
+
+  public bump(): i32 {
+    this.count = this.count + 1;
+    return this.count;
+  }
+}
+
+class Fancy extends Counter {
+  public tag: i32;
+  constructor() {
+    super();          // run the base constructor first
+    this.count = 41;  // then set the inherited field
+    this.tag = 7;     // ...and the class's own field
+  }
+}
+
+function main(): i32 {
+  let f: Fancy = new Fancy();
+  return f.bump();    // base method mutates the inherited field => 42
+}
+```
+
+`Fancy` carries the inherited `count` field and `bump` method alongside its own `tag` field. A
+base method operates on the inherited field even when called on a derived instance.
+
+## Overriding methods
+
+A derived class replaces an inherited method by declaring one with the same name. Overrides are
+dispatched **dynamically**: the object's actual class decides which implementation runs, even
+through a base-typed reference.
+
+```zeus
+class Animal {
+  public sound(): i32 { return 0; }
+}
+
+class Dog extends Animal {
+  public sound(): i32 { return 42; }
+}
+
+function main(): i32 {
+  let a: Animal = new Dog();
+  return a.sound();   // Dog.sound() via dynamic dispatch => 42
+}
+```
+
+## Polymorphism
+
+Because a derived instance *is a* base instance, you can pass it wherever the base type is expected
+— an **upcast**. Virtual methods still dispatch to the derived override:
+
+```zeus
+class Shape {
+  public area(): i32 { return 0; }
+}
+
+class Square extends Shape {
+  public s: i32;
+  constructor(s: i32) { this.s = s; }
+  public area(): i32 { return this.s * this.s; }
+}
+
+function describe(sh: Shape): i32 {
+  return sh.area();   // runs the concrete override
+}
+
+function main(): i32 {
+  let sq: Square = new Square(6);
+  return describe(sq) + 6;   // 36 + 6 => 42
+}
+```
+
+## Calling the base with `super`
+
+Inside an override, `super.method()` calls the base implementation, letting you *extend* inherited
+behavior instead of replacing it. A `super` call is **non-virtual** — it always runs the base
+version, never the override:
+
+```zeus
+class Animal {
+  public sound(): i32 { return 10; }
+}
+
+class Dog extends Animal {
+  public sound(): i32 { return super.sound() + 32; }
+}
+
+function main(): i32 {
+  let a: Animal = new Dog();
+  return a.sound();   // Dog.sound (virtual) -> super.sound (base) + 32 => 42
+}
+```
+
+## Constructors and `super(...)`
+
+When a derived class defines its own constructor, it calls the base constructor with `super(...)`
+to initialize the inherited fields:
+
+```zeus
+class Animal {
+  public legs: i32;
+  constructor(legs: i32) { this.legs = legs; }
+}
+
+class Dog extends Animal {
+  public tail: i32;
+  constructor(legs: i32, tail: i32) {
+    super(legs);       // initialize the base part first
+    this.tail = tail;  // then the derived part
+  }
+}
+
+function main(): i32 {
+  let d: Dog = new Dog(40, 2);
+  return d.legs + d.tail;   // => 42
+}
+```
+
+<Aside type="caution" title="Call super() before using this">
+  A derived constructor may not read or write `this` before calling `super(...)`. The base part of
+  the object must be initialized first — the same rule as JavaScript.
+</Aside>
+
+### Inherited constructors
+
+A derived class with **no constructor of its own** inherits the base constructor. `new Derived(args)`
+forwards straight to it:
+
+```zeus
+class Base {
+  public v: i32;
+  constructor(v: i32) { this.v = v; }
+}
+
+class Derived extends Base { }
+
+function main(): i32 {
+  let d: Derived = new Derived(42);
+  return d.v;   // => 42
+}
+```
+
+## Multi-level inheritance
+
+Inheritance chains any number of levels deep. Overrides and inherited members resolve through the
+whole chain:
+
+```zeus
+class A {
+  public who(): i32 { return 1; }
+  public gift(): i32 { return 40; }
+}
+
+class B extends A {
+  public who(): i32 { return 2; }   // override
+}
+
+class C extends B { }               // inherits B.who and A.gift
+
+function main(): i32 {
+  let c: A = new C();
+  return c.who() + c.gift();   // 2 (from B) + 40 (from A) => 42
+}
+```
+
+Constructors chain the same way — each level calls `super(...)` on the level above it. Static
+members are shared down the chain too; see [Static Members](/language/static-members/).
+
+<Aside type="note" title="Custom exception types">
+  Subclassing the built-in `Error` class to create custom exception types is not yet supported. See
+  [Exception Handling](/language/exception-handling/) for what's available today.
+</Aside>

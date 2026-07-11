@@ -135,7 +135,8 @@ function main(): i32 {
 ```
 
 <Aside type="note">
-  Currently, Zeus supports catching the `Error` type. Custom exception classes with inheritance are coming soon.
+  Zeus catches the built-in `Error` type today. Custom exception types that subclass `Error` — along
+  with the features listed below — are on the roadmap.
 </Aside>
 
 ## Best Practices
@@ -198,8 +199,3 @@ function safeGetElement(arr: i32[], index: i32): i32 {
 | Multiple catch blocks | Planned |
 | Rethrowing exceptions | Planned |
 
----
-
-## Next
-
-<a href="/language/modules/">Modules →</a>

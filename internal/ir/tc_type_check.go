@@ -1070,7 +1070,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		class := zeus_value.AsObjectType(valueType).Class
 		// Inherited members are resolvable: base-first flattened views let a derived class see
 		// (and, for same-named members, shadow) its base's fields and methods.
-		properties := zeus_value.FlattenedInstanceProperties(class)
+		properties := class.Layout().Fields
 		methods := zeus_value.FlattenedMethods(class)
 		isFound := false
 		isAccessible := false

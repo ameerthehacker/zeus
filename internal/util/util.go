@@ -13,10 +13,24 @@ func GetClassMethodName(className string, methodName string) string {
 	return className + "." + methodName
 }
 
+// FactoryFunctionPrefix is the naming prefix for every class factory function. The Zig runtime
+// calls the primordial ones by name (e.g. zeus_new_string), so this must stay in sync with the
+// runtime's extern declarations. Shared here so both codegen and the IR lowering pass that
+// synthesizes user-class factories agree on the symbol name.
+const FactoryFunctionPrefix = "zeus_new_"
+
+// GetFactoryFunctionName returns the factory function name for a class.
+// e.g. "u8[]" -> "zeus_new_u8_array", "string" -> "zeus_new_string", "MyClass" -> "zeus_new_MyClass".
+func GetFactoryFunctionName(className string) string {
+	// Replace [] with _array for array types
+	mangledName := strings.ReplaceAll(className, "[]", "_array")
+	return FactoryFunctionPrefix + mangledName
+}
+
 func GetPropertyIndex(class *zeus_value.Class, propertyName string) int {
-	// Fields are laid out base-first; FlattenedInstanceProperties yields that exact order
-	// (and excludes statics, which live in globals, not the instance struct).
-	for instanceIndex, property := range zeus_value.FlattenedInstanceProperties(class) {
+	// Layout().Fields is base-first (and excludes statics, which live in globals, not the
+	// instance struct), so the field's position is its instance struct slot (after the header).
+	for instanceIndex, property := range class.Layout().Fields {
 		if property.Property.Name == propertyName {
 			return instanceIndex + 1 // skip the obj header struct
 		}
@@ -24,32 +38,12 @@ func GetPropertyIndex(class *zeus_value.Class, propertyName string) int {
 	return -1
 }
 
-// GetVTableSlot returns the vtable slot for a concrete compiled method (as opposed to a call
-// site, which uses GetMethodIndex on a source name). It matches on the IR name first — the exact
-// function identity — then falls back to the source name. This resolves both accessors (whose
-// descriptor keeps the mangled #get_/#set_ name while the compiled function's source name is the
-// property name) and extern methods (compiled under a class-scoped IR name).
-func GetVTableSlot(class *zeus_value.Class, method *zeus_value.Function) int {
-	flat := zeus_value.FlattenedVTableMethods(class)
-	for i, m := range flat {
-		if m.Method.Name == method.Name {
-			return i
-		}
-	}
-	for i, m := range flat {
-		if m.Method.SourceName() == method.SourceName() {
-			return i
-		}
-	}
-	return -1
-}
-
 func GetMethodIndex(class *zeus_value.Class, methodName string) int {
-	// FlattenedVTableMethods yields vtable slots in physical order across the inheritance
-	// chain (base methods first, overrides in the base's slot), so an inherited/overridden
-	// method resolves to the same index it occupies in a base class's vtable.
-	for methodIndex, method := range zeus_value.FlattenedVTableMethods(class) {
-		if method.Method.SourceName() == methodName {
+	// Layout().VTable yields slots in physical order across the inheritance chain (base methods
+	// first, overrides in the base's slot), so an inherited/overridden method resolves to the
+	// same index it occupies in a base class's vtable.
+	for methodIndex, entry := range class.Layout().VTable {
+		if entry.Method.Method.SourceName() == methodName {
 			return methodIndex
 		}
 	}

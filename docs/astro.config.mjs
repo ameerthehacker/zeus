@@ -8,7 +8,7 @@ const zeusGrammar = {
   patterns: [
     {
       name: 'keyword.control.zeus',
-      match: '\\b(if|else|for|while|break|continue|return|new|class|extends|private|protected|public|this|try|throw|catch|finally|constructor)\\b'
+      match: '\\b(if|else|for|while|break|continue|return|new|class|extends|super|private|protected|public|static|get|set|this|try|throw|catch|finally|constructor)\\b'
     },
     {
       name: 'storage.type.zeus',
@@ -107,12 +107,12 @@ export default defineConfig({
       },
       sidebar: [
         {
-          label: 'Introduction',
+          label: 'Getting Started',
           items: [
             { label: 'Why Zeus?', slug: 'why-zeus' },
             { label: 'Installation', slug: 'getting-started/installation' },
             { label: 'Hello World', slug: 'getting-started/hello-world' },
-            { label: 'IDE Setup', slug: 'getting-started/ide-setup' },
+            { label: 'Editor Setup', slug: 'getting-started/ide-setup' },
           ],
         },
         {
@@ -124,31 +124,33 @@ export default defineConfig({
             { label: 'Control Flow', slug: 'language/control-flow' },
             { label: 'Functions', slug: 'language/functions' },
             { label: 'Closures', slug: 'language/closures' },
-            { label: 'Classes', slug: 'language/classes' },
             { label: 'Arrays', slug: 'language/arrays' },
             { label: 'Strings', slug: 'language/strings' },
             { label: 'Modules', slug: 'language/modules' },
             { label: 'Exception Handling', slug: 'language/exception-handling' },
-            { label: 'Built-in Functions', slug: 'language/built-in-functions' },
           ],
         },
         {
-          label: 'Building Programs',
+          label: 'Classes & OOP',
+          items: [
+            { label: 'Classes', slug: 'language/classes' },
+            { label: 'Encapsulation & Accessors', slug: 'language/encapsulation' },
+            { label: 'Static Members', slug: 'language/static-members' },
+            { label: 'Inheritance', slug: 'language/inheritance' },
+          ],
+        },
+        {
+          label: 'Standard Library',
+          items: [
+            { label: 'Console', slug: 'language/console' },
+            { label: 'Timers', slug: 'language/timers' },
+          ],
+        },
+        {
+          label: 'Tooling',
           items: [
             { label: 'Compiling Programs', slug: 'tooling/release-builds' },
-          ],
-        },
-        {
-          label: 'Development Tools',
-          items: [
             { label: 'Language Server', slug: 'tooling/lsp' },
-          ],
-        },
-        {
-          label: 'Examples',
-          items: [
-            { label: 'Fibonacci', slug: 'examples/fibonacci' },
-            { label: 'Calculator', slug: 'examples/calculator' },
           ],
         },
         {
@@ -158,10 +160,9 @@ export default defineConfig({
           ],
         },
         {
-          label: 'Planned Features',
+          label: 'Roadmap',
           badge: { text: 'Planned', variant: 'note' },
           items: [
-            { label: 'Inheritance', slug: 'coming-soon/inheritance' },
             { label: 'Interfaces', slug: 'coming-soon/interfaces' },
           ],
         },
@@ -169,7 +170,6 @@ export default defineConfig({
           label: 'Contributing',
           items: [
             { label: 'Building from Source', slug: 'developer/building-from-source' },
-            { label: 'Compiler Internals', slug: 'developer/compiler-architecture' },
           ],
         },
       ],

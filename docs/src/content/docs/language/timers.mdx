@@ -1,0 +1,136 @@
+---
+title: Timers
+description: Schedule callbacks with setTimeout and setInterval using the built-in async event loop.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus ships a built-in async event loop backed by [libxev](https://github.com/mitchellh/libxev). You
+can schedule callbacks to run after a delay or on a repeating interval — no setup required.
+
+After all module-level code runs, Zeus automatically drains any pending timers before the process
+exits. You never start or stop the loop manually.
+
+## setTimeout
+
+Schedules a callback to run once after a delay.
+
+```zeus
+setTimeout(callback: () => void, delay: i32): i32
+```
+
+- `callback` — a zero-argument function to invoke after the delay.
+- `delay` — delay in milliseconds (values ≤ 0 fire on the next tick).
+- **Returns** a timer ID you can pass to `clearTimeout` to cancel it.
+
+```zeus
+setTimeout(() => {
+  console.log("Runs after module-level code");
+}, 500);
+
+console.log("Runs first");
+```
+
+Output:
+
+```
+Runs first
+Runs after module-level code
+```
+
+The callback fires after module-level code because Zeus drains the event loop as part of shutdown.
+Callbacks are closures, so they capture surrounding variables:
+
+```zeus
+let message: string = "hello from closure";
+
+setTimeout(() => {
+  console.log(message);
+}, 100);
+```
+
+## clearTimeout
+
+Cancels a timer scheduled with `setTimeout` before it fires. If the ID doesn't match a pending
+timer, it does nothing.
+
+```zeus
+let id: i32 = setTimeout(() => {
+  console.log("this will never run");
+}, 1000);
+
+clearTimeout(id);
+console.log("timer cancelled");
+```
+
+Output:
+
+```
+timer cancelled
+```
+
+## setInterval
+
+Schedules a callback to run repeatedly at a fixed interval.
+
+```zeus
+setInterval(callback: () => void, delay: i32): i32
+```
+
+- `callback` — invoked on each tick.
+- `delay` — time between firings in milliseconds (minimum 1ms).
+- **Returns** an interval ID you can pass to `clearInterval`.
+
+<Aside type="caution">
+  An interval that is never cleared keeps the event loop alive indefinitely. Always call
+  `clearInterval` when you're done — often from inside the callback itself.
+</Aside>
+
+To stop an interval from within its own callback, declare the ID variable *before* the
+`setInterval` call so the closure can capture it:
+
+```zeus
+let count: i32 = 0;
+let timer = setInterval(() => {
+  count += 1;
+  console.log("tick");
+  if (count >= 5) {
+    clearInterval(timer);
+  }
+}, 200);
+```
+
+This works because Zeus closures capture variables **by reference** — by the first tick, `timer`
+already holds the interval ID.
+
+## clearInterval
+
+Stops a repeating timer scheduled with `setInterval`. `clearTimeout` and `clearInterval` are
+interchangeable — either can cancel a timer created by either scheduling function.
+
+```zeus
+let id: i32 = setInterval(() => {
+  console.log("this will never run");
+}, 500);
+
+clearInterval(id);
+console.log("interval cancelled before first tick");
+```
+
+## Timer ordering
+
+When multiple timers are pending, Zeus fires them in ascending delay order — shortest delay first:
+
+```zeus
+setTimeout(() => { console.log("200ms"); }, 200);
+setTimeout(() => { console.log("50ms"); }, 50);
+setTimeout(() => { console.log("100ms"); }, 100);
+```
+
+Output:
+
+```
+50ms
+100ms
+200ms
+```

@@ -3,9 +3,14 @@ package ir
 import (
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/ameerthehacker/zeus/internal/lexer"
+	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/prelude"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
@@ -27,6 +32,17 @@ type IRBuilder struct {
 }
 
 func NewIRBuilder() *IRBuilder {
+	// Preludes are compiled once (lazily) before the first builder is populated, so the primordial
+	// classes they define are in the registry for every IR-gen — the real compiler and unit tests
+	// (which construct IRBuilders directly, bypassing the compiler) alike.
+	ensurePreludesLoaded()
+	return newIRBuilderInternal()
+}
+
+// newIRBuilderInternal creates a builder and registers the current registry primordials WITHOUT
+// triggering prelude loading. Used by NewIRBuilder (after preludes are loaded) and by the prelude
+// compilation itself, so compiling a prelude does not re-enter ensurePreludesLoaded (no recursion).
+func newIRBuilderInternal() *IRBuilder {
 	symbol_table := symbol_table.NewSymbolTable[zeus_value.Value]()
 	symbol_table.EnterScope()
 
@@ -46,6 +62,97 @@ func NewIRBuilder() *IRBuilder {
 	builder.initializePrimordials()
 
 	return builder
+}
+
+var preludeOnce sync.Once
+
+// ensurePreludesLoaded compiles the embedded prelude sources once and registers the resulting
+// primordial classes/functions. Runs before any builder is populated.
+func ensurePreludesLoaded() {
+	preludeOnce.Do(loadPreludes)
+}
+
+// reservedClassIds pins a fixed class ID for prelude classes that need one — Error's ID backs O(1)
+// exception-type matching (IsErrorClass). Add an entry to reserve an ID for a new prelude class.
+var reservedClassIds = map[string]int{"Error": zeus_value.ERROR_CLASS_ID}
+
+// loadPreludes discovers every embedded prelude .zs, compiles it, and registers the classes it
+// declares (extern free functions self-register during compile). `string` is loaded first because
+// other preludes reference it. A failure here is a compiler/prelude bug, not user input, so it panics.
+func loadPreludes() {
+	entries, err := prelude.FS.ReadDir(".")
+	if err != nil {
+		panic(fmt.Sprintf("reading preludes: %s", err))
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".zs") {
+			names = append(names, e.Name())
+		}
+	}
+	// `string` is the foundational primordial the others reference, so load it first; the rest are
+	// order-independent and loaded alphabetically for determinism.
+	sort.Slice(names, func(i, j int) bool {
+		const first = "string.zs"
+		if names[i] == first || names[j] == first {
+			return names[i] == first
+		}
+		return names[i] < names[j]
+	})
+
+	for _, name := range names {
+		src, err := prelude.FS.ReadFile(name)
+		if err != nil {
+			panic(fmt.Sprintf("reading prelude %s: %s", name, err))
+		}
+		builder, err := compilePrelude(string(src))
+		if err != nil {
+			panic(fmt.Sprintf("failed to load prelude %s: %s", name, err))
+		}
+		// A prelude's own class is the DECL_CLASS with an empty PrimordialName. The primordials that
+		// initializePrimordials re-emits into this throwaway builder (arrays + already-loaded
+		// preludes) all carry a non-empty tag, so this cleanly isolates what THIS file declares.
+		for _, instr := range builder.GetInstrs() {
+			if instr.Type != InstrTypeDeclClass {
+				continue
+			}
+			class := AsDeclClassInstrInput(instr.Input).Class
+			if class.PrimordialName != "" {
+				continue
+			}
+			// Any non-empty tag keeps the class on the internal-linkage + codegen factory path; the
+			// specific value is not read (only ARRAY and "" are special-cased elsewhere), so the
+			// class name serves. A reserved ID is applied when one is registered for this class.
+			class.PrimordialName = class.SourceName()
+			if id, ok := reservedClassIds[class.SourceName()]; ok {
+				class.Id = id
+			}
+			zeus_value.Registry.RegisterClass(class)
+		}
+	}
+}
+
+// compilePrelude lexes, parses, and IR-generates a prelude source, returning the populated builder.
+// Uses newIRBuilderInternal so it does not re-enter prelude loading. Extern free functions in the
+// source self-register into the registry during IR-gen (VisitFunctionDeclExpr).
+func compilePrelude(source string) (*IRBuilder, error) {
+	l := lexer.NewLexer(source)
+	tokens, lexErrs := l.Lex()
+	if len(lexErrs) > 0 {
+		return nil, fmt.Errorf("lex: %v", lexErrs)
+	}
+	program, parseErrs := parser.NewParser(tokens).ParseProgram()
+	if len(parseErrs) > 0 {
+		return nil, fmt.Errorf("parse: %v", parseErrs)
+	}
+	builder := newIRBuilderInternal()
+	mod := NewIRModule(builder, "<prelude>", false, nil)
+	for _, e := range mod.Generate(program) {
+		if e.Severity == zeus_error.ErrorSeverityError {
+			return nil, fmt.Errorf("irgen: %s", e.Message)
+		}
+	}
+	return builder, nil
 }
 
 // initializePrimordials registers all primordial classes and functions from the registry.
@@ -191,6 +298,25 @@ func (b *IRBuilder) SetInsertionBlock(block *BasicBlock) {
 func (b *IRBuilder) ResetToGlobalEnd() {
 	b.currentBlock = nil
 	b.insertionIndex = len(b.instrs)
+}
+
+// InsertionPoint is a snapshot of the builder's insertion state (current block + index). Take one
+// with SaveInsertionPoint and reapply it with RestoreInsertionPoint to temporarily retarget
+// insertion (e.g. ResetToGlobalEnd to synthesize a top-level function) and then restore it.
+type InsertionPoint struct {
+	block *BasicBlock
+	index int
+}
+
+// SaveInsertionPoint snapshots the current insertion state so it can be restored later.
+func (b *IRBuilder) SaveInsertionPoint() InsertionPoint {
+	return InsertionPoint{block: b.currentBlock, index: b.insertionIndex}
+}
+
+// RestoreInsertionPoint reapplies a snapshot taken by SaveInsertionPoint.
+func (b *IRBuilder) RestoreInsertionPoint(ip InsertionPoint) {
+	b.currentBlock = ip.block
+	b.insertionIndex = ip.index
 }
 
 func (b *IRBuilder) SetInsertionAfter(instr *Instr) {
@@ -552,6 +678,23 @@ func (b *IRBuilder) BuildNewObj(callee zeus_value.Value, args []zeus_value.Value
 		Type:   InstrTypeNewObj,
 		Output: result,
 		Input:  NewNewObjInstrInput(callee, args),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildAllocObj emits an ALLOC_OBJ for the given class. The output is typed as an object of that
+// class here (rather than via the type checker) because ALLOC_OBJ is synthesized during lowering,
+// after type checking has run.
+func (b *IRBuilder) BuildAllocObj(class *zeus_value.Class, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = zeus_value.NewObjectType(class)
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeAllocObj,
+		Output: result,
+		Input:  NewAllocObjInstrInput(class),
 		Span:   span,
 	})
 

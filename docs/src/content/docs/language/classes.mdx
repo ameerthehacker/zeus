@@ -1,13 +1,19 @@
 ---
 title: Classes
-description: Object-oriented programming with classes in Zeus.
+description: Define custom types with fields and methods, construct them with new, and work with object references.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Classes in Zeus provide a way to create custom types with properties and methods.
+A class defines a custom type with **fields** (data) and **methods** (behavior). This page covers
+defining and using classes; the rest of this section goes deeper:
+[Encapsulation & Accessors](/language/encapsulation/) for access control,
+[Static Members](/language/static-members/) for class-level state, and
+[Inheritance](/language/inheritance/) for subclassing.
 
-## Basic Class
+## Defining a class
+
+Declare fields with a type, then create instances with `new`:
 
 ```zeus
 class Rectangle {
@@ -22,7 +28,8 @@ rect.height = 5.0;
 
 ## Constructors
 
-Use `constructor` to initialize objects:
+A `constructor` initializes an object's fields. It runs automatically when you write
+`new ClassName(...)`:
 
 ```zeus
 class Point {
@@ -37,17 +44,13 @@ class Point {
 
 function main(): i32 {
   let p: Point = new Point(10, 20);
-  return p.x + p.y;  // Returns 30
+  return p.x + p.y;   // => 30
 }
 ```
 
-<Aside type="note">
-  The constructor is called automatically when you use `new ClassName(...)`.
-</Aside>
-
 ## Methods
 
-Classes can have methods that operate on the object:
+Methods are functions attached to a class that operate on the instance:
 
 ```zeus
 class Rectangle {
@@ -73,7 +76,8 @@ let a: f64 = rect.area();       // 50.0
 let p: f64 = rect.perimeter();  // 30.0
 ```
 
-Methods support [rest parameters](/language/functions/#rest-parameters) too — prefix the final parameter with `...`:
+Methods can take [rest parameters](/language/functions/#rest-parameters) — prefix the final
+parameter with `...`:
 
 ```zeus
 class Accumulator {
@@ -96,9 +100,10 @@ let acc: Accumulator = new Accumulator(10);
 let total: i32 = acc.sum(1, 2, 3);  // 16
 ```
 
-## The `this` Keyword
+## The `this` keyword
 
-Inside a class, `this` refers to the current instance:
+Inside a method, `this` refers to the current instance — use it to read and update the object's own
+fields:
 
 ```zeus
 class Counter {
@@ -108,62 +113,51 @@ class Counter {
     this.value = start;
   }
 
-  public increment() {
+  public increment(): void {
     this.value = this.value + 1;
-  }
-
-  public add(amount: i32) {
-    this.value = this.value + amount;
   }
 
   public getValue(): i32 {
     return this.value;
   }
 }
+
+function main(): i32 {
+  let c: Counter = new Counter(41);
+  c.increment();
+  return c.getValue();   // => 42
+}
 ```
 
-## Access Modifiers
+## Object references
 
-Zeus supports `public` and `private` access modifiers:
+Objects are passed by reference. A function that mutates its parameter changes the caller's object:
 
 ```zeus
-class BankAccount {
-  private balance: i32;
-  public accountId: i32;
+class Box {
+  public value: i32;
+  constructor(v: i32) { this.value = v; }
+}
 
-  constructor(id: i32, initialBalance: i32) {
-    this.accountId = id;
-    this.balance = initialBalance;
-  }
-
-  public deposit(amount: i32) {
-    this.balance = this.balance + amount;
-  }
-
-  public getBalance(): i32 {
-    return this.balance;
-  }
+function modifyBox(box: Box): void {
+  box.value = 999;
 }
 
 function main(): i32 {
-  let account: BankAccount = new BankAccount(1, 100);
-  account.deposit(50);
-  
-  // account.balance = 0;  // Error: 'balance' is private
-  
-  return account.getBalance();  // 150
+  let myBox: Box = new Box(10);
+  modifyBox(myBox);
+  return myBox.value;   // => 999
 }
 ```
 
-## Nested Objects
+## Nested objects
 
-Classes can contain other objects as properties:
+A field can hold another object, letting you compose larger structures:
 
 ```zeus
 class Point {
   public x: i32;
   public y: i32;
-
   constructor(x: i32, y: i32) {
     this.x = x;
     this.y = y;
@@ -182,47 +176,19 @@ class Line {
   public length(): i32 {
     let dx: i32 = this.end.x - this.start.x;
     let dy: i32 = this.end.y - this.start.y;
-    return dx + dy;  // Simplified (Manhattan distance)
+    return dx + dy;   // Manhattan distance
   }
 }
 
 function main(): i32 {
-  let p1: Point = new Point(0, 0);
-  let p2: Point = new Point(10, 20);
-  let line: Line = new Line(p1, p2);
-  
-  return line.length();  // Returns 30
+  let line: Line = new Line(new Point(0, 0), new Point(10, 20));
+  return line.length();   // => 30
 }
 ```
 
-## Object References
+## Null and null-safety
 
-Objects are passed by reference:
-
-```zeus
-class Box {
-  public value: i32;
-
-  constructor(v: i32) {
-    this.value = v;
-  }
-}
-
-function modifyBox(box: Box) {
-  box.value = 999;
-}
-
-function main(): i32 {
-  let myBox: Box = new Box(10);
-  modifyBox(myBox);
-  
-  return myBox.value;  // Returns 999
-}
-```
-
-## Null Objects
-
-Object variables can be `null`:
+An object variable can be `null`, either explicitly or when left uninitialized:
 
 ```zeus
 class Node {
@@ -231,44 +197,26 @@ class Node {
 
   constructor(v: i32) {
     this.value = v;
-    this.next = null;  // No next node
+    this.next = null;   // no next node yet
   }
-}
-
-function main(): i32 {
-  let node: Node = new Node(42);
-  // node.next is null
-  
-  return node.value;
 }
 ```
 
-### Null Reference Checking
-
-Zeus automatically checks for null when accessing object properties. Attempting to access a property on a null object throws a `NullReferenceException`:
+Zeus checks for null on every property access. Reaching through a null reference throws a
+`NullReferenceException`:
 
 ```zeus
-class Person {
-  public name: string;
-  constructor(name: string) {
-    this.name = name;
-  }
-}
-
-let person: Person;       // null by default
-console.log(person.name);         // Throws NullReferenceException!
+let person: Person;        // null by default
+console.log(person.name);  // throws NullReferenceException
 ```
 
 <Aside type="caution">
-  Always ensure objects are initialized before accessing their properties, or use try-catch to handle potential null reference errors.
+  Initialize objects before using them, or wrap access in `try`/`catch` to recover from a null
+  reference. See [Exception Handling](/language/exception-handling/).
 </Aside>
 
-### Handling Null Safely
-
-You can use try-catch to handle null reference errors:
-
 ```zeus
-function getPersonName(person: Person): string {
+function getName(person: Person): string {
   try {
     return person.name;
   } catch (e: Error) {
@@ -277,37 +225,9 @@ function getPersonName(person: Person): string {
 }
 ```
 
-## Method Chaining
+## Classes with arrays
 
-Methods can return `this` for chaining (when returning the same type):
-
-```zeus
-class Builder {
-  public x: i32;
-  public y: i32;
-  public z: i32;
-
-  constructor() {
-    this.x = 0;
-    this.y = 0;
-    this.z = 0;
-  }
-
-  public setX(val: i32): i32 {
-    this.x = val;
-    return this.x;
-  }
-
-  public setY(val: i32): i32 {
-    this.y = val;
-    return this.y;
-  }
-}
-```
-
-## Classes with Arrays
-
-Classes can have array properties:
+A field can be an array. Initialize it in the constructor, then use the array methods:
 
 ```zeus
 class Team {
@@ -317,7 +237,7 @@ class Team {
     this.scores = new i32[];
   }
 
-  public addScore(score: i32) {
+  public addScore(score: i32): void {
     this.scores.push(score);
   }
 
@@ -331,29 +251,22 @@ function main(): i32 {
   team.addScore(10);
   team.addScore(20);
   team.addScore(30);
-  
-  return team.getScore(1);  // Returns 20
+  return team.getScore(1);   // => 20
 }
 ```
 
----
+## Anonymous classes
 
-## Anonymous Classes
+A class expression creates a type inline, without a top-level declaration — handy for one-off
+objects.
 
-A class expression can be used inline without declaring a named type. This is useful for one-off objects or when you want to encapsulate logic without polluting the namespace.
-
-### Assign to a variable
-
-The most common form — assign the anonymous class to a `const`, then use the const as the type:
+Assign it to a `const` and use that name as the type:
 
 ```zeus
 function main(): i32 {
   const Counter = class {
     public n: i32;
-
-    constructor(start: i32) {
-      this.n = start;
-    }
+    constructor(start: i32) { this.n = start; }
 
     inc(): i32 {
       this.n = this.n + 1;
@@ -362,57 +275,41 @@ function main(): i32 {
   }
 
   let c = new Counter(9);
-  return c.inc();  // 10
+  return c.inc();   // => 10
 }
 ```
 
-### Named class expression
-
-You can give the class an internal name. Both the variable name and the class name are then usable in the same scope:
+You can also give the expression an internal name — both the variable and the class name are then
+usable:
 
 ```zeus
 function main(): i32 {
   const Vec = class Vector {
     public x: i32;
     public y: i32;
-
     constructor(x: i32, y: i32) {
       this.x = x;
       this.y = y;
     }
-
     sum(): i32 { return this.x + this.y; }
   }
 
   let a = new Vec(3, 4);     // via the const
   let b = new Vector(1, 2);  // via the class name
-  return a.sum() + b.sum();  // 10
+  return a.sum() + b.sum();  // => 10
 }
 ```
 
-### Inline instantiation
-
-Use `new (class { ... })(args)` to create and instantiate an anonymous class in a single expression — no variable needed for the class itself:
+Or define and instantiate in a single expression — the class equivalent of an IIFE:
 
 ```zeus
 function main(): i32 {
   let obj = new (class {
     public v: i32;
-
     constructor(v: i32) { this.v = v; }
-
     get(): i32 { return this.v; }
   })(42);
 
-  return obj.get();  // 42
+  return obj.get();   // => 42
 }
 ```
-
-This is the class equivalent of an IIFE: the class is defined and immediately instantiated. It's useful when you need a one-off object with methods but don't want to declare a named class.
-
----
-
-## Next
-
-<a href="/language/arrays/">Arrays →</a>
-

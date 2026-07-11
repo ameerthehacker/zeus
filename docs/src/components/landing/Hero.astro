@@ -1,0 +1,290 @@
+---
+import CodeWindow from './CodeWindow.astro';
+
+const installCmd = 'brew tap ameerthehacker/zeus && brew install zeus';
+---
+
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <div class="container hero-grid">
+    <!-- left column -->
+    <div class="hero-left">
+      <p class="eyebrow">
+        <span class="pulse"></span> alpha · compiled · garbage-collected
+      </p>
+
+      <h1 class="headline">
+        Feels like <span class="hl-yellow">TypeScript</span>.<br />
+        Ships as a <span class="hl-cyan">native binary</span>.
+      </h1>
+
+      <p class="subtitle">
+        Zeus borrows the syntax you already know from TypeScript and compiles straight to
+        native machine code via <strong>LLVM</strong> — no interpreter, no VM, no runtime tax.
+        Automatic garbage collection and first-class <strong>editor tooling</strong> come
+        built in.
+      </p>
+
+      <div class="actions">
+        <a href="/getting-started/installation/" class="btn btn-primary">
+          Get started
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+        </a>
+        <a href="/why-zeus/" class="btn btn-ghost">Read the docs</a>
+      </div>
+
+      <div class="install">
+        <p class="install-label">Install</p>
+        <div class="install-row">
+          <code class="install-cmd" id="install-cmd">{installCmd}</code>
+          <button class="copy-btn" type="button" data-copy={installCmd} aria-label="Copy install command">
+            <svg class="ico-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+            <svg class="ico-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          </button>
+        </div>
+        <p class="install-note">macOS · Apple Silicon &amp; Intel · Linux coming soon</p>
+      </div>
+    </div>
+
+    <!-- right column -->
+    <div class="hero-right">
+      <CodeWindow />
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(2.5rem, 6vw, 5.5rem) 0 clamp(3rem, 7vw, 6rem);
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg-grad-b) 100%);
+  }
+
+  .hero-bg {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle at 15% 15%, rgba(234, 179, 8, 0.12) 0%, transparent 42%),
+      radial-gradient(circle at 90% 30%, rgba(34, 211, 238, 0.1) 0%, transparent 45%),
+      linear-gradient(rgba(45, 74, 111, 0.16) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45, 74, 111, 0.16) 1px, transparent 1px);
+    background-size: auto, auto, 46px 46px, 46px 46px;
+    mask-image: radial-gradient(ellipse 90% 80% at 50% 25%, #000 40%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 25%, #000 40%, transparent 100%);
+  }
+
+  :global(:root[data-theme='light']) .hero-bg {
+    background-image:
+      radial-gradient(circle at 15% 15%, rgba(234, 179, 8, 0.14) 0%, transparent 42%),
+      radial-gradient(circle at 90% 30%, rgba(6, 182, 212, 0.12) 0%, transparent 45%),
+      linear-gradient(rgba(148, 163, 184, 0.18) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+    background-size: auto, auto, 46px 46px, 46px 46px;
+  }
+
+  .hero-grid {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: center;
+  }
+
+  .hero-left {
+    max-width: 34rem;
+    min-width: 0;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 1.2rem;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.02em;
+    color: var(--text-dim);
+    background: var(--surface);
+  }
+
+  .pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--zeus-yellow-400);
+    box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.6);
+    animation: pulsering 2.2s ease-out infinite;
+  }
+
+  @keyframes pulsering {
+    0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.55); }
+    70% { box-shadow: 0 0 0 7px rgba(250, 204, 21, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+  }
+
+  .headline {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: clamp(2.15rem, 5.4vw, 3.7rem);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    color: var(--text);
+    overflow-wrap: break-word;
+  }
+
+  .hl-yellow {
+    color: var(--zeus-yellow-400);
+    text-shadow: 0 0 30px rgba(250, 204, 21, 0.25);
+  }
+  :global(:root[data-theme='light']) .hl-yellow {
+    color: var(--zeus-yellow-600);
+    text-shadow: none;
+  }
+  .hl-cyan {
+    color: var(--zeus-cyan-400);
+    text-shadow: 0 0 30px rgba(34, 211, 238, 0.22);
+  }
+  :global(:root[data-theme='light']) .hl-cyan {
+    color: var(--zeus-cyan-500);
+    text-shadow: none;
+  }
+
+  .subtitle {
+    margin: 1.4rem 0 0;
+    font-size: clamp(1rem, 1.4vw, 1.14rem);
+    color: var(--text-dim);
+    max-width: 33rem;
+  }
+  .subtitle strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 2rem;
+  }
+
+  .install {
+    margin-top: 2.2rem;
+  }
+
+  .install-label {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--text-faint);
+  }
+
+  .install-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 33rem;
+    padding: 0.35rem 0.35rem 0.35rem 0.9rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface);
+  }
+
+  .install-cmd {
+    flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text);
+    scrollbar-width: none;
+  }
+  .install-cmd::-webkit-scrollbar {
+    display: none;
+  }
+  .install-cmd::before {
+    content: '$ ';
+    color: var(--accent-2);
+  }
+
+  .copy-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 7px;
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text-dim);
+    transition: color 0.15s ease, border-color 0.15s ease;
+  }
+  .copy-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .copy-btn .ico-check {
+    display: none;
+    color: #22c55e;
+  }
+  .copy-btn.copied .ico-copy {
+    display: none;
+  }
+  .copy-btn.copied .ico-check {
+    display: block;
+  }
+
+  .install-note {
+    margin: 0.7rem 0 0;
+    font-size: 0.82rem;
+    color: var(--text-faint);
+  }
+
+  .hero-right {
+    position: relative;
+    min-width: 0;
+  }
+
+  @media (max-width: 56rem) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2.5rem;
+    }
+    .hero-left {
+      max-width: 40rem;
+    }
+    .hero-right {
+      max-width: 34rem;
+    }
+  }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('.copy-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.getAttribute('data-copy') ?? '';
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        return;
+      }
+      btn.classList.add('copied');
+      window.setTimeout(() => btn.classList.remove('copied'), 1600);
+    });
+  });
+</script>

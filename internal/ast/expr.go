@@ -242,9 +242,12 @@ func (f *FunctionCallExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 type FunctionDeclExprNode struct {
 	Name       *IdentifierExprNode
 	Params     []*VarDeclNode
-	Body       *BlockStmtNode
+	Body       *BlockStmtNode // nil for extern functions
 	ReturnType *ValueTypeNode
-	Span       *token.Span
+	// ExternSymbol, when non-empty, marks a body-less function forwarding to the named Zig runtime
+	// symbol (a primordial function defined in a prelude). Body is nil in that case.
+	ExternSymbol string
+	Span         *token.Span
 }
 
 func (f *FunctionDeclExprNode) GetSpan() *token.Span {
@@ -434,12 +437,15 @@ const (
 type ClassMethod struct {
 	Name           *IdentifierExprNode
 	Params         []*VarDeclNode
-	Body           *BlockStmtNode
+	Body           *BlockStmtNode // nil for extern methods
 	ReturnType     *ValueTypeNode
 	AccessModifier *token.Token
 	Accessor       AccessorKind
 	IsStatic       bool
-	Span           *token.Span
+	// ExternSymbol, when non-empty, marks this as an extern method whose body forwards to the
+	// named Zig runtime symbol (no Zeus body). Body is nil in that case.
+	ExternSymbol string
+	Span         *token.Span
 }
 
 // Helper functions
