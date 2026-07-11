@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -131,7 +132,7 @@ func (p *Parser) parseFunctionSignature(functionName *ast.IdentifierExprNode, is
 	if isClassMethod {
 		fnType = "method"
 	}
-	previousToken := p.tokens[p.current]
+	previousToken := p.peek()
 	// consume the params
 	params := []*ast.VarDeclNode{}
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
@@ -552,12 +553,32 @@ func NewParser(tokens []*token.Token) *Parser {
 	return &Parser{tokens: tokens, current: 0, errors: []*zeus_error.ZeusError{}, prefixParselets: prefixParselets, infixParselets: infixParselets}
 }
 
+// tokenAt returns the token at index i, clamping out-of-range indices to the
+// final EOF token. The lexer always appends an EOF token, so the last token is a
+// sticky sentinel: once the cursor reaches or passes it, every read yields EOF and
+// isEOF() stays true. This makes the parser immune to index-out-of-range panics
+// from any code path that consumes past the end of the token stream (which is easy
+// to hit on malformed/partial input from an editor).
+func (p *Parser) tokenAt(i int) *token.Token {
+	if len(p.tokens) == 0 {
+		// Defensive: a parser constructed with no tokens. Synthesize an EOF.
+		return token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))
+	}
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(p.tokens) {
+		i = len(p.tokens) - 1
+	}
+	return p.tokens[i]
+}
+
 func (p *Parser) isEOF() bool {
-	return p.tokens[p.current].Type == token.TokenTypeEOF
+	return p.tokenAt(p.current).Type == token.TokenTypeEOF
 }
 
 func (p *Parser) peek() *token.Token {
-	return p.tokens[p.current]
+	return p.tokenAt(p.current)
 }
 
 func (p *Parser) checkToken(tokenType token.TokenType, extraInfo ...string) bool {
@@ -671,8 +692,11 @@ func (p *Parser) consumeAccessModifier() *token.Token {
 }
 
 func (p *Parser) consume() *token.Token {
-	token := p.tokens[p.current]
-	p.current++
+	token := p.tokenAt(p.current)
+	// Never advance past the EOF sentinel so the cursor stays in bounds.
+	if p.current < len(p.tokens) {
+		p.current++
+	}
 	return token
 }
 
@@ -699,21 +723,23 @@ func (p *Parser) consumeIndexingMetadata() *ast.IndexingMeta {
 }
 
 func (p *Parser) consumeToken(expectedTokenType token.TokenType, extraInfo ...string) *token.Token {
-	token := p.tokens[p.current]
+	token := p.tokenAt(p.current)
 	if token.Type != expectedTokenType {
 		p.expectedButGotError(expectedTokenType.String(), token, extraInfo...)
-	} else {
+	} else if p.current < len(p.tokens) {
 		p.current++
 	}
 	return token
 }
 
 func (p *Parser) consumeOptionalToken(expectedTokenType token.TokenType) *token.Token {
-	token := p.tokens[p.current]
+	token := p.tokenAt(p.current)
 	if token.Type != expectedTokenType {
 		return nil
 	}
-	p.current++
+	if p.current < len(p.tokens) {
+		p.current++
+	}
 	return token
 }
 
@@ -812,7 +838,7 @@ func (p *Parser) expectedError(expected string, extraInfo ...string) {
 	if len(extraInfo) > 0 {
 		message += fmt.Sprintf(" %s", strings.Join(extraInfo, " "))
 	}
-	p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, message, p.tokens[p.current].Span))
+	p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, message, p.peek().Span))
 }
 
 func (p *Parser) expectedButGotError(expected string, token *token.Token, extraInfo ...string) {
@@ -944,6 +970,11 @@ func (p *Parser) parseForStmt() *ast.ForStmtNode {
 				decl := p.parseVarDecl(true, false, varDeclType, "for loop initializer")
 				decls = append(decls, *decl)
 				p.consumeOptionalToken(token.TokenTypeComma)
+			}
+			// `for (let ; ...)` / `for (let` reach here with no declarations; report a clean
+			// error (which unwinds to the parser's recover) instead of indexing decls[-1].
+			if len(decls) == 0 {
+				p.expectedError("variable declaration", "in for loop initializer")
 			}
 			span := &token.Span{Start: varDeclTypeToken.Span.Start, End: decls[len(decls)-1].GetSpan().End}
 			init = &ast.VarDeclStmtNode{Decls: decls, Span: span}
@@ -1262,7 +1293,35 @@ func (p *Parser) parseExternFunctionStmt() ast.StmtNode {
 	}}
 }
 
+// isNilNode reports whether an AST node interface holds a nil concrete pointer.
+// Statement/expression parse helpers return concrete pointer types (e.g. *ast.IfStmtNode);
+// returning a nil pointer through an interface produces a non-nil interface holding a nil
+// pointer (Go's typed-nil gotcha). Collectors that check `node != nil` would then keep a
+// node that crashes any later walk. Normalizing typed nils to a real nil interface at the
+// parse boundary makes partial/erroneous input safe.
+func isNilNode(node any) bool {
+	if node == nil {
+		return true
+	}
+	v := reflect.ValueOf(node)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
+		return v.IsNil()
+	}
+	return false
+}
+
 func (p *Parser) ParseStmt() ast.StmtNode {
+	stmt := p.parseStmt()
+	// Never let a typed-nil statement escape (produced when a sub-parser bails out on
+	// malformed input). Callers rely on `stmt != nil` to skip failed statements.
+	if isNilNode(stmt) {
+		return nil
+	}
+	return stmt
+}
+
+func (p *Parser) parseStmt() ast.StmtNode {
 	// handle panics and synchronize the parser
 	defer p.handlePanic()
 

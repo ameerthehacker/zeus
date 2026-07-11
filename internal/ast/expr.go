@@ -284,6 +284,10 @@ type IndexingMeta struct {
 func (i *IndexingMeta) String() string {
 	indexingExprsStr := []string{}
 	for _, indexingExpr := range i.IndexingExprs {
+		if indexingExpr == nil {
+			indexingExprsStr = append(indexingExprsStr, "[]")
+			continue
+		}
 		indexingExprsStr = append(indexingExprsStr, fmt.Sprintf("[%s]", indexingExpr.String()))
 	}
 	return strings.Join(indexingExprsStr, "")
@@ -303,6 +307,11 @@ func (t *IndexingExprNode) PrettyString() string {
 	if t.IndexingMeta.IndexingExprs != nil {
 		indexingExprsStr := []string{}
 		for _, indexingExpr := range t.IndexingMeta.IndexingExprs {
+			// An index can be nil for empty brackets (e.g. `arr[]` in type position).
+			if indexingExpr == nil {
+				indexingExprsStr = append(indexingExprsStr, "[]")
+				continue
+			}
 			indexingExprsStr = append(indexingExprsStr, fmt.Sprintf("[%s]", indexingExpr.PrettyString()))
 		}
 		return fmt.Sprintf("%s%s", t.Array.PrettyString(), strings.Join(indexingExprsStr, ""))

@@ -68,6 +68,9 @@ func (l *Lexer) shouldInsertSemicolon() bool {
 }
 
 func (l *Lexer) isNewLine() bool {
+	if l.isEOF(0) {
+		return false
+	}
 	return l.source[l.cursor] == '\n' || l.source[l.cursor] == '\r'
 }
 
@@ -166,7 +169,20 @@ func (l *Lexer) eatNumber() {
 		}
 	}
 
-	l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
+	literal := string(l.source[start:l.cursor])
+
+	// A radix-prefixed literal (0x / 0b / 0o) must have at least one digit after
+	// the prefix. Without this check "0x", "0b", "0o" would lex as valid number
+	// tokens and later crash integer parsing downstream.
+	if !isRadix10 && len(literal) <= 2 {
+		l.pushError(zeus_error.NewZeusError(
+			zeus_error.ErrorSeverityError,
+			fmt.Sprintf("malformed number literal '%s': missing digits after radix prefix", literal),
+			token.NewSpan(*startPosition, *endPosition),
+		))
+	}
+
+	l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, literal, token.NewSpan(*startPosition, *endPosition)))
 }
 
 func (l *Lexer) eatStringOrChar(isChar bool) {
