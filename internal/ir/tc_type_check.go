@@ -82,7 +82,9 @@ func (p *TypeCheckingPass) tcFunctorCast(tc *TypeChecker, instr *Instr, sourceCl
 
 	var callMethod *zeus_value.Function
 	for _, m := range sourceClass.Class.Methods {
-		if m.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && m.AccessModifier.Type == token.TokenTypePublic {
+		// A nil access modifier means the default (public).
+		isPublic := m.AccessModifier == nil || m.AccessModifier.Type == token.TokenTypePublic
+		if m.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && isPublic {
 			callMethod = m.Method
 			m.Method.IsUsed = true
 			break
@@ -1017,6 +1019,9 @@ func (p *TypeCheckingPass) tcNewObj(tc *TypeChecker, instr *Instr) {
 			Message: fmt.Sprintf("cannot create object of type '%s'", tc.getValueType(input.Callee)),
 			Span:    input.Callee.GetSpan(),
 		})
+		// Callee is not a class (e.g. `new (0)`). Stop here rather than building an
+		// ObjectType with a nil class, which later type-check stages would dereference.
+		return
 	}
 
 	class := zeus_value.AsClass(input.Callee)
@@ -1408,7 +1413,9 @@ func (p *TypeCheckingPass) tcIndirectFuncCall(tc *TypeChecker, instr *Instr) {
 	// TC runs before lowering, so functor INDIRECT_FUNC_CALLs haven't been rewritten to CALL_METHOD yet.
 	if objectType != nil {
 		for _, method := range objectType.Class.Methods {
-			if method.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && method.AccessModifier.Type == token.TokenTypePublic {
+			// A nil access modifier means the default (public).
+			isPublic := method.AccessModifier == nil || method.AccessModifier.Type == token.TokenTypePublic
+			if method.Method.SourceName() == token.FUNCTOR_CALL_METHOD_NAME && isPublic {
 				functionType = zeus_value.AsFunctionType(zeus_value.GetValueType(method.Method))
 				method.Method.IsUsed = true
 				fnSpan = method.Method.GetSpan()

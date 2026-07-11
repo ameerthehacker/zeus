@@ -1,0 +1,2 @@
+go test fuzz v1
+string("function reverseString(s:A){let A:u8[]=0\nlet rev=new A[]\nlet B,string=A00\n00000000000000000\"\"0000000000000000000\"\"00if(A000000000000(\"\"))0;}")
