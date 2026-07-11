@@ -159,10 +159,11 @@ import { Point } from "../models/point.zs";
 Zeus includes a (growing) standard library at `@std/`:
 
 ```zeus
-import { add } from "@std/math/index.zs";
+import { red, bold } from "@std/console/colors";
 
 function main(): i32 {
-  return add(5, 3);
+  console.log(bold(red("Hello from the standard library!")));
+  return 0;
 }
 ```
 

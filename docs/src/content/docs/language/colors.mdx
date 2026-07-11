@@ -1,0 +1,67 @@
+---
+title: Colors
+description: Chalk-like terminal colors — wrap strings in ANSI escape codes for colored output.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The `@std/console/colors` module provides chalk-like helpers for coloring terminal output. Each
+function wraps its text in an [ANSI escape code](https://en.wikipedia.org/wiki/ANSI_escape_code) and
+returns a new `string` — pass the result straight to `console.log`.
+
+```zeus
+import { red, green, bold } from "@std/console/colors";
+
+function main(): i32 {
+  console.log(red("Something went wrong"));
+  console.log(green("All tests passed"));
+  console.log(bold("Important!"));
+  return 0;
+}
+```
+
+## Combining styles
+
+Because each function just returns a string, you compose styles by **nesting** calls:
+
+```zeus
+import { red, bold, underline } from "@std/console/colors";
+
+console.log(bold(red("Fatal error")));       // bold + red
+console.log(underline(bold("Heading")));     // underline + bold
+```
+
+## Available functions
+
+Every function has the signature `(text: string): string`.
+
+**Foreground colors**
+
+`black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, `gray` (alias `grey`)
+
+**Background colors**
+
+`bgBlack`, `bgRed`, `bgGreen`, `bgYellow`, `bgBlue`, `bgMagenta`, `bgCyan`, `bgWhite`
+
+**Styles**
+
+`bold`, `dim`, `italic`, `underline`, `inverse`, `strikethrough`
+
+```zeus
+import { yellow, bgBlue, white, italic } from "@std/console/colors";
+
+console.log(yellow("warning: low disk space"));
+console.log(bgBlue(white(" INFO ")));
+console.log(italic("a subtle note"));
+```
+
+<Aside type="note">
+  Colors rely on ANSI escape codes, which are interpreted by the terminal. When output is redirected
+  to a file or a program that doesn't understand ANSI, the raw escape sequences appear in the text.
+</Aside>
+
+<Aside type="tip">
+  These helpers are plain Zeus built on the `\e` escape (the ESC / `0x1b` byte) and string
+  concatenation — see [Strings](/language/strings/). You can build your own ANSI helpers the same
+  way: `"\e[1m" + text + "\e[0m"`.
+</Aside>

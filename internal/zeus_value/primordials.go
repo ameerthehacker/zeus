@@ -219,6 +219,10 @@ const (
 // defined in prelude/console.zs (compiled + registered at compiler startup), not built here.
 const ZEUS_PRIMORDIAL_CONSOLE = "Console"
 
+// ZEUS_PRIMORDIAL_MATH is the Math class name / primordial tag. The class is defined in
+// prelude/math.zs and exposed as the global `Math` singleton (like `console`).
+const ZEUS_PRIMORDIAL_MATH = "Math"
+
 // Ref cell class naming constants
 const ZEUS_REF_CELL_CLASS_PREFIX = "__ref_cell_"
 const ZEUS_REF_CELL_VALUE_PROPERTY = "value"
