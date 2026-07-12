@@ -60,6 +60,10 @@ func toZeusRuntimeType(zeusType zeus_value.ValueType) ZeusRuntimeType {
 		return ZeusRuntimeTypeNull
 	case zeus_value.ObjectType:
 		return ZeusRuntimeTypeObject
+	case zeus_value.InterfaceType:
+		// An interface value is an object pointer at runtime, so an interface array is an
+		// object array (shared Object[] layout).
+		return ZeusRuntimeTypeObject
 	case zeus_value.FunctionType:
 		return ZeusRuntimeTypeObject
 	default:

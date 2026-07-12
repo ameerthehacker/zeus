@@ -231,6 +231,17 @@ func NewParser(tokens []*token.Token) *Parser {
 			parentClass = parser.consumeIdentifier("parent class name")
 		}
 
+		// Check for optional `implements A, B, C` clause
+		var implementsList []*ast.IdentifierExprNode
+		if parser.peek().Type == token.TokenTypeImplements {
+			parser.consume() // consume 'implements'
+			implementsList = append(implementsList, parser.consumeIdentifier("interface name"))
+			for parser.peek().Type == token.TokenTypeComma {
+				parser.consume()
+				implementsList = append(implementsList, parser.consumeIdentifier("interface name"))
+			}
+		}
+
 		parser.consumeToken(token.TokenTypeLeftBrace, "after class name")
 
 		methods := []*ast.ClassMethod{}
@@ -376,7 +387,70 @@ func NewParser(tokens []*token.Token) *Parser {
 
 		closeBrace := parser.consumeToken(token.TokenTypeRightBrace, "after class members")
 
-		return &ast.ClassDeclExprNode{Name: className, ParentClass: parentClass, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
+		return &ast.ClassDeclExprNode{Name: className, ParentClass: parentClass, Implements: implementsList, Methods: methods, Properties: properties, Span: &token.Span{Start: classKeyword.Span.Start, End: closeBrace.Span.End}}
+	}
+
+	interfaceParselet := func(parser *Parser, interfaceKeyword *token.Token) ast.ExprNode {
+		var interfaceName *ast.IdentifierExprNode
+		if parser.peek().Type != token.TokenTypeLeftBrace && parser.peek().Type != token.TokenTypeExtends {
+			interfaceName = parser.consumeIdentifier("interface name")
+		}
+
+		// Optional `extends A, B, C` — interfaces may extend multiple interfaces.
+		parents := []*ast.IdentifierExprNode{}
+		if parser.peek().Type == token.TokenTypeExtends {
+			parser.consume() // consume 'extends'
+			parents = append(parents, parser.consumeIdentifier("parent interface name"))
+			for parser.peek().Type == token.TokenTypeComma {
+				parser.consume()
+				parents = append(parents, parser.consumeIdentifier("parent interface name"))
+			}
+		}
+
+		parser.consumeToken(token.TokenTypeLeftBrace, "after interface name")
+
+		properties := []*ast.InterfacePropertySignature{}
+		methods := []*ast.InterfaceMethodSignature{}
+
+		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
+			// Method signature: `name(params): Ret;`
+			if parser.checkToken(token.TokenTypeIdentifier, "in interface member") && parser.lookahead(1, token.TokenTypeLeftParen) {
+				methodName := parser.consumeIdentifier("interface method name")
+				_, params, returnType := parser.parseFunctionSignature(methodName, true)
+				methods = append(methods, &ast.InterfaceMethodSignature{
+					Name:       methodName,
+					Params:     params,
+					ReturnType: returnType,
+					Span:       &token.Span{Start: methodName.GetSpan().Start, End: returnType.GetSpan().End},
+				})
+				parser.consumeSemicolon()
+			} else {
+				// Property signature: `[readonly] name: Type;`
+				isReadonly := false
+				if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.READONLY_KEYWORD {
+					isReadonly = true
+					parser.consume()
+				}
+				property := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "interface property")
+				properties = append(properties, &ast.InterfacePropertySignature{
+					Name:       property.Identifier,
+					ValueType:  property.ValueType,
+					IsReadonly: isReadonly,
+					Span:       property.Identifier.GetSpan(),
+				})
+				parser.consumeSemicolon()
+			}
+		}
+
+		closeBrace := parser.consumeToken(token.TokenTypeRightBrace, "after interface members")
+
+		return &ast.InterfaceDeclExprNode{
+			Name:       interfaceName,
+			Parents:    parents,
+			Properties: properties,
+			Methods:    methods,
+			Span:       &token.Span{Start: interfaceKeyword.Span.Start, End: closeBrace.Span.End},
+		}
 	}
 
 	objectPropertyAccessParseLet := func(parser *Parser, left ast.ExprNode, dot *token.Token) ast.ExprNode {
@@ -480,6 +554,7 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypePlusPlus:   prefixIncrementParseLet,
 		token.TokenTypeMinusMinus: prefixIncrementParseLet,
 		token.TokenTypeClass:      classParselet,
+		token.TokenTypeInterface:  interfaceParselet,
 		token.TokenTypeInt8:       valueTypeParseLet,
 		token.TokenTypeInt16:      valueTypeParseLet,
 		token.TokenTypeInt32:      valueTypeParseLet,
@@ -671,7 +746,7 @@ func (p *Parser) isFunctionTypeAt(tokenIndex int) bool {
 
 func exprEndsWithBlock(expr ast.ExprNode) bool {
 	switch e := expr.(type) {
-	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode:
+	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode, *ast.InterfaceDeclExprNode:
 		return true
 	case *ast.BinaryExprNode:
 		return exprEndsWithBlock(e.Right)
@@ -1133,8 +1208,9 @@ func (p *Parser) parseExportStmt() *ast.ExportStmtNode {
 	switch expr.(type) {
 	case *ast.FunctionDeclExprNode:
 	case *ast.ClassDeclExprNode:
+	case *ast.InterfaceDeclExprNode:
 	default:
-		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "export can only be used with function declaration", expr.GetSpan()))
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "export can only be used with function, class or interface declaration", expr.GetSpan()))
 	}
 
 	return &ast.ExportStmtNode{Expr: expr, Span: &token.Span{Start: exportKeyword.Span.Start, End: expr.GetSpan().End}}

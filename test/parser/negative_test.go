@@ -335,12 +335,12 @@ func TestNegativeExportStatement(t *testing.T) {
 		{
 			name:   "export with identifier (not function or class)",
 			input:  "export x;",
-			errors: parseErr("export can only be used with function declaration", 1, 8, 8),
+			errors: parseErr("export can only be used with function, class or interface declaration", 1, 8, 8),
 		},
 		{
 			name:   "export with literal",
 			input:  "export 42;",
-			errors: parseErr("export can only be used with function declaration", 1, 8, 9),
+			errors: parseErr("export can only be used with function, class or interface declaration", 1, 8, 9),
 		},
 	}
 

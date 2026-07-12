@@ -1,0 +1,243 @@
+---
+title: Interfaces
+description: Structural interfaces for type-safe contracts in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Interfaces describe the **shape** a value must have. They are a purely type-level
+construct — an interface generates no runtime code, it only tells the type checker
+what properties and methods a value is required to have.
+
+Zeus interfaces are **structural**: any class that has the required members satisfies
+the interface, with no explicit `implements` needed (much like TypeScript).
+
+## Declaring an Interface
+
+```zeus
+interface Shape {
+  radius: i32;
+  area(): i32;
+}
+```
+
+An interface may declare:
+
+- **property signatures** — `name: Type;`
+- **method signatures** — `name(params): ReturnType;` (no body)
+- **`readonly` properties** — `readonly id: i32;`
+
+## Structural Conformance
+
+A class conforms to an interface automatically when it has every required member with
+a compatible type. There is no `implements` keyword:
+
+```zeus
+interface Shape {
+  radius: i32;
+  area(): i32;
+}
+
+class Circle {
+  public radius: i32;
+
+  constructor(r: i32) {
+    this.radius = r;
+  }
+
+  public area(): i32 {
+    return this.radius;
+  }
+}
+
+// Circle has `radius: i32` and `area(): i32`, so it satisfies Shape.
+function describe(s: Shape): i32 {
+  return 0;
+}
+
+function main(): i32 {
+  let c: Circle = new Circle(42);
+  return describe(c);   // Circle is accepted as a Shape
+}
+```
+
+If a class is missing a required member, passing it where the interface is expected is
+a compile-time error:
+
+```zeus
+class Square {
+  public side: i32;
+  constructor(s: i32) { this.side = s; }
+}
+
+// error: argument 1 of type 'Square' does not match expected type 'Shape'
+// (Square has no area() method)
+describe(new Square(5));
+```
+
+## Extending Interfaces
+
+An interface can extend one or more other interfaces. A value must satisfy every
+member of the interface **and** all of its parents:
+
+```zeus
+interface Named {
+  id: i32;
+}
+
+interface Entity extends Named {
+  score(): i32;
+}
+
+// A conforming class needs `id: i32` (from Named) and `score(): i32` (from Entity).
+class Player {
+  public id: i32;
+  constructor(i: i32) { this.id = i; }
+  public score(): i32 { return this.id; }
+}
+```
+
+## Interfaces as Types
+
+Use an interface anywhere a type is expected — variable declarations, function
+parameters, and return types. At runtime an interface value is represented exactly like
+any object (a single pointer), so passing a conforming object is free:
+
+```zeus
+function main(): i32 {
+  let c: Circle = new Circle(42);
+  let s: Shape = c;   // a conforming object may be stored in an interface variable
+  return c.radius;
+}
+```
+
+## Dynamic Method Dispatch
+
+Calling a **method** through an interface value dispatches dynamically to whatever
+concrete class the value actually holds — the essence of polymorphism:
+
+```zeus
+interface Shape {
+  area(): i32;
+}
+
+class Circle {
+  public r: i32;
+  constructor(r: i32) { this.r = r; }
+  public area(): i32 { return this.r * this.r; }
+}
+
+class Square {
+  public side: i32;
+  constructor(s: i32) { this.side = s; }
+  public area(): i32 { return this.side * 4; }
+}
+
+// `s.area()` calls Circle.area or Square.area depending on the runtime value.
+function areaOf(s: Shape): i32 {
+  return s.area();
+}
+
+function main(): i32 {
+  return areaOf(new Circle(5)) + areaOf(new Square(4)); // 25 + 16 = 41
+}
+```
+
+Dispatch works for methods declared directly on the interface and for methods inherited
+via `extends`.
+
+## Property Access
+
+Properties can be read and written through an interface value; the access resolves to the
+field on whatever concrete object the value holds:
+
+```zeus
+interface Counter {
+  count: i32;
+}
+
+class Tally {
+  public count: i32;
+  constructor() { this.count = 0; }
+}
+
+function bump(c: Counter): void {
+  c.count = c.count + 1;   // read and write through the interface
+}
+```
+
+A `readonly` interface property may be read but not assigned through the interface:
+
+```zeus
+interface Config {
+  readonly id: i32;
+}
+
+function rename(c: Config): void {
+  c.id = 5;   // error: cannot assign to readonly property 'id'
+}
+```
+
+## Implementing Interfaces
+
+Conformance is structural, so `implements` is optional — but you can add it to document
+intent and have the compiler verify the class satisfies the interface:
+
+```zeus
+interface Shape {
+  radius: i32;
+  area(): i32;
+}
+
+class Circle implements Shape {
+  public radius: i32;
+  constructor(r: i32) { this.radius = r; }
+  public area(): i32 { return this.radius * this.radius; }
+}
+```
+
+If the class is missing a required member, the `implements` clause reports it:
+`class 'Square' does not implement interface 'Shape'`. A class may implement several
+interfaces: `class Button implements Drawable, Clickable { ... }`.
+
+## Exporting and Importing
+
+Interfaces can cross module boundaries with `export` / `import`, just like classes and
+functions:
+
+```zeus
+// shapes.zs
+export interface Shape {
+  radius: i32;
+  area(): i32;
+}
+```
+
+```zeus
+// main.zs
+import { Shape } from "./shapes";
+
+function useShape(s: Shape): i32 {
+  return 0;
+}
+```
+
+Dispatch works across modules too — the interface and the concrete class may live in
+different files.
+
+Built-in classes participate too: `string`, `Error`, and other primordials are ordinary
+classes, so they satisfy an interface whenever they structurally match it.
+
+<Aside type="note" title="Not yet supported">
+  Two kinds of members are rejected at compile time (a clean type error, never a bad dispatch):
+
+  - **Accessor-backed members.** An interface member must be backed by a real **field**
+    (properties) or **method** — a class that provides it only through an **accessor**
+    (`get`/`set`) does not conform, because interface dispatch resolves properties by field
+    offset and methods by vtable slot.
+  - **Arrays.** Object arrays (`Point[]`, `Shape[]`, …) all share one physical layout and
+    therefore one runtime class id, so they can't be keyed in the per-class dispatch table.
+
+  Optional members (`?`), index signatures, call/construct signatures, and generic interfaces
+  also depend on language features Zeus does not have yet.
+</Aside>

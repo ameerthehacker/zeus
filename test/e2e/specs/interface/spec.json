@@ -1,0 +1,121 @@
+[
+    {
+        "name": "Class structurally conforms to an interface (property + method)",
+        "exit": "42",
+        "entry": "conformance.zs"
+    },
+    {
+        "name": "Array of interface elements dispatches per concrete class",
+        "exit": "33",
+        "entry": "array_of_interface.zs"
+    },
+    {
+        "name": "Primordial class (string) conforms to an interface (method + property dispatch)",
+        "exit": "5",
+        "entry": "primordial_conforms.zs"
+    },
+    {
+        "name": "Object array is not assignable to an interface (shared-layout class id)",
+        "exit": "1",
+        "entry": "array_not_conforming.zs",
+        "compile_error": true,
+        "stderr_contains": ["not assignable"]
+    },
+    {
+        "name": "Interface extends another interface (flattened conformance)",
+        "exit": "42",
+        "entry": "extends.zs"
+    },
+    {
+        "name": "Assign a conforming object to an interface-typed variable",
+        "exit": "42",
+        "entry": "assign.zs"
+    },
+    {
+        "name": "Non-conforming class is not assignable to interface",
+        "exit": "1",
+        "entry": "not_conforming.zs",
+        "compile_error": true,
+        "stderr_contains": ["does not match expected type"]
+    },
+    {
+        "name": "Read a property through an interface (non-trivial field offset)",
+        "exit": "42",
+        "entry": "prop_read.zs"
+    },
+    {
+        "name": "Write a property through an interface",
+        "exit": "42",
+        "entry": "prop_write.zs"
+    },
+    {
+        "name": "Assigning a readonly interface property is rejected",
+        "exit": "1",
+        "entry": "prop_readonly.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot assign to readonly property"]
+    },
+    {
+        "name": "Class implements an interface (forward-declared, checked)",
+        "exit": "42",
+        "entry": "implements.zs"
+    },
+    {
+        "name": "implements clause rejects a non-conforming class",
+        "exit": "1",
+        "entry": "implements_fail.zs",
+        "compile_error": true,
+        "stderr_contains": ["does not implement interface"]
+    },
+    {
+        "name": "A member satisfied only by an accessor does not conform",
+        "exit": "1",
+        "entry": "accessor_not_conforming.zs",
+        "compile_error": true,
+        "stderr_contains": ["does not match expected type"]
+    },
+    {
+        "name": "A function-typed field does not satisfy an interface method",
+        "exit": "1",
+        "entry": "functor_not_method.zs",
+        "compile_error": true,
+        "stderr_contains": ["does not match expected type"]
+    },
+    {
+        "name": "Dynamic method dispatch through an interface",
+        "exit": "41",
+        "entry": "dispatch.zs"
+    },
+    {
+        "name": "Dispatch across multiple itable slots with an argument",
+        "exit": "42",
+        "entry": "dispatch_multi.zs"
+    },
+    {
+        "name": "Dispatch an inherited (extends) interface method",
+        "exit": "42",
+        "entry": "dispatch_extends.zs"
+    },
+    {
+        "name": "Dynamic dispatch on an imported class through an imported interface",
+        "exit": "42",
+        "entry": "dispatch_xmod.zs"
+    },
+    {
+        "name": "Export and import an interface across modules",
+        "exit": "42",
+        "entry": "import_main.zs"
+    },
+    {
+        "name": "Self-referential interface conformance terminates",
+        "exit": "42",
+        "entry": "self_referential.zs"
+    },
+    {
+        "name": "Interface cannot be instantiated with new",
+        "exit": "1",
+        "entry": "instantiate_interface.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot be used as a value"]
+    }
+]

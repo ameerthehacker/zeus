@@ -68,6 +68,10 @@ type CodegenModule struct {
 	exportedClasses        map[string]ZeusClassModule
 	importedClasses        map[string]ZeusClassModule
 	zeusClassLLVMStructMap map[string]*ZeusClassLLVMStruct
+	// interfaceDispatch/interfacePropDispatch memoize the per-interface method/property
+	// dispatch-table globals (keyed by Interface.Id) so each is built once per module.
+	interfaceDispatch      map[int]*interfaceDispatchInfo
+	interfacePropDispatch  map[int]*interfaceDispatchInfo
 	targetDataLayout       llvm.TargetData
 	globalLLVMFunctions    map[string]GlobalLLVMFunction
 	zeusObjectTypeInfoType llvm.Type
@@ -103,8 +107,9 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 
 	zeusObjectInfoStructType := c.cxt.StructCreateNamed(ZeusObjectTypeInfoStructName)
 	zeusObjectInfoStructType.StructSetBody([]llvm.Type{
-		// type id
-		c.cxt.Int8Type(),
+		// type id — i32 so the class-id space isn't capped at 255 (interface dispatch keys on
+		// it). Must match runtime/abi.zig ZeusObjectTypeInfo.object_type_id (u32).
+		c.cxt.Int32Type(),
 		// type
 		c.cxt.Int8Type(),
 		// array element type
@@ -167,6 +172,8 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		exportedClasses:        make(map[string]ZeusClassModule),
 		importedClasses:        make(map[string]ZeusClassModule),
 		zeusClassLLVMStructMap: make(map[string]*ZeusClassLLVMStruct),
+		interfaceDispatch:      make(map[int]*interfaceDispatchInfo),
+		interfacePropDispatch:  make(map[int]*interfaceDispatchInfo),
 		targetDataLayout:       targetDataLayout,
 		globalLLVMFunctions:    globalLLVMFunctions,
 		zeusObjectTypeInfoType: zeusObjectInfoStructType,
@@ -516,6 +523,9 @@ func (c *CodegenModule) toLLVMType(_type zeus_value.ValueType) llvm.Type {
 	case zeus_value.ObjectType:
 		// In LLVM opaque-pointer mode the element type is irrelevant; ptr addrspace(1) is the GC pointer.
 		return llvm.PointerType(c.cxt.VoidType(), 1)
+	case zeus_value.InterfaceType:
+		// An interface value is represented exactly like an object: a GC object pointer.
+		return llvm.PointerType(c.cxt.VoidType(), 1)
 	case zeus_value.ArrayType:
 		// Arrays are objects - use the array class name to get the struct type
 		return llvm.PointerType(c.getLLVMStructType(_type.String()), 1)
@@ -759,9 +769,10 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 			}
 			return floatFloat(leftVal, rightVal, opName)
 		}
-	case zeus_value.ObjectType:
-		// Object comparison (pointer comparison)
-		// Handles: object == null, object != null, object == object
+	case zeus_value.ObjectType, zeus_value.InterfaceType:
+		// Object/interface comparison (pointer comparison).
+		// Handles: value == null, value != null, value == value. An interface value is
+		// represented as an object pointer, so it compares identically to an object.
 		leftValue := c.toLLVMValue(left)
 		var rightValue llvm.Value
 		if zeus_value.IsNullType(rightType) {
@@ -780,8 +791,8 @@ func (c *CodegenModule) genLLVMBinaryOp(left zeus_value.Value, right zeus_value.
 			return intIntOp(leftValue, rightValue, opName)
 		}
 	case zeus_value.NullType:
-		// null compared with object or function pointer (reversed order)
-		if zeus_value.IsObjectType(rightType) {
+		// null compared with object/interface or function pointer (reversed order)
+		if zeus_value.IsObjectType(rightType) || zeus_value.IsInterfaceType(rightType) {
 			rightValue := c.toLLVMValue(right)
 			leftValue := llvm.ConstPointerNull(rightValue.Type())
 			return intIntOp(leftValue, rightValue, opName)
@@ -1087,9 +1098,10 @@ func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	if c.zeusClassLLVMStructMap[class.Name] != nil {
 		return c.zeusClassLLVMStructMap[class.Name]
-	} else if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && class.Name != ZeusObjectArrayClassName && zeus_value.IsObjectType(class.ArrayElementType) {
+	} else if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && class.Name != ZeusObjectArrayClassName && (zeus_value.IsObjectType(class.ArrayElementType) || zeus_value.IsInterfaceType(class.ArrayElementType)) {
 		// we generate single object array class for all types of OBJECT arrays
-		// because they are represented exactly the same way in memory
+		// because they are represented exactly the same way in memory (interface elements are
+		// object pointers too, so they share this layout).
 		// NOTE: primitive type arrays (u8[], i32[], etc.) need their own type info
 		// so the runtime knows the correct element size
 		c.zeusClassLLVMStructMap[class.Name] = c.genObjArrayClass()
@@ -1125,7 +1137,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	}
 
 	llvmObjectTypeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
-		llvm.ConstInt(c.cxt.Int8Type(), uint64(class.Id), false),
+		llvm.ConstInt(c.cxt.Int32Type(), uint64(class.Id), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeObjectType), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeArrayElementType), false),
 		llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0)),
@@ -1179,7 +1191,7 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 	// Determine the factory function name
 	// For object array types (e.g., Point[]), use the shared Object[] factory
 	factoryClassName := callee.Name
-	if callee.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && callee.Name != ZeusObjectArrayClassName && zeus_value.IsObjectType(callee.ArrayElementType) {
+	if callee.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && callee.Name != ZeusObjectArrayClassName && (zeus_value.IsObjectType(callee.ArrayElementType) || zeus_value.IsInterfaceType(callee.ArrayElementType)) {
 		factoryClassName = ZeusObjectArrayClassName
 	}
 	factoryFunctionName := util.GetFactoryFunctionName(factoryClassName)
@@ -1429,6 +1441,36 @@ func (c *CodegenModule) fillVTables() {
 	}
 }
 
+// loadObjectVTable walks obj → header → vtable (header field 0) using opaque generic-pointer
+// GEPs, for dispatch where the concrete class is unknown at compile time (interface calls,
+// functor calls). Field offsets MUST match getLLVMObjHeaderStruct: header field 0 = vtable ptr.
+func (c *CodegenModule) loadObjectVTable(obj llvm.Value) llvm.Value {
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
+	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
+	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")
+	genericHeaderType := c.cxt.StructType([]llvm.Type{ptrType, ptrType}, false)
+	vtablePtrAddr := c.builder.CreateStructGEP(genericHeaderType, header, VTABLE_STRUCT_INDEX, "vTablePtr")
+	return c.builder.CreateLoad(ptrType, vtablePtrAddr, "vTable")
+}
+
+// loadObjectClassId walks obj → header → typeInfo → id (typeInfo field 0, i32) using opaque
+// generic-pointer GEPs, since the concrete class is unknown at an interface call site.
+func (c *CodegenModule) loadObjectClassId(obj llvm.Value) llvm.Value {
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+	// obj: { ptr header, ... } — field 0 is the header pointer.
+	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
+	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, OBJ_HEADER_STRUCT_INDEX, "objHeaderPtr")
+	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")
+	// header: { ptr vtable, ptr typeInfo } — field 1 is the type-info pointer.
+	genericHeaderType := c.cxt.StructType([]llvm.Type{ptrType, ptrType}, false)
+	typeInfoPtrAddr := c.builder.CreateStructGEP(genericHeaderType, header, 1, "typeInfoPtr")
+	typeInfo := c.builder.CreateLoad(ptrType, typeInfoPtrAddr, "typeInfo")
+	// typeInfo: { i32 id, ... } — field 0 is the class id.
+	idAddr := c.builder.CreateStructGEP(c.zeusObjectTypeInfoType, typeInfo, 0, "classIdPtr")
+	return c.builder.CreateLoad(c.cxt.Int32Type(), idAddr, "classId")
+}
+
 // loadVTableMethodPtr navigates obj → header → vtable → slot[slotIndex] and returns the fn ptr.
 // When objType is non-nil the precise typed structs for that class are used.
 // When objType is nil it falls back to opaque-pointer GEPs for generic/unknown-class dispatch.
@@ -1445,13 +1487,7 @@ func (c *CodegenModule) loadVTableMethodPtr(obj llvm.Value, objType *zeus_value.
 		return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
 	}
 	// Generic opaque-pointer dispatch (class unknown at compile time).
-	// Field offsets MUST match getLLVMObjHeaderStruct: index 0 = vtable ptr, index 1 = ...
-	genericObjType := c.cxt.StructType([]llvm.Type{ptrType}, false)
-	headerPtrAddr := c.builder.CreateStructGEP(genericObjType, obj, 0, "objHeaderPtr")
-	header := c.builder.CreateLoad(ptrType, headerPtrAddr, "objHeader")
-	genericHeaderType := c.cxt.StructType([]llvm.Type{ptrType, ptrType}, false)
-	vtablePtrAddr := c.builder.CreateStructGEP(genericHeaderType, header, 0, "vTablePtr")
-	vtable := c.builder.CreateLoad(ptrType, vtablePtrAddr, "vTable")
+	vtable := c.loadObjectVTable(obj)
 	slotTypes := make([]llvm.Type, slotIndex+1)
 	for i := range slotTypes {
 		slotTypes[i] = ptrType
@@ -1460,9 +1496,208 @@ func (c *CodegenModule) loadVTableMethodPtr(obj llvm.Value, objType *zeus_value.
 	return c.builder.CreateLoad(ptrType, slotAddr, name+"_fn_ptr")
 }
 
+// interfaceDispatchInfo describes one interface's runtime dispatch-table global. The table has
+// type [maxClassId+1 x [numCols x i32]]: indexed by the concrete object's class id, each row
+// holds either the class's vtable slot per interface method (method table) or the byte offset
+// of the backing field per interface property (property table). Rows for non-conforming class
+// ids are zero. Every entry is a compile-time constant, so no finalize pass is needed and
+// cross-module dispatch works for free (a method table stores slot indices, read at runtime
+// from the object's own vtable — never the imported class's method symbols).
+type interfaceDispatchInfo struct {
+	global    llvm.Value
+	tableType llvm.Type
+}
+
+// interfaceCandidateClasses returns every non-primordial class known in this module — the
+// classes that may be the runtime type behind an interface value (including imported ones,
+// whose vtables carry the methods at the same slots). Uses &structInfo.ZeusClass so Layout()
+// and conformance walk the map's own class copies.
+func (c *CodegenModule) interfaceCandidateClasses() []*zeus_value.Class {
+	var classes []*zeus_value.Class
+	for _, structInfo := range c.zeusClassLLVMStructMap {
+		cls := &structInfo.ZeusClass
+		// Generic array classes use the shared Object[] layout; skip them. Other primordials
+		// (string, Error, ...) are ordinary classes and may conform.
+		if cls.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY {
+			continue
+		}
+		classes = append(classes, cls)
+	}
+	return classes
+}
+
+// getInterfaceDispatchTable lazily builds (once per interface) the method dispatch-table
+// global from the layout data computed in zeus_value. Codegen only emits the LLVM globals;
+// the conformance + slot computation lives in zeus_value.BuildInterfaceDispatchLayout.
+func (c *CodegenModule) getInterfaceDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
+	if info, ok := c.interfaceDispatch[iface.Id]; ok {
+		return info
+	}
+
+	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.interfaceCandidateClasses())
+	numMethods := len(zeus_value.InterfaceMethods(iface))
+	i32 := c.cxt.Int32Type()
+
+	innerType := llvm.ArrayType(i32, numMethods)
+	tableType := llvm.ArrayType(innerType, layout.MaxClassId+1)
+
+	rows := make([]llvm.Value, layout.MaxClassId+1)
+	nullInner := llvm.ConstNull(innerType)
+	for i := range rows {
+		rows[i] = nullInner
+	}
+	for _, row := range layout.Rows {
+		slots := make([]llvm.Value, numMethods)
+		for j, slot := range row.MethodSlots {
+			slots[j] = llvm.ConstInt(i32, uint64(slot), false)
+		}
+		rows[row.ClassId] = llvm.ConstArray(innerType, slots)
+	}
+
+	global := llvm.AddGlobal(c.module, tableType, fmt.Sprintf("%s.idispatch", iface.Name))
+	global.SetInitializer(llvm.ConstArray(innerType, rows))
+	global.SetLinkage(llvm.InternalLinkage)
+
+	info := &interfaceDispatchInfo{global: global, tableType: tableType}
+	c.interfaceDispatch[iface.Id] = info
+	return info
+}
+
+// getInterfacePropDispatchTable lazily builds (once per interface) the property dispatch-table
+// global: [maxClassId+1 x [numProps x i32]] of byte offsets. Field indices come from the
+// zeus_value layout data; codegen turns each into a byte offset via the offsetof idiom.
+func (c *CodegenModule) getInterfacePropDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
+	if info, ok := c.interfacePropDispatch[iface.Id]; ok {
+		return info
+	}
+
+	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.interfaceCandidateClasses())
+	numProps := len(zeus_value.InterfaceProperties(iface))
+	i32 := c.cxt.Int32Type()
+
+	innerType := llvm.ArrayType(i32, numProps)
+	tableType := llvm.ArrayType(innerType, layout.MaxClassId+1)
+
+	rows := make([]llvm.Value, layout.MaxClassId+1)
+	nullInner := llvm.ConstNull(innerType)
+	for i := range rows {
+		rows[i] = nullInner
+	}
+	for _, row := range layout.Rows {
+		structType := c.getLLVMStructType(row.Class.Name)
+		offsets := make([]llvm.Value, numProps)
+		for k, fieldIndex := range row.PropertyFieldIndices {
+			// +1 skips the object header (matches util.GetPropertyIndex).
+			offsets[k] = c.constFieldOffset(structType, fieldIndex+1)
+		}
+		rows[row.ClassId] = llvm.ConstArray(innerType, offsets)
+	}
+
+	global := llvm.AddGlobal(c.module, tableType, fmt.Sprintf("%s.ipropdispatch", iface.Name))
+	global.SetInitializer(llvm.ConstArray(innerType, rows))
+	global.SetLinkage(llvm.InternalLinkage)
+
+	info := &interfaceDispatchInfo{global: global, tableType: tableType}
+	c.interfacePropDispatch[iface.Id] = info
+	return info
+}
+
+// constFieldOffset returns the byte offset of a struct field as a compile-time constant using
+// the offsetof idiom: ptrtoint(getelementptr(structType, null, 0, fieldIndex)). Independent of
+// the target-data-layout API and consistent across modules that build the same struct type.
+func (c *CodegenModule) constFieldOffset(structType llvm.Type, fieldIndex int) llvm.Value {
+	i32 := c.cxt.Int32Type()
+	nullPtr := llvm.ConstNull(llvm.PointerType(structType, 0))
+	gep := llvm.ConstInBoundsGEP(structType, nullPtr, []llvm.Value{
+		llvm.ConstInt(i32, 0, false),
+		llvm.ConstInt(i32, uint64(fieldIndex), false),
+	})
+	return llvm.ConstPtrToInt(gep, i32)
+}
+
+// genInterfaceMethodCall dispatches a method call through an interface value: obj → classId →
+// idispatch[classId][methodSlot] → vtable slot → load fn from the object's own vtable → call.
+func (c *CodegenModule) genInterfaceMethodCall(input ir.MethodCallInstrInput, iface *zeus_value.Interface, output zeus_value.Var) {
+	llvmObject := c.toLLVMValue(input.Object)
+	info := c.getInterfaceDispatchTable(iface)
+
+	slot := zeus_value.InterfaceMethodIndex(iface, input.MethodName)
+	zeus_error.Assert(slot != -1, fmt.Sprintf("interface %s has no method %s", iface.Name, input.MethodName))
+
+	var ifaceMethod *zeus_value.Function
+	for _, m := range zeus_value.InterfaceMethods(iface) {
+		if m.SourceName() == input.MethodName {
+			ifaceMethod = m
+			break
+		}
+	}
+	zeus_error.Assert(ifaceMethod != nil, fmt.Sprintf("interface method %s.%s not found", iface.Name, input.MethodName))
+
+	i32 := c.cxt.Int32Type()
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+
+	// vtableSlot = idispatch[classId][methodSlot]
+	classId := c.loadObjectClassId(llvmObject)
+	zero := llvm.ConstInt(i32, 0, false)
+	methodSlot := llvm.ConstInt(i32, uint64(slot), false)
+	slotAddr := c.builder.CreateInBoundsGEP(info.tableType, info.global, []llvm.Value{zero, classId, methodSlot}, "vtableSlotAddr")
+	vtableSlot := c.builder.CreateLoad(i32, slotAddr, "vtableSlot")
+
+	// fnPtr = objectVTable[vtableSlot] — read the method from the object's own vtable, so an
+	// imported concrete class resolves correctly without referencing its symbols here.
+	vtable := c.loadObjectVTable(llvmObject)
+	fnPtrAddr := c.builder.CreateInBoundsGEP(ptrType, vtable, []llvm.Value{vtableSlot}, "ifaceMethodPtrAddr")
+	fnPtr := c.builder.CreateLoad(ptrType, fnPtrAddr, "ifaceMethodPtr")
+
+	// Build the call: interface method params, then the receiver (a generic object pointer).
+	functionArgs := make([]llvm.Value, 0, len(input.Args)+1)
+	for _, arg := range input.Args {
+		functionArgs = append(functionArgs, c.toLLVMValue(arg))
+	}
+	functionArgs = append(functionArgs, llvmObject)
+
+	llvmParamTypes := make([]llvm.Type, 0, len(ifaceMethod.Params)+1)
+	for _, p := range ifaceMethod.Params {
+		llvmParamTypes = append(llvmParamTypes, c.toLLVMType(p.ValueType))
+	}
+	llvmParamTypes = append(llvmParamTypes, llvm.PointerType(c.cxt.VoidType(), 1))
+	callType := llvm.FunctionType(c.toLLVMType(ifaceMethod.ReturnType), llvmParamTypes, false)
+
+	result := c.builder.CreateCall(callType, fnPtr, functionArgs, fmt.Sprintf("%s_result", input.MethodName))
+	c.llvmValues[output.Name] = result
+}
+
+// genInterfacePropertyPtr returns a pointer to the property's field on the concrete object
+// behind an interface value: obj + ipropdispatch[classId][propSlot] (a byte offset). The
+// result is used the same way as a normal field pointer — loaded for reads, stored for writes.
+func (c *CodegenModule) genInterfacePropertyPtr(input ir.ObjectPropertyAccessInstrInput, iface *zeus_value.Interface, llvmObject llvm.Value) llvm.Value {
+	propSlot := zeus_value.InterfacePropertyIndex(iface, input.Property)
+	zeus_error.Assert(propSlot != -1, fmt.Sprintf("interface %s has no property %s", iface.Name, input.Property))
+
+	info := c.getInterfacePropDispatchTable(iface)
+	i32 := c.cxt.Int32Type()
+
+	classId := c.loadObjectClassId(llvmObject)
+	zero := llvm.ConstInt(i32, 0, false)
+	pSlot := llvm.ConstInt(i32, uint64(propSlot), false)
+	offsetAddr := c.builder.CreateInBoundsGEP(info.tableType, info.global, []llvm.Value{zero, classId, pSlot}, "propOffsetAddr")
+	byteOffset := c.builder.CreateLoad(i32, offsetAddr, "propByteOffset")
+
+	// fieldPtr = (i8*)obj + byteOffset
+	return c.builder.CreateInBoundsGEP(c.cxt.Int8Type(), llvmObject, []llvm.Value{byteOffset}, "ifacePropPtr")
+}
+
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
 	objectType := c.getValueType(input.Object)
 	llvmValue := c.toLLVMValue(input.Object)
+
+	// Property access through an interface value: the field lives at a class-specific byte
+	// offset, so look it up dynamically via the interface's property dispatch table.
+	if ifaceType := zeus_value.AsInterfaceType(objectType); ifaceType != nil {
+		c.llvmValues[output.Name] = c.genInterfacePropertyPtr(input, ifaceType.Interface, llvmValue)
+		return
+	}
+
 	objectClass := zeus_value.AsObjectType(objectType)
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("object %s is not a class", input.Object))
 	propertyIndex := util.GetPropertyIndex(objectClass.Class, input.Property)
@@ -1531,6 +1766,14 @@ func (c *CodegenModule) genMethodCall(input ir.MethodCallInstrInput, output zeus
 	}
 
 	objectType := c.getValueType(input.Object)
+
+	// Method call through an interface value dispatches dynamically via the interface's
+	// itable, keyed by the concrete object's class id.
+	if ifaceType := zeus_value.AsInterfaceType(objectType); ifaceType != nil {
+		c.genInterfaceMethodCall(input, ifaceType.Interface, output)
+		return
+	}
+
 	llvmObject := c.toLLVMValue(input.Object)
 	objectClass := zeus_value.AsObjectType(objectType)
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("CALL_METHOD receiver is not an object: %s", input.Object))
@@ -1713,6 +1956,9 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 	case zeus_value.BoolType:
 		return llvm.ConstInt(c.cxt.Int1Type(), 0, false)
 	case zeus_value.ObjectType:
+		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	case zeus_value.InterfaceType:
+		// An interface value is an object pointer; its zero value is null.
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	case zeus_value.OpaqueType:
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))

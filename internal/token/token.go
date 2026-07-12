@@ -107,8 +107,10 @@ const (
 	TokenTypeCatch    // catch keyword
 	TokenTypeThrow    // throw keyword
 	TokenTypeExtends  // extends keyword for class inheritance
-	TokenTypeBreak    // break keyword
-	TokenTypeContinue // continue keyword
+	TokenTypeBreak      // break keyword
+	TokenTypeContinue   // continue keyword
+	TokenTypeInterface  // interface keyword
+	TokenTypeImplements // implements keyword
 	keyword_end
 	// data types
 	datatype_beg
@@ -316,6 +318,10 @@ func (t TokenType) String() string {
 		return "break"
 	case TokenTypeContinue:
 		return "continue"
+	case TokenTypeInterface:
+		return "interface"
+	case TokenTypeImplements:
+		return "implements"
 	case TokenTypeNull:
 		return "null"
 	case TokenTypeChar:
@@ -358,8 +364,10 @@ var Keywords = map[string]TokenType{
 	TokenTypeThrow.String():     TokenTypeThrow,
 	TokenTypeExtends.String():   TokenTypeExtends,
 	TokenTypeNull.String():      TokenTypeNull,
-	TokenTypeBreak.String():     TokenTypeBreak,
-	TokenTypeContinue.String():  TokenTypeContinue,
+	TokenTypeBreak.String():      TokenTypeBreak,
+	TokenTypeContinue.String():   TokenTypeContinue,
+	TokenTypeInterface.String():  TokenTypeInterface,
+	TokenTypeImplements.String(): TokenTypeImplements,
 }
 
 var DataTypes = map[string]TokenType{
