@@ -422,6 +422,16 @@ type Token struct {
 	Span  *Span
 }
 
+// Comment is a source comment captured by the lexer. Comments are intentionally
+// kept out of the token stream (the parser ignores them); tools like the
+// formatter retrieve them via Lexer.Comments() and re-associate them with AST
+// nodes by position. Text is the raw comment text including its delimiters.
+type Comment struct {
+	Text    string
+	IsBlock bool
+	Span    *Span
+}
+
 func NewTokenWithValue(tokenType TokenType, value string, span *Span) *Token {
 	return &Token{Type: tokenType, Value: value, Span: span}
 }

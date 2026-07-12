@@ -91,5 +91,17 @@
         "entry": "super_method_no_base.zs",
         "compile_error": true,
         "stderr_contains": ["requires a base class"]
+    },
+    {
+        "name": "Protected members are accessible from a subclass",
+        "exit": "42",
+        "entry": "protected_access.zs"
+    },
+    {
+        "name": "Protected member access from outside the hierarchy is a compile error",
+        "exit": "1",
+        "entry": "protected_outside_error.zs",
+        "compile_error": true,
+        "stderr_contains": ["is not accessible in class"]
     }
 ]

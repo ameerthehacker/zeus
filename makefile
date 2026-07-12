@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check always build lsp fmt fetch-libxev
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run zeus-test check zeus-fmt always build lsp fmt fetch-libxev
 
 clean:
 	rm -rf playground/target
@@ -93,6 +93,9 @@ compile-release: always build-runtime-release
 check:
 	ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) go run $(GO_BUILD_TAGS) zeus.go check ./playground/$(file).zs --emit-ir ./playground
 
+zeus-fmt:
+	go run $(GO_BUILD_TAGS) zeus.go fmt ./playground/$(file).zs
+
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
 		ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --emit-ir --target-dir ./playground && \
@@ -100,6 +103,15 @@ run: always build-runtime
 	else \
 		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go build ./playground/$(file).zs --target-dir ./playground && \
 		./playground/target/debug/bin/$(file); \
+	fi
+
+# Run the Zeus test runner over the playground. `make zeus-test` runs every *.test.zs / *.spec.zs
+# under ./playground; `make zeus-test file=example` runs just ./playground/example.test.zs.
+zeus-test: always build-runtime
+	@if [ -n "$(file)" ]; then \
+		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go test ./playground/$(file).test.zs; \
+	else \
+		ZEUS_HOME=$(CURDIR) $(if $(filter true,$(nogc)),ZEUS_NO_GC=true) go run $(GO_BUILD_TAGS) zeus.go test ./playground; \
 	fi
 
 ARCH ?= arm64
