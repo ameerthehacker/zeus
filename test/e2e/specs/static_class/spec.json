@@ -53,6 +53,11 @@
         "name": "Private static property accessed from outside class is a compile error",
         "compile_error": true,
         "entry": "error_private_static_from_outside.zs",
-        "stderr_contains": ["cannot access private static property", "Vault"]
+        "stderr_contains": ["static property", "is not accessible here", "Vault"]
+    },
+    {
+        "name": "Protected static member accessed from a subclass",
+        "exit": "42",
+        "entry": "protected_static.zs"
     }
 ]

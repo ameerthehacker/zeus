@@ -955,7 +955,8 @@ func (p *TypeCheckingPass) resolveAccessor(tc *TypeChecker, object zeus_value.Va
 		return nil
 	}
 	propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == objType.Class.Name
-	if acc.AccessModifier != nil && acc.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass {
+	if acc.AccessModifier != nil && acc.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass &&
+		!tc.protectedAccessAllowed(acc.AccessModifier, objType.Class) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("accessor '%s' is not accessible in class '%s'", accessorName, objType.Class.SourceName()),
 			Span:    span,
@@ -1080,6 +1081,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		isFound := false
 		isAccessible := false
 		isMethod := false
+		var foundAccessModifier *token.Token
 
 		// Reject access to static properties on an instance — must use ClassName.x.
 		// Walk the parent chain so inherited statics are caught with a targeted message.
@@ -1098,6 +1100,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 		for _, property := range properties {
 			if property.Property.Name == input.Property {
 				isFound = true
+				foundAccessModifier = property.AccessModifier
 				if property.AccessModifier != nil {
 					isAccessible = property.AccessModifier.Type == token.TokenTypePublic
 				} else {
@@ -1123,6 +1126,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			if method.Method.SourceName() == input.Property {
 				isFound = true
 				isMethod = true
+				foundAccessModifier = method.AccessModifier
 				if method.AccessModifier != nil {
 					isAccessible = method.AccessModifier.Type == token.TokenTypePublic
 				}
@@ -1152,7 +1156,7 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 			})
 		} else if isFound {
 			propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
-			if !isAccessible && !propertyOfSameClass {
+			if !isAccessible && !propertyOfSameClass && !tc.protectedAccessAllowed(foundAccessModifier, class) {
 				tc.pushError(&zeus_error.ZeusError{
 					Message: fmt.Sprintf("property %s is not accessible in class %s", input.Property, class.SourceName()),
 					Span:    output.Span,
@@ -1235,7 +1239,8 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	propertyOfSameClass := tc.currentClass != nil && tc.currentClass.Name == class.Name
-	if foundMethod.AccessModifier != nil && foundMethod.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass {
+	if foundMethod.AccessModifier != nil && foundMethod.AccessModifier.Type != token.TokenTypePublic && !propertyOfSameClass &&
+		!tc.protectedAccessAllowed(foundMethod.AccessModifier, class) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("property %s is not accessible in class %s", input.MethodName, class.SourceName()),
 			Span:    instr.Output.Span,

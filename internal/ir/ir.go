@@ -803,9 +803,13 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 				for _, m := range cur.Methods {
 					if m.IsStatic && m.Method.SourceName() == methodName {
 						if m.AccessModifier != nil && m.AccessModifier.Type != token.TokenTypePublic {
-							if !g.isInsideClass(cur) {
+							accessible := g.isInsideClass(cur)
+							if m.AccessModifier.Type == token.TokenTypeProtected {
+								accessible = g.isInsideSubclassOf(cur)
+							}
+							if !accessible {
 								g.pushError(&zeus_error.ZeusError{
-									Message: fmt.Sprintf("cannot call private static method '%s' of class '%s'", methodName, cur.SourceName()),
+									Message: fmt.Sprintf("static method '%s' of class '%s' is not accessible here", methodName, cur.SourceName()),
 									Span:    expr.GetSpan(),
 								})
 								return nil
@@ -980,6 +984,17 @@ func (g *IRModule) checkVariadicParamType(param *ast.VarDeclNode, paramType zeus
 func (g *IRModule) isInsideClass(class *zeus_value.Class) bool {
 	for _, c := range g.classStack {
 		if c.Name == class.Name {
+			return true
+		}
+	}
+	return false
+}
+
+// isInsideSubclassOf reports whether any class currently being emitted is `class` or a subclass of
+// it — the reach a `protected` static member grants beyond its declaring class.
+func (g *IRModule) isInsideSubclassOf(class *zeus_value.Class) bool {
+	for _, c := range g.classStack {
+		if zeus_value.IsSubclassOf(c, class) {
 			return true
 		}
 	}
@@ -2152,9 +2167,13 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 			for _, prop := range cur.Properties {
 				if prop.IsStatic && prop.Property.Name == property {
 					if prop.AccessModifier != nil && prop.AccessModifier.Type != token.TokenTypePublic {
-						if !g.isInsideClass(cur) {
+						accessible := g.isInsideClass(cur)
+						if prop.AccessModifier.Type == token.TokenTypeProtected {
+							accessible = g.isInsideSubclassOf(cur)
+						}
+						if !accessible {
 							g.pushError(&zeus_error.ZeusError{
-								Message: fmt.Sprintf("cannot access private static property '%s' of class '%s'", property, cur.SourceName()),
+								Message: fmt.Sprintf("static property '%s' of class '%s' is not accessible here", property, cur.SourceName()),
 								Span:    expr.GetSpan(),
 							})
 							return nil
@@ -2173,9 +2192,13 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 			for _, acc := range cur.Accessors {
 				if acc.IsStatic && acc.Name == property {
 					if acc.AccessModifier != nil && acc.AccessModifier.Type != token.TokenTypePublic {
-						if !g.isInsideClass(cur) {
+						accessible := g.isInsideClass(cur)
+						if acc.AccessModifier.Type == token.TokenTypeProtected {
+							accessible = g.isInsideSubclassOf(cur)
+						}
+						if !accessible {
 							g.pushError(&zeus_error.ZeusError{
-								Message: fmt.Sprintf("cannot access private static accessor '%s' of class '%s'", property, cur.SourceName()),
+								Message: fmt.Sprintf("static accessor '%s' of class '%s' is not accessible here", property, cur.SourceName()),
 								Span:    expr.GetSpan(),
 							})
 							return nil

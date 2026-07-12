@@ -3,6 +3,7 @@ package ir
 import (
 	"fmt"
 
+	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -154,6 +155,16 @@ func (tc *TypeChecker) getValueType(value zeus_value.Value) zeus_value.ValueType
 
 func (tc *TypeChecker) pushError(err *zeus_error.ZeusError) {
 	tc.errors = append(tc.errors, err)
+}
+
+// protectedAccessAllowed reports the extra reach `protected` grants over `private`: a protected
+// member reachable on an object of static type `objectClass` is accessible when the current class
+// is that class or a subclass of it. Non-protected modifiers return false — callers handle
+// public / private / same-class separately.
+func (tc *TypeChecker) protectedAccessAllowed(mod *token.Token, objectClass *zeus_value.Class) bool {
+	return mod != nil && mod.Type == token.TokenTypeProtected &&
+		tc.currentClass != nil && objectClass != nil &&
+		zeus_value.IsSubclassOf(tc.currentClass, objectClass)
 }
 
 // variadicElementType returns the value type each trailing argument of a variadic call

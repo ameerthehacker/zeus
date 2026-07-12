@@ -43,6 +43,12 @@ function main(): i32 {
 `Fancy` carries the inherited `count` field and `bump` method alongside its own `tag` field. A
 base method operates on the inherited field even when called on a derived instance.
 
+<Aside type="note" title="Protected members">
+  A subclass can read and override members the base marks `protected` — visible across the hierarchy
+  but hidden from outside code. `private` members stay locked to their declaring class. See
+  [Encapsulation & Accessors](/language/encapsulation/).
+</Aside>
+
 ## Overriding methods
 
 A derived class replaces an inherited method by declaring one with the same name. Overrides are
