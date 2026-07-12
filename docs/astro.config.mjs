@@ -150,6 +150,7 @@ export default defineConfig({
           label: 'Tooling',
           items: [
             { label: 'Compiling Programs', slug: 'tooling/release-builds' },
+            { label: 'Formatter', slug: 'tooling/formatter' },
             { label: 'Language Server', slug: 'tooling/lsp' },
           ],
         },

@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"strings"
 	"unicode"
 
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -9,17 +10,18 @@ import (
 )
 
 type Lexer struct {
-	source              []rune
-	cursor              int
-	tokens              []*token.Token
-	errors              []*zeus_error.ZeusError
-	line                int
-	column              int
-	lastToken           *token.Token
+	source    []rune
+	cursor    int
+	tokens    []*token.Token
+	comments  []*token.Comment
+	errors    []*zeus_error.ZeusError
+	line      int
+	column    int
+	lastToken *token.Token
 	// templateBraceStack tracks open-brace depth inside template string expressions.
 	// Each entry corresponds to one active interpolation; the value is the depth of
 	// nested '{' seen so far. When it hits 0 and we see '}', the interpolation ends.
-	templateBraceStack  []int
+	templateBraceStack []int
 }
 
 func NewLexer(source string) *Lexer {
@@ -75,6 +77,17 @@ func (l *Lexer) consumeLine() {
 	for !l.isEOF(0) && !l.isNewLine() {
 		l.advance()
 	}
+}
+
+// consumeNewLine consumes a single logical line break — "\n", "\r", or "\r\n" —
+// advancing past it and incrementing the line counter exactly once, so CRLF files
+// are not counted as two lines.
+func (l *Lexer) consumeNewLine() {
+	if l.matchRune('\r') && l.matchNextRune('\n') {
+		l.advance() // consume '\r' of a CRLF pair
+	}
+	l.advance() // consume '\n', or a lone '\r'
+	l.newLine()
 }
 
 func isIdentifierRune(char rune) bool {
@@ -316,8 +329,59 @@ func (l *Lexer) getCurrentPosition() *token.Position {
 	return token.NewPosition(l.line, l.column)
 }
 
+// Comments returns the comments captured during lexing, in source order. They are
+// not part of the token stream; the formatter uses them to re-emit comments.
+func (l *Lexer) Comments() []*token.Comment {
+	return l.comments
+}
+
+// eatLineComment records a `// ...` comment (up to, but not including, the newline).
+func (l *Lexer) eatLineComment(startPosition *token.Position) {
+	start := l.cursor
+	l.consumeLine()
+	raw := strings.TrimRight(string(l.source[start:l.cursor]), " \t")
+	endPosition := token.NewPosition(l.line, l.column-1)
+	l.comments = append(l.comments, &token.Comment{
+		Text:    raw,
+		IsBlock: false,
+		Span:    token.NewSpan(*startPosition, *endPosition),
+	})
+}
+
+// eatBlockComment records a `/* ... */` comment, which may span multiple lines.
+func (l *Lexer) eatBlockComment(startPosition *token.Position) {
+	start := l.cursor
+	l.advance() // consume '/'
+	l.advance() // consume '*'
+	terminated := false
+	for !l.isEOF(0) {
+		if l.matchRune('*') && l.matchNextRune('/') {
+			l.advance() // consume '*'
+			l.advance() // consume '/'
+			terminated = true
+			break
+		}
+		if l.isNewLine() {
+			l.consumeNewLine()
+		} else {
+			l.advance()
+		}
+	}
+	if !terminated {
+		l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unterminated block comment", token.NewSpan(*startPosition, *startPosition)))
+	}
+	raw := string(l.source[start:l.cursor])
+	endPosition := token.NewPosition(l.line, l.column-1)
+	l.comments = append(l.comments, &token.Comment{
+		Text:    raw,
+		IsBlock: true,
+		Span:    token.NewSpan(*startPosition, *endPosition),
+	})
+}
+
 func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 	l.tokens = []*token.Token{}
+	l.comments = []*token.Comment{}
 	l.errors = []*zeus_error.ZeusError{}
 
 	for !l.isEOF(0) {
@@ -330,8 +394,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 				pos := l.lastToken.Span.End
 				l.pushToken(token.NewToken(token.TokenTypeSemicolon, token.NewSpan(pos, pos)))
 			}
-			l.advance()
-			l.newLine()
+			l.consumeNewLine()
 		case unicode.IsSpace(char):
 			l.advance()
 		case char == '[':
@@ -428,7 +491,9 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 		case char == '/':
 			startPosition := position
 			if l.matchNextRune('/') {
-				l.consumeLine()
+				l.eatLineComment(startPosition)
+			} else if l.matchNextRune('*') {
+				l.eatBlockComment(startPosition)
 			} else if l.matchNextRune('=') {
 				l.advance()
 				endPosition := l.getCurrentPosition()

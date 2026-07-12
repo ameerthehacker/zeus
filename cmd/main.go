@@ -14,6 +14,7 @@ func Execute() {
 	rootCmd.AddCommand(buildCmd())
 	rootCmd.AddCommand(runCmd())
 	rootCmd.AddCommand(checkCmd())
+	rootCmd.AddCommand(fmtCmd())
 	rootCmd.AddCommand(lspCmd())
 	rootCmd.Execute()
 }

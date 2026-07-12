@@ -13,10 +13,10 @@ The runtime is written in Zig (`runtime/`). Build tags: `-tags llvm19` are requi
 ## Repo layout
 
 ```
-cmd/                  CLI (cobra commands: build, lsp, ...)
+cmd/                  CLI (cobra commands: build, fmt, lsp, ...)
 internal/
   token/              TokenType enum + Span/Position types
-  lexer/              Lexer — produces []Token from source text
+  lexer/              Lexer — produces []Token from source text; comments captured off-stream via Comments()
   ast/                AST nodes + ExprVisitor[T] interface
   parser/             Pratt parser (precedence climbing)
   ir/
@@ -36,10 +36,12 @@ internal/
     llvm_type.go      Zeus type → LLVM type conversion
   zeus_value/         Value and ValueType interfaces, concrete types (IntType, FloatType, ...)
   zeus_compiler/      Orchestrates all passes in order
+  formatter/          `zeus fmt` — Prettier-style formatter (doc.go IR, printer.go, formatter.go). See wiki/formatter.md
   lsp/                Language-server protocol implementation
 test/
   e2e/                End-to-end tests; compiled via the zeus binary
   parser/             Parser unit tests (AST structure)
+  formatter/          Formatter golden + idempotency/parse-stability tests
   ir/                 HIR/LIR blackbox tests
   lexer/              Lexer unit tests
 ```
