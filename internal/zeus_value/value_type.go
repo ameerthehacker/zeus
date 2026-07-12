@@ -631,14 +631,22 @@ func isAssignableToInterface(iface *Interface, source ValueType) bool {
 
 	props, methods := flattenInterfaceMembers(iface)
 
-	// An interface property must be backed by a real data field, and an interface method by
-	// a real method — matching how dispatch resolves them (field offset vs vtable slot). A
-	// field cannot satisfy a method (nor vice-versa) even when the types line up, because a
-	// function-typed field is a functor object, not a vtable entry.
+	// An interface property is backed by a real data **field** OR a get/set **accessor**
+	// (readonly needs only a getter; a writable property needs a setter too); an interface
+	// method must be a real method (a function-typed field is a functor object, not a vtable
+	// entry, so it can't satisfy a method). Class conformers resolve the backing via
+	// ResolveInterfacePropertyBacking — kept in lockstep with the itable so dispatch matches;
+	// an interface *source* satisfies a property only with a matching interface property.
 	for _, prop := range props {
-		srcType, ok := lookupFieldType(source, prop.Property.Name)
-		if !ok || !CmpValueType(prop.Property.ValueType, srcType) {
-			return false
+		if src := AsObjectType(source); src != nil {
+			if _, ok := ResolveInterfacePropertyBacking(src.Class, prop, !prop.IsReadonly); !ok {
+				return false
+			}
+		} else {
+			srcType, ok := lookupFieldType(source, prop.Property.Name)
+			if !ok || !CmpValueType(prop.Property.ValueType, srcType) {
+				return false
+			}
 		}
 	}
 	for _, method := range methods {

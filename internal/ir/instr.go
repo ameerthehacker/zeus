@@ -671,6 +671,58 @@ func (i SetAccessorInstrInput) String() string {
 	return fmt.Sprintf("%s, %q, %s", i.Object, i.AccessorName, i.Value)
 }
 
+// InterfacePropGetInstrInput reads property PropName through an interface value (Object, typed as
+// Iface). Codegen resolves the backing (field offset or accessor slot) via Iface's property itable.
+type InterfacePropGetInstrInput struct {
+	Object   zeus_value.Value
+	Iface    *zeus_value.Interface
+	PropName string
+}
+
+func NewInterfacePropGetInstrInput(object zeus_value.Value, iface *zeus_value.Interface, propName string) *InterfacePropGetInstrInput {
+	return &InterfacePropGetInstrInput{Object: object, Iface: iface, PropName: propName}
+}
+
+func AsInterfacePropGetInstrInput(input InstrInput) *InterfacePropGetInstrInput {
+	switch input := input.(type) {
+	case *InterfacePropGetInstrInput:
+		return input
+	default:
+		panicInvalidInputType("InterfacePropGetInstrInput", input)
+	}
+	return nil
+}
+
+func (i InterfacePropGetInstrInput) String() string {
+	return fmt.Sprintf("%s, %s.%s", i.Object, i.Iface.Name, i.PropName)
+}
+
+// InterfacePropSetInstrInput writes Value into property PropName through an interface value.
+type InterfacePropSetInstrInput struct {
+	Object   zeus_value.Value
+	Iface    *zeus_value.Interface
+	PropName string
+	Value    zeus_value.Value
+}
+
+func NewInterfacePropSetInstrInput(object zeus_value.Value, iface *zeus_value.Interface, propName string, value zeus_value.Value) *InterfacePropSetInstrInput {
+	return &InterfacePropSetInstrInput{Object: object, Iface: iface, PropName: propName, Value: value}
+}
+
+func AsInterfacePropSetInstrInput(input InstrInput) *InterfacePropSetInstrInput {
+	switch input := input.(type) {
+	case *InterfacePropSetInstrInput:
+		return input
+	default:
+		panicInvalidInputType("InterfacePropSetInstrInput", input)
+	}
+	return nil
+}
+
+func (i InterfacePropSetInstrInput) String() string {
+	return fmt.Sprintf("%s.%s, %s", i.Iface.Name, i.PropName, i.Value)
+}
+
 type IndirectFuncCallInstrInput struct {
 	Function zeus_value.Value
 	Args     []zeus_value.Value
@@ -1020,6 +1072,12 @@ const (
 	// accessor invocation (HIR - lowered before codegen)
 	InstrTypeGetAccessor // read via getter: obj.name
 	InstrTypeSetAccessor // write via setter: obj.name = value
+	// interface property access (LIR only). Emitted by InterfacePropertyLoweringPass from an
+	// OBJECT_PROPERTY_ACCESS on an interface receiver plus its consuming LOAD/STORE. Codegen
+	// dispatches each through the interface's tagged property itable (field offset OR accessor
+	// vtable slot), so the read/write shape — not a plain lvalue pointer — is explicit in the IR.
+	InstrTypeInterfacePropGet // read a property through an interface value (value-producing)
+	InstrTypeInterfacePropSet // write a property through an interface value (value-consuming)
 	// array indexing (HIR - lowered before codegen)
 	InstrTypeGetIndex
 	// array element assignment (HIR - lowered before codegen)
@@ -1136,6 +1194,10 @@ func (i InstrType) String() string {
 		return "GET_ACCESSOR"
 	case InstrTypeSetAccessor:
 		return "SET_ACCESSOR"
+	case InstrTypeInterfacePropGet:
+		return "INTERFACE_PROP_GET"
+	case InstrTypeInterfacePropSet:
+		return "INTERFACE_PROP_SET"
 	case InstrTypeGetIndex:
 		return "GET_INDEX"
 	case InstrTypeSetIndex:

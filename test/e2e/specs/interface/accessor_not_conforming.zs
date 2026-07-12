@@ -2,9 +2,9 @@ interface HasArea {
   area: i32;
 }
 
-// Circle exposes `area` only via an accessor (get), not a stored field or method.
-// Interface dispatch resolves properties by field offset, which an accessor doesn't
-// provide, so Circle must NOT be accepted as a HasArea (a clean error, not a crash).
+// `area: i32` is a WRITABLE interface property, so a conformer must be able to write it — a
+// real field, or an accessor with BOTH a getter and a setter. Circle has a getter-only accessor,
+// so it does NOT conform (a clean error, not a crash). (A `readonly area` would accept it.)
 class Circle {
   public r: i32;
   constructor(r: i32) { this.r = r; }

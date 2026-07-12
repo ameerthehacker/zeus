@@ -228,15 +228,16 @@ different files.
 Built-in classes participate too: `string`, `Error`, and other primordials are ordinary
 classes, so they satisfy an interface whenever they structurally match it.
 
-<Aside type="note" title="Not yet supported">
-  Two kinds of members are rejected at compile time (a clean type error, never a bad dispatch):
+A property may be backed by a **field or an accessor**: a class satisfies `readonly x: T` with a
+`get x()` and a writable `x: T` with both `get x()` and `set x()`. Reading or writing the property
+through the interface dispatches to the field (a direct load/store) or the accessor (a getter/setter
+call) automatically, depending on the concrete object.
 
-  - **Accessor-backed members.** An interface member must be backed by a real **field**
-    (properties) or **method** — a class that provides it only through an **accessor**
-    (`get`/`set`) does not conform, because interface dispatch resolves properties by field
-    offset and methods by vtable slot.
+<Aside type="note" title="Not yet supported">
   - **Arrays.** Object arrays (`Point[]`, `Shape[]`, …) all share one physical layout and
-    therefore one runtime class id, so they can't be keyed in the per-class dispatch table.
+    therefore one runtime class id, so they can't be keyed in the per-class dispatch table —
+    they're rejected at compile time (a clean type error, never a bad dispatch).
+  - Interface **methods** must still be backed by a real method (not a function-typed field).
 
   Optional members (`?`), index signatures, call/construct signatures, and generic interfaces
   also depend on language features Zeus does not have yet.

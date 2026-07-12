@@ -68,7 +68,22 @@
         "stderr_contains": ["does not implement interface"]
     },
     {
-        "name": "A member satisfied only by an accessor does not conform",
+        "name": "Accessor-backed interface property (getter/setter dispatch)",
+        "exit": "64",
+        "entry": "accessor_property.zs"
+    },
+    {
+        "name": "Mixed field- and accessor-backed conformers via one dispatch site",
+        "exit": "21",
+        "entry": "mixed_prop_backing.zs"
+    },
+    {
+        "name": "Compound assignment through an accessor interface property calls the getter once",
+        "exit": "115",
+        "entry": "compound_accessor.zs"
+    },
+    {
+        "name": "A writable property satisfied only by a getter-only accessor does not conform",
         "exit": "1",
         "entry": "accessor_not_conforming.zs",
         "compile_error": true,

@@ -503,6 +503,32 @@ func (b *IRBuilder) BuildStore(addr *zeus_value.Var, value zeus_value.Value, spa
 	})
 }
 
+// BuildInterfacePropGet emits an INTERFACE_PROP_GET: read `propName` through interface value
+// `object`. resultType (the interface property's type) is set on the produced value.
+func (b *IRBuilder) BuildInterfacePropGet(object zeus_value.Value, iface *zeus_value.Interface, propName string, resultType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = resultType
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeInterfacePropGet,
+		Output: result,
+		Input:  NewInterfacePropGetInstrInput(object, iface, propName),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildInterfacePropSet emits an INTERFACE_PROP_SET: write `value` into `propName` through
+// interface value `object`. No result (the write is a statement).
+func (b *IRBuilder) BuildInterfacePropSet(object zeus_value.Value, iface *zeus_value.Interface, propName string, value zeus_value.Value, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypeInterfacePropSet,
+		Input: NewInterfacePropSetInstrInput(object, iface, propName, value),
+		Span:  span,
+	})
+}
+
 func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 

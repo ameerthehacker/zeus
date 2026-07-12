@@ -131,9 +131,52 @@ class Square {
 		t.Fatalf("method slots: got %v, want [%d]", row.MethodSlots, wantSlot)
 	}
 
-	// Property field index must equal radius's 0-based index in Circle's fields.
+	// Property backing must be the field radius at its 0-based index in Circle's fields.
 	wantIndex := fieldIndex(t, circle, "radius")
-	if len(row.PropertyFieldIndices) != 1 || row.PropertyFieldIndices[0] != wantIndex {
-		t.Fatalf("property field indices: got %v, want [%d]", row.PropertyFieldIndices, wantIndex)
+	if len(row.PropertyBackings) != 1 ||
+		row.PropertyBackings[0].Kind != zeus_value.PropertyBackingField ||
+		row.PropertyBackings[0].FieldIndex != wantIndex {
+		t.Fatalf("property backings: got %+v, want field @%d", row.PropertyBackings, wantIndex)
+	}
+}
+
+// TestInterfacePropertyBackingAccessor: a class that provides a property via get/set accessors
+// resolves to an Accessor PropertyBacking pointing at the getter/setter vtable slots.
+func TestInterfacePropertyBackingAccessor(t *testing.T) {
+	_, instrs := generateHIR(t, `
+class Widget {
+  private v: i32;
+  constructor(w: i32) { this.v = w; }
+  get value(): i32 { return this.v; }
+  set value(x: i32) { this.v = x; }
+}`)
+	instrs = filterUserInstrs(instrs)
+	widget := classBySourceName(t, instrs, "Widget")
+
+	acc := zeus_value.LookupAccessor(widget, "value")
+	if acc == nil || acc.Getter == nil || acc.Setter == nil {
+		t.Fatalf("Widget should have a get/set accessor for value")
+	}
+	// A writable interface property `value: T` backed by Widget's accessor.
+	prop := zeus_value.NewClassProperty(
+		zeus_value.NewVar("value", acc.Getter.ReturnType, false, nil), nil, false, false, nil)
+
+	backing, ok := zeus_value.ResolveInterfacePropertyBacking(widget, prop, true /*writable*/)
+	if !ok {
+		t.Fatalf("Widget should back a writable `value` via its accessor")
+	}
+	if backing.Kind != zeus_value.PropertyBackingAccessor {
+		t.Fatalf("backing kind: got %+v, want accessor", backing)
+	}
+	wantGet := vtableSlot(t, widget, acc.Getter.SourceName())
+	wantSet := vtableSlot(t, widget, acc.Setter.SourceName())
+	if backing.GetterSlot != wantGet || backing.SetterSlot != wantSet {
+		t.Fatalf("accessor slots: got get=%d set=%d, want get=%d set=%d",
+			backing.GetterSlot, backing.SetterSlot, wantGet, wantSet)
+	}
+
+	// Readonly (getter-only requirement) also resolves.
+	if _, ok := zeus_value.ResolveInterfacePropertyBacking(widget, prop, false /*readonly*/); !ok {
+		t.Fatalf("Widget should back a readonly `value` via its getter")
 	}
 }

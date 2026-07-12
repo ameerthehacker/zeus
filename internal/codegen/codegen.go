@@ -170,7 +170,7 @@ func (c *Codegen) interfaceTablesDigest() string {
 		layout := c.interfaceLayout(usage.iface)
 		fmt.Fprintf(h, "max %d\n", layout.MaxClassId)
 		for _, row := range layout.Rows {
-			fmt.Fprintf(h, "row %d slots=%v props=%v\n", row.ClassId, row.MethodSlots, row.PropertyFieldIndices)
+			fmt.Fprintf(h, "row %d slots=%v props=%v\n", row.ClassId, row.MethodSlots, row.PropertyBackings)
 			for _, field := range row.Class.Layout().Fields {
 				fmt.Fprintf(h, "  f %s\n", field.Property.ValueType.String())
 			}
@@ -180,15 +180,15 @@ func (c *Codegen) interfaceTablesDigest() string {
 }
 
 type ZeusClassLLVMStruct struct {
-	ZeusClass                zeus_value.Class
-	LLVMStructType           llvm.Type
-	LLVMVTableStructType     llvm.Type
-	LLVMVTableMethods        []llvm.Value
-	LLVMObjHeaderStructType  llvm.Type
-	LLVMVTableInstance       *llvm.Value
-	LLVMObjHeaderInstance    llvm.Value
-	LLVMConstructorMethod    *llvm.Value
-	LLVMFactoryFunction      *llvm.Value
+	ZeusClass               zeus_value.Class
+	LLVMStructType          llvm.Type
+	LLVMVTableStructType    llvm.Type
+	LLVMVTableMethods       []llvm.Value
+	LLVMObjHeaderStructType llvm.Type
+	LLVMVTableInstance      *llvm.Value
+	LLVMObjHeaderInstance   llvm.Value
+	LLVMConstructorMethod   *llvm.Value
+	LLVMFactoryFunction     *llvm.Value
 }
 
 type ZeusClassModule struct {
@@ -215,10 +215,10 @@ const ZeusObjectClassName = "Object"
 const ZeusObjectArrayClassName = ZeusObjectClassName + "[]"
 
 type CodegenModule struct {
-	module                 llvm.Module
-	builder                llvm.Builder
-	cxt                    llvm.Context
-	llvmValues             map[string]llvm.Value
+	module     llvm.Module
+	builder    llvm.Builder
+	cxt        llvm.Context
+	llvmValues map[string]llvm.Value
 	// llvmFunctions is a separate namespace for functions so their (uniquified) IR names
 	// can never collide with parameter/variable names in llvmValues — primordial method
 	// params use non-unique literal names (e.g. "count", "value") that would otherwise
@@ -241,7 +241,7 @@ type CodegenModule struct {
 	// interfaceDispatch/interfacePropDispatch memoize the per-interface method/property
 	// dispatch-table globals (keyed by Interface.Id) so each is built once per module.
 	interfaceDispatch      map[int]*interfaceDispatchInfo
-	interfacePropDispatch  map[int]*interfaceDispatchInfo
+	interfacePropDispatch  map[int]*interfacePropDispatchInfo
 	targetDataLayout       llvm.TargetData
 	globalLLVMFunctions    map[string]GlobalLLVMFunction
 	zeusObjectTypeInfoType llvm.Type
@@ -348,7 +348,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		zeusClassLLVMStructMap: make(map[string]*ZeusClassLLVMStruct),
 		codegen:                c,
 		interfaceDispatch:      make(map[int]*interfaceDispatchInfo),
-		interfacePropDispatch:  make(map[int]*interfaceDispatchInfo),
+		interfacePropDispatch:  make(map[int]*interfacePropDispatchInfo),
 		targetDataLayout:       targetDataLayout,
 		globalLLVMFunctions:    globalLLVMFunctions,
 		zeusObjectTypeInfoType: zeusObjectInfoStructType,
@@ -1683,6 +1683,28 @@ type interfaceDispatchInfo struct {
 	tableType llvm.Type
 }
 
+// interfacePropDispatchInfo holds an interface's two property dispatch tables (read/write) and
+// their (shared) LLVM type. Each entry is a tagged i32: a field byte-offset, or (accessor)
+// a getter/setter vtable slot with interfaceAccessorTag set.
+type interfacePropDispatchInfo struct {
+	getGlobal llvm.Value
+	setGlobal llvm.Value
+	tableType llvm.Type
+}
+
+// interfaceAccessorTag marks a property-itable entry as a vtable slot (an accessor) rather than a
+// field byte offset. Field offsets are small (≥ 8, after the header) and slots small, so the high
+// bit is free as a discriminator.
+const interfaceAccessorTag = 0x80000000
+
+// interfacePropAccessInfo bundles the operands of an INTERFACE_PROP_GET/SET for the dispatch
+// helpers: the receiver object (already lowered to an LLVM value), its interface, and the property.
+type interfacePropAccessInfo struct {
+	object   llvm.Value
+	iface    *zeus_value.Interface
+	propName string
+}
+
 // Interface dispatch tables (itables) are whole-program data (they list conformers from every
 // module), so they are DEFINED once in a dedicated itable module (defineInterface*Table, external
 // linkage) and merely REFERENCED (external declaration) at each dispatch site. This keeps ordinary
@@ -1693,8 +1715,12 @@ func interfaceMethodTableName(iface *zeus_value.Interface) string {
 	return fmt.Sprintf("__zeus_iface_%d_idispatch", iface.Id)
 }
 
-func interfacePropTableName(iface *zeus_value.Interface) string {
-	return fmt.Sprintf("__zeus_iface_%d_ipropdispatch", iface.Id)
+func interfacePropGetTableName(iface *zeus_value.Interface) string {
+	return fmt.Sprintf("__zeus_iface_%d_ipropget", iface.Id)
+}
+
+func interfacePropSetTableName(iface *zeus_value.Interface) string {
+	return fmt.Sprintf("__zeus_iface_%d_ipropset", iface.Id)
 }
 
 // interfaceMethodTableType is the LLVM type of iface's method itable: [maxClassId+1][numMethods]
@@ -1730,16 +1756,20 @@ func (c *CodegenModule) refInterfaceDispatchTable(iface *zeus_value.Interface) *
 }
 
 // refInterfacePropDispatchTable is the property-table counterpart of refInterfaceDispatchTable.
-func (c *CodegenModule) refInterfacePropDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
+// refInterfacePropTables returns references to iface's property get/set itables, emitting external
+// DECLARATIONS in this module (definitions live in the dedicated itable module).
+func (c *CodegenModule) refInterfacePropTables(iface *zeus_value.Interface) *interfacePropDispatchInfo {
 	if info, ok := c.interfacePropDispatch[iface.Id]; ok {
 		return info
 	}
 	tableType := c.interfacePropTableType(iface)
-	global := llvm.AddGlobal(c.module, tableType, interfacePropTableName(iface))
-	global.SetLinkage(llvm.ExternalLinkage)
+	getGlobal := llvm.AddGlobal(c.module, tableType, interfacePropGetTableName(iface))
+	getGlobal.SetLinkage(llvm.ExternalLinkage)
+	setGlobal := llvm.AddGlobal(c.module, tableType, interfacePropSetTableName(iface))
+	setGlobal.SetLinkage(llvm.ExternalLinkage)
 	c.codegen.recordInterfacePropTable(iface)
 	c.dispatchesInterface = true
-	info := &interfaceDispatchInfo{global: global, tableType: tableType}
+	info := &interfacePropDispatchInfo{getGlobal: getGlobal, setGlobal: setGlobal, tableType: tableType}
 	c.interfacePropDispatch[iface.Id] = info
 	return info
 }
@@ -1773,33 +1803,54 @@ func (c *CodegenModule) defineInterfaceDispatchTable(iface *zeus_value.Interface
 	global.SetGlobalConstant(true)
 }
 
-// defineInterfacePropDispatchTable emits the DEFINITION of iface's property itable (byte offsets).
-func (c *CodegenModule) defineInterfacePropDispatchTable(iface *zeus_value.Interface) {
+// defineInterfacePropTables emits the DEFINITIONS of iface's two property itables (get/set). Each
+// entry is a tagged i32: a field byte offset, or a getter/setter vtable slot | interfaceAccessorTag.
+func (c *CodegenModule) defineInterfacePropTables(iface *zeus_value.Interface) {
 	layout := c.codegen.interfaceLayout(iface)
 	numProps := len(zeus_value.InterfaceProperties(iface))
 	i32 := c.cxt.Int32Type()
 	innerType := llvm.ArrayType(i32, numProps)
 	tableType := llvm.ArrayType(innerType, layout.MaxClassId+1)
 
-	rows := make([]llvm.Value, layout.MaxClassId+1)
+	getRows := make([]llvm.Value, layout.MaxClassId+1)
+	setRows := make([]llvm.Value, layout.MaxClassId+1)
 	nullInner := llvm.ConstNull(innerType)
-	for i := range rows {
-		rows[i] = nullInner
+	for i := range getRows {
+		getRows[i] = nullInner
+		setRows[i] = nullInner
 	}
 	for _, row := range layout.Rows {
 		structType := c.instanceStructTypeForOffset(row.Class)
-		offsets := make([]llvm.Value, numProps)
-		for k, fieldIndex := range row.PropertyFieldIndices {
-			// +1 skips the object header (matches util.GetPropertyIndex).
-			offsets[k] = c.constFieldOffset(structType, fieldIndex+1)
+		getEntries := make([]llvm.Value, numProps)
+		setEntries := make([]llvm.Value, numProps)
+		for k, backing := range row.PropertyBackings {
+			if backing.Kind == zeus_value.PropertyBackingAccessor {
+				getEntries[k] = llvm.ConstInt(i32, uint64(backing.GetterSlot)|interfaceAccessorTag, false)
+				setter := backing.SetterSlot
+				if setter < 0 {
+					setter = 0 // readonly property: setter never dispatched
+				}
+				setEntries[k] = llvm.ConstInt(i32, uint64(setter)|interfaceAccessorTag, false)
+			} else {
+				// Field: both read and write use the field's byte offset (+1 skips the header).
+				offset := c.constFieldOffset(structType, backing.FieldIndex+1)
+				getEntries[k] = offset
+				setEntries[k] = offset
+			}
 		}
-		rows[row.ClassId] = llvm.ConstArray(innerType, offsets)
+		getRows[row.ClassId] = llvm.ConstArray(innerType, getEntries)
+		setRows[row.ClassId] = llvm.ConstArray(innerType, setEntries)
 	}
 
-	global := llvm.AddGlobal(c.module, tableType, interfacePropTableName(iface))
-	global.SetInitializer(llvm.ConstArray(innerType, rows))
-	global.SetLinkage(llvm.ExternalLinkage)
-	global.SetGlobalConstant(true)
+	getGlobal := llvm.AddGlobal(c.module, tableType, interfacePropGetTableName(iface))
+	getGlobal.SetInitializer(llvm.ConstArray(innerType, getRows))
+	getGlobal.SetLinkage(llvm.ExternalLinkage)
+	getGlobal.SetGlobalConstant(true)
+
+	setGlobal := llvm.AddGlobal(c.module, tableType, interfacePropSetTableName(iface))
+	setGlobal.SetInitializer(llvm.ConstArray(innerType, setRows))
+	setGlobal.SetLinkage(llvm.ExternalLinkage)
+	setGlobal.SetGlobalConstant(true)
 }
 
 // DefineDispatchedInterfaceTables emits the definitions of every interface table referenced
@@ -1818,7 +1869,7 @@ func (c *CodegenModule) DefineDispatchedInterfaceTables() {
 			c.defineInterfaceDispatchTable(usage.iface)
 		}
 		if usage.needsProp {
-			c.defineInterfacePropDispatchTable(usage.iface)
+			c.defineInterfacePropTables(usage.iface)
 		}
 	}
 }
@@ -1917,36 +1968,134 @@ func (c *CodegenModule) genInterfaceMethodCall(input ir.MethodCallInstrInput, if
 	c.llvmValues[output.Name] = result
 }
 
-// genInterfacePropertyPtr returns a pointer to the property's field on the concrete object
-// behind an interface value: obj + ipropdispatch[classId][propSlot] (a byte offset). The
-// result is used the same way as a normal field pointer — loaded for reads, stored for writes.
-func (c *CodegenModule) genInterfacePropertyPtr(input ir.ObjectPropertyAccessInstrInput, iface *zeus_value.Interface, llvmObject llvm.Value) llvm.Value {
-	propSlot := zeus_value.InterfacePropertyIndex(iface, input.Property)
-	zeus_error.Assert(propSlot != -1, fmt.Sprintf("interface %s has no property %s", iface.Name, input.Property))
-
-	info := c.refInterfacePropDispatchTable(iface)
+// interfacePropTagAndSlot loads the tagged property-itable entry for `access` from `table` and
+// returns (tag i32, isAccessor i1, slotOrOffset masked-i32). Shared by get and set.
+func (c *CodegenModule) interfacePropTagAndSlot(access interfacePropAccessInfo, table llvm.Value, tableType llvm.Type) (tag, isAcc, payload llvm.Value) {
+	iface := access.iface
+	propSlot := zeus_value.InterfacePropertyIndex(iface, access.propName)
+	zeus_error.Assert(propSlot != -1, fmt.Sprintf("interface %s has no property %s", iface.Name, access.propName))
 	i32 := c.cxt.Int32Type()
-
-	classId := c.loadObjectClassId(llvmObject)
 	zero := llvm.ConstInt(i32, 0, false)
+	classId := c.loadObjectClassId(access.object)
 	pSlot := llvm.ConstInt(i32, uint64(propSlot), false)
-	offsetAddr := c.builder.CreateInBoundsGEP(info.tableType, info.global, []llvm.Value{zero, classId, pSlot}, "propOffsetAddr")
-	byteOffset := c.builder.CreateLoad(i32, offsetAddr, "propByteOffset")
+	addr := c.builder.CreateInBoundsGEP(tableType, table, []llvm.Value{zero, classId, pSlot}, "ipropEntryAddr")
+	tag = c.builder.CreateLoad(i32, addr, "ipropEntry")
+	accBit := c.builder.CreateAnd(tag, llvm.ConstInt(i32, interfaceAccessorTag, false), "accBit")
+	isAcc = c.builder.CreateICmp(llvm.IntNE, accBit, zero, "isAccessor")
+	payload = c.builder.CreateAnd(tag, llvm.ConstInt(i32, interfaceAccessorTag-1, false), "ipropPayload")
+	return tag, isAcc, payload
+}
 
-	// fieldPtr = (i8*)obj + byteOffset
-	return c.builder.CreateInBoundsGEP(c.cxt.Int8Type(), llvmObject, []llvm.Value{byteOffset}, "ifacePropPtr")
+// interfacePropertyType is the LLVM type of interface property `name`.
+func (c *CodegenModule) interfacePropertyType(iface *zeus_value.Interface, name string) llvm.Type {
+	for _, p := range zeus_value.InterfaceProperties(iface) {
+		if p.Property.Name == name {
+			return c.toLLVMType(p.Property.ValueType)
+		}
+	}
+	panic(fmt.Sprintf("interface %s has no property %s", iface.Name, name))
+}
+
+// genInterfacePropGet lowers an INTERFACE_PROP_GET instruction: read the property value through
+// the interface receiver and bind it to the instruction's output.
+func (c *CodegenModule) genInterfacePropGet(input ir.InterfacePropGetInstrInput, output zeus_value.Var) {
+	access := interfacePropAccessInfo{
+		object:   c.toLLVMValue(input.Object),
+		iface:    input.Iface,
+		propName: input.PropName,
+	}
+	c.llvmValues[output.Name] = c.genInterfacePropertyGet(access)
+}
+
+// genInterfacePropSet lowers an INTERFACE_PROP_SET instruction: write a value through the
+// interface receiver.
+func (c *CodegenModule) genInterfacePropSet(input ir.InterfacePropSetInstrInput) {
+	access := interfacePropAccessInfo{
+		object:   c.toLLVMValue(input.Object),
+		iface:    input.Iface,
+		propName: input.PropName,
+	}
+	c.genInterfacePropertySet(access, c.toLLVMValue(input.Value))
+}
+
+// genInterfacePropertyGet reads an interface property through the tagged get-itable: a field load
+// at the byte offset, or a getter call through the object's own vtable — chosen at runtime.
+func (c *CodegenModule) genInterfacePropertyGet(access interfacePropAccessInfo) llvm.Value {
+	obj := access.object
+	info := c.refInterfacePropTables(access.iface)
+	propType := c.interfacePropertyType(access.iface, access.propName)
+	tag, isAcc, slot := c.interfacePropTagAndSlot(access, info.getGlobal, info.tableType)
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+
+	fn := c.builder.GetInsertBlock().Parent()
+	fieldBlock := c.cxt.AddBasicBlock(fn, "iprop.get.field")
+	accBlock := c.cxt.AddBasicBlock(fn, "iprop.get.acc")
+	mergeBlock := c.cxt.AddBasicBlock(fn, "iprop.get.merge")
+	c.builder.CreateCondBr(isAcc, accBlock, fieldBlock)
+
+	// field: load(obj + offset)  (tag is the offset when the accessor bit is clear)
+	c.builder.SetInsertPointAtEnd(fieldBlock)
+	fieldPtr := c.builder.CreateInBoundsGEP(c.cxt.Int8Type(), obj, []llvm.Value{tag}, "ipropFieldPtr")
+	vField := c.builder.CreateLoad(propType, fieldPtr, "ipropField")
+	c.builder.CreateBr(mergeBlock)
+	fieldEnd := c.builder.GetInsertBlock()
+
+	// accessor: getter = objVtable[slot]; call getter(obj)
+	c.builder.SetInsertPointAtEnd(accBlock)
+	vtable := c.loadObjectVTable(obj)
+	fnPtrAddr := c.builder.CreateInBoundsGEP(ptrType, vtable, []llvm.Value{slot}, "getterPtrAddr")
+	fnPtr := c.builder.CreateLoad(ptrType, fnPtrAddr, "getterPtr")
+	getterType := llvm.FunctionType(propType, []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 1)}, false)
+	vAcc := c.builder.CreateCall(getterType, fnPtr, []llvm.Value{obj}, "ipropGetter")
+	c.builder.CreateBr(mergeBlock)
+	accEnd := c.builder.GetInsertBlock()
+
+	c.builder.SetInsertPointAtEnd(mergeBlock)
+	phi := c.builder.CreatePHI(propType, "ipropValue")
+	phi.AddIncoming([]llvm.Value{vField, vAcc}, []llvm.BasicBlock{fieldEnd, accEnd})
+	return phi
+}
+
+// genInterfacePropertySet writes an interface property through the tagged set-itable: a field store
+// at the byte offset, or a setter call through the object's own vtable — chosen at runtime.
+func (c *CodegenModule) genInterfacePropertySet(access interfacePropAccessInfo, value llvm.Value) {
+	obj := access.object
+	info := c.refInterfacePropTables(access.iface)
+	propType := c.interfacePropertyType(access.iface, access.propName)
+	tag, isAcc, slot := c.interfacePropTagAndSlot(access, info.setGlobal, info.tableType)
+	ptrType := llvm.PointerType(c.cxt.VoidType(), 0)
+
+	fn := c.builder.GetInsertBlock().Parent()
+	fieldBlock := c.cxt.AddBasicBlock(fn, "iprop.set.field")
+	accBlock := c.cxt.AddBasicBlock(fn, "iprop.set.acc")
+	mergeBlock := c.cxt.AddBasicBlock(fn, "iprop.set.merge")
+	c.builder.CreateCondBr(isAcc, accBlock, fieldBlock)
+
+	// field: store value, (obj + offset)
+	c.builder.SetInsertPointAtEnd(fieldBlock)
+	fieldPtr := c.builder.CreateInBoundsGEP(c.cxt.Int8Type(), obj, []llvm.Value{tag}, "ipropFieldPtr")
+	c.builder.CreateStore(value, fieldPtr)
+	c.builder.CreateBr(mergeBlock)
+
+	// accessor: setter = objVtable[slot]; call setter(value, obj)  (method ABI: args then receiver)
+	c.builder.SetInsertPointAtEnd(accBlock)
+	vtable := c.loadObjectVTable(obj)
+	fnPtrAddr := c.builder.CreateInBoundsGEP(ptrType, vtable, []llvm.Value{slot}, "setterPtrAddr")
+	fnPtr := c.builder.CreateLoad(ptrType, fnPtrAddr, "setterPtr")
+	setterType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{propType, llvm.PointerType(c.cxt.VoidType(), 1)}, false)
+	c.builder.CreateCall(setterType, fnPtr, []llvm.Value{value, obj}, "")
+	c.builder.CreateBr(mergeBlock)
+
+	c.builder.SetInsertPointAtEnd(mergeBlock)
 }
 
 func (c *CodegenModule) genObjectPropertyAccess(input ir.ObjectPropertyAccessInstrInput, output zeus_value.Var) {
 	objectType := c.getValueType(input.Object)
 	llvmValue := c.toLLVMValue(input.Object)
 
-	// Property access through an interface value: the field lives at a class-specific byte
-	// offset, so look it up dynamically via the interface's property dispatch table.
-	if ifaceType := zeus_value.AsInterfaceType(objectType); ifaceType != nil {
-		c.llvmValues[output.Name] = c.genInterfacePropertyPtr(input, ifaceType.Interface, llvmValue)
-		return
-	}
+	// Property access through an interface value never reaches codegen as an OBJECT_PROPERTY_ACCESS:
+	// InterfacePropertyLoweringPass has already folded it into INTERFACE_PROP_GET/SET (a field is
+	// not guaranteed — the concrete member may be a get/set accessor, resolved at runtime).
 
 	objectClass := zeus_value.AsObjectType(objectType)
 	zeus_error.Assert(objectClass != nil, fmt.Sprintf("object %s is not a class", input.Object))
@@ -2346,6 +2495,12 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeObjectPropertyAccess:
 			c.setDebugLocation(instr.Span)
 			c.genObjectPropertyAccess(*ir.AsObjectPropertyAccessInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeInterfacePropGet:
+			c.setDebugLocation(instr.Span)
+			c.genInterfacePropGet(*ir.AsInterfacePropGetInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeInterfacePropSet:
+			c.setDebugLocation(instr.Span)
+			c.genInterfacePropSet(*ir.AsInterfacePropSetInstrInput(instr.Input))
 		case ir.InstrTypeIndirectFuncCall:
 			c.setDebugLocation(instr.Span)
 			c.genIndirectFuncCall(*ir.AsIndirectFuncCallInstrInput(instr.Input), *instr.Output)
