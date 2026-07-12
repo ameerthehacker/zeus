@@ -190,12 +190,24 @@ func isJSDoc(lines []string) bool {
 // Statements
 // ---------------------------------------------------------------------------
 
+// semi renders a statement/member terminator: a literal `;` when the Semicolons
+// option is on, otherwise nothing. Callers must only use it where Zeus's automatic
+// semicolon insertion makes the `;` redundant (i.e. the preceding token is a
+// value-ending token — see lexer.shouldInsertSemicolon). Keyword-terminated
+// statements like a bare `return`/`break`/`continue` keep an explicit `;`.
+func (f *formatter) semi() Doc {
+	if f.opts.Semicolons {
+		return text(";")
+	}
+	return nilDoc
+}
+
 func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 	switch s := stmt.(type) {
 	case *ast.ExprStmtNode:
 		d := f.printExpr(s.Expr)
 		if !exprEndsWithBlock(s.Expr) {
-			d = concat(d, text(";"))
+			d = concat(d, f.semi())
 		}
 		return d
 
@@ -207,9 +219,10 @@ func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 
 	case *ast.ReturnStmtNode:
 		if s.Expr == nil {
+			// Bare `return` ends in a keyword — ASI never inserts here, so the `;` stays.
 			return text("return;")
 		}
-		return concat(text("return "), f.printExpr(s.Expr), text(";"))
+		return concat(text("return "), f.printExpr(s.Expr), f.semi())
 
 	case *ast.IfStmtNode:
 		return f.printIf(s)
@@ -229,7 +242,7 @@ func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 	case *ast.ExportStmtNode:
 		d := concat(text("export "), f.printExpr(s.Expr))
 		if !exprEndsWithBlock(s.Expr) {
-			d = concat(d, text(";"))
+			d = concat(d, f.semi())
 		}
 		return d
 
@@ -237,9 +250,10 @@ func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 		return f.printTryCatch(s)
 
 	case *ast.ThrowStmtNode:
-		return concat(text("throw "), f.printExpr(s.Expr), text(";"))
+		return concat(text("throw "), f.printExpr(s.Expr), f.semi())
 
 	case *ast.BreakStmtNode:
+		// `break`/`continue` end in a keyword — ASI never inserts here, so the `;` stays.
 		return text("break;")
 
 	case *ast.ContinueStmtNode:
@@ -261,8 +275,11 @@ func (f *formatter) printVarDeclStmt(s *ast.VarDeclStmtNode, semicolon bool) Doc
 	d := concat(text(keyword+" "), join(text(", "), declDocs))
 	if semicolon {
 		last := s.Decls[len(s.Decls)-1]
+		// `let x: T` ends in a type and `let x = expr` in the initializer's value token — after
+		// either, ASI inserts the terminator, so it can be omitted (unless the initializer is a
+		// self-terminating block).
 		if last.Initializer == nil || !exprEndsWithBlock(last.Initializer) {
-			d = concat(d, text(";"))
+			d = concat(d, f.semi())
 		}
 	}
 	return d
@@ -432,6 +449,8 @@ func (f *formatter) printExpr(expr ast.ExprNode) Doc {
 		return f.printFunction(e)
 	case *ast.ClassDeclExprNode:
 		return f.printClass(e)
+	case *ast.InterfaceDeclExprNode:
+		return f.printInterface(e)
 	case *ast.ValueTypeNode:
 		return text(formatType(e.ValueType))
 	}
@@ -478,10 +497,10 @@ func (f *formatter) printFunction(e *ast.FunctionDeclExprNode) Doc {
 
 	sig := concat(text("function "+e.Name.Name.Value), f.paramList(e.Params), f.returnType(e.ReturnType))
 	if e.ExternSymbol != "" {
-		return concat(text("extern(\""+e.ExternSymbol+"\") "), sig, text(";"))
+		return concat(text("extern(\""+e.ExternSymbol+"\") "), sig, f.semi())
 	}
 	if e.Body == nil {
-		return concat(sig, text(";"))
+		return concat(sig, f.semi())
 	}
 	return concat(sig, text(" "), f.printBlockFor(e.Body))
 }
@@ -493,6 +512,13 @@ func (f *formatter) printClass(e *ast.ClassDeclExprNode) Doc {
 	}
 	if e.ParentClass != nil {
 		head += " extends " + e.ParentClass.Name.Value
+	}
+	if len(e.Implements) > 0 {
+		names := make([]string, len(e.Implements))
+		for i, iface := range e.Implements {
+			names[i] = iface.Name.Value
+		}
+		head += " implements " + strings.Join(names, ", ")
 	}
 
 	// Properties and methods are stored in separate slices; sort by span so the
@@ -533,7 +559,7 @@ func (f *formatter) printProperty(p *ast.ClassProperty) Doc {
 	if p.ValueType != nil && p.ValueType.ValueType != nil {
 		parts = append(parts, text(": "+formatType(p.ValueType.ValueType)))
 	}
-	parts = append(parts, text(";"))
+	parts = append(parts, f.semi())
 	return concat(parts...)
 }
 
@@ -566,10 +592,63 @@ func (f *formatter) printMethod(m *ast.ClassMethod) Doc {
 	}
 
 	if m.Body == nil {
-		parts = append(parts, text(";"))
+		parts = append(parts, f.semi())
 	} else {
 		parts = append(parts, text(" "), f.printBlockFor(m.Body))
 	}
+	return concat(parts...)
+}
+
+func (f *formatter) printInterface(e *ast.InterfaceDeclExprNode) Doc {
+	head := "interface"
+	if e.Name != nil {
+		head += " " + e.Name.Name.Value
+	}
+	if len(e.Parents) > 0 {
+		names := make([]string, len(e.Parents))
+		for i, p := range e.Parents {
+			names[i] = p.Name.Value
+		}
+		head += " extends " + strings.Join(names, ", ")
+	}
+
+	// Property and method signatures live in separate slices; sort by span to preserve the
+	// original source order and comment attachment, mirroring printClass.
+	items := make([]bodyItem, 0, len(e.Properties)+len(e.Methods))
+	for _, p := range e.Properties {
+		p := p
+		items = append(items, bodyItem{span: p.Span, render: func() Doc { return f.printInterfaceProperty(p) }})
+	}
+	for _, m := range e.Methods {
+		m := m
+		items = append(items, bodyItem{span: m.Span, render: func() Doc { return f.printInterfaceMethod(m) }})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return posLess(items[i].span.Start, items[j].span.Start)
+	})
+
+	body, has := f.printBody(items, &e.Span.End)
+	if !has {
+		return concat(text(head+" "), text("{}"))
+	}
+	return concat(text(head+" "), text("{"), indent(concat(hardline, body)), hardline, text("}"))
+}
+
+func (f *formatter) printInterfaceProperty(p *ast.InterfacePropertySignature) Doc {
+	parts := []Doc{}
+	if p.IsReadonly {
+		parts = append(parts, text("readonly "))
+	}
+	parts = append(parts, text(p.Name.Name.Value))
+	if p.ValueType != nil && p.ValueType.ValueType != nil {
+		parts = append(parts, text(": "+formatType(p.ValueType.ValueType)))
+	}
+	parts = append(parts, f.semi())
+	return concat(parts...)
+}
+
+func (f *formatter) printInterfaceMethod(m *ast.InterfaceMethodSignature) Doc {
+	parts := []Doc{text(m.Name.Name.Value), f.paramList(m.Params), f.returnType(m.ReturnType), f.semi()}
 	return concat(parts...)
 }
 
@@ -636,7 +715,7 @@ func unwrapGrouping(expr ast.ExprNode) ast.ExprNode {
 // Mirrors the parser's helper of the same name.
 func exprEndsWithBlock(expr ast.ExprNode) bool {
 	switch e := expr.(type) {
-	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode:
+	case *ast.FunctionDeclExprNode, *ast.ClassDeclExprNode, *ast.InterfaceDeclExprNode:
 		return true
 	case *ast.BinaryExprNode:
 		return exprEndsWithBlock(e.Right)

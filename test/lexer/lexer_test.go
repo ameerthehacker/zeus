@@ -124,6 +124,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "void",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeVoid, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 5))),
 			},
 		},
@@ -135,6 +136,7 @@ func TestZeusLexer(t *testing.T) {
 				token.NewToken(token.TokenTypeInt16, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 6))),
 				token.NewToken(token.TokenTypeInt32, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 10))),
 				token.NewToken(token.TokenTypeInt64, token.NewSpan(*token.NewPosition(1, 12), *token.NewPosition(1, 14))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 14), *token.NewPosition(1, 14))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 15), *token.NewPosition(1, 15))),
 			},
 		},
@@ -144,6 +146,7 @@ func TestZeusLexer(t *testing.T) {
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeFloat32, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 3))),
 				token.NewToken(token.TokenTypeFloat64, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 7))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 7), *token.NewPosition(1, 7))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
 		},
@@ -152,6 +155,7 @@ func TestZeusLexer(t *testing.T) {
 			input: "boolean",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeBoolean, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 7))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 7), *token.NewPosition(1, 7))),
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 8), *token.NewPosition(1, 8))),
 			},
 		},

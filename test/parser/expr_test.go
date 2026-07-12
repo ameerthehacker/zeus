@@ -271,7 +271,9 @@ func TestParseExpression(t *testing.T) {
 			input:    "function name(a: i8): i8",
 			expected: nil,
 			errors: []*zeus_error.ZeusError{
-				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected { to begin block", token.NewSpan(token.Position{Line: 1, Column: 25}, token.Position{Line: 1, Column: 25})),
+				// ASI inserts a `;` after the return type `i8`; the missing-brace error is reported
+				// against that `;` rather than end-of-input.
+				zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected { to begin block, but found ;", token.NewSpan(token.Position{Line: 1, Column: 24}, token.Position{Line: 1, Column: 24})),
 			},
 		},
 		{

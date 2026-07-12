@@ -13,7 +13,11 @@ import (
 )
 
 func fmtCmd() *cobra.Command {
-	return &cobra.Command{
+	// Flags bind directly onto an Options value seeded with the defaults; cobra parses them
+	// before Run, so opts reflects any overrides by the time we format.
+	opts := formatter.DefaultOptions()
+
+	cmd := &cobra.Command{
 		Use:   "fmt [file]",
 		Short: "Format a zeus source file in place",
 		Args:  cobra.ExactArgs(1),
@@ -42,7 +46,7 @@ func fmtCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			formatted := formatter.Format(program, lex.Comments(), formatter.DefaultOptions())
+			formatted := formatter.Format(program, lex.Comments(), opts)
 
 			// Safety net: never overwrite a file with output that no longer parses.
 			// Re-lex and re-parse the formatted result; if it fails, this is a
@@ -67,4 +71,11 @@ func fmtCmd() *cobra.Command {
 			logger.Log(zeus_error.ErrorSeverityInfo, fmt.Sprintf("formatted %s", filePath))
 		},
 	}
+
+	cmd.Flags().IntVar(&opts.PrintWidth, "print-width", opts.PrintWidth, "column width the printer targets before wrapping")
+	cmd.Flags().IntVar(&opts.IndentWidth, "indent-width", opts.IndentWidth, "number of spaces per indentation level")
+	cmd.Flags().BoolVar(&opts.UseTabs, "use-tabs", opts.UseTabs, "indent with a tab per level instead of spaces")
+	cmd.Flags().BoolVar(&opts.Semicolons, "semicolons", opts.Semicolons, "append terminating semicolons (use --semicolons=false to omit them where ASI allows)")
+
+	return cmd
 }

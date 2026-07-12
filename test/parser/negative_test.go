@@ -231,9 +231,11 @@ func TestNegativeFunctionDeclaration(t *testing.T) {
 			errors: parseErr("expected return type in function declaration, but found {", 1, 23, 23),
 		},
 		{
-			name:   "missing { for function body",
-			input:  "function name(a: i8): i8",
-			errors: parseErr("expected { to begin block", 1, 25, 25),
+			name:  "missing { for function body",
+			input: "function name(a: i8): i8",
+			// ASI inserts a `;` after the return type `i8`, so the parser reports the missing body
+			// brace against that `;` rather than end-of-input.
+			errors: parseErr("expected { to begin block, but found ;", 1, 24, 24),
 		},
 		{
 			name:   "missing } to close function body",
