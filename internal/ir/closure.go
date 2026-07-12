@@ -160,6 +160,10 @@ func (w *astWalker) VisitClassDeclExpr(*ast.ClassDeclExprNode) zeus_value.Value 
 	return nil // class bodies have their own scope; don't walk method bodies
 }
 
+func (w *astWalker) VisitInterfaceDeclExpr(*ast.InterfaceDeclExprNode) zeus_value.Value {
+	return nil // interfaces are type-level only; no runtime sub-expressions to walk
+}
+
 func (w *astWalker) VisitNumber(*ast.NumberExprNode) zeus_value.Value          { return nil }
 func (w *astWalker) VisitChar(*ast.CharExprNode) zeus_value.Value              { return nil }
 func (w *astWalker) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value        { return nil }

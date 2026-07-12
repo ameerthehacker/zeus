@@ -50,6 +50,9 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	l.passes = []LowerPass{
 		// Runs first so all later passes see a normalized fixed-arity argument list.
 		NewVariadicCallLoweringPass(),
+		// Folds interface property access (OBJECT_PROPERTY_ACCESS + LOAD/STORE) into
+		// INTERFACE_PROP_GET/SET early, so later passes and codegen see a self-contained instr.
+		NewInterfacePropertyLoweringPass(),
 		NewArrayMethodLoweringPass(),
 		NewIndexLoweringPass(),
 		NewStringOperatorLoweringPass(),
@@ -437,6 +440,124 @@ func (p *AccessorLoweringPass) lowerSetAccessor(l *Lowerer, instr *Instr, block 
 
 	updateOutputVar(instr.Output, result, zeus_value.GetValueType(input.Value))
 	builder.DeleteInstr(block, instr)
+}
+
+// InterfacePropertyLoweringPass - rewrites property access through an interface value
+// =============================================================================
+
+// Property access on an interface receiver is emitted by IR-gen as an OBJECT_PROPERTY_ACCESS
+// (producing an lvalue "pointer") followed by a LOAD (read) or STORE (write) of that pointer —
+// the same shape as a concrete field access. But an interface member may be backed by a field OR
+// a get/set accessor on the concrete object, chosen at runtime, so there is no real address to
+// load/store. This pass folds each (OBJECT_PROPERTY_ACCESS + LOAD/STORE) pair into a single
+// INTERFACE_PROP_GET / INTERFACE_PROP_SET, moving the "which instruction feeds which" reasoning
+// out of codegen (which now just translates one self-contained instruction) and into lowering.
+
+type interfacePropRef struct {
+	object   zeus_value.Value
+	iface    *zeus_value.Interface
+	propName string
+	span     *token.Span
+}
+
+type interfacePropRewrite struct {
+	instr    *Instr // the LOAD (read) or STORE (write) consuming the property pointer
+	block    *BasicBlock
+	ref      interfacePropRef
+	addrName string // the property-pointer var name (for store-to-load forwarding)
+	isWrite  bool
+}
+
+type interfacePropAccessInstr struct {
+	instr *Instr // the OBJECT_PROPERTY_ACCESS to delete once its consumer is rewritten
+	block *BasicBlock
+}
+
+type InterfacePropertyLoweringPass struct {
+	pending      map[string]interfacePropRef // OBJECT_PROPERTY_ACCESS output var → interface access
+	rewrites     []interfacePropRewrite
+	accessInstrs []interfacePropAccessInstr
+}
+
+func NewInterfacePropertyLoweringPass() *InterfacePropertyLoweringPass {
+	return &InterfacePropertyLoweringPass{pending: map[string]interfacePropRef{}}
+}
+
+func (p *InterfacePropertyLoweringPass) GetName() string { return "InterfacePropertyLowering" }
+
+func (p *InterfacePropertyLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	switch instr.Type {
+	case InstrTypeObjectPropertyAccess:
+		input := AsObjectPropertyAccessInstrInput(instr.Input)
+		ifaceType := zeus_value.AsInterfaceType(zeus_value.GetValueType(input.Object))
+		if ifaceType == nil {
+			return
+		}
+		// The property pointer is consumed by a LOAD/STORE later in the same block; record the
+		// access keyed by the pointer var so we can rewrite that consumer in Finalize.
+		p.pending[instr.Output.Name] = interfacePropRef{
+			object:   input.Object,
+			iface:    ifaceType.Interface,
+			propName: input.Property,
+			span:     instr.Span,
+		}
+		p.accessInstrs = append(p.accessInstrs, interfacePropAccessInstr{instr, l.GetCurrentBlock()})
+	case InstrTypeLoad:
+		input := AsLoadInstrInput(instr.Input)
+		if ref, ok := p.pending[input.Addr.Name]; ok {
+			p.rewrites = append(p.rewrites, interfacePropRewrite{instr, l.GetCurrentBlock(), ref, input.Addr.Name, false})
+		}
+	case InstrTypeStore:
+		input := AsStoreInstrInput(instr.Input)
+		if ref, ok := p.pending[input.Addr.Name]; ok {
+			p.rewrites = append(p.rewrites, interfacePropRewrite{instr, l.GetCurrentBlock(), ref, input.Addr.Name, true})
+		}
+	}
+}
+
+func (p *InterfacePropertyLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	// A compound assignment / prefix ++ through an interface property emits LOAD, STORE, LOAD on
+	// the SAME property pointer (read old, write new, re-read for the expression's result). The
+	// trailing read must NOT re-dispatch: an accessor-backed conformer would run the getter twice
+	// (a visible side effect) and, worse, a setter that clamps/transforms would make the re-read
+	// disagree with the assigned value. IR-gen always emits that trailing LOAD immediately after
+	// the STORE with nothing in between, so forwarding the just-stored value is sound — and it
+	// matches standard compound-assignment semantics (the result is the assigned value).
+	lastStored := map[string]zeus_value.Value{}
+	for _, rw := range p.rewrites {
+		setInsertionPoint(builder, rw.block, rw.instr)
+		if rw.isWrite {
+			store := AsStoreInstrInput(rw.instr.Input)
+			builder.BuildInterfacePropSet(rw.ref.object, rw.ref.iface, rw.ref.propName, store.Value, rw.ref.span)
+			lastStored[rw.addrName] = store.Value
+		} else {
+			propType := interfacePropertyValueType(rw.ref.iface, rw.ref.propName)
+			if stored, ok := lastStored[rw.addrName]; ok && zeus_value.AsVar(stored) != nil {
+				updateOutputVar(rw.instr.Output, stored, propType) // forward, no second getter
+			} else {
+				result := builder.BuildInterfacePropGet(rw.ref.object, rw.ref.iface, rw.ref.propName, propType, rw.ref.span)
+				updateOutputVar(rw.instr.Output, result, propType)
+			}
+		}
+		builder.DeleteInstr(rw.block, rw.instr)
+	}
+	// The property "pointer" is now unreferenced (its only consumer was rewritten above).
+	for _, a := range p.accessInstrs {
+		builder.DeleteInstr(a.block, a.instr)
+	}
+}
+
+// interfacePropertyValueType returns the declared type of interface property `name`. The property
+// is guaranteed to exist (the type checker rejects unknown members before lowering), so a miss is
+// a compiler invariant violation — fail loudly rather than return a nil type that crashes codegen.
+func interfacePropertyValueType(iface *zeus_value.Interface, name string) zeus_value.ValueType {
+	for _, prop := range zeus_value.InterfaceProperties(iface) {
+		if prop.Property.Name == name {
+			return prop.Property.ValueType
+		}
+	}
+	panic(fmt.Sprintf("interface %s has no property %s", iface.Name, name))
 }
 
 // IndexLoweringPass - Lowers GET_INDEX/SET_INDEX instructions to method calls

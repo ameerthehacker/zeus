@@ -158,7 +158,7 @@ func (f Function) String() string {
 type AccessorKind int
 
 const (
-	AccessorKindNone   AccessorKind = iota
+	AccessorKindNone AccessorKind = iota
 	AccessorKindGetter
 	AccessorKindSetter
 )
@@ -166,8 +166,8 @@ const (
 // ClassAccessor holds the getter and/or setter function for a named accessor property.
 type ClassAccessor struct {
 	Name           string
-	Getter         *Function    // nil if setter-only
-	Setter         *Function    // nil if getter-only
+	Getter         *Function // nil if setter-only
+	Setter         *Function // nil if getter-only
 	AccessModifier *token.Token
 	// IsLowered is true for primordial accessors whose bodies are expanded directly
 	// by the lowering pass (no Zig runtime function needed, e.g. arr.length).
@@ -367,6 +367,8 @@ func GetValueType(value Value) ValueType {
 		return value.ValueType
 	case *Class:
 		return NewClassType(value)
+	case *Interface:
+		return NewInterfaceType(value)
 	case *Function:
 		return ToFunctionType(*value)
 	case *ArrayElementRef:
@@ -394,6 +396,184 @@ func AsClass(value Value) *Class {
 	default:
 		return nil
 	}
+}
+
+// interfaceIdCounter gives every interface a stable unique id, used to key per-interface
+// dispatch tables in codegen. Interfaces and classes have separate id spaces.
+var interfaceIdCounter = 0
+
+// Interface is a TypeScript-style structural interface. It is a purely type-level
+// value: it lives in the symbol table and drives conformance checking, but emits no
+// IR/LLVM of its own. Methods carry only signatures (no body); Properties reuse
+// ClassProperty for name + type + readonly (AccessModifier is always nil).
+type Interface struct {
+	Id         int
+	Name       string
+	Parents    []*Interface // interfaces this one extends (structural union of members)
+	Properties []*ClassProperty
+	Methods    []*Function
+	Span       *token.Span
+}
+
+func NewInterface(name string, parents []*Interface, properties []*ClassProperty, methods []*Function, span *token.Span) *Interface {
+	interfaceIdCounter += 1
+	return &Interface{
+		Id:         interfaceIdCounter,
+		Name:       name,
+		Parents:    parents,
+		Properties: properties,
+		Methods:    methods,
+		Span:       span,
+	}
+}
+
+func (i Interface) GetSpan() *token.Span {
+	return i.Span
+}
+
+func (i Interface) String() string {
+	return i.Name
+}
+
+func IsInterface(value Value) bool {
+	_, ok := value.(*Interface)
+	return ok
+}
+
+func AsInterface(value Value) *Interface {
+	switch value := value.(type) {
+	case *Interface:
+		return value
+	default:
+		return nil
+	}
+}
+
+// PropertyBackingKind distinguishes how a conforming class provides an interface property.
+type PropertyBackingKind int
+
+const (
+	PropertyBackingField    PropertyBackingKind = iota // a real data field at FieldIndex
+	PropertyBackingAccessor                            // a get/set accessor at GetterSlot/SetterSlot
+)
+
+// PropertyBacking says how one class provides one interface property: either a real field (its
+// 0-based index in Layout().Fields, which codegen turns into a byte offset) or a get/set accessor
+// (vtable slots; SetterSlot is -1 when the property is readonly / has no setter). The type checker
+// and the itable builder both derive this via ResolveInterfacePropertyBacking so they agree.
+type PropertyBacking struct {
+	Kind       PropertyBackingKind
+	FieldIndex int
+	GetterSlot int
+	SetterSlot int
+}
+
+// ResolveInterfacePropertyBacking determines how `class` backs interface property `prop` and
+// whether it conforms. Fields win over accessors (a class can't declare both of the same name).
+// `writable` (the property is not readonly) additionally requires a setter for an accessor backing.
+func ResolveInterfacePropertyBacking(class *Class, prop *ClassProperty, writable bool) (PropertyBacking, bool) {
+	name := prop.Property.Name
+	wantType := prop.Property.ValueType
+	layout := class.Layout()
+
+	// Field first (fast path): a real data field, base-first index (what codegen offsets from).
+	for i, field := range layout.Fields {
+		if field.Property.Name == name {
+			if !CmpValueType(wantType, field.Property.ValueType) {
+				return PropertyBacking{}, false
+			}
+			return PropertyBacking{Kind: PropertyBackingField, FieldIndex: i}, true
+		}
+	}
+
+	// Else a get/set accessor (already a first-class vtable method).
+	acc := LookupAccessor(class, name)
+	if acc == nil || acc.Getter == nil || !CmpValueType(wantType, acc.Getter.ReturnType) {
+		return PropertyBacking{}, false
+	}
+	setterSlot := -1
+	if acc.Setter != nil {
+		setterSlot = vtableSlotOf(layout, acc.Setter.SourceName())
+	}
+	if writable {
+		// A writable interface property needs a setter accepting the property type.
+		if acc.Setter == nil || len(acc.Setter.Params) == 0 || !CmpValueType(wantType, acc.Setter.Params[0].ValueType) {
+			return PropertyBacking{}, false
+		}
+	}
+	return PropertyBacking{
+		Kind:       PropertyBackingAccessor,
+		GetterSlot: vtableSlotOf(layout, acc.Getter.SourceName()),
+		SetterSlot: setterSlot,
+	}, true
+}
+
+// InterfaceDispatchRow describes one conforming class's dispatch data for an interface,
+// as pure integers (no LLVM). MethodSlots[j] is the class's vtable slot for interface
+// method j (in InterfaceMethods order); PropertyBackings[k] describes how the class provides
+// interface property k (field offset vs accessor vtable slot), in InterfaceProperties order.
+type InterfaceDispatchRow struct {
+	ClassId          int
+	Class            *Class
+	MethodSlots      []int
+	PropertyBackings []PropertyBacking
+}
+
+// InterfaceDispatchLayout is the LLVM-independent description of an interface's runtime
+// dispatch tables. Codegen consumes it mechanically to emit the [maxClassId+1 x N] globals.
+type InterfaceDispatchLayout struct {
+	MaxClassId int
+	Rows       []InterfaceDispatchRow // conforming classes only
+}
+
+// BuildInterfaceDispatchLayout computes, as pure data, the dispatch layout of an interface
+// over a set of candidate classes: which classes structurally conform, and for each, the
+// vtable slot of every interface method and the field index of every interface property.
+// It performs no LLVM work — codegen emits the tables and derives byte offsets from the
+// field indices. Must be called post IR-gen (it reads Class.Layout()).
+func BuildInterfaceDispatchLayout(iface *Interface, classes []*Class) *InterfaceDispatchLayout {
+	methods := InterfaceMethods(iface)
+	props := InterfaceProperties(iface)
+
+	layout := &InterfaceDispatchLayout{}
+	for _, class := range classes {
+		if !ClassConformsToInterface(class, iface) {
+			continue
+		}
+		classLayout := class.Layout()
+
+		methodSlots := make([]int, len(methods))
+		for j, m := range methods {
+			methodSlots[j] = vtableSlotOf(classLayout, m.SourceName())
+		}
+		propBackings := make([]PropertyBacking, len(props))
+		for k, p := range props {
+			// class conforms (checked above), so backing resolution succeeds.
+			propBackings[k], _ = ResolveInterfacePropertyBacking(class, p, !p.IsReadonly)
+		}
+
+		layout.Rows = append(layout.Rows, InterfaceDispatchRow{
+			ClassId:          class.Id,
+			Class:            class,
+			MethodSlots:      methodSlots,
+			PropertyBackings: propBackings,
+		})
+		if class.Id > layout.MaxClassId {
+			layout.MaxClassId = class.Id
+		}
+	}
+	return layout
+}
+
+// vtableSlotOf returns the vtable slot of the method named `name` in a class layout, or -1.
+// Mirrors util.GetMethodIndex without the import cycle (util imports zeus_value).
+func vtableSlotOf(layout *ClassLayout, name string) int {
+	for slot, entry := range layout.VTable {
+		if entry.Method.Method.SourceName() == name {
+			return slot
+		}
+	}
+	return -1
 }
 
 // LookupInstanceProperty finds a non-static data field by name on the class or any ancestor.

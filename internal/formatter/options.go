@@ -11,6 +11,10 @@ type Options struct {
 	IndentWidth int
 	// UseTabs emits a tab per indentation level instead of spaces.
 	UseTabs bool
+	// Semicolons appends a terminating `;` to statements and member declarations.
+	// When false, terminators are omitted wherever Zeus's automatic semicolon
+	// insertion makes them redundant (statements ending in a value token).
+	Semicolons bool
 }
 
 // DefaultOptions returns the standard formatting options.
@@ -19,5 +23,6 @@ func DefaultOptions() Options {
 		PrintWidth:  80,
 		IndentWidth: 4,
 		UseTabs:     false,
+		Semicolons:  false,
 	}
 }

@@ -137,6 +137,7 @@ export default defineConfig({
             { label: 'Encapsulation & Accessors', slug: 'language/encapsulation' },
             { label: 'Static Members', slug: 'language/static-members' },
             { label: 'Inheritance', slug: 'language/inheritance' },
+            { label: 'Interfaces', slug: 'language/interfaces' },
           ],
         },
         {
@@ -167,7 +168,7 @@ export default defineConfig({
           label: 'Roadmap',
           badge: { text: 'Planned', variant: 'note' },
           items: [
-            { label: 'Interfaces', slug: 'coming-soon/interfaces' },
+            { label: 'What\'s next', slug: 'roadmap' },
           ],
         },
         {

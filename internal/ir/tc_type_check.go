@@ -202,15 +202,19 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 			if zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
 				return true
 			}
-			// Allow object type (class instances) compared with null
-			if zeus_value.IsObjectType(a) && zeus_value.IsNullType(b) {
+			// Allow object/interface values (which are object pointers at runtime) to be
+			// compared with null and with each other.
+			isRef := func(t zeus_value.ValueType) bool {
+				return zeus_value.IsObjectType(t) || zeus_value.IsInterfaceType(t)
+			}
+			if isRef(a) && zeus_value.IsNullType(b) {
 				return true
 			}
-			if zeus_value.IsNullType(a) && zeus_value.IsObjectType(b) {
+			if zeus_value.IsNullType(a) && isRef(b) {
 				return true
 			}
-			// Allow two object types to be compared
-			if zeus_value.IsObjectType(a) && zeus_value.IsObjectType(b) {
+			// Allow two object/interface types to be compared
+			if isRef(a) && isRef(b) {
 				return true
 			}
 			// Allow boolean comparisons
@@ -456,6 +460,13 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 // - float to float of bigger size
 func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
+
+	// Object/interface → interface: assignability is a *directional* structural check
+	// (CmpValueType is otherwise symmetric), so it must be tested target-first here. An
+	// interface value is represented identically to the object, so no runtime cast is emitted.
+	if zeus_value.IsInterfaceType(targetType) {
+		return value, zeus_value.CmpValueType(targetType, valueType)
+	}
 
 	// *Function → FunctionType: wrap in a functor class (all FunctionType values are objects at runtime)
 	// Must come before CmpValueType check since *Function.GetValueType() returns a matching FunctionType.
@@ -1163,6 +1174,29 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 				})
 			}
 		}
+	} else if zeus_value.IsInterfaceType(valueType) {
+		iface := zeus_value.AsInterfaceType(valueType).Interface
+		var found *zeus_value.ClassProperty
+		for _, prop := range zeus_value.InterfaceProperties(iface) {
+			if prop.Property.Name == input.Property {
+				found = prop
+				break
+			}
+		}
+		if found == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("interface '%s' has no property '%s'", iface.Name, input.Property),
+				Span:    output.Span,
+			})
+			return
+		}
+		if found.IsReadonly && input.IsLValue {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot assign to readonly property '%s'", input.Property),
+				Span:    output.Span,
+			})
+		}
+		instr.Output.ValueType = found.Property.ValueType
 	} else {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("cannot access property %s of type '%s'", input.Property, valueType),
@@ -1180,6 +1214,31 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	valueType := tc.getValueType(input.Object)
+
+	// Method call through an interface value: resolve against the interface's method
+	// signatures. Codegen dispatches dynamically to the concrete class via an itable.
+	if zeus_value.IsInterfaceType(valueType) {
+		iface := zeus_value.AsInterfaceType(valueType).Interface
+		var ifaceMethod *zeus_value.Function
+		for _, m := range zeus_value.InterfaceMethods(iface) {
+			if m.SourceName() == input.MethodName {
+				ifaceMethod = m
+				break
+			}
+		}
+		if ifaceMethod == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("interface '%s' has no method '%s'", iface.Name, input.MethodName),
+				Span:    instr.Output.Span,
+			})
+			return
+		}
+		functionType := zeus_value.ToFunctionType(*ifaceMethod)
+		input.Args = p.tcFunctionCall(tc, instr, functionType, input.Args, instr.Output.Span)
+		instr.Input = NewMethodCallInstrInput(input.Object, input.MethodName, input.Args)
+		instr.Output.ValueType = ifaceMethod.ReturnType
+		return
+	}
 
 	if !zeus_value.IsObjectType(valueType) {
 		tc.pushError(&zeus_error.ZeusError{

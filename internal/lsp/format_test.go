@@ -25,7 +25,8 @@ func TestDocumentEnd(t *testing.T) {
 
 func TestFormatDocument(t *testing.T) {
 	const uri = "file:///x.zs"
-	formatted := "function main(): i32 {\n    return 0;\n}\n"
+	// The formatter's default omits statement semicolons (Zeus's ASI reinserts them).
+	formatted := "function main(): i32 {\n    return 0\n}\n"
 
 	s := NewServer()
 	s.documents[uri] = &DocumentInfo{Content: "function   main():i32{return 0;}"}

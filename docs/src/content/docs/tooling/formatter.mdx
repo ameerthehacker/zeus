@@ -71,20 +71,20 @@ Running `zeus fmt` produces:
 ```zeus
 // Point in 2D space
 class Point {
-    public x: i32; // x coordinate
-    public y: i32; // y coordinate
+    public x: i32 // x coordinate
+    public y: i32 // y coordinate
     constructor(x: i32, y: i32) {
-        this.x = x;
-        this.y = y;
+        this.x = x
+        this.y = y
     }
 }
 function main(): i32 {
-    let p: Point = new Point(3, 4); // make a point
+    let p: Point = new Point(3, 4) // make a point
     // verify
     if (p.x == 3) {
-        return 0;
+        return 0
     }
-    return 1;
+    return 1
 }
 ```
 
@@ -100,8 +100,8 @@ function main(): i32 {
         argumentNumberTwo,
         argumentNumberThree,
         argumentFour,
-    );
-    return result;
+    )
+    return result
 }
 ```
 
@@ -111,10 +111,10 @@ Both comment styles are preserved:
 
 ```zeus
 // a line comment
-let x: i32 = 1; // a trailing comment
+let x: i32 = 1 // a trailing comment
 
 /* a block comment */
-let y: i32 = 2;
+let y: i32 = 2
 ```
 
 JSDoc-style block comments are re-indented with their `*` lines aligned (other
@@ -125,7 +125,7 @@ multi-line block comments — tables, ASCII art — are kept exactly as written)
  * Computes the answer.
  */
 function answer(): i32 {
-    return 42;
+    return 42
 }
 ```
 
@@ -133,15 +133,34 @@ Blank lines you write between statements are preserved (collapsed to at most one
 
 ## Style
 
-The formatter is intentionally **not** configurable — one style, no options to
-argue about. The defaults are:
+The formatter ships with sensible defaults and a small set of flags to override them:
 
-| Setting        | Value        |
-| -------------- | ------------ |
-| Indentation    | 4 spaces     |
-| Print width    | 80 columns   |
-| Statements     | Semicolons   |
-| Control-flow   | Always braced |
+| Setting      | Default    | Flag              |
+| ------------ | ---------- | ----------------- |
+| Indentation  | 4 spaces   | `--indent-width`  |
+| Tabs         | off        | `--use-tabs`      |
+| Print width  | 80 columns | `--print-width`   |
+| Semicolons   | off        | `--semicolons`    |
+| Control-flow | Always braced | —              |
+
+By default statement terminators are omitted — Zeus's [automatic semicolon
+insertion](#semicolons) makes them redundant. Opt back in with `--semicolons=true`:
+
+```bash
+# semicolon-free (default)
+zeus fmt app.zs
+
+# keep semicolons, tabs, and a wider ruler
+zeus fmt app.zs --semicolons=true --use-tabs --print-width=100
+```
+
+### Semicolons
+
+Zeus inserts a semicolon at a line break after any token that can end a statement — a
+value (identifier, number, `)`, `]`, …) or a type keyword (`i32`, `void`, …). So the
+formatter drops the `;` from statements, class fields, and interface members, and only
+keeps it where automatic insertion can't help: a bare `return`, `break`, or `continue`,
+which end in a keyword.
 
 ## Editor integration
 

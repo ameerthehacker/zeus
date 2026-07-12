@@ -306,6 +306,28 @@ func (p *DeclCheckPass) walkExpr(g *IRModule, expr ast.ExprNode, isTopLevel bool
 			p.st.ExitScope()
 		}
 		p.st.ExitScope()
+
+	case *ast.InterfaceDeclExprNode:
+		if e.Name != nil {
+			ok := p.checkAndDeclare(e.Name.Name.Value, e.Name.GetSpan())
+			if ok && isTopLevel {
+				p.registerInterfaceStub(g, e)
+			}
+		} else if isTopLevel {
+			p.errors = append(p.errors, zeus_error.NewZeusError(
+				zeus_error.ErrorSeverityError,
+				"cannot declare anonymous interfaces in the global scope",
+				expr.GetSpan(),
+			))
+		}
+		p.st.EnterScope()
+		for _, prop := range e.Properties {
+			p.checkAndDeclare(prop.Name.Name.Value, prop.Name.GetSpan())
+		}
+		for _, method := range e.Methods {
+			p.checkAndDeclare(method.Name.Name.Value, method.Name.GetSpan())
+		}
+		p.st.ExitScope()
 	}
 }
 
@@ -407,4 +429,13 @@ func (p *DeclCheckPass) registerClassStub(g *IRModule, expr *ast.ClassDeclExprNo
 	}
 	class.OriginalName = name
 	g.irBuilder.symbolTable.DeclareGlobalSymbol(name, class)
+}
+
+// registerInterfaceStub registers an empty interface under its name so forward and
+// self type references resolve to InterfaceType{stub}. The stub's members are filled
+// in later by VisitInterfaceDeclExpr (which mutates this same pointer in place).
+func (p *DeclCheckPass) registerInterfaceStub(g *IRModule, expr *ast.InterfaceDeclExprNode) {
+	name := expr.Name.Name.Value
+	iface := zeus_value.NewInterface(name, nil, nil, nil, expr.GetSpan())
+	g.irBuilder.symbolTable.DeclareGlobalSymbol(name, iface)
 }

@@ -231,9 +231,11 @@ func TestNegativeFunctionDeclaration(t *testing.T) {
 			errors: parseErr("expected return type in function declaration, but found {", 1, 23, 23),
 		},
 		{
-			name:   "missing { for function body",
-			input:  "function name(a: i8): i8",
-			errors: parseErr("expected { to begin block", 1, 25, 25),
+			name:  "missing { for function body",
+			input: "function name(a: i8): i8",
+			// ASI inserts a `;` after the return type `i8`, so the parser reports the missing body
+			// brace against that `;` rather than end-of-input.
+			errors: parseErr("expected { to begin block, but found ;", 1, 24, 24),
 		},
 		{
 			name:   "missing } to close function body",
@@ -335,12 +337,12 @@ func TestNegativeExportStatement(t *testing.T) {
 		{
 			name:   "export with identifier (not function or class)",
 			input:  "export x;",
-			errors: parseErr("export can only be used with function declaration", 1, 8, 8),
+			errors: parseErr("export can only be used with function, class or interface declaration", 1, 8, 8),
 		},
 		{
 			name:   "export with literal",
 			input:  "export 42;",
-			errors: parseErr("export can only be used with function declaration", 1, 8, 9),
+			errors: parseErr("export can only be used with function, class or interface declaration", 1, 8, 9),
 		},
 	}
 

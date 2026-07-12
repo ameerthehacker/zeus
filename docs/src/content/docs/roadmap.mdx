@@ -1,0 +1,86 @@
+---
+title: Roadmap
+description: Features planned for future releases of Zeus.
+banner:
+  content: |
+    🚧 The features on this page are planned and not yet available in Zeus.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Coming Soon">
+  Everything below is a preview of where Zeus is headed. The syntax shown is a design sketch and may
+  change before it ships. For what works today, see the [Language Guide](/language/variables/).
+</Aside>
+
+Zeus is in active development. Here's the batch of features planned next.
+
+## Generics
+
+Reusable containers and functions parameterized by type, so you write a data structure once and use
+it with any element type — no casts, no duplication:
+
+```zeus
+class Box<T> {
+  private value: T;
+  constructor(value: T) { this.value = value; }
+  public get(): T { return this.value; }
+}
+
+function identity<T>(value: T): T {
+  return value;
+}
+
+let boxed: Box<i32> = new Box<i32>(42);
+let same: i32 = identity<i32>(7);
+```
+
+Generic interfaces (`interface Container<T>`) build on the same machinery.
+
+## Promise and async/await
+
+First-class asynchronous values, so I/O reads like straight-line code instead of nested callbacks:
+
+```zeus
+async function loadCount(): Promise<i32> {
+  let value: i32 = await fetchCount();
+  return value + 1;
+}
+```
+
+`Promise<T>` is a generic type, so it lands together with generics.
+
+## A Node-like HTTP server
+
+A web server in a few lines, served from the standard library — no `main` boilerplate required:
+
+```zeus
+import { createServer, Request, Response } from "@std/http";
+
+let server = createServer((req: Request, res: Response) => {
+  res.writeHead(200, "text/plain");
+  res.end("Hello from Zeus!");
+});
+
+server.listen(3000);
+```
+
+## Custom exception types
+
+Subclassing `Error` to define your own exception hierarchy:
+
+```zeus
+class NotFoundError extends Error {
+  constructor(message: string) { super(message); }
+}
+```
+
+## An expanded standard library
+
+More batteries included — file system, JSON, and richer collections — as `@std` modules you import
+on demand.
+
+<Aside type="note">
+  Want to help shape what ships next? [Star Zeus on GitHub](https://github.com/ameerthehacker/zeus)
+  and open an issue with your use case.
+</Aside>

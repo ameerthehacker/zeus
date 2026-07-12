@@ -276,6 +276,38 @@ func IsClassType(value ValueType) bool {
 	return AsClassType(value) != nil
 }
 
+// InterfaceType is the ValueType of an interface annotation (e.g. `let s: Shape`).
+// At runtime an interface value is represented exactly like an object (a one-word
+// pointer); the InterfaceType exists only for structural conformance checking.
+type InterfaceType struct {
+	Interface *Interface
+}
+
+func (i InterfaceType) GetSpan() *token.Span {
+	return i.Interface.Span
+}
+
+func (i InterfaceType) String() string {
+	return i.Interface.Name
+}
+
+func NewInterfaceType(iface *Interface) InterfaceType {
+	return InterfaceType{Interface: iface}
+}
+
+func AsInterfaceType(value ValueType) *InterfaceType {
+	switch value := value.(type) {
+	case InterfaceType:
+		return &value
+	default:
+		return nil
+	}
+}
+
+func IsInterfaceType(value ValueType) bool {
+	return AsInterfaceType(value) != nil
+}
+
 type ArrayType struct {
 	ElementType ValueType
 	Span        *token.Span
@@ -550,9 +582,199 @@ func CmpValueType(a, b ValueType) bool {
 			return false
 		}
 		return CmpValueType(GetValueType(aCall), GetValueType(bCall))
+
+	case InterfaceType:
+		// Callers pass CmpValueType(target, source): does `b` structurally satisfy
+		// interface `a`? A conforming class (ObjectType) or interface (InterfaceType)
+		// on the source side is assignable to the interface.
+		return isAssignableToInterface(a.Interface, b)
 	}
 
 	return false
+}
+
+// interfaceCmpInProgress breaks cycles during structural interface comparison so that
+// self-referential (`interface Node { next: Node }`) and mutually-referential interfaces
+// don't recurse forever. A cycle is treated coinductively as conformant. Safe as a package
+// global because the compiler is single-threaded, and each entry is removed on return.
+var interfaceCmpInProgress = map[[2]*Interface]bool{}
+
+// isAssignableToInterface reports whether a value of type `source` structurally
+// satisfies every member of `iface`, including members inherited via `extends`.
+func isAssignableToInterface(iface *Interface, source ValueType) bool {
+	// Only objects and other interfaces can satisfy an interface.
+	if !IsObjectType(source) && !IsInterfaceType(source) {
+		return false
+	}
+
+	// Array classes (i32[], Point[], ...) participate: each element type has its own runtime type
+	// handle (a distinct class id), so codegen can key it in the interface itable — see
+	// genObjectArrayTypeHandle. This predicate must stay in lockstep with codegen's
+	// candidateClasses (both now include arrays) or a match would type-check but misdispatch.
+
+	// Cycle handling for self-/mutually-referential interfaces.
+	if si := AsInterfaceType(source); si != nil {
+		if si.Interface == iface {
+			return true // an interface is trivially assignable to itself
+		}
+		key := [2]*Interface{iface, si.Interface}
+		if interfaceCmpInProgress[key] {
+			return true
+		}
+		interfaceCmpInProgress[key] = true
+		defer delete(interfaceCmpInProgress, key)
+	}
+
+	props, methods := flattenInterfaceMembers(iface)
+
+	// An interface property is backed by a real data **field** OR a get/set **accessor**
+	// (readonly needs only a getter; a writable property needs a setter too); an interface
+	// method must be a real method (a function-typed field is a functor object, not a vtable
+	// entry, so it can't satisfy a method). Class conformers resolve the backing via
+	// ResolveInterfacePropertyBacking — kept in lockstep with the itable so dispatch matches;
+	// an interface *source* satisfies a property only with a matching interface property.
+	for _, prop := range props {
+		if src := AsObjectType(source); src != nil {
+			if _, ok := ResolveInterfacePropertyBacking(src.Class, prop, !prop.IsReadonly); !ok {
+				return false
+			}
+		} else {
+			srcType, ok := lookupFieldType(source, prop.Property.Name)
+			if !ok || !CmpValueType(prop.Property.ValueType, srcType) {
+				return false
+			}
+		}
+	}
+	for _, method := range methods {
+		srcType, ok := lookupMethodType(source, method.SourceName())
+		if !ok || !CmpValueType(ToFunctionType(*method), srcType) {
+			return false
+		}
+	}
+	return true
+}
+
+// flattenInterfaceMembers collects an interface's own members plus every member
+// inherited through `extends`, with own members shadowing inherited ones by name.
+func flattenInterfaceMembers(iface *Interface) ([]*ClassProperty, []*Function) {
+	seenProp := map[string]bool{}
+	seenMethod := map[string]bool{}
+	visited := map[*Interface]bool{}
+	var props []*ClassProperty
+	var methods []*Function
+
+	var visit func(i *Interface)
+	visit = func(i *Interface) {
+		if i == nil || visited[i] {
+			return
+		}
+		visited[i] = true
+		for _, p := range i.Properties {
+			if !seenProp[p.Property.Name] {
+				seenProp[p.Property.Name] = true
+				props = append(props, p)
+			}
+		}
+		for _, m := range i.Methods {
+			if !seenMethod[m.SourceName()] {
+				seenMethod[m.SourceName()] = true
+				methods = append(methods, m)
+			}
+		}
+		for _, parent := range i.Parents {
+			visit(parent)
+		}
+	}
+	visit(iface)
+	return props, methods
+}
+
+// InterfaceMethods returns an interface's method signatures in dispatch order — own
+// members first, then those inherited via `extends`, deduped by name. This order defines
+// the itable slot layout used for dynamic dispatch.
+func InterfaceMethods(iface *Interface) []*Function {
+	_, methods := flattenInterfaceMembers(iface)
+	return methods
+}
+
+// InterfaceMethodIndex returns the itable slot of method `name` in `iface`, or -1.
+func InterfaceMethodIndex(iface *Interface, name string) int {
+	for i, m := range InterfaceMethods(iface) {
+		if m.SourceName() == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// InterfaceProperties returns an interface's property signatures in dispatch order — own
+// members first, then those inherited via `extends`, deduped by name.
+func InterfaceProperties(iface *Interface) []*ClassProperty {
+	props, _ := flattenInterfaceMembers(iface)
+	return props
+}
+
+// InterfacePropertyIndex returns the dispatch slot of property `name` in `iface`, or -1.
+func InterfacePropertyIndex(iface *Interface, name string) int {
+	for i, p := range InterfaceProperties(iface) {
+		if p.Property.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// ClassConformsToInterface reports whether `class` structurally satisfies `iface`.
+func ClassConformsToInterface(class *Class, iface *Interface) bool {
+	return isAssignableToInterface(iface, NewObjectType(class))
+}
+
+// lookupFieldType returns the type of a data field named `name` on `source` (a class
+// property or interface property), searching parent classes / extended interfaces. Methods
+// and accessors do NOT count — interface property dispatch resolves to a field offset, which
+// only a real field provides.
+func lookupFieldType(source ValueType, name string) (ValueType, bool) {
+	switch src := source.(type) {
+	case ObjectType:
+		for cls := src.Class; cls != nil; cls = cls.ParentClass {
+			for _, prop := range cls.Properties {
+				if prop.Property.Name == name {
+					return prop.Property.ValueType, true
+				}
+			}
+		}
+	case InterfaceType:
+		for _, prop := range InterfaceProperties(src.Interface) {
+			if prop.Property.Name == name {
+				return prop.Property.ValueType, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// lookupMethodType returns the FunctionType of a method named `name` on `source` (a class
+// method or interface method), searching parent classes / extended interfaces (params
+// exclude the implicit receiver). Fields — including function-typed ones — and accessors do
+// NOT count, since interface method dispatch resolves to a vtable slot.
+func lookupMethodType(source ValueType, name string) (ValueType, bool) {
+	switch src := source.(type) {
+	case ObjectType:
+		for cls := src.Class; cls != nil; cls = cls.ParentClass {
+			for _, method := range cls.Methods {
+				if method.Method.SourceName() == name {
+					return ToFunctionType(*method.Method), true
+				}
+			}
+		}
+	case InterfaceType:
+		for _, method := range InterfaceMethods(src.Interface) {
+			if method.SourceName() == name {
+				return ToFunctionType(*method), true
+			}
+		}
+	}
+	return nil, false
 }
 
 // GetFunctorCallMethod returns the __call__ method of a class if it has one, nil otherwise.

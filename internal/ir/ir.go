@@ -65,6 +65,18 @@ type IRModule struct {
 	currentConstructorClass *zeus_value.Class
 	superRequiredInCtor     bool
 	superCalledInCtor       bool
+	// pendingImplements holds `class implements Interface` conformance checks to run
+	// after all declarations are emitted, so interfaces declared after the class are
+	// fully resolved by check time.
+	pendingImplements []pendingImplement
+}
+
+// pendingImplement records one `class implements Interface` obligation to verify.
+type pendingImplement struct {
+	class     *zeus_value.Class
+	iface     *zeus_value.Interface
+	ifaceName string
+	span      *token.Span
 }
 
 func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, getIRModule func(modulePath string) *IRModule) *IRModule {
@@ -157,6 +169,8 @@ func (g *IRModule) Generate(program *ast.ProgramNode) []*zeus_error.ZeusError {
 			return errs
 		}
 	}
+	// Verify `implements` obligations now that all interfaces are resolved.
+	g.checkPendingImplements()
 	return g.errors
 }
 
@@ -1374,6 +1388,13 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 		return nil
 	}
 
+	// Interfaces are type-level only; they cannot be used as runtime values (e.g. new Shape()
+	// or `let x = Shape`). Report a clear error instead of falling through to the panic below.
+	if zeus_value.IsInterface(variable) {
+		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("'%s' is an interface and cannot be used as a value", expr.Name.Value), expr.Name.Span))
+		return nil
+	}
+
 	asFn := zeus_value.AsFunction(variable)
 
 	if asFn != nil {
@@ -1901,6 +1922,11 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 		g.exportedSymbols[exportedValue.Name] = exportedValue
 	case *zeus_value.Class:
 		g.exportedSymbols[exportedValue.Name] = exportedValue
+	case *zeus_value.Interface:
+		// Interfaces are type-level only: track them so importers can resolve the type,
+		// but emit no EXPORT instruction (there is no runtime symbol to link).
+		g.exportedSymbols[exportedValue.Name] = exportedValue
+		return
 	default:
 		g.pushError(&zeus_error.ZeusError{
 			Message: "cannot export non-function expression",
@@ -2141,9 +2167,116 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	}
 
 	g.symbolTable().DeclareSymbol(registerName, class)
+
+	// Record `implements` obligations to verify after all interfaces are resolved.
+	for _, ifaceIdent := range expr.Implements {
+		name := ifaceIdent.Name.Value
+		sym, ok := g.symbolTable().GetSymbol(name)
+		iface := zeus_value.AsInterface(sym)
+		if !ok || iface == nil {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("'%s' is not an interface", name),
+				Span:    ifaceIdent.GetSpan(),
+			})
+			continue
+		}
+		g.pendingImplements = append(g.pendingImplements, pendingImplement{
+			class:     class,
+			iface:     iface,
+			ifaceName: name,
+			span:      ifaceIdent.GetSpan(),
+		})
+	}
+
 	return class
 }
 
+// checkPendingImplements verifies every `class implements Interface` obligation. Runs
+// after emission so forward-declared interfaces are fully resolved.
+func (g *IRModule) checkPendingImplements() {
+	for _, pi := range g.pendingImplements {
+		if !zeus_value.ClassConformsToInterface(pi.class, pi.iface) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("class '%s' does not implement interface '%s'", pi.class.SourceName(), pi.ifaceName),
+				Span:    pi.span,
+			})
+		}
+	}
+}
+
+// VisitInterfaceDeclExpr resolves an interface's member types and registers it as a
+// type-level symbol. It emits NO IR — interfaces exist only for structural conformance
+// checking. When a DeclCheckPass stub exists (top-level interfaces), its fields are
+// mutated in place so any InterfaceType{stub} references created during forward/self
+// resolution observe the resolved members.
+func (g *IRModule) VisitInterfaceDeclExpr(expr *ast.InterfaceDeclExprNode) zeus_value.Value {
+	if expr.Name == nil {
+		g.pushError(&zeus_error.ZeusError{
+			Message: "interface declarations must be named",
+			Span:    expr.GetSpan(),
+		})
+		return nil
+	}
+	sourceName := expr.Name.Name.Value
+
+	// Resolve extended interfaces by name.
+	parents := []*zeus_value.Interface{}
+	for _, parentIdent := range expr.Parents {
+		parentSym, ok := g.symbolTable().GetSymbol(parentIdent.Name.Value)
+		if !ok {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("undefined interface '%s'", parentIdent.Name.Value),
+				Span:    parentIdent.GetSpan(),
+			})
+			continue
+		}
+		parentIface := zeus_value.AsInterface(parentSym)
+		if parentIface == nil {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("'%s' is not an interface", parentIdent.Name.Value),
+				Span:    parentIdent.GetSpan(),
+			})
+			continue
+		}
+		parents = append(parents, parentIface)
+	}
+
+	// Resolve property signatures.
+	properties := []*zeus_value.ClassProperty{}
+	for _, prop := range expr.Properties {
+		propType := g.resolveTypeForIRGen(prop.ValueType.ValueType, false)
+		v := zeus_value.NewVar(prop.Name.Name.Value, propType, false, prop.Name.GetSpan())
+		properties = append(properties, zeus_value.NewClassProperty(v, nil, prop.IsReadonly, false, nil))
+	}
+
+	// Resolve method signatures (no bodies).
+	methods := []*zeus_value.Function{}
+	for _, method := range expr.Methods {
+		params := []*zeus_value.Var{}
+		for _, param := range method.Params {
+			paramType := g.resolveTypeForIRGen(param.ValueType.ValueType, false)
+			params = append(params, zeus_value.NewVar(param.Identifier.Name.Value, paramType, false, param.Identifier.Name.Span))
+		}
+		returnType := g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
+		fn := zeus_value.NewFunction(method.Name.Name.Value, params, returnType, method.Span)
+		fn.OriginalName = method.Name.Name.Value
+		methods = append(methods, fn)
+	}
+
+	// Mutate the DeclCheckPass stub in place when present, else create + declare fresh
+	// (e.g. a named interface nested inside a function body).
+	if sym, ok := g.symbolTable().GetSymbol(sourceName); ok {
+		if stub := zeus_value.AsInterface(sym); stub != nil {
+			stub.Parents = parents
+			stub.Properties = properties
+			stub.Methods = methods
+			return stub
+		}
+	}
+	iface := zeus_value.NewInterface(sourceName, parents, properties, methods, expr.GetSpan())
+	g.symbolTable().DeclareSymbol(sourceName, iface)
+	return iface
+}
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
@@ -2493,6 +2626,13 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 			return
 		}
 
+		// Interfaces are type-level only: bring the type into scope but emit no IMPORT
+		// instruction (there is no runtime symbol to link against).
+		if zeus_value.IsInterface(importedValue) {
+			g.symbolTable().DeclareSymbol(_import.Name.Value, importedValue)
+			continue
+		}
+
 		g.irBuilder.BuildImport(absoluteModulePath, _import.Name.Value, importedValue, _import.Name.Span)
 		g.symbolTable().DeclareSymbol(_import.Name.Value, importedValue)
 	}
@@ -2786,6 +2926,9 @@ func (g *IRModule) resolveTypeForIRGen(t zeus_value.ValueType, isReturnType bool
 				typ.Span,
 			))
 			return zeus_value.UndefinedType{Span: typ.Span}
+		}
+		if iface := zeus_value.AsInterface(sym); iface != nil {
+			return zeus_value.NewInterfaceType(iface)
 		}
 		cls := zeus_value.AsClass(sym)
 		if cls == nil {

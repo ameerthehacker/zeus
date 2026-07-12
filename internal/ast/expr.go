@@ -333,7 +333,8 @@ func (t *IndexingExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_va
 // ClassDeclExprNode and its methods
 type ClassDeclExprNode struct {
 	Name        *IdentifierExprNode
-	ParentClass *IdentifierExprNode // Optional parent class for inheritance (extends)
+	ParentClass *IdentifierExprNode   // Optional parent class for inheritance (extends)
+	Implements  []*IdentifierExprNode // Interfaces this class declares it implements
 	Properties  []*ClassProperty
 	Methods     []*ClassMethod
 	Span        *token.Span
@@ -455,6 +456,76 @@ type ClassMethod struct {
 	// named Zig runtime symbol (no Zeus body). Body is nil in that case.
 	ExternSymbol string
 	Span         *token.Span
+}
+
+// InterfacePropertySignature is a `name: Type;` member of an interface (no default value).
+type InterfacePropertySignature struct {
+	Name       *IdentifierExprNode
+	ValueType  *ValueTypeNode
+	IsReadonly bool
+	Span       *token.Span
+}
+
+// InterfaceMethodSignature is a `name(params): Ret;` member of an interface (no body).
+type InterfaceMethodSignature struct {
+	Name       *IdentifierExprNode
+	Params     []*VarDeclNode
+	ReturnType *ValueTypeNode
+	Span       *token.Span
+}
+
+// InterfaceDeclExprNode is a TypeScript-style `interface` declaration. It is a
+// purely type-level construct: it produces no runtime code, only a type used for
+// structural conformance checking (see internal/zeus_value InterfaceType).
+type InterfaceDeclExprNode struct {
+	Name       *IdentifierExprNode
+	Parents    []*IdentifierExprNode // interfaces this one extends (structural union)
+	Properties []*InterfacePropertySignature
+	Methods    []*InterfaceMethodSignature
+	Span       *token.Span
+}
+
+func (i *InterfaceDeclExprNode) GetSpan() *token.Span {
+	return i.Span
+}
+
+func (i *InterfaceDeclExprNode) PrettyString() string {
+	members := []string{}
+	for _, property := range i.Properties {
+		ro := ""
+		if property.IsReadonly {
+			ro = "readonly "
+		}
+		members = append(members, fmt.Sprintf("%s%s: %s", ro, property.Name.PrettyString(), property.ValueType.ValueType))
+	}
+	for _, method := range i.Methods {
+		members = append(members, fmt.Sprintf("%s()", method.Name.PrettyString()))
+	}
+	extendsStr := ""
+	if len(i.Parents) > 0 {
+		parents := []string{}
+		for _, parent := range i.Parents {
+			parents = append(parents, parent.PrettyString())
+		}
+		extendsStr = fmt.Sprintf(" extends %s", strings.Join(parents, ", "))
+	}
+	nameStr := ""
+	if i.Name != nil {
+		nameStr = i.Name.PrettyString()
+	}
+	return fmt.Sprintf("interface %s%s {\n%s\n}", nameStr, extendsStr, strings.Join(members, "\n"))
+}
+
+func (i *InterfaceDeclExprNode) String() string {
+	nameStr := "nil"
+	if i.Name != nil {
+		nameStr = i.Name.String()
+	}
+	return fmt.Sprintf("{ type: InterfaceDeclExprNode, Name: %s, Parents: %d, Properties: %d, Methods: %d, Span: %s }", nameStr, len(i.Parents), len(i.Properties), len(i.Methods), i.GetSpan())
+}
+
+func (i *InterfaceDeclExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitInterfaceDeclExpr(i)
 }
 
 // Helper functions
@@ -626,6 +697,7 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitFunctionCallExpr(node *FunctionCallExprNode) T
 	VisitFunctionDeclExpr(node *FunctionDeclExprNode) T
 	VisitClassDeclExpr(node *ClassDeclExprNode) T
+	VisitInterfaceDeclExpr(node *InterfaceDeclExprNode) T
 	VisitNewExpr(node *NewExprNode) T
 	VisitObjectPropertyAccessExpr(node *ObjectPropertyAccessExprNode) T
 	VisitNull(node *NullExprNode) T

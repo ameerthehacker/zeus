@@ -63,7 +63,23 @@ func (l *Lexer) shouldInsertSemicolon() bool {
 		token.TokenTypeRightBracket,
 		token.TokenTypePlusPlus,
 		token.TokenTypeMinusMinus,
-		token.TokenTypeTemplateLiteralEnd:
+		token.TokenTypeTemplateLiteralEnd,
+		// Primitive type keywords end a declaration (`let x: i32`, `area(): i32`, `c: bool`), so a
+		// newline after one terminates the statement just like a value token. This lets typed
+		// declarations omit their trailing `;`. (A signature's body brace must stay on the same
+		// line — `function f(): i32 {` — which the formatter always emits.)
+		token.TokenTypeInt8,
+		token.TokenTypeInt16,
+		token.TokenTypeInt32,
+		token.TokenTypeInt64,
+		token.TokenTypeUInt8,
+		token.TokenTypeUInt16,
+		token.TokenTypeUInt32,
+		token.TokenTypeUInt64,
+		token.TokenTypeFloat32,
+		token.TokenTypeFloat64,
+		token.TokenTypeBoolean,
+		token.TokenTypeVoid:
 		return true
 	}
 	return false

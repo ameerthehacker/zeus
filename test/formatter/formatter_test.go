@@ -36,7 +36,78 @@ func format(t *testing.T, source string) string {
 	if !ok {
 		t.Fatalf("failed to parse source:\n%s", source)
 	}
-	return formatter.Format(program, comments, formatter.DefaultOptions())
+	// The golden/comment cases below verify spacing, comments, and blank-line handling — details
+	// orthogonal to semicolons. Format them with Semicolons on so the fixtures stay stable and
+	// readable; the no-semicolon default is covered by TestFormatNoSemicolons and the whole-suite
+	// TestIdempotentAndStable (which uses DefaultOptions).
+	opts := formatter.DefaultOptions()
+	opts.Semicolons = true
+	return formatter.Format(program, comments, opts)
+}
+
+func TestFormatNoSemicolons(t *testing.T) {
+	// DefaultOptions has Semicolons off. Because Zeus's ASI inserts a `;` at a newline after a
+	// value OR a type keyword, terminators are omitted everywhere they are redundant — statements,
+	// class fields, and interface members alike. Only keyword-terminated statements (a bare
+	// `return`, `break`, `continue`) keep an explicit `;`, since ASI never fires after a keyword.
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:  "value- and type-terminated statements drop semicolons",
+			input: "function f(): i32 { let x: i32 = 5; return x + 1; }",
+			expected: `function f(): i32 {
+    let x: i32 = 5
+    return x + 1
+}
+`,
+		},
+		{
+			name:  "class fields and method bodies drop semicolons",
+			input: "class C { public c: i32; constructor(v: i32) { this.c = v; } }",
+			expected: `class C {
+    public c: i32
+    constructor(v: i32) {
+        this.c = v
+    }
+}
+`,
+		},
+		{
+			name:  "interface members drop semicolons",
+			input: "interface I { readonly x: i32; foo(): i32; }",
+			expected: `interface I {
+    readonly x: i32
+    foo(): i32
+}
+`,
+		},
+		{
+			name:  "keyword-terminated statements keep their semicolon",
+			input: "function f(): void { while (true) { break; } return; }",
+			expected: `function f(): void {
+    while (true) {
+        break;
+    }
+    return;
+}
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			program, comments, ok := parseSource(t, tc.input)
+			if !ok {
+				t.Fatalf("failed to parse: %s", tc.input)
+			}
+			got := formatter.Format(program, comments, formatter.DefaultOptions())
+			if got != tc.expected {
+				t.Errorf("got:\n%q\nwant:\n%q", got, tc.expected)
+			}
+		})
+	}
 }
 
 func TestFormatGolden(t *testing.T) {

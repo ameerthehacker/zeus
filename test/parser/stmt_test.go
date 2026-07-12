@@ -737,7 +737,7 @@ func TestParserStmt(t *testing.T) {
 			input: "export x;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "export can only be used with function declaration",
+					Message: "export can only be used with function, class or interface declaration",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 8},
 						End:   token.Position{Line: 1, Column: 8},
@@ -750,7 +750,7 @@ func TestParserStmt(t *testing.T) {
 			input: "export 5;",
 			errors: []*zeus_error.ZeusError{
 				{
-					Message: "export can only be used with function declaration",
+					Message: "export can only be used with function, class or interface declaration",
 					Span: &token.Span{
 						Start: token.Position{Line: 1, Column: 8},
 						End:   token.Position{Line: 1, Column: 8},

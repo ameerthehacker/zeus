@@ -177,6 +177,59 @@ matching Go's element width.
 
 ---
 
+## 4. Interface dispatch sites can't cache their object files (build perf)
+
+### Symptom
+
+Any module that dispatches through an interface (`s.area()` where `s: Shape`) is
+recompiled whenever **any** interface in the program changes shape — even an
+interface it doesn't use, and even if the dispatching module's own source is
+untouched. Non-dispatching modules still cache normally; only dispatch sites pay.
+
+### Root cause
+
+An interface method call bakes two *interface-layout constants* into the call
+site's machine code (`internal/codegen/codegen.go`, `genInterfaceMethodCall` /
+`genInterfacePropertyPtr`):
+
+1. the method's **interface slot** (`InterfaceMethodIndex`), and
+2. the **itable stride** (`numMethods`/`numProps`, the inner-array width used in
+   the `getelementptr`).
+
+Both are derived from the interface *definition*, which may live in a different
+file than the call site. So a dispatch module's `.o` is **not** a pure function
+of its own source — it also depends on the interfaces it dispatches. Zeus caches
+`.o` files by per-file source hash (`EmitObjFiles`), which assumes the pure-function
+property, so a stale cached dispatch `.o` would carry the wrong slot/stride when an
+interface changes in another file (a silent miscompile — verified: adding a method
+to an imported interface without touching the dispatch file made `areaOf` return
+0 instead of 36).
+
+**Current fix is conservative (the remaining issue is the *cost*, not correctness):**
+a module that dispatches is flagged (`CodegenModule.dispatchesInterface`) and its
+object-file cache key is salted with a digest of *all* interface tables
+(`SourceFile.ObjCacheKeySalt` = `Codegen.interfaceTablesDigest`). Correct, but any
+interface-shape change busts every dispatch module's cache, not just the ones that
+use the changed interface.
+
+### Fix direction
+
+Stop baking the slot/stride into the dispatch site. Emit them as small **external
+constants in the content-addressed itable module** (e.g. `@__zeus_iface_N_stride`
+and a per-method slot constant), and have the dispatch site **load** them and
+compute a flat index `classId*stride + slot` against a flat `[K x i32]` itable.
+Then the dispatch site's `.o` no longer depends on any interface's shape → it
+caches by per-file hash like everything else, and the `dispatchesInterface` salt
+can be dropped. Cost: ~2 extra loads per interface call (both hit a small constant
+table). Alternatively, dependency-track: mix only the *dispatched* interfaces'
+definition hashes into the module's key instead of the whole-program digest
+(tighter, but needs per-module dependency records).
+
+Touch points: `genInterfaceMethodCall` / `genInterfacePropertyPtr` and the
+`defineInterface*DispatchTable` emitters in `internal/codegen/codegen.go`.
+
+---
+
 ## Reproducing / measuring
 
 ```bash
