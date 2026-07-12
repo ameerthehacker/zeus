@@ -1,0 +1,134 @@
+---
+title: Testing
+description: Write tests with describe, it, and assert from @std/test, and run them with zeus test.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus has a built-in, Jest-style test runner. You write tests with `describe`, `it`, and `assert`
+from the `@std/test` module, then run them with the `zeus test` command.
+
+## Writing a test
+
+Put tests in a file ending in `.test.zs` or `.spec.zs` and import the API from `@std/test`:
+
+```zeus
+// math.test.zs
+import { describe, it, assert } from "@std/test";
+
+describe("math", () => {
+  it("adds", () => {
+    assert(2 + 2 == 4, "addition is broken");
+  });
+
+  it("multiplies", () => {
+    assert(3 * 4 == 12, "multiplication is broken");
+  });
+});
+```
+
+- **`describe(name, fn)`** groups related tests. Groups can nest.
+- **`it(name, fn)`** defines a single test. Its body runs immediately when the group runs.
+- **`assert(cond, message)`** fails the test with `message` when `cond` is `false`.
+
+A failing `assert` stops only its own `it` — every other test still runs.
+
+### Nested groups
+
+`describe` blocks nest, and the runner indents them in the report:
+
+```zeus
+import { describe, it, assert } from "@std/test";
+
+describe("string", () => {
+  it("concatenates", () => {
+    assert("foo".concat("bar").equals("foobar"), "concat is broken");
+  });
+
+  describe("comparison", () => {
+    it("is case-sensitive", () => {
+      assert(!"foo".equals("FOO"), "comparison should be case-sensitive");
+    });
+  });
+});
+```
+
+## assert
+
+```zeus
+assert(condition: boolean, message: string): void
+```
+
+`assert` is the only matcher. You write the comparison yourself and pass a message describing what
+should have been true:
+
+```zeus
+assert(2 + 2 == 4, "math is broken");
+assert("zeus".length == 4, "wrong length");
+assert("foo".equals("foo"), "strings should match");
+```
+
+<Aside type="note">
+The message is a fixed string — it can't yet embed the actual and expected values (like
+"expected 3, got 2"), so make it descriptive. Richer matchers such as `expect(x).toBe(y)` are
+planned.
+</Aside>
+
+## Running tests
+
+Point `zeus test` at a directory or a single file:
+
+```bash
+# Every *.test.zs / *.spec.zs under the current directory
+zeus test
+
+# A specific directory
+zeus test ./tests
+
+# A single file
+zeus test math.test.zs
+```
+
+The runner discovers the test files, compiles and runs each one, and prints a report:
+
+```
+ PASS  math.test.zs
+   math
+     ✓ adds
+     ✓ multiplies
+ FAIL  string.spec.zs
+   string
+     ✓ concatenates
+     comparison
+       ✗ is case-sensitive — comparison should be case-sensitive
+
+ Test Files  1 failed, 1 passed, 2 total
+      Tests  1 failed, 3 passed, 4 total
+```
+
+Directories are searched recursively; `target/`, `node_modules/`, and hidden folders are skipped.
+
+### Exit code
+
+`zeus test` exits **non-zero** if any test fails, any file fails to compile, or a test binary
+crashes — so it drops straight into CI:
+
+```bash
+zeus test && echo "all green"
+```
+
+<Aside type="tip">
+Set `NO_COLOR=1` to disable colored output — handy for CI logs and diffs.
+</Aside>
+
+## How it works
+
+Each test file is compiled to its own native binary and executed in a separate process, and files
+run in parallel. Because every test file is an independent program, its top-level `describe` / `it`
+calls simply run on startup — there's no special entry point, `main`, or registration step.
+
+<Aside type="caution">
+Tests run **synchronously**. Since a file compiles to a single program, the tests inside it run one
+after another, and there are no `async` tests yet — that depends on `async` / `await`, which is on
+the roadmap.
+</Aside>
