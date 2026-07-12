@@ -1,6 +1,6 @@
 ---
 title: Encapsulation & Accessors
-description: Control access to class internals with public and private, and expose computed properties with get/set accessors.
+description: Control access to class internals with public, private, and protected, and expose computed properties with get/set accessors.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -11,10 +11,12 @@ instead of touching a field directly.
 
 ## Access modifiers
 
-Every field and method is either `public` or `private`:
+Every field and method carries one of three access levels:
 
 - **`public`** — reachable from anywhere.
 - **`private`** — reachable only from within the same class.
+- **`protected`** — reachable from within the same class *and* its subclasses, but not from outside
+  the class hierarchy.
 
 ```zeus
 class Account {
@@ -45,6 +47,41 @@ function main(): i32 {
 
 Keeping `balance` private means it can only change through `deposit`, so the class controls its own
 invariants.
+
+### Protected: sharing with subclasses
+
+`private` shuts a member off from everything but its own class — including subclasses. Use
+`protected` when a base class wants to keep a member internal to the outside world but still let its
+subclasses read and override it:
+
+```zeus
+class Animal {
+  protected legs: i32;
+  constructor(legs: i32) { this.legs = legs; }
+}
+
+class Dog extends Animal {
+  constructor() { super(4); }
+
+  describe(): i32 {
+    return this.legs;   // ok: protected members are visible to subclasses
+  }
+}
+
+function main(): i32 {
+  let d: Dog = new Dog();
+  // d.legs;   // error: 'legs' is not accessible from outside the hierarchy
+  return d.describe() * 10 + 2;   // => 42
+}
+```
+
+If `legs` were `private`, the `this.legs` read inside `Dog` would be a compile error. See
+[Inheritance](/language/inheritance/) for how subclasses build on their base.
+
+<Aside type="caution">
+  `protected` still hides the member from unrelated code. Reading `d.legs` from `main` (outside the
+  `Animal`/`Dog` hierarchy) is a compile error, just like accessing a `private` member.
+</Aside>
 
 ## Getters
 
