@@ -287,6 +287,16 @@ func (p *UnusedWarningPass) handleSetIndex(instr *Instr) {
 }
 
 func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
+	// Collect in-scope interfaces first. A method/property of a class that structurally conforms to
+	// an interface can be invoked through dynamic interface dispatch (possibly from another module,
+	// which this per-module pass never sees), so such members must not be reported as unused.
+	var interfaces []*zeus_value.Interface
+	tc.builder.symbolTable.Walk(func(_ string, value zeus_value.Value) {
+		if iface := zeus_value.AsInterface(value); iface != nil {
+			interfaces = append(interfaces, iface)
+		}
+	})
+
 	// Check for unused variables, functions, classes, and class members - push warnings
 	tc.builder.symbolTable.Walk(func(name string, value zeus_value.Value) {
 		if variable := zeus_value.AsVar(value); variable != nil {
@@ -341,8 +351,9 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 						continue
 					}
 
-					// Check if the method is unused
-					if !method.IsUsed && class.PrimordialName == "" {
+					// Check if the method is unused (interface-dispatchable methods count as used).
+					if !method.IsUsed && class.PrimordialName == "" &&
+						!reachableViaInterface(class, method.SourceName(), true, interfaces) {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
 							Message:  fmt.Sprintf("method '%s' in class '%s' is declared but not used", method.SourceName(), class.SourceName()),
@@ -365,7 +376,8 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 						continue
 					}
 					property := classProperty.Property
-					if !property.IsUsed && class.PrimordialName == "" {
+					if !property.IsUsed && class.PrimordialName == "" &&
+						!reachableViaInterface(class, property.Name, false, interfaces) {
 						tc.pushError(&zeus_error.ZeusError{
 							Severity: zeus_error.ErrorSeverityWarning,
 							Message:  fmt.Sprintf("property '%s' in class '%s' is declared but not used", property.Name, class.SourceName()),
@@ -376,4 +388,24 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 			}
 		}
 	})
+}
+
+// reachableViaInterface reports whether a member named `memberName` on `class` satisfies a member of
+// some in-scope interface the class structurally conforms to. Such a member can be invoked through
+// dynamic interface dispatch, so it must not be flagged as unused. `isMethod` selects the interface
+// member kind (method vs property). The cheap name lookup runs before the structural conformance
+// check so the (more expensive) conformance walk only happens for a matching member name.
+func reachableViaInterface(class *zeus_value.Class, memberName string, isMethod bool, interfaces []*zeus_value.Interface) bool {
+	for _, iface := range interfaces {
+		var declares bool
+		if isMethod {
+			declares = zeus_value.InterfaceMethodIndex(iface, memberName) != -1
+		} else {
+			declares = zeus_value.InterfacePropertyIndex(iface, memberName) != -1
+		}
+		if declares && zeus_value.ClassConformsToInterface(class, iface) {
+			return true
+		}
+	}
+	return false
 }

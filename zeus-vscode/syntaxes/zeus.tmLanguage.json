@@ -3,8 +3,24 @@
     "name": "zeus",
     "patterns": [
         {
+            "comment": "Declaration name: `class Foo` / `interface Foo` highlights Foo as a type",
+            "match": "\\b(class|interface)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+            "captures": {
+                "1": { "name": "storage.type.zeus" },
+                "2": { "name": "entity.name.type.zeus" }
+            }
+        },
+        {
+            "comment": "Inheritance clause: `extends Base` / `implements Iface` highlights the type name",
+            "match": "\\b(extends|implements)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+            "captures": {
+                "1": { "name": "keyword.control.zeus" },
+                "2": { "name": "entity.name.type.zeus" }
+            }
+        },
+        {
             "name": "keyword.control.zeus",
-            "match": "\\b(if|else|return|while|new|class|private|protected|public|this|try|throw|catch|finally)\\b"
+            "match": "\\b(if|else|return|while|for|break|continue|new|class|interface|extends|implements|private|protected|public|this|super|try|throw|catch|finally)\\b"
         },
         {
             "name": "storage.type.zeus",
@@ -12,7 +28,7 @@
         },
         {
             "name": "storage.modifier.zeus",
-            "match": "\\b(let|const)\\b"
+            "match": "\\b(let|const|readonly|static|get|set)\\b"
         },
         {
             "name": "constant.numeric.zeus",
@@ -78,7 +94,7 @@
         },
         {
             "name": "support.type.zeus",
-            "match": "\\b(i8|i16|i32|i64|i128|f16|f32|f64|f128|boolean|void|string|null)\\b"
+            "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|f32|f64|boolean|void|string|null)\\b"
         },
         {
             "name": "keyword.control.import.zeus",

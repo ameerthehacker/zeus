@@ -165,6 +165,13 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Roadmap',
+          badge: { text: 'Planned', variant: 'note' },
+          items: [
+            { label: 'What\'s next', slug: 'roadmap' },
+          ],
+        },
+        {
           label: 'Contributing',
           items: [
             { label: 'Building from Source', slug: 'developer/building-from-source' },
