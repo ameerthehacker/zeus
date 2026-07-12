@@ -607,14 +607,10 @@ func isAssignableToInterface(iface *Interface, source ValueType) bool {
 		return false
 	}
 
-	// Generic array classes (i32[], Object[], ...) use the shared Object[] layout and are
-	// excluded from interface itables in codegen, so they must not be considered conformers
-	// here either — otherwise a match would type-check but crash at dispatch. (Other
-	// primordials like string/Error are ordinary classes and DO participate.) Keeping this
-	// predicate in lockstep with codegen's candidateClasses is what makes dispatch sound.
-	if src := AsObjectType(source); src != nil && src.Class.PrimordialName == ZEUS_PRIMORDIAL_ARRAY {
-		return false
-	}
+	// Array classes (i32[], Point[], ...) participate: each element type has its own runtime type
+	// handle (a distinct class id), so codegen can key it in the interface itable — see
+	// genObjectArrayTypeHandle. This predicate must stay in lockstep with codegen's
+	// candidateClasses (both now include arrays) or a match would type-check but misdispatch.
 
 	// Cycle handling for self-/mutually-referential interfaces.
 	if si := AsInterfaceType(source); si != nil {

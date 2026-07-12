@@ -42,7 +42,7 @@ func (c *Codegen) interfaceLayout(iface *zeus_value.Interface) *zeus_value.Inter
 	if layout, ok := c.interfaceLayouts[iface.Id]; ok {
 		return layout
 	}
-	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.candidateClasses())
+	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.allClasses)
 	c.interfaceLayouts[iface.Id] = layout
 	return layout
 }
@@ -112,20 +112,6 @@ func (c *Codegen) CollectClasses(builders []*ir.IRBuilder) {
 			c.allClasses = append(c.allClasses, cls)
 		}
 	}
-}
-
-// candidateClasses is the whole-program set eligible to conform to an interface: all collected
-// classes except generic array classes (they share the Object[] layout and one runtime class id,
-// so they can't be keyed in a per-class itable).
-func (c *Codegen) candidateClasses() []*zeus_value.Class {
-	var classes []*zeus_value.Class
-	for _, cls := range c.allClasses {
-		if cls.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY {
-			continue
-		}
-		classes = append(classes, cls)
-	}
-	return classes
 }
 
 // BuildInterfaceTableModule creates the dedicated module that DEFINES every interface dispatch
@@ -1269,18 +1255,60 @@ func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 	return c.genClass(*objectArrayClass)
 }
 
+// isObjectArrayHandle reports whether `class` is a specific object-array type (e.g. Point[]) that
+// shares the single Object[] struct/vtable/factory but carries its own distinct type handle. Such
+// entries reuse Object[]'s emitted code, so per-class emission passes (fillVTables, factory bodies,
+// extern methods) must skip them — only the base Object[] entry owns that code.
+func isObjectArrayHandle(class zeus_value.Class) bool {
+	return class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY &&
+		class.Name != ZeusObjectArrayClassName &&
+		(zeus_value.IsObjectType(class.ArrayElementType) || zeus_value.IsInterfaceType(class.ArrayElementType))
+}
+
+// genObjectArrayTypeHandle gives a specific object-array type (e.g. Point[]) its OWN runtime type
+// handle — a distinct type-info (its own class id) and object header — while SHARING the single
+// Object[] struct layout, vtable (methods), factory and constructor. Every object array is
+// byte-identical in memory (elements are object pointers), so the CODE is shared; but a distinct
+// class id is what lets the per-class interface dispatch table key this array type. This mirrors
+// C#'s "one shared generic method body, a distinct runtime type handle per instantiation".
+func (c *CodegenModule) genObjectArrayTypeHandle(class zeus_value.Class) *ZeusClassLLVMStruct {
+	if existing := c.zeusClassLLVMStructMap[class.Name]; existing != nil {
+		return existing
+	}
+	shared := c.genObjArrayClass() // Object[] entry: struct, vtable, methods, factory, ctor
+
+	// Own type info: a distinct class id (object arrays are pointer-element, so the runtime element
+	// size is identical to Object[]'s regardless of the element type).
+	typeInfo := llvm.AddGlobal(c.module, c.zeusObjectTypeInfoType, GetObjectTypeInfoStructPtrName(class.Name))
+	typeInfo.SetLinkage(llvm.InternalLinkage)
+	typeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
+		llvm.ConstInt(c.cxt.Int32Type(), uint64(class.Id), false),
+		llvm.ConstInt(c.cxt.Int8Type(), uint64(ZeusRuntimeObjectTypeArray), false),
+		llvm.ConstInt(c.cxt.Int8Type(), uint64(toZeusRuntimeType(class.ArrayElementType)), false),
+		llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0)),
+	}, false))
+
+	// Own header sharing Object[]'s vtable, so method calls dispatch to the shared code.
+	header := llvm.AddGlobal(c.module, shared.LLVMObjHeaderStructType, GetObjectHeaderStructPtrName(class.Name))
+	header.SetLinkage(llvm.InternalLinkage)
+	header.SetInitializer(llvm.ConstStruct([]llvm.Value{*shared.LLVMVTableInstance, typeInfo}, false))
+
+	entry := NewZeusClassLLVMStruct(class, shared.LLVMStructType, shared.LLVMVTableStructType, shared.LLVMVTableMethods, shared.LLVMObjHeaderStructType, shared.LLVMVTableInstance, header, shared.LLVMConstructorMethod)
+	c.zeusClassLLVMStructMap[class.Name] = entry
+	return entry
+}
+
 // genClass generates LLVM code for a Zeus class including struct types, vtable, and object header
 func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	if c.zeusClassLLVMStructMap[class.Name] != nil {
 		return c.zeusClassLLVMStructMap[class.Name]
-	} else if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY && class.Name != ZeusObjectArrayClassName && (zeus_value.IsObjectType(class.ArrayElementType) || zeus_value.IsInterfaceType(class.ArrayElementType)) {
-		// we generate single object array class for all types of OBJECT arrays
-		// because they are represented exactly the same way in memory (interface elements are
-		// object pointers too, so they share this layout).
-		// NOTE: primitive type arrays (u8[], i32[], etc.) need their own type info
-		// so the runtime knows the correct element size
-		c.zeusClassLLVMStructMap[class.Name] = c.genObjArrayClass()
-		return c.zeusClassLLVMStructMap[class.Name]
+	} else if isObjectArrayHandle(class) {
+		// All OBJECT arrays share the single Object[] layout/vtable/factory (they are byte-identical
+		// in memory — object pointers). But each element type gets its OWN type handle (distinct
+		// class id + header) so it can be keyed in interface dispatch tables. Primitive arrays
+		// (u8[], i32[], ...) already take the normal path below with their own type info (element
+		// size differs), so they get distinct class ids for free.
+		return c.genObjectArrayTypeHandle(class)
 	}
 
 	llvmStructType, vtableStructType, objectHeaderStructType, structName := c.createClassStructTypes(class)
@@ -1389,6 +1417,18 @@ func (c *CodegenModule) genNewObj(input ir.NewObjInstrInput, output zeus_value.V
 
 	// Call the factory function
 	llvmStruct := c.builder.CreateCall(factoryFunctionType, factoryFunc, factoryArgs, factoryFunctionName)
+
+	// Object arrays are built by the shared Object[] factory, which installs Object[]'s header
+	// (and thus Object[]'s class id). Swap in this array type's own header so the object carries a
+	// distinct class id — the vtable is shared, so methods still dispatch to the same code, but
+	// interface dispatch can now key this element type. (No-op for Object[] itself and primitive
+	// arrays, which already carry their own header.)
+	if isObjectArrayHandle(*callee) {
+		c.genObjectArrayTypeHandle(*callee) // ensure this type's header global exists
+		headerField := c.builder.CreateStructGEP(c.getLLVMStructType(ZeusObjectArrayClassName), llvmStruct, OBJ_HEADER_STRUCT_INDEX, "arr_type_header_field")
+		c.builder.CreateStore(c.getLLVMObjHeaderPtr(callee.Name), headerField)
+	}
+
 	c.llvmValues[output.Name] = llvmStruct
 }
 
@@ -1599,6 +1639,9 @@ func (c *CodegenModule) fillVTables() {
 		class := structInfo.ZeusClass
 		if _, isImported := c.importedClasses[class.Name]; isImported {
 			continue
+		}
+		if isObjectArrayHandle(class) {
+			continue // shares Object[]'s vtable, filled via the Object[] entry
 		}
 		// LLVMVTableMethods was sized to len(Layout().VTable) in genClass, so slot is always in range.
 		vtable := structInfo.LLVMVTableMethods
@@ -2559,6 +2602,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		}
 		if structInfo.ZeusClass.PrimordialName == "" {
 			continue
+		}
+		if isObjectArrayHandle(structInfo.ZeusClass) {
+			continue // uses the shared Object[] factory (no per-type factory declared)
 		}
 		c.genFactoryFunctionBody(structInfo.ZeusClass)
 	}

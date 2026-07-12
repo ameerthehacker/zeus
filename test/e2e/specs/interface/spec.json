@@ -15,7 +15,17 @@
         "entry": "primordial_conforms.zs"
     },
     {
-        "name": "Object array is not assignable to an interface (shared-layout class id)",
+        "name": "Array conforms to an interface it structurally matches (property + method dispatch)",
+        "exit": "216",
+        "entry": "array_conforms.zs"
+    },
+    {
+        "name": "Distinct object-array types dispatch independently through one interface site",
+        "exit": "13",
+        "entry": "array_distinct_handles.zs"
+    },
+    {
+        "name": "Array missing a required interface member is not assignable",
         "exit": "1",
         "entry": "array_not_conforming.zs",
         "compile_error": true,

@@ -233,10 +233,29 @@ A property may be backed by a **field or an accessor**: a class satisfies `reado
 through the interface dispatches to the field (a direct load/store) or the accessor (a getter/setter
 call) automatically, depending on the concrete object.
 
+Arrays participate too. An array conforms to any interface its members structurally match — e.g.
+`Point[]` satisfies `interface { readonly length: i32; get(i: i32): Point; }`. Every array element
+type gets its own runtime type handle (a distinct class id) while sharing the underlying array code,
+so it can be keyed in the dispatch table like any other class:
+
+```zeus
+interface Sized {
+  readonly length: i32;
+}
+
+function sizeOf(s: Sized): i32 {
+  return s.length;
+}
+
+function main(): i32 {
+  let xs: i32[] = new i32[];
+  xs.push(10);
+  xs.push(20);
+  return sizeOf(xs);   // 2 — an array satisfies Sized
+}
+```
+
 <Aside type="note" title="Not yet supported">
-  - **Arrays.** Object arrays (`Point[]`, `Shape[]`, …) all share one physical layout and
-    therefore one runtime class id, so they can't be keyed in the per-class dispatch table —
-    they're rejected at compile time (a clean type error, never a bad dispatch).
   - Interface **methods** must still be backed by a real method (not a function-typed field).
 
   Optional members (`?`), index signatures, call/construct signatures, and generic interfaces
