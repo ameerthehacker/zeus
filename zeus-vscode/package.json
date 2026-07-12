@@ -56,7 +56,13 @@
                 "command": "zeus.restartLanguageServer",
                 "title": "Zeus: Restart Language Server"
             }
-        ]
+        ],
+        "configurationDefaults": {
+            "[zeus]": {
+                "editor.defaultFormatter": "ameerthehacker.zeus-vscode",
+                "editor.formatOnSave": true
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run package",

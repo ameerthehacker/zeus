@@ -145,9 +145,10 @@ argue about. The defaults are:
 
 ## Editor integration
 
-`zeus fmt` is a command-line tool today. Format-on-save through the
-[language server](/tooling/lsp/) is planned. In the meantime, you can wire it up as
-a save hook in most editors by running `zeus fmt` on the current file.
+The same formatter is built into the [language server](/tooling/lsp/), so
+**Format Document** and **format-on-save** work in any LSP client. The VS Code
+extension turns on format-on-save for `.zs` files by default — no extra setup.
+The `zeus fmt` command is there for scripts, pre-commit hooks, and CI.
 
 ## Current limitations
 
