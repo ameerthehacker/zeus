@@ -129,6 +129,12 @@ func (g *IRModule) GetExportedSymbol(symbolName string) (zeus_value.Value, bool)
 	return value, true
 }
 
+// GetExportedSymbols returns the module's exported symbols keyed by the name they are imported
+// under. Used by the language server to offer import-symbol completions.
+func (g *IRModule) GetExportedSymbols() map[string]zeus_value.Value {
+	return g.exportedSymbols
+}
+
 // GetAllSymbols returns all symbols from the symbol table for code completion
 func (g *IRModule) GetAllSymbols() map[string]zeus_value.Value {
 	symbols := make(map[string]zeus_value.Value)
@@ -166,6 +172,12 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	for _, decl := range stmt.Decls {
 		// const X = class {} / const X = class MyClass {} → never emit a var decl
 		if classExpr, ok := decl.Initializer.(*ast.ClassDeclExprNode); ok {
+			// Anonymous class (const X = class {}): promote the var name to the class name.
+			// DeclCheckPass does this for top-level decls, but classes nested in method
+			// bodies are only reached here, so handle the nil name defensively.
+			if classExpr.Name == nil {
+				classExpr.Name = decl.Identifier
+			}
 			class := classExpr.Accept(g)
 			// Named class (const X = class MyClass {}): also declare X as an alias
 			if classExpr.Name.Name.Value != decl.Identifier.Name.Value {
@@ -549,6 +561,12 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		g.isLValueExpr = false
 		right := expr.Right.Accept(g)
 
+		// An operand failed to resolve (e.g. undefined identifier); the error was
+		// already reported. Bail before feeding a nil operand into IR emission.
+		if left == nil || right == nil {
+			return nil
+		}
+
 		// Check if this is an array element compound assignment
 		if arrayRef := zeus_value.AsArrayElementRef(left); arrayRef != nil {
 			// For array[i] += value:
@@ -609,6 +627,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	left := expr.Left.Accept(g)
 	g.isLValueExpr = false
 
+	// The left operand failed to resolve; its error was already reported.
+	if left == nil {
+		return nil
+	}
+
 	switch expr.Operator.Type {
 	case token.TokenTypeAmpAmp:
 		return g.emitShortCircuitAnd(left, expr)
@@ -617,6 +640,11 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	}
 
 	right := expr.Right.Accept(g)
+
+	// The right operand failed to resolve; its error was already reported.
+	if right == nil {
+		return nil
+	}
 
 	switch expr.Operator.Type {
 	case token.TokenTypePlus:
@@ -725,6 +753,31 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 	return g.irBuilder.BuildLoad(resultVar, span)
 }
 
+// visitArgs evaluates a list of call/constructor argument expressions. It returns
+// ok=false if any argument is missing or fails to resolve (e.g. an undefined identifier),
+// signalling the caller to abort emitting the call — the underlying error was already
+// reported. This keeps nil operands out of the emitted IR, which the type checker assumes
+// are always non-nil.
+func (g *IRModule) visitArgs(argExprs []ast.ExprNode) ([]zeus_value.Value, bool) {
+	args := make([]zeus_value.Value, 0, len(argExprs))
+	ok := true
+	for _, argExpr := range argExprs {
+		// Evaluate every argument even after one fails, so each argument's own error
+		// (e.g. several undefined identifiers) is reported rather than only the first.
+		if argExpr == nil {
+			ok = false
+			continue
+		}
+		v := argExpr.Accept(g)
+		if v == nil {
+			ok = false
+			continue
+		}
+		args = append(args, v)
+	}
+	return args, ok
+}
+
 func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_value.Value {
 	// super(...) — direct call to the base constructor inside a derived constructor.
 	if ident, ok := expr.Callee.(*ast.IdentifierExprNode); ok && ident.Name.Value == token.SUPER_KEYWORD {
@@ -758,9 +811,9 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 								return nil
 							}
 						}
-						args := []zeus_value.Value{}
-						for _, param := range expr.Params {
-							args = append(args, param.Accept(g))
+						args, ok := g.visitArgs(expr.Params)
+						if !ok {
+							return nil
 						}
 						return g.irBuilder.BuildCallFunc(m.Method, args, expr.GetSpan())
 					}
@@ -783,20 +836,23 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 			return nil
 		}
 
+		if object == nil {
+			return nil
+		}
 		if !g.isThisExpression(propAccess.Object) {
 			g.emitNullCheck(object, propAccess.Property.Name.Value, propAccess.GetSpan())
 		}
-		args := []zeus_value.Value{}
-		for _, param := range expr.Params {
-			args = append(args, param.Accept(g))
+		args, ok := g.visitArgs(expr.Params)
+		if !ok {
+			return nil
 		}
 		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, nil, nil, expr.GetSpan())
 	}
 
 	callee := expr.Callee.Accept(g)
-	params := []zeus_value.Value{}
-	for _, arg := range expr.Params {
-		params = append(params, arg.Accept(g))
+	params, ok := g.visitArgs(expr.Params)
+	if !ok {
+		return nil
 	}
 
 	if zeus_value.IsFunction(callee) {
@@ -1417,6 +1473,10 @@ func (g *IRModule) VisitUnaryExpr(expr *ast.UnaryExprNode) zeus_value.Value {
 	}
 
 	value := expr.Expr.Accept(g)
+	// Operand failed to resolve; its error was already reported.
+	if value == nil {
+		return nil
+	}
 
 	switch expr.Operator.Type {
 	case token.TokenTypeMinus:
@@ -1482,8 +1542,8 @@ func (g *IRModule) getOrCreateArrayClass(arrayType zeus_value.ArrayType) *zeus_v
 	arrayClassName := arrayType.String()
 
 	// Check if already in symbol table (already processed)
-	if existingClass, ok := g.symbolTable().GetSymbol(arrayClassName); ok {
-		return existingClass.(*zeus_value.Class)
+	if class := g.primordialClassInScope(arrayClassName); class != nil {
+		return class
 	}
 
 	// Get or create from registry (handles nested array types internally)
@@ -1662,11 +1722,28 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 
 	// Start with the base array
 	currentValue := expr.Array.Accept(g)
+	// Base expression failed to resolve (e.g. indexing an undefined identifier); the
+	// error was already reported. Bail instead of dereferencing nil.
+	if currentValue == nil {
+		return nil
+	}
 
 	// Collect all indices
 	indices := []zeus_value.Value{}
 	for _, indexExpr := range expr.IndexingMeta.IndexingExprs {
+		// Empty brackets (e.g. `arr[]`) are only valid in `new Type[]` type position;
+		// as a value expression they have no index. Report a clean error, not a crash.
+		if indexExpr == nil {
+			g.pushError(&zeus_error.ZeusError{
+				Message: "missing index expression in '[]'",
+				Span:    expr.GetSpan(),
+			})
+			return nil
+		}
 		index := indexExpr.Accept(g)
+		if index == nil {
+			return nil
+		}
 
 		// Cast index to i32 if needed (array methods expect i32)
 		indexType := zeus_value.GetValueType(index)
@@ -1784,9 +1861,16 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 
 	// Class instantiation: new MyClass(args)
 	calleeValue := callee.Accept(g)
-	args := []zeus_value.Value{}
-	for _, arg := range expr.Args {
-		args = append(args, arg.Accept(g))
+	// The callee failed to resolve (e.g. `new UndefinedClass`); the error was already
+	// reported. Don't emit a NEW_OBJ instruction with a nil callee — downstream type
+	// checking would dereference it.
+	if calleeValue == nil {
+		return nil
+	}
+	args, ok := g.visitArgs(expr.Args)
+	if !ok {
+		// A constructor argument failed to resolve; the error was already reported.
+		return nil
 	}
 
 	return g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
@@ -2048,6 +2132,11 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	object := expr.Object.Accept(g)
+	// The object sub-expression failed to resolve (e.g. undefined identifier); the
+	// underlying error was already reported. Bail out instead of dereferencing nil.
+	if object == nil {
+		return nil
+	}
 	property := expr.Property.Name.Value
 	asVar := zeus_value.AsVar(object)
 
@@ -2221,43 +2310,37 @@ func (g *IRModule) emitNullCheck(object zeus_value.Value, propertyName string, s
 	g.irBuilder.SetInsertionBlock(continueBlock)
 }
 
-// getOrCreateErrorClass returns the Error primordial class from the symbol table.
-func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
-	// Error class is registered with name "Error" (not the primordial constant "error")
-	errorClassName := "Error"
-
-	// Error class should always be pre-registered in the symbol table
-	if existingClass, ok := g.symbolTable().GetSymbol(errorClassName); ok {
-		return existingClass.(*zeus_value.Class)
+// primordialClassInScope returns the class registered under `name` in the symbol table, or nil
+// when the name is absent OR has been shadowed by a non-class user declaration (e.g. a program
+// that writes `let string = 0` or `function Error() {}`). Callers fall back to the primordial
+// registry so a shadowing program produces diagnostics instead of crashing on a bad type
+// assertion — the symbol table lookup can no longer be assumed to return the primordial class.
+func (g *IRModule) primordialClassInScope(name string) *zeus_value.Class {
+	if existing, ok := g.symbolTable().GetSymbol(name); ok {
+		return zeus_value.AsClass(existing)
 	}
-
-	// This should never happen - Error is registered during IRBuilder init
-	zeus_error.Assert(false, "Error class not found in symbol table - this is a bug")
 	return nil
 }
 
-// getOrCreateConsoleClass returns the Console primordial class, registering it if needed.
-func (g *IRModule) getOrCreateConsoleClass() *zeus_value.Class {
-	consoleClassName := zeus_value.ZEUS_PRIMORDIAL_CONSOLE
-
-	if existingClass, ok := g.symbolTable().GetSymbol(consoleClassName); ok {
-		return existingClass.(*zeus_value.Class)
+// getOrCreateErrorClass returns the Error primordial class from the symbol table.
+func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
+	// The Error class is registered in the symbol table and the primordial registry under its
+	// class name, "Error". A user program can shadow that name (e.g. `function Error() {}`), so
+	// fall back to the registry; if even that is unavailable, return nil so callers can degrade
+	// gracefully instead of crashing.
+	if class := g.primordialClassInScope("Error"); class != nil {
+		return class
 	}
-
-	consoleClass := zeus_value.Registry.GetClass(consoleClassName)
-	zeus_error.Assert(consoleClass != nil, "Console class not found in registry - this is a bug")
-
-	g.symbolTable().DeclareGlobalSymbol(consoleClassName, consoleClass)
-	g.irBuilder.EmitClassDeclAtStart(consoleClass)
-
-	return consoleClass
+	return zeus_value.Registry.GetClass("Error")
 }
 
-// initPrimordialGlobals creates the `console` global object inside the entry function body.
-// Must be called while the insertion block is set to the entry function's body block
-// and isInModuleScope is true.
+// initPrimordialGlobals creates the `console` and `Math` global objects inside the entry function
+// body. `Console`/`Math` are ordinary registered class symbols (declared by initializePrimordials),
+// so they resolve through primordialClassInScope — no dedicated get-or-create helper is needed. This
+// runs before any user statement, so the names cannot be shadowed yet. Must be called while the
+// insertion block is set to the entry function's body block and isInModuleScope is true.
 func (g *IRModule) initPrimordialGlobals(span *token.Span) {
-	consoleClass := g.getOrCreateConsoleClass()
+	consoleClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_CONSOLE)
 	consoleObj := g.irBuilder.BuildNewObj(consoleClass, []zeus_value.Value{}, span)
 
 	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(consoleClass), true, consoleObj, span)
@@ -2265,6 +2348,18 @@ func (g *IRModule) initPrimordialGlobals(span *token.Span) {
 	consoleVar.IsUsed = true // primordial global — suppress unused warning
 
 	g.symbolTable().DeclareGlobalSymbol("console", consoleVar)
+
+	// `Math` is a singleton instance (JS parity: Math.sqrt/Math.PI). Declaring the instance under
+	// "Math" intentionally shadows the class symbol of the same name — user code only ever
+	// references the instance; the class stays reachable via the object type and the registry.
+	mathClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_MATH)
+	mathObj := g.irBuilder.BuildNewObj(mathClass, []zeus_value.Value{}, span)
+
+	mathVarDecl := NewVarDecl(zeus_value.ZEUS_PRIMORDIAL_MATH, zeus_value.NewObjectType(mathClass), true, mathObj, span)
+	mathVar := g.irBuilder.BuildGlobalVarDecl(mathVarDecl)
+	mathVar.IsUsed = true // primordial global — suppress unused warning
+
+	g.symbolTable().DeclareGlobalSymbol(zeus_value.ZEUS_PRIMORDIAL_MATH, mathVar)
 }
 
 // emitBoundsCheck generates IR to check if an array index is within bounds and throw if not
@@ -2306,9 +2401,18 @@ func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Valu
 func (g *IRModule) emitThrowError(errorName string, errorMessage string, span *token.Span) {
 	// Get the Error class from symbol table
 	errorClass := g.getOrCreateErrorClass()
+	if errorClass == nil {
+		// The Error primordial is unavailable (e.g. the user shadowed the name). Skip emitting
+		// the throw rather than crashing — this only happens on already-erroneous programs.
+		return
+	}
 
 	// Get the string class and u8[] array class
 	stringClass := g.getOrCreateStringClass()
+	if stringClass == nil {
+		// The string primordial was shadowed; skip emitting the throw rather than crashing.
+		return
+	}
 	u8ArrayType := zeus_value.NewArrayType(zeus_value.IntType{Size: zeus_value.I8, Signed: false, Span: span}, span)
 	u8ArrayClass := g.getOrCreateArrayClass(u8ArrayType)
 	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
@@ -2393,14 +2497,14 @@ func (g *IRModule) VisitChar(expr *ast.CharExprNode) zeus_value.Value {
 func (g *IRModule) getOrCreateStringClass() *zeus_value.Class {
 	stringClassName := zeus_value.ZEUS_PRIMORDIAL_STRING
 
-	// String class should always be pre-registered in the symbol table
-	if existingClass, ok := g.symbolTable().GetSymbol(stringClassName); ok {
-		return existingClass.(*zeus_value.Class)
+	// String class should always be pre-registered in the symbol table, but a user program can
+	// shadow the name (e.g. `let string = 0`). Fall back to the registry so a string literal in
+	// such a program still resolves instead of crashing.
+	if class := g.primordialClassInScope(stringClassName); class != nil {
+		return class
 	}
-
-	// This should never happen - string is registered during IRBuilder init
-	zeus_error.Assert(false, "string class not found in symbol table - this is a bug")
-	return nil
+	// Fall back to the registry; nil if even that is unavailable so callers can degrade.
+	return zeus_value.Registry.GetClass(stringClassName)
 }
 
 func (g *IRModule) VisitTemplateString(expr *ast.TemplateStringExprNode) zeus_value.Value {
@@ -2462,7 +2566,13 @@ func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_va
 }
 
 func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
-	zeus_error.Assert(false, "value type should not be emitted in the IR")
+	// A type name reached expression position, e.g. `i32;` used as a value. This is a
+	// user error (a type is not a value), not an internal compiler fault — report it
+	// cleanly rather than asserting.
+	g.pushError(&zeus_error.ZeusError{
+		Message: fmt.Sprintf("type '%s' cannot be used as a value", expr.ValueType),
+		Span:    expr.GetSpan(),
+	})
 	return nil
 }
 
@@ -2491,10 +2601,20 @@ func (g *IRModule) getClassIdFromType(valueType zeus_value.ValueType) int {
 	case zeus_value.UserDefinedType:
 		// At IR generation time, catch clause types are still UserDefinedType
 		// (ToKnownTypesPass hasn't run yet). Look up the class in the symbol table.
+		// An unresolved or non-class name here is a user error (e.g. `catch (e: Foo)`
+		// where Foo is undefined), so report it cleanly instead of asserting.
 		sym, ok := g.symbolTable().GetSymbol(t.Name)
-		zeus_error.Assert(ok, "getClassIdFromType: unresolved type '"+t.Name+"' not found in symbol table")
+		if !ok {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+				fmt.Sprintf("undefined type '%s'", t.Name), t.GetSpan()))
+			return 0
+		}
 		class := zeus_value.AsClass(sym)
-		zeus_error.Assert(class != nil, "getClassIdFromType: symbol '"+t.Name+"' is not a class")
+		if class == nil {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+				fmt.Sprintf("'%s' is not a class", t.Name), t.GetSpan()))
+			return 0
+		}
 		return class.Id
 	default:
 		return 0

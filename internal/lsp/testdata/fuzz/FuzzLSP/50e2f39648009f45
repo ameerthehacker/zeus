@@ -1,0 +1,2 @@
+go test fuzz v1
+string("class Doubler{__call__(){}}function A(){const d=new Doubler\nconst A:()=>A=d\n}")

@@ -4,6 +4,7 @@ const io_runtime = @import("io_runtime.zig");
 const string_runtime = @import("string_runtime.zig");
 const exception_runtime = @import("exception_runtime.zig");
 const timers_runtime = @import("timers_runtime.zig");
+const math_runtime = @import("math_runtime.zig");
 
 // Anchor the xev module import so Zig's module-declaration checker is satisfied.
 // timers_runtime.zig is the actual consumer of xev.
@@ -16,5 +17,6 @@ comptime {
     _ = string_runtime;
     _ = exception_runtime;
     _ = timers_runtime;
+    _ = math_runtime;
     _ = xev;
 }

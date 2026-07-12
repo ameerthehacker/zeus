@@ -1,0 +1,7 @@
+[
+    {
+        "name": "ANSI color/style wrapping and nesting via @std/console/colors",
+        "exit": "0",
+        "entry": "colors_basic.zs"
+    }
+]

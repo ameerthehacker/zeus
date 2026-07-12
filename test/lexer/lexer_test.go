@@ -235,6 +235,24 @@ func TestZeusLexer(t *testing.T) {
 			},
 		},
 		{
+			name:  "string with escape esc",
+			input: `"\e"`,
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeString, "\x1b", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 4), *token.NewPosition(1, 4))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 5), *token.NewPosition(1, 5))),
+			},
+		},
+		{
+			name:  "string with hex escape",
+			input: `"\x41"`,
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeString, "A", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 6))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 6), *token.NewPosition(1, 6))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 7), *token.NewPosition(1, 7))),
+			},
+		},
+		{
 			name:  "unterminated string",
 			input: `"hello world`,
 			expected: []*token.Token{

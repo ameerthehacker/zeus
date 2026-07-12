@@ -70,6 +70,9 @@ func (l *Lexer) shouldInsertSemicolon() bool {
 }
 
 func (l *Lexer) isNewLine() bool {
+	if l.isEOF(0) {
+		return false
+	}
 	return l.source[l.cursor] == '\n' || l.source[l.cursor] == '\r'
 }
 
@@ -179,7 +182,20 @@ func (l *Lexer) eatNumber() {
 		}
 	}
 
-	l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, string(l.source[start:l.cursor]), token.NewSpan(*startPosition, *endPosition)))
+	literal := string(l.source[start:l.cursor])
+
+	// A radix-prefixed literal (0x / 0b / 0o) must have at least one digit after
+	// the prefix. Without this check "0x", "0b", "0o" would lex as valid number
+	// tokens and later crash integer parsing downstream.
+	if !isRadix10 && len(literal) <= 2 {
+		l.pushError(zeus_error.NewZeusError(
+			zeus_error.ErrorSeverityError,
+			fmt.Sprintf("malformed number literal '%s': missing digits after radix prefix", literal),
+			token.NewSpan(*startPosition, *endPosition),
+		))
+	}
+
+	l.pushToken(token.NewTokenWithValue(token.TokenTypeNumber, literal, token.NewSpan(*startPosition, *endPosition)))
 }
 
 func (l *Lexer) eatStringOrChar(isChar bool) {
@@ -299,10 +315,51 @@ func (l *Lexer) processEscapeSequence() rune {
 		return '\''
 	case '0':
 		return '\x00'
+	case 'e':
+		// ESC (0x1b) — convenience escape for ANSI terminal sequences.
+		return '\x1b'
+	case 'x':
+		// Hex escape: \xHH — exactly two hex digits (the 'x' is already consumed).
+		return l.processHexEscape()
 	default:
 		// Unknown escape sequence - return the character as-is
 		return char
 	}
+}
+
+// processHexEscape reads exactly two hex digits following \x and returns the
+// corresponding rune (codepoint 0x00–0xFF). The 'x' has already been consumed.
+// On malformed input it records a lexer error and returns whatever was parsed so far.
+func (l *Lexer) processHexEscape() rune {
+	var value rune
+	for i := 0; i < 2; i++ {
+		position := l.getCurrentPosition()
+		if l.isEOF(0) {
+			l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "incomplete \\x escape: expected two hex digits", token.NewSpan(*position, *position)))
+			return value
+		}
+		digit, ok := hexDigitValue(l.source[l.cursor])
+		if !ok {
+			l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("invalid hex digit %q in \\x escape", l.source[l.cursor]), token.NewSpan(*position, *position)))
+			return value
+		}
+		value = value*16 + rune(digit)
+		l.advance()
+	}
+	return value
+}
+
+// hexDigitValue returns the numeric value of a hex digit and whether the rune is one.
+func hexDigitValue(char rune) (int, bool) {
+	switch {
+	case char >= '0' && char <= '9':
+		return int(char - '0'), true
+	case char >= 'a' && char <= 'f':
+		return int(char-'a') + 10, true
+	case char >= 'A' && char <= 'F':
+		return int(char-'A') + 10, true
+	}
+	return 0, false
 }
 
 func (l *Lexer) pushError(err *zeus_error.ZeusError) {

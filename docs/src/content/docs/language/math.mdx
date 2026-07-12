@@ -1,0 +1,114 @@
+---
+title: Math
+description: The global Math object — constants and floating-point math functions, JavaScript style.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The global `Math` object is available in every program without an import, just like `console`. It
+exposes the constants and floating-point functions you know from JavaScript. Every method operates
+on `f64`.
+
+```zeus
+console.log("The square root of 16 is 4");
+
+if (Math.sqrt(16.0) == 4.0) {
+  console.log("correct!");
+}
+```
+
+## Constants
+
+| Constant  | Value               | Description               |
+| --------- | ------------------- | ------------------------- |
+| `Math.PI` | 3.141592653589793   | Ratio of a circle's circumference to its diameter. |
+| `Math.E`  | 2.718281828459045   | Euler's number, the base of natural logarithms.    |
+
+```zeus
+if (Math.PI > 3.14 && Math.PI < 3.15) {
+  console.log("PI looks right");
+}
+```
+
+## Rounding
+
+```zeus
+Math.floor(x: f64): f64   // largest integer <= x
+Math.ceil(x: f64): f64    // smallest integer >= x
+Math.round(x: f64): f64   // nearest integer, halves away from zero
+Math.trunc(x: f64): f64   // drops the fractional part
+```
+
+```zeus
+Math.floor(3.7);   // 3.0
+Math.ceil(3.2);    // 4.0
+Math.round(3.5);   // 4.0
+Math.trunc(3.9);   // 3.0
+```
+
+## Powers, roots, and logarithms
+
+```zeus
+Math.pow(x: f64, y: f64): f64   // x raised to the power y
+Math.sqrt(x: f64): f64          // square root
+Math.cbrt(x: f64): f64          // cube root
+Math.exp(x: f64): f64           // e raised to the power x
+Math.log(x: f64): f64           // natural logarithm (base e)
+Math.log2(x: f64): f64          // base-2 logarithm
+Math.log10(x: f64): f64         // base-10 logarithm
+```
+
+```zeus
+Math.pow(2.0, 10.0);   // 1024.0
+Math.sqrt(144.0);      // 12.0
+Math.log2(8.0);        // 3.0
+```
+
+## Trigonometry
+
+```zeus
+Math.sin(x: f64): f64   // sine of x (radians)
+Math.cos(x: f64): f64   // cosine of x (radians)
+Math.tan(x: f64): f64   // tangent of x (radians)
+```
+
+```zeus
+Math.sin(0.0);         // 0.0
+Math.cos(0.0);         // 1.0
+Math.cos(Math.PI);     // -1.0
+```
+
+## Sign, absolute value, and comparison
+
+```zeus
+Math.abs(x: f64): f64            // absolute value
+Math.sign(x: f64): f64           // -1.0, 0.0, or 1.0
+Math.min(a: f64, b: f64): f64    // smaller of a and b
+Math.max(a: f64, b: f64): f64    // larger of a and b
+Math.hypot(a: f64, b: f64): f64  // sqrt(a*a + b*b)
+```
+
+```zeus
+Math.abs(-5.0);        // 5.0
+Math.sign(-3.0);       // -1.0
+Math.max(2.0, 9.0);    // 9.0
+Math.hypot(3.0, 4.0);  // 5.0
+```
+
+<Aside type="note">
+  Unlike JavaScript, `Math.min` and `Math.max` take exactly **two** arguments — Zeus does not have
+  variadic functions yet. Nest calls to compare more values: `Math.max(a, Math.max(b, c))`.
+</Aside>
+
+## Random
+
+`Math.random()` returns a uniformly distributed `f64` in the range `[0.0, 1.0)`.
+
+```zeus
+let r: f64 = Math.random();   // e.g. 0.4271...
+```
+
+<Aside type="tip">
+  Scale and shift to get a value in another range. For example, `Math.floor(Math.random() * 6.0)`
+  gives an integer die roll in `0..5`.
+</Aside>

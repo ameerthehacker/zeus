@@ -13,7 +13,7 @@ import { add, multiply } from "./math";
 import { Point } from "./shapes/point";
 
 // Stdlib (@ prefix resolves from ZEUS_HOME/lib/)
-import { abs, max } from "@std/math";
+import { red, bold } from "@std/console/colors";
 
 // Export a function
 export function add(a: i32, b: i32): i32 {
@@ -43,7 +43,7 @@ Only functions and classes can be exported. Variables cannot be exported.
 | `"./math"` | `<importing_file_dir>/math.zs` (auto-appends `.zs` if needed) |
 | `"./utils"` | `<importing_file_dir>/utils/index.zs` (directory → index.zs) |
 | `"./math.zs"` | `<importing_file_dir>/math.zs` (explicit extension also works) |
-| `"@std/math"` | `$ZEUS_HOME/lib/std/math/index.zs` |
+| `"@std/console/colors"` | `$ZEUS_HOME/lib/std/console/colors.zs` |
 
 **ZEUS_HOME** is an env var that points to the zeus installation root (e.g. the repo root in
 development, or the Homebrew prefix in production). `lib/` lives directly inside it.
@@ -175,8 +175,8 @@ and `runtime/`. `GetRuntimeDir()` always appends `runtime/zig-out/out` to it.
 $ZEUS_HOME/
   lib/
     std/
-      math/
-        index.zs      ← @std/math resolves here
+      console/
+        colors.zs     ← @std/console/colors resolves here
   runtime/
     zig-out/
       out/
@@ -224,7 +224,7 @@ supports a `compile_error` field in spec.json for tests that expect the compiler
 | `class-main.zs` | Class import, `new`, property access |
 | `class-method-main.zs` | Class import, constructor args, vtable method call |
 | `folder-main.zs` | Directory import (`./utils` → `utils/index.zs`) |
-| `stdlib-main.zs` | `@std/math` stdlib import |
+| `stdlib-main.zs` | `@std/console/colors` stdlib import |
 | `bad-import.zs` | Compile error: symbol not exported |
 | `missing-module.zs` | Compile error: file not found |
 | `circular-main.zs` | Compile error: circular dependency |

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/token"
-	"github.com/ameerthehacker/zeus/internal/zeus_error"
 )
 
 const TEMP_VARIABLE_PREFIX = "%"
@@ -356,6 +355,9 @@ func IsClass(value Value) bool {
 }
 
 func GetValueType(value Value) ValueType {
+	if value == nil {
+		return UndefinedType{}
+	}
 	switch value := value.(type) {
 	case *Var:
 		return value.ValueType
@@ -376,7 +378,10 @@ func GetValueType(value Value) ValueType {
 			}
 			return objType.Class.ArrayElementType
 		}
-		panic(fmt.Sprintf("ArrayElementRef has non-array object type: %T", arrayType))
+		// The indexed object is not an array (e.g. indexing an untyped variable on
+		// malformed input). Return an undefined type so callers surface a clean type
+		// error rather than crashing.
+		return UndefinedType{Span: value.GetSpan()}
 	default:
 		panic(fmt.Sprintf("unable to identify type for value: %T", value))
 	}
@@ -665,8 +670,13 @@ func AsConstant(value Value) *Constant {
 
 func GetSignedIntSize(number string) IntSize {
 	value, err := strconv.ParseInt(number, 0, 64)
-
-	zeus_error.Assert(err == nil, fmt.Sprintf("failed to parse int: %s", err))
+	if err != nil {
+		// The number does not fit in a signed 64-bit integer (e.g. a large u64 literal), or
+		// it is a malformed literal (e.g. "0x" with no digits, from partial/incorrect source).
+		// Fall back to the widest size so IR generation never panics; malformed literals are
+		// reported as errors by the lexer, not here.
+		return I64
+	}
 
 	switch {
 	case value >= -128 && value <= 127:
