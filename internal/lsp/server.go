@@ -62,12 +62,13 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 			"signatureHelpProvider": map[string]interface{}{
 				"triggerCharacters": []string{"(", ","},
 			},
-			"hoverProvider":             true,
-			"definitionProvider":        true,
-			"documentSymbolProvider":    true,
-			"documentHighlightProvider": true,
-			"referencesProvider":        true,
-			"inlayHintProvider":         true,
+			"hoverProvider":              true,
+			"definitionProvider":         true,
+			"documentSymbolProvider":     true,
+			"documentHighlightProvider":  true,
+			"referencesProvider":         true,
+			"inlayHintProvider":          true,
+			"documentFormattingProvider": true,
 		},
 		"serverInfo": map[string]interface{}{
 			"name":    "zeus-lsp",
@@ -237,6 +238,12 @@ func (s *Server) handleMessage(msg []byte) (err error) {
 			return err
 		}
 		result = s.getInlayHints(params)
+	case "textDocument/formatting":
+		var params protocol.DocumentFormattingParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		result = s.formatDocument(params.TextDocument.URI)
 	default:
 		// Unknown/unsupported method. A request (has an id) must still get a reply, or the
 		// client blocks waiting for one — respond with JSON-RPC "method not found". A

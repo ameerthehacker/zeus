@@ -1,0 +1,170 @@
+---
+title: Formatter
+description: Format Zeus source code with zeus fmt — a Prettier-style code formatter.
+---
+
+import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
+
+Zeus ships with a built-in code formatter. `zeus fmt` rewrites a source file into a
+single, canonical style — so you never have to think about indentation, spacing, or
+where the braces go.
+
+It's inspired by [Prettier](https://prettier.io/): it parses your code, throws away
+the original whitespace, and re-prints it, fitting each construct to an 80-column
+width.
+
+## Usage
+
+Format a file **in place**:
+
+```bash
+zeus fmt app.zs
+```
+
+That's it. The file is rewritten with the canonical style. If the file is already
+formatted, nothing is written.
+
+<Aside type="note">
+  `zeus fmt` never overwrites a file if formatting it would produce code that no
+  longer parses — if that ever happens, the file is left untouched and an error is
+  printed. Your source is safe.
+</Aside>
+
+## What it does
+
+<CardGrid>
+  <Card title="Consistent Indentation" icon="bars">
+    4-space indentation, everywhere, automatically.
+  </Card>
+  <Card title="Canonical Spacing" icon="pencil">
+    Spaces around operators, after commas and keywords, normalized.
+  </Card>
+  <Card title="Smart Line Breaking" icon="random">
+    Long argument lists wrap one-per-line; short ones stay inline.
+  </Card>
+  <Card title="Comments Preserved" icon="comment">
+    Line and block comments are kept in place.
+  </Card>
+</CardGrid>
+
+## Example
+
+Given this messy input:
+
+```zeus
+// Point in 2D space
+class   Point{
+public x:i32; // x coordinate
+public y:i32; // y coordinate
+constructor(x:i32,y:i32){this.x=x;this.y=y;}
+}
+function main():i32{
+let p:Point=new Point(3,4); // make a point
+// verify
+if(p.x==3){return 0;}
+return 1;
+}
+```
+
+Running `zeus fmt` produces:
+
+```zeus
+// Point in 2D space
+class Point {
+    public x: i32; // x coordinate
+    public y: i32; // y coordinate
+    constructor(x: i32, y: i32) {
+        this.x = x;
+        this.y = y;
+    }
+}
+function main(): i32 {
+    let p: Point = new Point(3, 4); // make a point
+    // verify
+    if (p.x == 3) {
+        return 0;
+    }
+    return 1;
+}
+```
+
+### Width-based line breaking
+
+When a call is short, it stays on one line. When it would exceed the print width,
+the formatter breaks it — one argument per line, with a trailing comma:
+
+```zeus
+function main(): i32 {
+    let result: i32 = computeSomething(
+        argumentNumberOne,
+        argumentNumberTwo,
+        argumentNumberThree,
+        argumentFour,
+    );
+    return result;
+}
+```
+
+## Comments
+
+Both comment styles are preserved:
+
+```zeus
+// a line comment
+let x: i32 = 1; // a trailing comment
+
+/* a block comment */
+let y: i32 = 2;
+```
+
+JSDoc-style block comments are re-indented with their `*` lines aligned (other
+multi-line block comments — tables, ASCII art — are kept exactly as written):
+
+```zeus
+/*
+ * Computes the answer.
+ */
+function answer(): i32 {
+    return 42;
+}
+```
+
+Blank lines you write between statements are preserved (collapsed to at most one).
+
+## Style
+
+The formatter is intentionally **not** configurable — one style, no options to
+argue about. The defaults are:
+
+| Setting        | Value        |
+| -------------- | ------------ |
+| Indentation    | 4 spaces     |
+| Print width    | 80 columns   |
+| Statements     | Semicolons   |
+| Control-flow   | Always braced |
+
+## Editor integration
+
+The same formatter is built into the [language server](/tooling/lsp/), so
+**Format Document** and **format-on-save** work in any LSP client. The VS Code
+extension turns on format-on-save for `.zs` files by default — no extra setup.
+The `zeus fmt` command is there for scripts, pre-commit hooks, and CI.
+
+## Current limitations
+
+<Aside type="caution">
+  A few things aren't handled yet:
+</Aside>
+
+- Comments in unusual positions (for example, in the middle of an expression) are
+  never dropped, but may move to an adjacent line.
+- Long binary expressions and ternaries are not yet broken across lines.
+- `new` allocations of function-type arrays (`new ((x: i32) => i32)[]`) are left
+  as-is.
+
+---
+
+## See Also
+
+- [Compiling Programs](/tooling/release-builds/) — Build and run your code
+- [Language Server](/tooling/lsp/) — Editor diagnostics and completion

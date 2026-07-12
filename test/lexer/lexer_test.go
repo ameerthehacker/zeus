@@ -38,6 +38,18 @@ func TestZeusLexer(t *testing.T) {
 			},
 		},
 		{
+			// A CRLF pair is one logical line break: b must be on line 2, not line 3.
+			name:  "crlf counts as a single newline",
+			input: "a\r\nb",
+			expected: []*token.Token{
+				token.NewTokenWithValue(token.TokenTypeIdentifier, "a", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))),
+				token.NewTokenWithValue(token.TokenTypeIdentifier, "b", token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeSemicolon, token.NewSpan(*token.NewPosition(2, 1), *token.NewPosition(2, 1))),
+				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(2, 2), *token.NewPosition(2, 2))),
+			},
+		},
+		{
 			name:  "semantic tokens",
 			input: "({[)\n}];,:.",
 			expected: []*token.Token{

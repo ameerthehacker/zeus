@@ -22,6 +22,9 @@ Zeus includes a built-in Language Server Protocol (LSP) implementation that prov
   <Card title="Unused Warnings" icon="information">
     Warnings for unused variables, functions, and classes.
   </Card>
+  <Card title="Formatting" icon="pencil">
+    Format Document and format-on-save, powered by the built-in formatter.
+  </Card>
 </CardGrid>
 
 ## Available Now
@@ -74,6 +77,20 @@ function main(): i32 {
   return used;
 }
 ```
+
+### Formatting
+
+The server implements `textDocument/formatting` using the built-in
+[formatter](/tooling/formatter/), so **Format Document** (`Shift+Alt+F`) and
+**format-on-save** work in any LSP client. The VS Code extension enables
+format-on-save for `.zs` files by default; disable it per-workspace with:
+
+```json
+"[zeus]": { "editor.formatOnSave": false }
+```
+
+The server never returns an edit for code that doesn't parse, so a file with
+errors is left untouched.
 
 ## Running the Server
 
@@ -187,9 +204,9 @@ Parameter hints while typing function calls:
 add(|)  // Shows: add(a: i32, b: i32): i32
 ```
 
-### Format Document
+### (Available now) Document Formatting
 
-Automatic code formatting with consistent style.
+Now implemented — see [Formatting](#formatting) above.
 
 ## Troubleshooting
 

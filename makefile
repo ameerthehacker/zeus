@@ -1,4 +1,4 @@
-.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check always build lsp fmt fetch-libxev
+.PHONY: test test-go test-runtime build-runtime build-runtime-release build-release package-release clean compile run check zeus-fmt always build lsp fmt fetch-libxev
 
 clean:
 	rm -rf playground/target
@@ -92,6 +92,9 @@ compile-release: always build-runtime-release
 
 check:
 	ZEUS_DEBUG=true ZEUS_HOME=$(CURDIR) go run $(GO_BUILD_TAGS) zeus.go check ./playground/$(file).zs --emit-ir ./playground
+
+zeus-fmt:
+	go run $(GO_BUILD_TAGS) zeus.go fmt ./playground/$(file).zs
 
 run: always build-runtime
 	@if [ "$(debug)" = "true" ]; then \
