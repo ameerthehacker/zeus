@@ -611,7 +611,7 @@ func isAssignableToInterface(iface *Interface, source ValueType) bool {
 	// excluded from interface itables in codegen, so they must not be considered conformers
 	// here either — otherwise a match would type-check but crash at dispatch. (Other
 	// primordials like string/Error are ordinary classes and DO participate.) Keeping this
-	// predicate in lockstep with codegen's interfaceCandidateClasses is what makes dispatch sound.
+	// predicate in lockstep with codegen's candidateClasses is what makes dispatch sound.
 	if src := AsObjectType(source); src != nil && src.Class.PrimordialName == ZEUS_PRIMORDIAL_ARRAY {
 		return false
 	}

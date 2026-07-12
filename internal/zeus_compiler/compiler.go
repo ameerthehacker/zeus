@@ -53,6 +53,10 @@ type SourceFile struct {
 	IsEntryPoint bool
 	HIRText      string // captured after GenerateZeusIR, before TypeCheck and LowerIR
 	LIRText      string // captured after LowerIR, before GenerateLLVMIR
+	// ObjCacheKeySalt, when non-empty, is mixed into this file's object-file cache key. Used for
+	// modules whose compiled code depends on data outside their own source (a dispatch site bakes
+	// in interface-table constants), so a source-only key would reuse a stale object file.
+	ObjCacheKeySalt string
 }
 
 type SourceFileDependency struct {
@@ -439,6 +443,15 @@ func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputDir string, o
 }
 
 func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
+	// Give codegen the whole-program class set so interface itables built in one module can
+	// dispatch to conformers defined in another (a library function dispatching through an
+	// interface implemented by a client class).
+	builders := make([]*ir.IRBuilder, 0, len(sourceFiles))
+	for _, sourceFile := range sourceFiles {
+		builders = append(builders, sourceFile.IRBuilder)
+	}
+	c.codegen.CollectClasses(builders)
+
 	for _, sourceFile := range sourceFiles {
 		llvmModule := c.codegen.NewModule(sourceFile.Path, sourceFile.IsEntryPoint, c.targetDataLayout)
 		zeus_error.Assert(sourceFile.IRBuilder != nil, "source file ir builder is nil")
@@ -446,8 +459,31 @@ func (c *Compiler) GenerateLLVMIR(sourceFiles []*SourceFile) []*SourceFile {
 		sourceFile.Module = llvmModule
 	}
 
+	// Interface dispatch tables are whole-program data; codegen emits their definitions once in a
+	// dedicated module (referenced as external declarations by dispatch sites elsewhere), keyed on
+	// a content digest so it caches by contents, not by source text. Appended as a source file so
+	// both EmitObjFiles (debug) and mergeModules (release) pick it up like any other module.
+	if itableModule, digest := c.codegen.BuildInterfaceTableModule(itableModuleName, c.targetDataLayout); itableModule != nil {
+		sourceFiles = append(sourceFiles, &SourceFile{
+			Path:   itableModuleName,
+			Source: digest,
+			Module: itableModule,
+		})
+		// A dispatch site bakes in itable constants (a method's slot, the table stride) drawn from
+		// the interface's definition, which may live in another file. Salt those modules' cache
+		// keys with the itable digest so a changed interface invalidates their cached object files.
+		for _, sourceFile := range sourceFiles {
+			if sourceFile.Module != nil && sourceFile.Module.DispatchesInterface() {
+				sourceFile.ObjCacheKeySalt = digest
+			}
+		}
+	}
+
 	return sourceFiles
 }
+
+// itableModuleName is the synthetic path/module name of the dedicated interface-table object file.
+const itableModuleName = "__zeus_itables__"
 
 func (c *Compiler) TypeCheck(sourceFiles []*SourceFile) []*SourceFile {
 	for _, sourceFile := range sourceFiles {
@@ -576,6 +612,9 @@ func (c *Compiler) EmitObjFiles(sourceFiles []*SourceFile, outputDir string) ([]
 
 	for _, sourceFile := range sourceFiles {
 		hash := sourceFileHash(sourceFile)
+		if sourceFile.ObjCacheKeySalt != "" {
+			hash = hash + "-" + sourceFile.ObjCacheKeySalt
+		}
 		objPath := filepath.Join(outputDir, hash+".o")
 
 		if _, err := os.Stat(objPath); err == nil {

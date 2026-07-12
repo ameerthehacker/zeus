@@ -1,7 +1,10 @@
 package codegen
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -16,6 +19,164 @@ import (
 
 type Codegen struct {
 	cxt llvm.Context
+	// allClasses is the whole-program set of user + non-array-primordial classes, deduped by
+	// id. It is set once (CollectClasses) before the per-module codegen loop, so an interface
+	// dispatch table built in any module can cover conformers defined in *other* modules. Without
+	// this, a library function that dispatches through an interface would miss a conforming class
+	// defined in a client module (the class wouldn't be in the library module's local struct map).
+	allClasses []*zeus_value.Class
+	// dispatchedInterfaces records every interface dispatched anywhere in the program (and which
+	// tables it needs). Dispatch sites emit an external *declaration* of the table and record it
+	// here; a single dedicated itable module then emits the *definitions*. This keeps the
+	// whole-program itables in ONE object file so ordinary module .o files stay cacheable.
+	dispatchedInterfaces map[int]*interfaceUsage
+	// interfaceLayouts memoizes each interface's dispatch layout (keyed by Interface.Id). The
+	// layout is identical for every call in a compilation (it is computed over the fixed
+	// whole-program class set), so it is built once instead of at each declaration/definition/digest.
+	interfaceLayouts map[int]*zeus_value.InterfaceDispatchLayout
+}
+
+// interfaceLayout returns iface's dispatch layout, computed once over the whole-program candidate
+// classes and memoized.
+func (c *Codegen) interfaceLayout(iface *zeus_value.Interface) *zeus_value.InterfaceDispatchLayout {
+	if layout, ok := c.interfaceLayouts[iface.Id]; ok {
+		return layout
+	}
+	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.candidateClasses())
+	c.interfaceLayouts[iface.Id] = layout
+	return layout
+}
+
+// interfaceUsage tracks which dispatch tables an interface needs (method call vs property access).
+type interfaceUsage struct {
+	iface       *zeus_value.Interface
+	needsMethod bool
+	needsProp   bool
+}
+
+// recordInterfaceMethodTable notes that iface's method dispatch table is referenced somewhere.
+func (c *Codegen) recordInterfaceMethodTable(iface *zeus_value.Interface) {
+	u := c.dispatchedInterfaces[iface.Id]
+	if u == nil {
+		u = &interfaceUsage{iface: iface}
+		c.dispatchedInterfaces[iface.Id] = u
+	}
+	u.needsMethod = true
+}
+
+// recordInterfacePropTable notes that iface's property dispatch table is referenced somewhere.
+func (c *Codegen) recordInterfacePropTable(iface *zeus_value.Interface) {
+	u := c.dispatchedInterfaces[iface.Id]
+	if u == nil {
+		u = &interfaceUsage{iface: iface}
+		c.dispatchedInterfaces[iface.Id] = u
+	}
+	u.needsProp = true
+}
+
+// HasDispatchedInterfaces reports whether any interface dispatch happened, i.e. whether a
+// dedicated itable module needs to be emitted.
+func (c *Codegen) HasDispatchedInterfaces() bool {
+	return len(c.dispatchedInterfaces) > 0
+}
+
+// DispatchesInterface reports whether this module emitted an interface dispatch, so its object
+// file bakes in itable-content-dependent constants (method slot, itable stride) and must be
+// re-keyed when the itable content changes. See the dispatchesInterface field.
+func (c *CodegenModule) DispatchesInterface() bool {
+	return c.dispatchesInterface
+}
+
+// CollectClasses records the whole-program class set (every DECL_CLASS across all modules, deduped
+// by id) so interface itables are built over all conformers, not just one module's own classes.
+// Call before the per-module codegen loop.
+func (c *Codegen) CollectClasses(builders []*ir.IRBuilder) {
+	// Reset per-compilation state so a reused Codegen (e.g. the LSP) doesn't carry stale records.
+	c.dispatchedInterfaces = make(map[int]*interfaceUsage)
+	c.interfaceLayouts = make(map[int]*zeus_value.InterfaceDispatchLayout)
+	seen := make(map[int]bool)
+	c.allClasses = c.allClasses[:0]
+	for _, builder := range builders {
+		if builder == nil {
+			continue
+		}
+		for _, instr := range builder.GetInstrs() {
+			if instr.Type != ir.InstrTypeDeclClass {
+				continue
+			}
+			cls := ir.AsDeclClassInstrInput(instr.Input).Class
+			if cls == nil || seen[cls.Id] {
+				continue
+			}
+			seen[cls.Id] = true
+			c.allClasses = append(c.allClasses, cls)
+		}
+	}
+}
+
+// candidateClasses is the whole-program set eligible to conform to an interface: all collected
+// classes except generic array classes (they share the Object[] layout and one runtime class id,
+// so they can't be keyed in a per-class itable).
+func (c *Codegen) candidateClasses() []*zeus_value.Class {
+	var classes []*zeus_value.Class
+	for _, cls := range c.allClasses {
+		if cls.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY {
+			continue
+		}
+		classes = append(classes, cls)
+	}
+	return classes
+}
+
+// BuildInterfaceTableModule creates the dedicated module that DEFINES every interface dispatch
+// table referenced in the program, returning it with a content digest used as its object-file
+// cache key. Because the digest hashes the tables' inputs (not source text), the itable object is
+// rebuilt only when its contents actually change and is never shared across programs with
+// different contents. Returns (nil, "") when no interface is dispatched. Call after the per-module
+// codegen loop, once every dispatch site has recorded its interface.
+func (c *Codegen) BuildInterfaceTableModule(name string, dataLayout llvm.TargetData) (*CodegenModule, string) {
+	if !c.HasDispatchedInterfaces() {
+		return nil, ""
+	}
+	module := c.NewModule(name, false, dataLayout)
+	module.DefineDispatchedInterfaceTables()
+	return module, c.interfaceTablesDigest()
+}
+
+// interfaceTablesDigest hashes everything that determines the itable contents: each dispatched
+// interface (id + which tables it needs) and, per conforming class, its id, the vtable slots /
+// field indices, and the field types that fix property byte offsets. It is independent of source
+// text, so unrelated edits don't invalidate the itable object file.
+func (c *Codegen) interfaceTablesDigest() string {
+	ids := make([]int, 0, len(c.dispatchedInterfaces))
+	for id := range c.dispatchedInterfaces {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+
+	h := sha256.New()
+	for _, id := range ids {
+		usage := c.dispatchedInterfaces[id]
+		fmt.Fprintf(h, "iface %d m=%t p=%t\n", id, usage.needsMethod, usage.needsProp)
+		// The interface's member list (order + count) fixes each method's interface slot and the
+		// itable stride — both baked into dispatch sites — so hash it even when there are no
+		// conforming classes (which would otherwise leave the rows below empty).
+		for _, method := range zeus_value.InterfaceMethods(usage.iface) {
+			fmt.Fprintf(h, "  im %s\n", method.SourceName())
+		}
+		for _, prop := range zeus_value.InterfaceProperties(usage.iface) {
+			fmt.Fprintf(h, "  ip %s ro=%t\n", prop.Property.Name, prop.IsReadonly)
+		}
+		layout := c.interfaceLayout(usage.iface)
+		fmt.Fprintf(h, "max %d\n", layout.MaxClassId)
+		for _, row := range layout.Rows {
+			fmt.Fprintf(h, "row %d slots=%v props=%v\n", row.ClassId, row.MethodSlots, row.PropertyFieldIndices)
+			for _, field := range row.Class.Layout().Fields {
+				fmt.Fprintf(h, "  f %s\n", field.Property.ValueType.String())
+			}
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 type ZeusClassLLVMStruct struct {
@@ -68,6 +229,15 @@ type CodegenModule struct {
 	exportedClasses        map[string]ZeusClassModule
 	importedClasses        map[string]ZeusClassModule
 	zeusClassLLVMStructMap map[string]*ZeusClassLLVMStruct
+	// codegen is the parent Codegen (shared across all modules of one compilation). It owns the
+	// whole-program class set and interface-usage records; dispatch sites and itable emission read
+	// them through this back-reference.
+	codegen *Codegen
+	// dispatchesInterface is set when this module emits an interface dispatch (it bakes in the
+	// interface's method slot and itable stride — data derived from the interface definition, which
+	// may live in another file). Such a module's object file must be invalidated when the itable
+	// contents change, so the compiler salts its cache key with the itable digest.
+	dispatchesInterface bool
 	// interfaceDispatch/interfacePropDispatch memoize the per-interface method/property
 	// dispatch-table globals (keyed by Interface.Id) so each is built once per module.
 	interfaceDispatch      map[int]*interfaceDispatchInfo
@@ -87,7 +257,11 @@ type CodegenModule struct {
 func NewCodegen() *Codegen {
 	ctx := llvm.NewContext()
 
-	return &Codegen{ctx}
+	return &Codegen{
+		cxt:                  ctx,
+		dispatchedInterfaces: make(map[int]*interfaceUsage),
+		interfaceLayouts:     make(map[int]*zeus_value.InterfaceDispatchLayout),
+	}
 }
 
 // NewMergeTarget creates a bare LLVM module used as the destination for
@@ -172,6 +346,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		exportedClasses:        make(map[string]ZeusClassModule),
 		importedClasses:        make(map[string]ZeusClassModule),
 		zeusClassLLVMStructMap: make(map[string]*ZeusClassLLVMStruct),
+		codegen:                c,
 		interfaceDispatch:      make(map[int]*interfaceDispatchInfo),
 		interfacePropDispatch:  make(map[int]*interfaceDispatchInfo),
 		targetDataLayout:       targetDataLayout,
@@ -1508,36 +1683,74 @@ type interfaceDispatchInfo struct {
 	tableType llvm.Type
 }
 
-// interfaceCandidateClasses returns every non-primordial class known in this module — the
-// classes that may be the runtime type behind an interface value (including imported ones,
-// whose vtables carry the methods at the same slots). Uses &structInfo.ZeusClass so Layout()
-// and conformance walk the map's own class copies.
-func (c *CodegenModule) interfaceCandidateClasses() []*zeus_value.Class {
-	var classes []*zeus_value.Class
-	for _, structInfo := range c.zeusClassLLVMStructMap {
-		cls := &structInfo.ZeusClass
-		// Generic array classes use the shared Object[] layout; skip them. Other primordials
-		// (string, Error, ...) are ordinary classes and may conform.
-		if cls.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_ARRAY {
-			continue
-		}
-		classes = append(classes, cls)
-	}
-	return classes
+// Interface dispatch tables (itables) are whole-program data (they list conformers from every
+// module), so they are DEFINED once in a dedicated itable module (defineInterface*Table, external
+// linkage) and merely REFERENCED (external declaration) at each dispatch site. This keeps ordinary
+// module object files free of program-wide data so they stay cacheable. Globals are named by the
+// interface's unique id so a declaration and its definition resolve to the same symbol at link.
+
+func interfaceMethodTableName(iface *zeus_value.Interface) string {
+	return fmt.Sprintf("__zeus_iface_%d_idispatch", iface.Id)
 }
 
-// getInterfaceDispatchTable lazily builds (once per interface) the method dispatch-table
-// global from the layout data computed in zeus_value. Codegen only emits the LLVM globals;
-// the conformance + slot computation lives in zeus_value.BuildInterfaceDispatchLayout.
-func (c *CodegenModule) getInterfaceDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
+func interfacePropTableName(iface *zeus_value.Interface) string {
+	return fmt.Sprintf("__zeus_iface_%d_ipropdispatch", iface.Id)
+}
+
+// interfaceMethodTableType is the LLVM type of iface's method itable: [maxClassId+1][numMethods]
+// of i32. Computed from the whole-program class set, so a declaration (dispatch site) and the
+// definition (itable module) agree on the type.
+func (c *CodegenModule) interfaceMethodTableType(iface *zeus_value.Interface) llvm.Type {
+	layout := c.codegen.interfaceLayout(iface)
+	numMethods := len(zeus_value.InterfaceMethods(iface))
+	return llvm.ArrayType(llvm.ArrayType(c.cxt.Int32Type(), numMethods), layout.MaxClassId+1)
+}
+
+func (c *CodegenModule) interfacePropTableType(iface *zeus_value.Interface) llvm.Type {
+	layout := c.codegen.interfaceLayout(iface)
+	numProps := len(zeus_value.InterfaceProperties(iface))
+	return llvm.ArrayType(llvm.ArrayType(c.cxt.Int32Type(), numProps), layout.MaxClassId+1)
+}
+
+// refInterfaceDispatchTable returns a reference to iface's method itable, emitting an external
+// DECLARATION in this module (the definition lives in the dedicated itable module) and recording
+// that the table is needed program-wide.
+func (c *CodegenModule) refInterfaceDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
 	if info, ok := c.interfaceDispatch[iface.Id]; ok {
 		return info
 	}
+	tableType := c.interfaceMethodTableType(iface)
+	global := llvm.AddGlobal(c.module, tableType, interfaceMethodTableName(iface))
+	global.SetLinkage(llvm.ExternalLinkage) // no initializer ⇒ external declaration
+	c.codegen.recordInterfaceMethodTable(iface)
+	c.dispatchesInterface = true
+	info := &interfaceDispatchInfo{global: global, tableType: tableType}
+	c.interfaceDispatch[iface.Id] = info
+	return info
+}
 
-	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.interfaceCandidateClasses())
+// refInterfacePropDispatchTable is the property-table counterpart of refInterfaceDispatchTable.
+func (c *CodegenModule) refInterfacePropDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
+	if info, ok := c.interfacePropDispatch[iface.Id]; ok {
+		return info
+	}
+	tableType := c.interfacePropTableType(iface)
+	global := llvm.AddGlobal(c.module, tableType, interfacePropTableName(iface))
+	global.SetLinkage(llvm.ExternalLinkage)
+	c.codegen.recordInterfacePropTable(iface)
+	c.dispatchesInterface = true
+	info := &interfaceDispatchInfo{global: global, tableType: tableType}
+	c.interfacePropDispatch[iface.Id] = info
+	return info
+}
+
+// defineInterfaceDispatchTable emits the DEFINITION of iface's method itable (external, constant)
+// — only called in the dedicated itable module. Entries are vtable-slot indices per conforming
+// class; non-conforming rows are zero.
+func (c *CodegenModule) defineInterfaceDispatchTable(iface *zeus_value.Interface) {
+	layout := c.codegen.interfaceLayout(iface)
 	numMethods := len(zeus_value.InterfaceMethods(iface))
 	i32 := c.cxt.Int32Type()
-
 	innerType := llvm.ArrayType(i32, numMethods)
 	tableType := llvm.ArrayType(innerType, layout.MaxClassId+1)
 
@@ -1554,27 +1767,17 @@ func (c *CodegenModule) getInterfaceDispatchTable(iface *zeus_value.Interface) *
 		rows[row.ClassId] = llvm.ConstArray(innerType, slots)
 	}
 
-	global := llvm.AddGlobal(c.module, tableType, fmt.Sprintf("%s.idispatch", iface.Name))
+	global := llvm.AddGlobal(c.module, tableType, interfaceMethodTableName(iface))
 	global.SetInitializer(llvm.ConstArray(innerType, rows))
-	global.SetLinkage(llvm.InternalLinkage)
-
-	info := &interfaceDispatchInfo{global: global, tableType: tableType}
-	c.interfaceDispatch[iface.Id] = info
-	return info
+	global.SetLinkage(llvm.ExternalLinkage)
+	global.SetGlobalConstant(true)
 }
 
-// getInterfacePropDispatchTable lazily builds (once per interface) the property dispatch-table
-// global: [maxClassId+1 x [numProps x i32]] of byte offsets. Field indices come from the
-// zeus_value layout data; codegen turns each into a byte offset via the offsetof idiom.
-func (c *CodegenModule) getInterfacePropDispatchTable(iface *zeus_value.Interface) *interfaceDispatchInfo {
-	if info, ok := c.interfacePropDispatch[iface.Id]; ok {
-		return info
-	}
-
-	layout := zeus_value.BuildInterfaceDispatchLayout(iface, c.interfaceCandidateClasses())
+// defineInterfacePropDispatchTable emits the DEFINITION of iface's property itable (byte offsets).
+func (c *CodegenModule) defineInterfacePropDispatchTable(iface *zeus_value.Interface) {
+	layout := c.codegen.interfaceLayout(iface)
 	numProps := len(zeus_value.InterfaceProperties(iface))
 	i32 := c.cxt.Int32Type()
-
 	innerType := llvm.ArrayType(i32, numProps)
 	tableType := llvm.ArrayType(innerType, layout.MaxClassId+1)
 
@@ -1584,7 +1787,7 @@ func (c *CodegenModule) getInterfacePropDispatchTable(iface *zeus_value.Interfac
 		rows[i] = nullInner
 	}
 	for _, row := range layout.Rows {
-		structType := c.getLLVMStructType(row.Class.Name)
+		structType := c.instanceStructTypeForOffset(row.Class)
 		offsets := make([]llvm.Value, numProps)
 		for k, fieldIndex := range row.PropertyFieldIndices {
 			// +1 skips the object header (matches util.GetPropertyIndex).
@@ -1593,13 +1796,60 @@ func (c *CodegenModule) getInterfacePropDispatchTable(iface *zeus_value.Interfac
 		rows[row.ClassId] = llvm.ConstArray(innerType, offsets)
 	}
 
-	global := llvm.AddGlobal(c.module, tableType, fmt.Sprintf("%s.ipropdispatch", iface.Name))
+	global := llvm.AddGlobal(c.module, tableType, interfacePropTableName(iface))
 	global.SetInitializer(llvm.ConstArray(innerType, rows))
-	global.SetLinkage(llvm.InternalLinkage)
+	global.SetLinkage(llvm.ExternalLinkage)
+	global.SetGlobalConstant(true)
+}
 
-	info := &interfaceDispatchInfo{global: global, tableType: tableType}
-	c.interfacePropDispatch[iface.Id] = info
-	return info
+// DefineDispatchedInterfaceTables emits the definitions of every interface table referenced
+// anywhere in the program. Call it on the dedicated itable module after all other modules are
+// codegen'd (so every dispatched interface has been recorded). Interfaces are emitted in id order
+// so the module — and thus its object file — is deterministic.
+func (c *CodegenModule) DefineDispatchedInterfaceTables() {
+	ids := make([]int, 0, len(c.codegen.dispatchedInterfaces))
+	for id := range c.codegen.dispatchedInterfaces {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	for _, id := range ids {
+		usage := c.codegen.dispatchedInterfaces[id]
+		if usage.needsMethod {
+			c.defineInterfaceDispatchTable(usage.iface)
+		}
+		if usage.needsProp {
+			c.defineInterfacePropDispatchTable(usage.iface)
+		}
+	}
+}
+
+// instanceStructTypeForOffset returns a struct type suitable for computing an interface
+// property's byte offset on `class`. When the class was emitted in THIS module we use its real
+// named struct. When it is a conformer from another module (not in the local struct map) we
+// reconstruct a size-equivalent struct from its flattened field layout — the instance layout is
+// `[header ptr, field0, field1, …]` (base-first, matching createClassStructTypes), and offsets
+// depend only on each element's size/alignment, so a reconstruction yields identical offsets.
+func (c *CodegenModule) instanceStructTypeForOffset(class *zeus_value.Class) llvm.Type {
+	if info, ok := c.zeusClassLLVMStructMap[class.Name]; ok {
+		return info.LLVMStructType
+	}
+	elems := []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0)} // object header pointer
+	for _, field := range class.Layout().Fields {
+		elems = append(elems, c.offsetEquivalentType(field.Property.ValueType))
+	}
+	return c.cxt.StructType(elems, false)
+}
+
+// offsetEquivalentType returns an LLVM type with the same size and alignment as a field of the
+// given Zeus type, without needing that type's named LLVM struct (which may live in another
+// module). Every reference-shaped field is a GC pointer; primitives use their real scalar type.
+func (c *CodegenModule) offsetEquivalentType(t zeus_value.ValueType) llvm.Type {
+	switch t.(type) {
+	case zeus_value.ObjectType, zeus_value.InterfaceType, zeus_value.FunctionType, zeus_value.ArrayType:
+		return llvm.PointerType(c.cxt.VoidType(), 1)
+	default:
+		return c.toLLVMBuiltInType(t)
+	}
 }
 
 // constFieldOffset returns the byte offset of a struct field as a compile-time constant using
@@ -1619,7 +1869,7 @@ func (c *CodegenModule) constFieldOffset(structType llvm.Type, fieldIndex int) l
 // idispatch[classId][methodSlot] → vtable slot → load fn from the object's own vtable → call.
 func (c *CodegenModule) genInterfaceMethodCall(input ir.MethodCallInstrInput, iface *zeus_value.Interface, output zeus_value.Var) {
 	llvmObject := c.toLLVMValue(input.Object)
-	info := c.getInterfaceDispatchTable(iface)
+	info := c.refInterfaceDispatchTable(iface)
 
 	slot := zeus_value.InterfaceMethodIndex(iface, input.MethodName)
 	zeus_error.Assert(slot != -1, fmt.Sprintf("interface %s has no method %s", iface.Name, input.MethodName))
@@ -1674,7 +1924,7 @@ func (c *CodegenModule) genInterfacePropertyPtr(input ir.ObjectPropertyAccessIns
 	propSlot := zeus_value.InterfacePropertyIndex(iface, input.Property)
 	zeus_error.Assert(propSlot != -1, fmt.Sprintf("interface %s has no property %s", iface.Name, input.Property))
 
-	info := c.getInterfacePropDispatchTable(iface)
+	info := c.refInterfacePropDispatchTable(iface)
 	i32 := c.cxt.Int32Type()
 
 	classId := c.loadObjectClassId(llvmObject)

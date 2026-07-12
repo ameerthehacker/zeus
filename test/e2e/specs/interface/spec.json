@@ -107,6 +107,16 @@
         "entry": "import_main.zs"
     },
     {
+        "name": "Method dispatch on a client-defined conformer through a library interface",
+        "exit": "36",
+        "entry": "dispatch_xmod_client.zs"
+    },
+    {
+        "name": "Property dispatch on a client-defined conformer through a library interface",
+        "exit": "77",
+        "entry": "prop_xmod_client.zs"
+    },
+    {
         "name": "Self-referential interface conformance terminates",
         "exit": "42",
         "entry": "self_referential.zs"
