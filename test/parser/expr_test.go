@@ -112,6 +112,39 @@ func TestParseExpression(t *testing.T) {
 			errors: []*zeus_error.ZeusError{},
 		},
 		{
+			name:  "array literal",
+			input: "[1, 2, 3]",
+			expected: &ast.ArrayLiteralExprNode{
+				Elements: []ast.ExprNode{
+					&ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 2}))},
+					&ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "2", token.NewSpan(token.Position{Line: 1, Column: 5}, token.Position{Line: 1, Column: 5}))},
+					&ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "3", token.NewSpan(token.Position{Line: 1, Column: 8}, token.Position{Line: 1, Column: 8}))},
+				},
+				Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 9}),
+			},
+			errors: []*zeus_error.ZeusError{},
+		},
+		{
+			name:  "nested array literal with empty inner",
+			input: "[[1], []]",
+			expected: &ast.ArrayLiteralExprNode{
+				Elements: []ast.ExprNode{
+					&ast.ArrayLiteralExprNode{
+						Elements: []ast.ExprNode{
+							&ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "1", token.NewSpan(token.Position{Line: 1, Column: 3}, token.Position{Line: 1, Column: 3}))},
+						},
+						Span: token.NewSpan(token.Position{Line: 1, Column: 2}, token.Position{Line: 1, Column: 4}),
+					},
+					&ast.ArrayLiteralExprNode{
+						Elements: []ast.ExprNode{},
+						Span:     token.NewSpan(token.Position{Line: 1, Column: 7}, token.Position{Line: 1, Column: 8}),
+					},
+				},
+				Span: token.NewSpan(token.Position{Line: 1, Column: 1}, token.Position{Line: 1, Column: 9}),
+			},
+			errors: []*zeus_error.ZeusError{},
+		},
+		{
 			name:  "function call has higher precedence than equality",
 			input: "name(1) == 2",
 			expected: &ast.BinaryExprNode{

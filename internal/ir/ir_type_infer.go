@@ -231,6 +231,23 @@ func inferExprType(
 		}
 		return nil
 
+	case *ast.ArrayLiteralExprNode:
+		// Array literal: [1, 2, 3] -> i32[], [[1], []] -> i32[][]. Infer the widest element
+		// type, then return the array primordial class if it is already registered (mirrors the
+		// `new Foo[]` branch above); otherwise nil (tcDeclVar still recovers the var type from
+		// the initializer's NEW_OBJ output).
+		elemType := inferArrayLiteralElementType(e, symTable, localTypes)
+		if elemType == nil || zeus_value.IsUndefinedType(elemType) {
+			return nil
+		}
+		arrayType := zeus_value.NewArrayType(elemType, e.GetSpan())
+		if sym, ok := symTable.GetSymbol(arrayType.String()); ok {
+			if class := zeus_value.AsClass(sym); class != nil {
+				return zeus_value.NewObjectType(class)
+			}
+		}
+		return nil
+
 	// FunctionDeclExprNode: the Priority-3 fallback in VisitVarDeclStmt handles this
 	// correctly (emitFunctorClass sets the result's ValueType to ObjectType of the functor).
 	// ClassDeclExprNode: handled by a fast-path at the top of VisitVarDeclStmt before
@@ -240,6 +257,43 @@ func inferExprType(
 	default:
 		return nil
 	}
+}
+
+// inferArrayLiteralElementType statically determines an array literal's element type by widening
+// the types of its non-empty elements. Nested array-literal elements are inferred recursively;
+// empty elements (and elements whose type is unknown) contribute nothing. Numeric leaves widen to
+// a common type (e.g. int + float -> float); non-numeric element types keep the first seen.
+// Returns nil when no element type can be determined (e.g. a fully-empty literal with no context).
+func inferArrayLiteralElementType(
+	expr *ast.ArrayLiteralExprNode,
+	symTable *symbol_table.SymbolTable[zeus_value.Value],
+	localTypes map[string]zeus_value.ValueType,
+) zeus_value.ValueType {
+	var elementType zeus_value.ValueType
+	for _, el := range expr.Elements {
+		var elType zeus_value.ValueType
+		if nested, ok := el.(*ast.ArrayLiteralExprNode); ok {
+			inner := inferArrayLiteralElementType(nested, symTable, localTypes)
+			if inner == nil {
+				continue
+			}
+			elType = zeus_value.NewArrayType(inner, nested.GetSpan())
+		} else {
+			elType = inferExprType(el, symTable, localTypes)
+		}
+		if elType == nil || zeus_value.IsUndefinedType(elType) {
+			continue
+		}
+		if elementType == nil {
+			elementType = elType
+			continue
+		}
+		// Widen numeric leaves to a common type; otherwise keep the first element type.
+		if zeus_value.IsNumberType(elementType) && zeus_value.IsNumberType(elType) {
+			elementType = zeus_value.GetBiggerType(elementType, elType)
+		}
+	}
+	return elementType
 }
 
 // FunctionTypeEnv holds the types inferred for all local variables in a function
