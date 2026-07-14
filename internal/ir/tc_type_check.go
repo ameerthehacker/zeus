@@ -553,15 +553,15 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	case zeus_value.IntType:
 		switch targetType := targetType.(type) {
 		case zeus_value.IntType:
-			// value and target are signed and the target is larger
+			// A literal constant adopts any int type whose range holds it — a compile-time retype
+			// (no runtime cast), which also covers narrowing-that-fits like `let x: u8 = 200`.
+			if c := zeus_value.AsConstant(value); c != nil && zeus_value.ConstantFitsInIntType(c.Value, targetType) {
+				return zeus_value.NewConstant(c.Value, targetType, value.GetSpan()), true
+			}
+			// Non-constant widening: same signedness & larger, or unsigned→signed & larger.
 			canFitValue := targetType.Size > valueType.Size && valueType.Signed == targetType.Signed
-			// value is unsigned and target is signed and the target is larger
 			canFitUnsigned := targetType.Signed && !valueType.Signed && targetType.Size > valueType.Size
-			// value is a constant and the target is larger
-			constant := zeus_value.AsConstant(value)
-			canFitUnsignedConstant := constant != nil && targetType.Size >= zeus_value.GetSignedIntSize(constant.Value)
-
-			if canFitValue || canFitUnsigned || canFitUnsignedConstant {
+			if canFitValue || canFitUnsigned {
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
 		case zeus_value.FloatType:
@@ -570,6 +570,10 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	case zeus_value.FloatType:
 		switch targetType := targetType.(type) {
 		case zeus_value.FloatType:
+			// A float literal adopts the target float size (e.g. `let x: f32 = 2.0`).
+			if c := zeus_value.AsConstant(value); c != nil {
+				return zeus_value.NewConstant(c.Value, targetType, value.GetSpan()), true
+			}
 			if targetType.Size > valueType.Size {
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
@@ -670,6 +674,14 @@ func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Inst
 	case zeus_value.IntType:
 		switch rightValueType := rightValueType.(type) {
 		case zeus_value.IntType:
+			// If one side is a literal that fits the other's type, retype the literal to match
+			// rather than promoting the typed side up (keeps `b + 1` at u8, not i32).
+			if lc := zeus_value.AsConstant(left); lc != nil && zeus_value.ConstantFitsInIntType(lc.Value, rightValueType) {
+				return zeus_value.NewConstant(lc.Value, rightValueType, left.GetSpan()), right
+			}
+			if rc := zeus_value.AsConstant(right); rc != nil && zeus_value.ConstantFitsInIntType(rc.Value, leftValueType) {
+				return left, zeus_value.NewConstant(rc.Value, leftValueType, right.GetSpan())
+			}
 			if leftValueType.Size > rightValueType.Size {
 				right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 				if !ok {

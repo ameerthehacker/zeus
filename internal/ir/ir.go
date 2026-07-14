@@ -1500,10 +1500,7 @@ func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 	} else {
 		return zeus_value.NewConstant(
 			expr.Value.Value,
-			zeus_value.IntType{
-				Signed: false,
-				Size:   zeus_value.GetSignedIntSize(expr.Value.Value),
-			},
+			zeus_value.DefaultLiteralIntType(expr.Value.Value, expr.Value.Span),
 			expr.Value.Span,
 		)
 	}

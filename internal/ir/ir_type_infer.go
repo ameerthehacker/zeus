@@ -44,8 +44,8 @@ func inferExprType(
 		if zeus_value.IsFloat(e.Value.Value) {
 			return zeus_value.FloatType{Size: zeus_value.F64}
 		}
-		// Unsigned to match VisitNumber (ir.go) which emits Signed: false for all int literals.
-		return zeus_value.IntType{Signed: false, Size: zeus_value.GetSignedIntSize(e.Value.Value)}
+		// Signed, i32-floored — must match VisitNumber (ir.go) so the pre-scan and IR agree.
+		return zeus_value.DefaultLiteralIntType(e.Value.Value, e.Value.Span)
 
 	case *ast.BooleanExprNode:
 		return zeus_value.BoolType{}
