@@ -683,6 +683,29 @@ func (t *TernaryExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_val
 	return visitor.VisitTernaryExpr(t)
 }
 
+// CastExprNode represents an explicit cast: expr as Type
+type CastExprNode struct {
+	Expr   ExprNode
+	AsType *ValueTypeNode
+	Span   *token.Span
+}
+
+func (c *CastExprNode) GetSpan() *token.Span {
+	return c.Span
+}
+
+func (c *CastExprNode) PrettyString() string {
+	return fmt.Sprintf("(%s as %s)", c.Expr.PrettyString(), c.AsType.ValueType.String())
+}
+
+func (c *CastExprNode) String() string {
+	return fmt.Sprintf("{ type: CastExprNode, Expr: %s, AsType: %s, Span: %s }", c.Expr.String(), c.AsType.String(), c.Span)
+}
+
+func (c *CastExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitCastExpr(c)
+}
+
 // ExprVisitor interface
 type ExprVisitor[T zeus_value.Value] interface {
 	VisitBinaryExpr(node *BinaryExprNode) T
@@ -705,4 +728,5 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitTemplateString(node *TemplateStringExprNode) T
 	VisitValueType(node *ValueTypeNode) T
 	VisitTernaryExpr(node *TernaryExprNode) T
+	VisitCastExpr(node *CastExprNode) T
 }

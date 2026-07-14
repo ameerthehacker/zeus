@@ -51,7 +51,36 @@ func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
 			return
 		}
 	}
-	// Numeric and string casts are handled by existing codegen/lowering.
+
+	target := input.CastType
+
+	// Explicit `as` (and implicit widening) numeric/bool casts: int/float/bool in any
+	// direction. Unchecked — codegen's genCast truncates/wraps/reinterprets.
+	if isNumericOrBoolType(sourceType) && isNumericOrBoolType(target) {
+		instr.Output.ValueType = target
+		return
+	}
+
+	// Existing implicit string ↔ u8[] casts are emitted as CAST and lowered in a later pass.
+	if (isStringType(sourceType) || isU8ArrayType(sourceType)) &&
+		(isStringType(target) || isU8ArrayType(target)) {
+		return
+	}
+
+	// Anything else is an illegal cast, reported at compile time (zero runtime cost).
+	tc.pushError(&zeus_error.ZeusError{
+		Message: fmt.Sprintf("cannot cast '%s' to '%s'", sourceType, target),
+		Span:    instr.Span,
+	})
+}
+
+// isNumericOrBoolType reports whether a type participates in unchecked numeric/bool `as` casts.
+func isNumericOrBoolType(valueType zeus_value.ValueType) bool {
+	switch valueType.(type) {
+	case zeus_value.IntType, zeus_value.FloatType, zeus_value.BoolType:
+		return true
+	}
+	return false
 }
 
 func (p *TypeCheckingPass) tcCoerce(tc *TypeChecker, instr *Instr) {

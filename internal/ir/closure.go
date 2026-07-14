@@ -156,6 +156,11 @@ func (w *astWalker) VisitTernaryExpr(node *ast.TernaryExprNode) zeus_value.Value
 	return nil
 }
 
+func (w *astWalker) VisitCastExpr(node *ast.CastExprNode) zeus_value.Value {
+	w.walkExpr(node.Expr)
+	return nil
+}
+
 func (w *astWalker) VisitClassDeclExpr(*ast.ClassDeclExprNode) zeus_value.Value {
 	return nil // class bodies have their own scope; don't walk method bodies
 }

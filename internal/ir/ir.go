@@ -767,6 +767,20 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 	return g.irBuilder.BuildLoad(resultVar, span)
 }
 
+// VisitCastExpr emits an explicit `expr as Type` cast. Numeric/bool casts are unchecked
+// (truncate/wrap) and lowered by codegen's genCast. Object→object casts additionally emit a
+// runtime class-id check that throws on a failed downcast (see maybeEmitDowncastCheck).
+func (g *IRModule) VisitCastExpr(expr *ast.CastExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+	value := expr.Expr.Accept(g)
+	if value == nil {
+		return nil
+	}
+	targetType := g.resolveTypeForIRGen(expr.AsType.ValueType, false)
+
+	return g.irBuilder.BuildCast(value, targetType, span)
+}
+
 // visitArgs evaluates a list of call/constructor argument expressions. It returns
 // ok=false if any argument is missing or fails to resolve (e.g. an undefined identifier),
 // signalling the caller to abort emitting the call — the underlying error was already

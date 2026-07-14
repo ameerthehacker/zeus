@@ -111,6 +111,7 @@ const (
 	TokenTypeContinue   // continue keyword
 	TokenTypeInterface  // interface keyword
 	TokenTypeImplements // implements keyword
+	TokenTypeAs         // as keyword for explicit casts
 	keyword_end
 	// data types
 	datatype_beg
@@ -322,6 +323,8 @@ func (t TokenType) String() string {
 		return "interface"
 	case TokenTypeImplements:
 		return "implements"
+	case TokenTypeAs:
+		return "as"
 	case TokenTypeNull:
 		return "null"
 	case TokenTypeChar:
@@ -368,6 +371,7 @@ var Keywords = map[string]TokenType{
 	TokenTypeContinue.String():   TokenTypeContinue,
 	TokenTypeInterface.String():  TokenTypeInterface,
 	TokenTypeImplements.String(): TokenTypeImplements,
+	TokenTypeAs.String():         TokenTypeAs,
 }
 
 var DataTypes = map[string]TokenType{

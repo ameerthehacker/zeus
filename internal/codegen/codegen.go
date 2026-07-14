@@ -1149,34 +1149,77 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 		}
 	}
 
+	src := c.toLLVMValue(input.Value)
+	dstLLVMType := c.toLLVMType(input.CastType)
+	name := fmt.Sprintf("%s_cast", input.CastType)
+
 	switch valueType := valueType.(type) {
 	case zeus_value.IntType:
 		switch castType := input.CastType.(type) {
 		case zeus_value.FloatType:
+			// Signedness of the *source* selects signed vs unsigned int→float.
 			if valueType.Signed {
-				result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateSIToFP(src, dstLLVMType, name)
 			} else {
-				result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateUIToFP(src, dstLLVMType, name)
 			}
 		case zeus_value.IntType:
-			if castType.Signed {
-				result = c.builder.CreateSExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
-			} else {
-				result = c.builder.CreateZExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			// LLVM iN is signedness-agnostic: same width is a no-op reinterpret, widening uses
+			// the *source* signedness (sign- vs zero-extend), narrowing truncates (wraps).
+			switch {
+			case castType.Size == valueType.Size:
+				result = src
+			case castType.Size > valueType.Size:
+				if valueType.Signed {
+					result = c.builder.CreateSExt(src, dstLLVMType, name)
+				} else {
+					result = c.builder.CreateZExt(src, dstLLVMType, name)
+				}
+			default:
+				result = c.builder.CreateTrunc(src, dstLLVMType, name)
 			}
+		case zeus_value.BoolType:
+			// int → bool is `x != 0`.
+			zero := llvm.ConstInt(c.toLLVMType(valueType), 0, false)
+			result = c.builder.CreateICmp(llvm.IntNE, src, zero, name)
 		default:
 			panic(castErrorMsg)
 		}
 	case zeus_value.FloatType:
 		switch castType := input.CastType.(type) {
 		case zeus_value.IntType:
+			// Truncates toward zero; out-of-range is unchecked (LLVM poison) by design.
 			if castType.Signed {
-				result = c.builder.CreateFPToSI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateFPToSI(src, dstLLVMType, name)
 			} else {
-				result = c.builder.CreateFPToUI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateFPToUI(src, dstLLVMType, name)
 			}
 		case zeus_value.FloatType:
-			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			switch {
+			case castType.Size > valueType.Size:
+				result = c.builder.CreateFPExt(src, dstLLVMType, name)
+			case castType.Size < valueType.Size:
+				result = c.builder.CreateFPTrunc(src, dstLLVMType, name)
+			default:
+				result = src
+			}
+		case zeus_value.BoolType:
+			// float → bool is `x != 0.0` (ordered).
+			zero := llvm.ConstFloat(c.toLLVMType(valueType), 0.0)
+			result = c.builder.CreateFCmp(llvm.FloatONE, src, zero, name)
+		default:
+			panic(castErrorMsg)
+		}
+	case zeus_value.BoolType:
+		switch input.CastType.(type) {
+		case zeus_value.IntType:
+			// bool → int gives 0/1 (i1 zero-extended).
+			result = c.builder.CreateZExt(src, dstLLVMType, name)
+		case zeus_value.FloatType:
+			// bool → float gives 0.0/1.0.
+			result = c.builder.CreateUIToFP(src, dstLLVMType, name)
+		case zeus_value.BoolType:
+			result = src
 		default:
 			panic(castErrorMsg)
 		}
