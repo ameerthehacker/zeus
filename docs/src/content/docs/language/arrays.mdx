@@ -9,20 +9,47 @@ Zeus provides dynamic arrays that can grow and shrink at runtime.
 
 ## Creating Arrays
 
+The idiomatic way to create an array is an **array literal** — a comma-separated
+list of values in square brackets:
+
 ```zeus
-let numbers = new i32[];           // Empty array
-let preallocated = new i32[100];   // Pre-allocate capacity
+let numbers = [10, 20, 30];         // inferred: u8[] (each value fits u8)
+let scores: i32[] = [95, 87, 100];  // annotate to pin a wider element type
+let mixed = [1, 2.5];               // inferred: f64[] (widened to a common type)
+```
+
+The element type is inferred the same way as scalar literals: the smallest type
+that fits every element, widening across mixed numeric types. Add a type
+annotation when you want a specific width or signedness.
+
+An **empty literal** has no elements to infer from, so it takes its type from a
+declaration annotation (or, when nested, from its sibling rows):
+
+```zeus
+let todo: string[] = [];       // empty — element type from the annotation
+let rows = [[1], [2], []];     // the empty row is typed u8[] from its siblings
+```
+
+<Aside type="note">
+  A bare `let a = []` with no annotation and no sibling context is a compile
+  error, since there is nothing to infer the element type from.
+</Aside>
+
+You can also construct arrays explicitly with `new`. Passing a size fills that
+many default-valued elements (the array's `length` becomes that size):
+
+```zeus
+let empty = new i32[];         // empty array (length 0)
+let zeros = new i32[100];      // 100 zero-filled elements (length 100)
 ```
 
 ## Basic Operations
 
 ```zeus
-let arr = new i32[];
+let arr: i32[] = [10, 20, 30];
 
-// Add elements
-arr.push(10);
-arr.push(20);
-arr.push(30);        // arr = [10, 20, 30]
+// Add an element
+arr.push(40);        // arr = [10, 20, 30, 40]
 
 // Access elements (bracket notation or .get())
 let first = arr[0];       // 10
@@ -30,13 +57,13 @@ let second = arr.get(1);  // 20
 
 // Modify elements (bracket notation or .set())
 arr[0] = 100;
-arr.set(1, 200);     // arr = [100, 200, 30]
+arr.set(1, 200);     // arr = [100, 200, 30, 40]
 
 // Remove last element
-let last = arr.pop();  // Returns 30, arr = [100, 200]
+let last = arr.pop();  // Returns 40, arr = [100, 200, 30]
 
 // Check length
-let len = arr.length;  // 2
+let len = arr.length;  // 3
 ```
 
 ## Method Reference
@@ -80,12 +107,10 @@ These return **new arrays** without modifying the original:
 ## Non-Mutating Operations
 
 ```zeus
-let arr = new i32[];
-arr.push(1); arr.push(2); arr.push(3);
+let arr = [1, 2, 3];
 
 // concat - combine arrays
-let other = new i32[];
-other.push(4); other.push(5);
+let other = [4, 5];
 let combined = arr.concat(other);  // [1, 2, 3, 4, 5]
 // arr is still [1, 2, 3]
 
@@ -103,8 +128,7 @@ let result = arr.reverse().slice(0, 2);  // [3, 2]
 ## Searching
 
 ```zeus
-let arr: i32[] = new i32[];
-arr.push(10); arr.push(20); arr.push(30); arr.push(20);
+let arr: i32[] = [10, 20, 30, 20];
 
 arr.indexOf(20);      // 1 (first occurrence)
 arr.lastIndexOf(20);  // 3 (last occurrence)
@@ -120,23 +144,23 @@ arr.isEmpty();        // false
 
 ## Multi-Dimensional Arrays
 
+Nested literals build multi-dimensional arrays directly:
+
 ```zeus
-// 2D array
-let matrix = new i32[][];
-matrix.push(new i32[]);
-matrix.push(new i32[]);
-matrix[0].push(1); matrix[0].push(2);
-matrix[1].push(3); matrix[1].push(4);
+// 2D
+let matrix = [[1, 2], [3, 4]];
+let value = matrix[0][1];        // 2
 
-let value = matrix[0][1];  // 2
+// 3D
+let cube = [[[42]]];
+let v = cube[0][0][0];           // 42
 
-// 3D array
-let cube = new i32[][][];
-cube.push(new i32[][]);
-cube[0].push(new i32[]);
-cube[0][0].push(42);
-let v = cube[0][0][0];  // 42
+// Rows can be jagged, and an empty row is still typed from its siblings
+let jagged = [[1, 2, 3], [4], []];
 ```
+
+When the shape is only known at runtime, build the rows with `new` and `push`
+instead — see the [Matrix Class](#matrix-class) example below.
 
 ## Object Arrays
 
@@ -150,12 +174,15 @@ class Point {
   }
 }
 
-let points = new Point[];
-points.push(new Point(1, 2));
-points.push(new Point(3, 4));
+// Build the array directly with a literal
+let points = [new Point(1, 2), new Point(3, 4)];
 
 let p = points[0];
 let sum = p.x + p.y;  // 3
+
+// ...or incrementally with push
+let more = new Point[];
+more.push(new Point(5, 6));
 ```
 
 ## Practical Examples
@@ -210,9 +237,7 @@ class Matrix {
 Zeus performs automatic bounds checking when reading from arrays. Accessing an index outside the valid range throws an `IndexOutOfBoundsException`:
 
 ```zeus
-let arr: i32[] = new i32[];
-arr.push(10);
-arr.push(20);
+let arr = [10, 20];
 
 let safe = arr[0];      // 10 - valid
 let also_safe = arr[1]; // 20 - valid

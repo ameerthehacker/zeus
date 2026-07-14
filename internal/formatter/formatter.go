@@ -439,6 +439,12 @@ func (f *formatter) printExpr(expr ast.ExprNode) Doc {
 		return concat(text("new "), f.printExpr(e.Callee), f.argList(e.Args))
 	case *ast.IndexingExprNode:
 		return f.printIndexing(e)
+	case *ast.ArrayLiteralExprNode:
+		items := make([]Doc, 0, len(e.Elements))
+		for _, el := range e.Elements {
+			items = append(items, f.printExpr(el))
+		}
+		return f.delimitedList("[", "]", items)
 	case *ast.ObjectPropertyAccessExprNode:
 		return concat(f.printExpr(e.Object), text("."+e.Property.Name.Value))
 	case *ast.TernaryExprNode:

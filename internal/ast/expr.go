@@ -403,6 +403,28 @@ func (n *NewExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.V
 	return visitor.VisitNewExpr(n)
 }
 
+// ArrayLiteralExprNode and its methods — an inline array literal like [1, 2, 3] or [[1], []].
+type ArrayLiteralExprNode struct {
+	Elements []ExprNode
+	Span     *token.Span
+}
+
+func (a *ArrayLiteralExprNode) GetSpan() *token.Span {
+	return a.Span
+}
+
+func (a *ArrayLiteralExprNode) PrettyString() string {
+	return fmt.Sprintf("[%s]", exprNodesString(a.Elements, true))
+}
+
+func (a *ArrayLiteralExprNode) String() string {
+	return fmt.Sprintf("{ type: ArrayLiteralExprNode, Elements: [%s], Span: %s }", exprNodesString(a.Elements, false), a.GetSpan())
+}
+
+func (a *ArrayLiteralExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeus_value.Value {
+	return visitor.VisitArrayLiteral(a)
+}
+
 // ObjectPropertyAccessExprNode and its methods
 type ObjectPropertyAccessExprNode struct {
 	Object   ExprNode
@@ -722,6 +744,7 @@ type ExprVisitor[T zeus_value.Value] interface {
 	VisitClassDeclExpr(node *ClassDeclExprNode) T
 	VisitInterfaceDeclExpr(node *InterfaceDeclExprNode) T
 	VisitNewExpr(node *NewExprNode) T
+	VisitArrayLiteral(node *ArrayLiteralExprNode) T
 	VisitObjectPropertyAccessExpr(node *ObjectPropertyAccessExprNode) T
 	VisitNull(node *NullExprNode) T
 	VisitStringConstant(node *StringConstantExprNode) T

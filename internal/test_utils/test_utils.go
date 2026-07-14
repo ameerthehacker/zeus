@@ -98,6 +98,19 @@ func CompareExprNodes(t *testing.T, expr, expected ast.ExprNode) {
 		for i := range aNode.Params {
 			CompareExprNodes(t, aNode.Params[i], bNode.Params[i])
 		}
+	case *ast.ArrayLiteralExprNode:
+		bNode, ok := expected.(*ast.ArrayLiteralExprNode)
+		if !ok {
+			logExprNotEqualError(aNode, expected)
+			return
+		}
+		if len(aNode.Elements) != len(bNode.Elements) {
+			logExprNotEqualError(aNode, expected)
+			return
+		}
+		for i := range aNode.Elements {
+			CompareExprNodes(t, aNode.Elements[i], bNode.Elements[i])
+		}
 	case *ast.FunctionDeclExprNode:
 		bNode, ok := expected.(*ast.FunctionDeclExprNode)
 		if !ok {

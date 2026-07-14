@@ -216,6 +216,16 @@ func TestFormatGolden(t *testing.T) {
 			expected: "let xs: i32[] = new i32[10];\n",
 		},
 		{
+			name:     "array literal",
+			input:    "let xs=[1,2,3];",
+			expected: "let xs = [1, 2, 3];\n",
+		},
+		{
+			name:     "nested array literal with empty inner",
+			input:    "let xs=[[1],[2],[]];",
+			expected: "let xs = [[1], [2], []];\n",
+		},
+		{
 			name:     "blank line collapse",
 			input:    "let a:i32=1;\n\n\n\nlet b:i32=2;",
 			expected: "let a: i32 = 1;\n\nlet b: i32 = 2;\n",
