@@ -87,10 +87,8 @@ Thrown when accessing an array with an invalid index:
 
 ```zeus
 function main(): i32 {
-  let arr: i32[] = new i32[];
-  arr.push(10);
-  arr.push(20);
-  
+  let arr = [10, 20];
+
   let value: i32 = arr[5];  // Throws IndexOutOfBoundsException
   return value;
 }

@@ -1,18 +1,14 @@
 // Basic Array Operations
 // Run with: make run file=basic (from examples/arrays directory)
-// Demonstrates: array creation, push, get, set
+// Demonstrates: array literals, push, get, set
 
 function main(): i32 {
-  // Create a dynamic array
-  let numbers: i32[] = new i32[];
-  
-  // Add elements
-  numbers.push(10);
-  numbers.push(20);
-  numbers.push(30);
-  numbers.push(40);
+  // Create a dynamic array with an array literal
+  let numbers: i32[] = [10, 20, 30, 40];
+
+  // Arrays still grow with push
   numbers.push(50);
-  
+
   // Access elements
   let first: i32 = numbers.get(0);   // 10
   let third: i32 = numbers.get(2);   // 30

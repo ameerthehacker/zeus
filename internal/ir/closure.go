@@ -144,6 +144,13 @@ func (w *astWalker) VisitNewExpr(node *ast.NewExprNode) zeus_value.Value {
 	return nil
 }
 
+func (w *astWalker) VisitArrayLiteral(node *ast.ArrayLiteralExprNode) zeus_value.Value {
+	for _, el := range node.Elements {
+		w.walkExpr(el)
+	}
+	return nil
+}
+
 func (w *astWalker) VisitObjectPropertyAccessExpr(node *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
 	w.walkExpr(node.Object)
 	return nil

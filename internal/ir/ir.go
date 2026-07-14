@@ -69,6 +69,11 @@ type IRModule struct {
 	// after all declarations are emitted, so interfaces declared after the class are
 	// fully resolved by check time.
 	pendingImplements []pendingImplement
+	// arrayLiteralExpectedType threads an expected array type into VisitArrayLiteral so
+	// that an empty literal ([]) or an empty nested element can learn its element type
+	// from a declaration annotation or its sibling elements. It is consumed (read then
+	// cleared) at the start of VisitArrayLiteral; nil when no context is available.
+	arrayLiteralExpectedType zeus_value.ValueType
 }
 
 // pendingImplement records one `class implements Interface` obligation to verify.
@@ -201,6 +206,11 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		}
 
 		varName := decl.Identifier.Name.Value
+
+		// Seed an array-literal initializer with the declared array type so an empty literal
+		// (e.g. `let a: i32[] = []`) can take its element type from the annotation. This is
+		// consumed (read then cleared) by VisitArrayLiteral and is nil for any other initializer.
+		g.arrayLiteralExpectedType = g.arrayLiteralAnnotationType(decl)
 
 		var initializer zeus_value.Value
 		isConst := false
@@ -1910,6 +1920,90 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 	}
 
 	return g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
+}
+
+// VisitArrayLiteral lowers an array literal ([1, 2, 3] or [[1], []]) into the same instructions
+// `new T[]` emits: allocate the array primordial class, then push each element. This reuses the
+// whole array pipeline (type checking, lowering, codegen) with no new instruction type.
+func (g *IRModule) VisitArrayLiteral(expr *ast.ArrayLiteralExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+
+	// Consume any expected type threaded in from a var-decl annotation or an enclosing array
+	// literal so it does not leak into the element evaluations below.
+	expected := g.arrayLiteralExpectedType
+	g.arrayLiteralExpectedType = nil
+
+	// 1. Determine the element type: prefer the expected type (from annotation / siblings),
+	//    otherwise infer the widest element type from the literal's own elements.
+	elementType := arrayElementTypeOf(expected)
+	if elementType == nil {
+		elementType = inferArrayLiteralElementType(expr, g.symbolTable(), nil)
+	}
+	if elementType == nil || zeus_value.IsUndefinedType(elementType) {
+		g.pushError(zeus_error.NewZeusError(
+			zeus_error.ErrorSeverityError,
+			"cannot infer element type of empty array literal; add a type annotation like 'let a: T[] = []'",
+			span,
+		))
+		return nil
+	}
+
+	// 2. Build (or reuse) the array primordial class for this element type.
+	arrayType := zeus_value.NewArrayType(elementType, span)
+	arrayClass := g.getOrCreateArrayClass(arrayType)
+
+	// 3. Allocate an empty array (initial length 0), then push each element. The array
+	//    constructor argument is the initial *length* (slots are default-filled), so it must be
+	//    0 here — push auto-extends the buffer, exactly like `let a = new T[]; a.push(...)`.
+	capacity := zeus_value.NewConstant("0", zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}, span)
+	arrayObj := g.irBuilder.BuildNewObj(arrayClass, []zeus_value.Value{capacity}, span)
+
+	// 4. Push each element. When an element is itself an array literal, seed it with this array's
+	//    element type first so an empty nested element ([]) can learn its type. The seed is gated
+	//    to directly-nested literals so it does not leak into an unrelated literal buried inside a
+	//    complex element expression (e.g. an empty [] passed as a call argument). The push argument
+	//    implicit-cast (in the type checker) widens narrower elements up to elementType.
+	for _, el := range expr.Elements {
+		if _, isLiteral := el.(*ast.ArrayLiteralExprNode); isLiteral {
+			g.arrayLiteralExpectedType = elementType
+		}
+		elemVal := el.Accept(g)
+		g.arrayLiteralExpectedType = nil
+		if elemVal == nil {
+			continue
+		}
+		g.irBuilder.BuildMethodCall(arrayObj, zeus_value.ARRAY_METHOD_PUSH, []zeus_value.Value{elemVal}, nil, nil, span)
+	}
+
+	return arrayObj
+}
+
+// arrayElementTypeOf extracts the element type from an array-shaped type: an ArrayType directly,
+// or an ObjectType wrapping an array primordial class. Returns nil for any non-array type.
+func arrayElementTypeOf(t zeus_value.ValueType) zeus_value.ValueType {
+	if t == nil {
+		return nil
+	}
+	if at, ok := t.(zeus_value.ArrayType); ok {
+		return at.ElementType
+	}
+	if ot := zeus_value.AsObjectType(t); ot != nil && ot.Class != nil && ot.Class.ArrayElementType != nil {
+		return ot.Class.ArrayElementType
+	}
+	return nil
+}
+
+// arrayLiteralAnnotationType returns the resolved array type to seed VisitArrayLiteral with when a
+// declaration is explicitly typed and its initializer is an array literal (so `let a: i32[] = []`
+// types the empty literal from its annotation). Returns nil for any other declaration/initializer.
+func (g *IRModule) arrayLiteralAnnotationType(decl ast.VarDeclNode) zeus_value.ValueType {
+	if decl.ValueType == nil {
+		return nil
+	}
+	if _, ok := decl.Initializer.(*ast.ArrayLiteralExprNode); !ok {
+		return nil
+	}
+	return g.resolveTypeForIRGen(decl.ValueType.ValueType, false)
 }
 
 func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {

@@ -547,6 +547,16 @@ func NewParser(tokens []*token.Token) *Parser {
 				Span:   &token.Span{Start: newKeyword.Span.Start, End: closeParen.Span.End},
 			}
 		},
+		// Array literal: [1, 2, 3] or [[1], []]. A leading '[' (no left operand) is a literal;
+		// the same token in infix position (line below) is array indexing.
+		token.TokenTypeLeftBracket: func(parser *Parser, openBracket *token.Token) ast.ExprNode {
+			elements := parser.parseExpressionList()
+			closeBracket := parser.consumeToken(token.TokenTypeRightBracket, "to close array literal")
+			return &ast.ArrayLiteralExprNode{
+				Elements: elements,
+				Span:     &token.Span{Start: openBracket.Span.Start, End: closeBracket.Span.End},
+			}
+		},
 		token.TokenTypeFunction:   functionParselet,
 		token.TokenTypeMinus:      unaryOperatorParseLet,
 		token.TokenTypeBang:       unaryOperatorParseLet, // logical NOT
@@ -1172,6 +1182,27 @@ func (p *Parser) parseArgumentList() ([]ast.ExprNode, *token.Token) {
 
 	closeParen := p.consumeToken(token.TokenTypeRightParen, "after function call arguments")
 	return params, closeParen
+}
+
+// parseExpressionList parses a comma-separated list of expressions, stopping when no further
+// expression can be parsed (e.g. at a closing delimiter). A trailing comma is allowed, and an
+// empty list is valid. The caller is responsible for consuming the closing delimiter.
+func (p *Parser) parseExpressionList() []ast.ExprNode {
+	elements := []ast.ExprNode{}
+
+	for {
+		element := p.parseExprOfPrecedence(0, true)
+		if element == nil {
+			break
+		}
+		elements = append(elements, element)
+		if p.peek().Type != token.TokenTypeComma {
+			break
+		}
+		p.consume()
+	}
+
+	return elements
 }
 
 func (p *Parser) parseFunctionCall(callee ast.ExprNode) (ast.ExprNode, []ast.ExprNode, *token.Span) {

@@ -24,28 +24,28 @@ class Point {
   }
 }
 
-function sumAllPoints(points: Point[], count: i32): i32 {
+function sumAllPoints(points: Point[]): i32 {
   let total: i32 = 0;
   let i: i32 = 0;
-  
-  while (i < count) {
+
+  while (i < points.length) {
     total = total + points.get(i).sum();
     i = i + 1;
   }
-  
+
   return total;
 }
 
 function main(): i32 {
-  // Create array of points
-  let points: Point[] = new Point[];
-  
-  points.push(new Point(1, 2));   // sum = 3
-  points.push(new Point(3, 4));   // sum = 7
-  points.push(new Point(5, 6));   // sum = 11
-  points.push(new Point(10, 10)); // sum = 20
-  
+  // Create the array of points directly with an array literal
+  let points: Point[] = [
+    new Point(1, 2),   // sum = 3
+    new Point(3, 4),   // sum = 7
+    new Point(5, 6),   // sum = 11
+    new Point(10, 10), // sum = 20
+  ];
+
   // Total sum should be 3 + 7 + 11 + 20 = 41
-  return sumAllPoints(points, 4);
+  return sumAllPoints(points);
 }
 

@@ -78,5 +78,25 @@
         "name": "Element-store width + auto-extend (fast-path regression)",
         "exit": "0",
         "entry": "elem-store-width.zs"
+    },
+    {
+        "name": "Array literal (1D)",
+        "exit": "40",
+        "entry": "literal-1d.zs"
+    },
+    {
+        "name": "Array literal (nested with empty inner)",
+        "exit": "6",
+        "entry": "literal-nested.zs"
+    },
+    {
+        "name": "Array literal (empty, typed from annotation)",
+        "exit": "7",
+        "entry": "literal-empty-annotated.zs"
+    },
+    {
+        "name": "Array literal (mixed numerics widen to common type)",
+        "exit": "1",
+        "entry": "literal-widen.zs"
     }
 ]
