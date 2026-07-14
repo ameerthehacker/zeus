@@ -22,6 +22,9 @@ type VarDecl struct {
 	Span        *token.Span
 	// IsVariadic marks a function's rest parameter; propagated onto the built Var.
 	IsVariadic bool
+	// IsAmbient marks a `global` definition — the built Var gets the stable, un-mangled ambient
+	// symbol name and external linkage instead of a per-module unique name (see BuildGlobalVarDecl).
+	IsAmbient bool
 }
 
 func NewVarDecl(name string, valueType zeus_value.ValueType, isConst bool, initializer zeus_value.Value, span *token.Span) *VarDecl {
@@ -128,6 +131,30 @@ func AsDeclVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 
 func AsDeclGlobalVarInstrInput(input InstrInput) *DeclareVarInstrInput {
 	return AsDeclVarInstrInput(input)
+}
+
+// CallModuleInitInstrInput names the module-init symbol to invoke (module.ModuleInitFuncName).
+type CallModuleInitInstrInput struct {
+	SymbolName string
+}
+
+func NewCallModuleInitInstrInput(symbolName string) *CallModuleInitInstrInput {
+	return &CallModuleInitInstrInput{SymbolName: symbolName}
+}
+
+func (i CallModuleInitInstrInput) String() string {
+	return i.SymbolName + "()"
+}
+
+func AsCallModuleInitInstrInput(input InstrInput) *CallModuleInitInstrInput {
+	switch input := input.(type) {
+	case *CallModuleInitInstrInput:
+		return input
+	default:
+		panicInvalidInputType("CallModuleInitInstrInput", input)
+	}
+
+	return nil
 }
 
 type LoadInstrInput struct {
@@ -1077,6 +1104,10 @@ const (
 	InstrTypeDeclPrimordialFunc
 	InstrTypeCallFunc
 	InstrTypeIndirectFuncCall
+	// CALL_MODULE_INIT invokes a module's per-module init function by its stable external
+	// symbol name (module.ModuleInitFuncName). Emitted only into the entry point's dispatcher;
+	// codegen declares the symbol extern if the definition lives in another module.
+	InstrTypeCallModuleInit
 	InstrTypeReturn
 	// control flow
 	InstrTypeJmp
@@ -1186,6 +1217,8 @@ func (i InstrType) String() string {
 		return "DECLARE_PRIMORDIAL_FUNC"
 	case InstrTypeCallFunc:
 		return "CALL_FUNC"
+	case InstrTypeCallModuleInit:
+		return "CALL_MODULE_INIT"
 	case InstrTypeReturn:
 		return "RETURN"
 	case InstrTypeJmp:

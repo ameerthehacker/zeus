@@ -14,3 +14,14 @@ import "embed"
 //
 //go:embed *.zs
 var FS embed.FS
+
+// GlobalsFile is the prelude that declares ambient `global`s (console, Math). Unlike the other
+// preludes it defines no classes — it constructs the singleton instances — so it is NOT harvested
+// as a class prelude (see ir.loadPreludes); instead the compiler injects it as a real, always-linked
+// module compiled first, so its init runs before any user code.
+const GlobalsFile = "globals.zs"
+
+// GlobalsModulePath is the synthetic module path of the injected ambient-globals prelude. It is the
+// owning module recorded for console/Math in the ambient-global registry, so the compiler's injected
+// globals.zs (which carries this same path) is recognized as the definer rather than a duplicate.
+const GlobalsModulePath = "<zeus-prelude-globals>"

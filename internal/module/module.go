@@ -34,6 +34,21 @@ func GetModuleScopedName(modulePath string, name string) string {
 	return moduleName + "_" + name
 }
 
+// ModuleInitFuncPrefix marks the per-module initializer function that runs a module's top-level
+// statements (global/const/let initializers) at program startup. It uses the same `$` module-symbol
+// convention as GetModuleScopedName — link-safe across object files, unlike `#`, which the macOS
+// linker cannot resolve for cross-TU `call`s (these init functions are called from `main`, which
+// lives in a different object file). The name embeds the module's own path, so it cannot collide
+// across modules; codegen gives these functions external linkage so `main` can call them.
+const ModuleInitFuncPrefix = "$module_init$"
+
+// ModuleInitFuncName returns the stable, program-wide symbol for a module's init function.
+// Both the defining module and the entry point's dispatcher derive it from the module path,
+// so the two agree without any shared state.
+func ModuleInitFuncName(modulePath string) string {
+	return ModuleInitFuncPrefix + GetModulePrefix(modulePath)
+}
+
 // getZeusHomeDir returns the Zeus home directory.
 // It first checks the ZEUS_HOME environment variable, and if not set,
 // it finds the directory where the Zeus binary is located (resolving symlinks).

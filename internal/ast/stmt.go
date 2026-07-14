@@ -12,6 +12,7 @@ type VarDeclType int
 const (
 	VarDeclTypeLet VarDeclType = iota
 	VarDeclTypeConst
+	VarDeclTypeGlobal
 )
 
 func (v VarDeclType) String() string {
@@ -20,6 +21,8 @@ func (v VarDeclType) String() string {
 		return "let"
 	case VarDeclTypeConst:
 		return "const"
+	case VarDeclTypeGlobal:
+		return "global"
 	}
 
 	panic("unknown var decl type")

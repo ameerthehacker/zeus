@@ -1,0 +1,37 @@
+[
+    {
+        "name": "console is available in an imported module",
+        "exit": "0",
+        "entry": "console-import-main.zs",
+        "stdout": "hi from lib\n"
+    },
+    {
+        "name": "ambient global is readable across modules without import",
+        "exit": "42",
+        "entry": "xmod-global-main.zs"
+    },
+    {
+        "name": "ambient object global (new Class) is readable across modules",
+        "exit": "42",
+        "entry": "obj-global-main.zs"
+    },
+    {
+        "name": "duplicate global across modules is a compile error",
+        "exit": "1",
+        "entry": "dup-main.zs",
+        "compile_error": true,
+        "stderr_contains": ["already defined"]
+    },
+    {
+        "name": "global is immutable and cannot be reassigned",
+        "exit": "1",
+        "entry": "immutable-main.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot assign to constant 'n'"]
+    },
+    {
+        "name": "module-level const may be initialized by a function call",
+        "exit": "7",
+        "entry": "call-init-main.zs"
+    }
+]

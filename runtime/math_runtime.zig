@@ -1,23 +1,15 @@
 // Zeus Math Runtime Functions
 //
-// Backs the `Math` primordial (see internal/prelude/math.zs). Each export follows the extern-method
-// ABI produced by codegen (emitExternMethodBody):
+// Backs the `Math` primordial (see internal/prelude/math.zs). `Math` is a pure static class, so
+// each export follows the static extern-method ABI produced by codegen (emitExternMethodBody):
 //   fn(this_ptr, return_buffer_ptr_ptr, ...param_ptrs)
 // Params arrive as pointers to f64; f64 results are boxed via runtime_util.allocateReturnBuffer and
-// read back from the wrapper's result field. `this_ptr` is ignored for the stateless methods; the
-// constructor uses it to stamp the readonly PI/E fields onto the singleton instance.
+// read back from the wrapper's result field. `this_ptr` is always null here (static methods have no
+// receiver) and ignored — the slot is kept so the ABI matches instance extern methods. The PI/E
+// constants live as inline static-field initializers in math.zs, so there is no constructor.
 
 const std = @import("std");
-const abi = @import("abi.zig");
 const runtime_util = @import("runtime_util.zig");
-
-/// Zeus Math object layout. Must match the LLVM struct codegen generates for `class Math` —
-/// obj_header first, then the properties in declaration order (PI, then E).
-pub const ZeusMathObj = extern struct {
-    obj_header: *abi.ZeusObjectHeader,
-    PI: f64,
-    E: f64,
-};
 
 // ---- ABI helpers ----------------------------------------------------------
 
@@ -29,15 +21,6 @@ inline fn writeF64(return_buffer_ptr_ptr: ?*anyopaque, value: f64) void {
     if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(f64))) |bytes| {
         @as(*f64, @ptrCast(@alignCast(bytes.ptr))).* = value;
     }
-}
-
-// ---- Constructor ----------------------------------------------------------
-
-export fn zeus_Math_constructor(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque) callconv(.C) void {
-    _ = return_buffer_ptr; // void return
-    const math_obj = @as(*ZeusMathObj, @ptrCast(@alignCast(this_ptr)));
-    math_obj.PI = std.math.pi;
-    math_obj.E = std.math.e;
 }
 
 // ---- Unary functions ------------------------------------------------------

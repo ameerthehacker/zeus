@@ -369,7 +369,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					isReadonly = true
 					parser.consume()
 				}
-				property := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "class property")
+				property := parser.parseVarDecl(true, false, ast.VarDeclTypeLet, "class property")
 				spanStart := property.Identifier.GetSpan().Start
 				if accessModifier != nil {
 					spanStart = accessModifier.Span.Start
@@ -380,6 +380,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					AccessModifier: accessModifier,
 					IsReadonly:     isReadonly,
 					IsStatic:       isStatic,
+					Initializer:    property.Initializer,
 					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
 				parser.consumeSemicolon()
@@ -1108,6 +1109,8 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 
 	if varDeclTypeToken.Type == token.TokenTypeConst {
 		varDeclType = ast.VarDeclTypeConst
+	} else if varDeclTypeToken.Type == token.TokenTypeGlobal {
+		varDeclType = ast.VarDeclTypeGlobal
 	}
 
 	decls := []ast.VarDeclNode{}
@@ -1334,6 +1337,7 @@ func (p *Parser) synchronize() {
 	stopAtTokens := map[token.TokenType]bool{
 		token.TokenTypeLet:        true,
 		token.TokenTypeConst:      true,
+		token.TokenTypeGlobal:     true,
 		token.TokenTypeFunction:   true,
 		token.TokenTypeLeftParen:  true,
 		token.TokenTypeRightParen: true,
@@ -1449,6 +1453,8 @@ func (p *Parser) parseStmt() ast.StmtNode {
 	case token.TokenTypeLet:
 		fallthrough
 	case token.TokenTypeConst:
+		fallthrough
+	case token.TokenTypeGlobal:
 		return p.parseVarDeclStmt()
 	case token.TokenTypeLeftBrace:
 		return p.parseBlockStmt()

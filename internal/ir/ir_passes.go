@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ameerthehacker/zeus/internal/ast"
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -34,68 +35,82 @@ func (p *IREmitPass) Run(g *IRModule, program *ast.ProgramNode) []*zeus_error.Ze
 		g.irBuilder.BuildDeclPrimordialFunc(fn, fn.Span)
 	}
 
+	// Every module (entry and non-entry) wraps its top-level *initializer* statements into a
+	// per-module init function ($module_init$...). Function/class/interface declarations still
+	// emit globally — their visitors save/restore the insertion point, so they land at module
+	// scope rather than inside this body. The entry point's `main` calls each module's init in
+	// dependency order at startup (see emitFunction / the synthesized main below).
+	initBody := g.irBuilder.BuildBasicBlock()
+	voidType := zeus_value.ValueType(zeus_value.VoidType{Span: defaultSpan})
+	g.irBuilder.BuildFuncDecl(module.ModuleInitFuncName(g.modulePath), []*VarDecl{}, initBody, voidType, nil, defaultSpan)
+	g.irBuilder.SetInsertionBlock(initBody)
+	g.isInModuleScope = true
+
+	// Visit user top-level statements; module-level var decls become globals, function/class
+	// decls are emitted to b.instrs via emitFunction's save/restore.
+	for _, stmt := range program.Statements {
+		stmt.Accept(g)
+	}
+	g.isInModuleScope = false
+	g.irBuilder.BuildReturn(nil, defaultSpan) // module init returns void
+	g.irBuilder.SetInsertionBlock(nil)
+
 	if g.isEntryPoint {
-		// Determine the return type for #_zeus_main. If the user pre-declared
-		// `function main()` (DeclCheckPass registers the stub), use its return type
-		// so that calling main() and returning its value doesn't cause a type mismatch.
-		// Otherwise default to i32.
-		i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: defaultSpan}
-		entryReturnType := zeus_value.ValueType(i32Type)
-		if sym, ok := g.irBuilder.symbolTable.GetSymbol(token.MAIN_FUNCTION_NAME); ok {
-			if mainFnStub, ok := sym.(*zeus_value.Function); ok {
-				if mainFnStub.ReturnType != nil {
-					entryReturnType = mainFnStub.ReturnType
-				}
-			}
-		}
-
-		// Create the synthetic #_zeus_main function as the actual OS entry point.
-		// `#` is not a valid Zeus identifier start character, so users can never
-		// define a function with this name.
-		entryBody := g.irBuilder.BuildBasicBlock()
-		g.irBuilder.BuildFuncDecl(token.ZEUS_ENTRY_FUNCTION_NAME, []*VarDecl{}, entryBody, entryReturnType, nil, defaultSpan)
-		g.irBuilder.SetInsertionBlock(entryBody)
-		g.isInModuleScope = true
-
-		// Initialize primordial globals (console etc.) at the start of the entry body
-		g.initPrimordialGlobals(defaultSpan)
-
-		// Visit user top-level statements; module-level var decls become globals,
-		// function/class decls are emitted to b.instrs via emitFunction's save/restore
-		for _, stmt := range program.Statements {
-			stmt.Accept(g)
-		}
-		g.isInModuleScope = false
-
-		// If user defined `function main()`, call it and return its value.
-		// Otherwise return 0 (cast to entryReturnType).
-		var userMainFn *zeus_value.Function
+		// `main` is the program's OS entry point. A user-defined `main` was already emitted with the
+		// module-init dispatch injected as its first statements and marked IsOSEntry (see
+		// emitFunction). If the user did not define one, synthesize a `main` that runs the dispatch
+		// and returns 0.
+		userMainDefined := false
 		for _, instr := range g.irBuilder.GetInstrs() {
-			if IsFunctionDeclInstr(instr.Type) {
-				input := AsDeclFuncInstrInput(instr.Input)
-				if input.Function.Name == token.MAIN_FUNCTION_NAME {
-					userMainFn = input.Function
-					break
-				}
+			if IsFunctionDeclInstr(instr.Type) && AsDeclFuncInstrInput(instr.Input).Function.Name == token.MAIN_FUNCTION_NAME {
+				userMainDefined = true
+				break
 			}
 		}
 
-		if userMainFn != nil {
-			exitCode := g.irBuilder.BuildCallFunc(userMainFn, []zeus_value.Value{}, defaultSpan)
-			g.irBuilder.BuildReturn(exitCode, defaultSpan)
-		} else {
-			zero := zeus_value.NewConstant("0", entryReturnType, defaultSpan)
-			g.irBuilder.BuildReturn(zero, defaultSpan)
-		}
-		g.irBuilder.SetInsertionBlock(nil)
-	} else {
-		for _, stmt := range program.Statements {
-			stmt.Accept(g)
+		if !userMainDefined {
+			i32Type := zeus_value.ValueType(zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: defaultSpan})
+			mainBody := g.irBuilder.BuildBasicBlock()
+			mainFn := g.irBuilder.BuildFuncDecl(token.MAIN_FUNCTION_NAME, []*VarDecl{}, mainBody, i32Type, nil, defaultSpan)
+			mainFn.IsOSEntry = true
+			g.irBuilder.SetInsertionBlock(mainBody)
+			g.emitModuleInitDispatch(defaultSpan)
+			g.irBuilder.BuildReturn(zeus_value.NewConstant("0", i32Type, defaultSpan), defaultSpan)
+			g.irBuilder.SetInsertionBlock(nil)
 		}
 	}
 
 	g.irBuilder.Optimize()
 	return g.errors
+}
+
+// PrescanAmbientGlobals registers a module's top-level `global` declarations up front — before any
+// module is IR-generated — so a `global` referenced in a module compiled before its definer still
+// resolves, and so cross-module duplicate definitions are reported once. Types come from the
+// annotation when present; unannotated globals register as undefined and are refined to their
+// concrete type when the defining module is IR-generated (see RefineAmbientGlobalType).
+func PrescanAmbientGlobals(program *ast.ProgramNode, modulePath string) []*zeus_error.ZeusError {
+	var errors []*zeus_error.ZeusError
+	for _, stmt := range program.Statements {
+		varDeclStmt, ok := stmt.(*ast.VarDeclStmtNode)
+		if !ok {
+			continue
+		}
+		for _, decl := range varDeclStmt.Decls {
+			if decl.DeclType != ast.VarDeclTypeGlobal {
+				continue
+			}
+			name := decl.Identifier.Name.Value
+			var valueType zeus_value.ValueType = zeus_value.UndefinedType{Span: decl.Identifier.Name.Span}
+			if decl.ValueType != nil {
+				valueType = decl.ValueType.ValueType
+			}
+			if err := zeus_value.RegisterAmbientGlobalDef(name, modulePath, valueType, decl.Identifier.Name.Span); err != nil {
+				errors = append(errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, err.Error(), decl.Identifier.Name.Span))
+			}
+		}
+	}
+	return errors
 }
 
 // DeclCheckPass walks the full AST, validates declaration uniqueness at every

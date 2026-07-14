@@ -1,0 +1,32 @@
+[
+    {
+        "name": "Instance field defaults via implicit constructor",
+        "exit": "7",
+        "entry": "instance_defaults.zs"
+    },
+    {
+        "name": "Constructor body runs after (overrides) field initializers",
+        "exit": "9",
+        "entry": "ctor_overrides.zs"
+    },
+    {
+        "name": "Initializer expression referencing an earlier field via this",
+        "exit": "6",
+        "entry": "init_this_ref.zs"
+    },
+    {
+        "name": "Readonly instance field initializer",
+        "exit": "7",
+        "entry": "readonly_field.zs"
+    },
+    {
+        "name": "Static readonly field initializer accessed via class",
+        "exit": "42",
+        "entry": "static_const.zs"
+    },
+    {
+        "name": "Derived class field initializer runs after super()",
+        "exit": "15",
+        "entry": "derived_init.zs"
+    }
+]
