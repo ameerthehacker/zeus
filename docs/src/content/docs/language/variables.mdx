@@ -34,7 +34,7 @@ When you provide an initializer, Zeus infers the type automatically:
 
 ```zeus
 let name = "Zeus";      // inferred: string
-let count = 42;         // inferred: u8 (smallest unsigned type that fits)
+let count = 42;         // inferred: i32 (integer literals default to signed, ≥ i32)
 let ratio = 0.5;        // inferred: f64
 let flag = false;       // inferred: boolean
 ```

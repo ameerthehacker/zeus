@@ -25,11 +25,17 @@ Zeus provides signed and unsigned integers of various sizes:
 | `u64` | 64-bit | 0 to 1.8×10¹⁹ |
 
 ```zeus
-let small = 127;                      // inferred: u8
+let small = 127;                      // inferred: i32 (integer literals default to signed, ≥ i32)
 let normal = 1000000;                 // inferred: i32
 let big: i64 = 9223372036854775807;   // explicit: value requires i64
-let positive: u32 = 4000000000;       // explicit: need unsigned u32
+let positive: u32 = 4000000000;       // explicit: the literal fits u32, so it adopts u32
 ```
+
+<Aside type="note">
+  A bare integer literal defaults to a **signed** integer, at least `i32` wide (`i64` if the value
+  is too large for `i32`). When you give it a target type, the literal **adopts that type as long as
+  the value fits** — so `let b: u8 = 200` works, while `let b: u8 = 300` is a compile error.
+</Aside>
 
 ### Floating-Point Types
 
@@ -127,16 +133,19 @@ let floating: f64 = integer;  // OK: i32 → f64
 **Allowed implicit conversions:**
 - Smaller integers → larger integers (e.g., `i8` → `i32`)
 - Integers → floats (e.g., `i32` → `f64`)
+- An integer **literal** → any integer type whose range holds its value (e.g. `let b: u8 = 200`)
 - `null` → any object type
 - `string` ↔ `u8[]` (creates a copy)
+- A derived object → a base type (upcast, e.g. `Dog` → `Animal`)
 
 ### Type Errors
 
-Narrowing conversions are not allowed:
+Narrowing a **runtime value** is not implicit — use [`as`](#type-casting-with-as):
 
 ```zeus
 let big: i32 = 1000;
-let small: i8 = big;  // Error: cannot convert i32 to i8
+let small: i8 = big;         // Error: use `big as i8`
+let f: i32 = 2.0;            // Error: floats never implicitly become ints — use `2` or `2.0 as i32`
 ```
 
 Incompatible types cause errors:
@@ -145,6 +154,59 @@ Incompatible types cause errors:
 let num: i32 = 42;
 let flag: boolean = num;  // Error: cannot convert i32 to boolean
 ```
+
+---
+
+## Type Casting with `as`
+
+When an implicit conversion isn't allowed, `as` performs an **explicit** cast: `value as Type`.
+
+### Numeric and boolean casts
+
+Numeric casts are **unchecked** and cost nothing at runtime — they truncate or wrap, exactly like
+Rust's `as`, Go, or C. Float→int truncates toward zero.
+
+```zeus
+let big: i32 = 300;
+let small: u8 = big as u8;    // 300 wraps to 44 (300 mod 256)
+
+let pi: f64 = 3.9;
+let n: i32 = pi as i32;       // 3 (truncates toward zero)
+
+let flag: i32 = true as i32;  // 1
+let on: boolean = 5 as boolean; // true (any non-zero → true)
+```
+
+<Aside type="caution">
+  Numeric `as` never checks for overflow — `300 as u8` silently becomes `44`. Cast only when you
+  know the value fits, or check the range yourself first.
+</Aside>
+
+Casting between unrelated types (e.g. `"hi" as i32`) is a **compile-time** error.
+
+### Object downcasts
+
+`as` also narrows an object reference to a subclass. This is **checked at runtime**: if the object
+isn't actually an instance of the target class, it throws a `ClassCastException`. Casting between
+classes in unrelated hierarchies is a compile-time error.
+
+```zeus
+class Animal { public legs: i32; constructor(l: i32) { this.legs = l; } }
+class Dog extends Animal {
+  public name: string;
+  constructor() { super(4); this.name = "Rex"; }
+}
+
+let a: Animal = new Dog();   // implicit upcast
+let d: Dog = a as Dog;       // downcast — runtime-checked, succeeds here
+console.log(d.name);         // "Rex"
+
+let other: Animal = new Animal(2);
+let bad: Dog = other as Dog; // throws ClassCastException (not a Dog)
+```
+
+Upcasts (a derived object → a base type) need no `as` and no runtime check — they happen
+implicitly.
 
 ---
 
