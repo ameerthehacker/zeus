@@ -18,6 +18,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/logger"
 	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/prelude"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -344,6 +345,9 @@ func (c *Compiler) Check(entryFilePath string) []*SourceFile {
 	entryPointSourceFile.IsEntryPoint = true
 	// parse and collect dependencies
 	sourceFiles := c.CollectDependencies(entryPointSourceFile)
+	// Prepend the always-linked ambient-globals prelude (console/Math). Compiled first so it is the
+	// owner of those globals and its init runs before any user module's.
+	sourceFiles = append([]*SourceFile{c.preludeGlobalsSourceFile()}, sourceFiles...)
 
 	checkSourceFilesErrors(sourceFiles)
 	// generate zeus IR
@@ -509,6 +513,36 @@ func (c *Compiler) LowerIR(sourceFiles []*SourceFile) []*SourceFile {
 func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 	irModuleFilePathMap := map[string]*ir.IRModule{}
 
+	// Load preludes first so the never-reset prelude tier (console/Math) is seeded before the
+	// pre-scan populates the user tier — loadPreludes resets the user tier when it freezes console/Math.
+	ir.EnsurePreludesLoaded()
+
+	// Ambient `global` declarations are program-wide state; clear any registrations left over from
+	// a previous compilation (the LSP/tests reuse the process) before regenerating IR.
+	zeus_value.ResetAmbientGlobals()
+
+	// Pre-scan every module's top-level `global`s so they resolve in modules compiled before their
+	// definer, and so cross-module duplicates are reported. Runs before any IR generation.
+	for _, sourceFile := range sourceFiles {
+		if sourceFile.Program == nil {
+			continue
+		}
+		sourceFile.Errors = append(sourceFile.Errors, ir.PrescanAmbientGlobals(sourceFile.Program, sourceFile.Path)...)
+	}
+
+	// The entry point's `main` runs every module's init function in dependency order. sourceFiles
+	// is already in that order (BFS collects dependencies before dependents), so the module paths in
+	// list order are the init order.
+	moduleInitOrder := make([]string, 0, len(sourceFiles))
+	seenInitPath := map[string]bool{}
+	for _, sourceFile := range sourceFiles {
+		if seenInitPath[sourceFile.Path] {
+			continue
+		}
+		seenInitPath[sourceFile.Path] = true
+		moduleInitOrder = append(moduleInitOrder, sourceFile.Path)
+	}
+
 	for _, sourceFile := range sourceFiles {
 		// if the source file is already in the map, skip it
 		_, ok := irModuleFilePathMap[sourceFile.Path]
@@ -524,12 +558,29 @@ func (c *Compiler) GenerateZeusIR(sourceFiles []*SourceFile) []*SourceFile {
 			zeus_error.Assert(ok, fmt.Sprintf("IR module not found %s", modulePath))
 			return irModule
 		})
+		if sourceFile.IsEntryPoint {
+			irModule.SetModuleInitOrder(moduleInitOrder)
+		}
 		irModuleFilePathMap[sourceFile.Path] = irModule
 		errors := irModule.Generate(sourceFile.Program)
 		sourceFile.Errors = append(sourceFile.Errors, errors...)
 	}
 
 	return sourceFiles
+}
+
+// preludeGlobalsSourceFile parses the embedded globals.zs prelude into a SourceFile so it flows
+// through the normal compile pipeline as an always-present, always-linked module.
+func (c *Compiler) preludeGlobalsSourceFile() *SourceFile {
+	src, err := prelude.FS.ReadFile(prelude.GlobalsFile)
+	if err != nil {
+		panic(fmt.Sprintf("reading prelude %s: %s", prelude.GlobalsFile, err))
+	}
+	return c.CompileFile(&SourceFile{
+		Path:         prelude.GlobalsModulePath,
+		Source:       string(src),
+		IsEntryPoint: false,
+	})
 }
 
 func (c *Compiler) CollectDependencies(entry *SourceFile) []*SourceFile {
@@ -780,9 +831,10 @@ func linkObjFiles(objFiles []string, outputPath string) error {
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
 		linkerArgs = append(linkerArgs, "-L"+getBDWGCLibDir(), "-lgc")
-		// On macOS, LLVM prepends '_' to all symbol names in the object file,
-		// so the linker must reference the symbol with the '_' prefix.
-		entrySymbol := token.ZEUS_ENTRY_FUNCTION_NAME
+		// The program's OS entry point is `main` (the entry module's user main, or a synthesized one).
+		// On macOS, LLVM prepends '_' to all symbol names in the object file, so the linker must
+		// reference the symbol with the '_' prefix.
+		entrySymbol := token.MAIN_FUNCTION_NAME
 		if runtime.GOOS == "darwin" {
 			entrySymbol = "_" + entrySymbol
 		}

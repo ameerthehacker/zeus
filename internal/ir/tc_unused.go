@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
@@ -322,13 +323,16 @@ func (p *UnusedWarningPass) Finalize(tc *TypeChecker) {
 					return
 				}
 			}
-			isEntryFunction := (function.Name == token.MAIN_FUNCTION_NAME || function.Name == token.ZEUS_ENTRY_FUNCTION_NAME) && tc.IsEntryPoint
+			isEntryFunction := (function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint) || function.IsOSEntry
+			// The synthetic per-module init function is invoked via CALL_MODULE_INIT (from the entry
+			// point's `main`), which the usage tracker doesn't follow, so it always looks unused.
+			isModuleInitFn := strings.HasPrefix(function.Name, module.ModuleInitFuncPrefix)
 			// Skip static methods and static accessors — they are emitted as InstrTypeDeclFunc but
 			// tracked via class.Methods/Accessors in the Finalize loop below; checking them here
 			// would produce spurious "declared but not used" warnings for used statics.
 			isStaticClassFn := function.Class != nil
 			// Check for unused functions, ignore instance class methods and static class functions
-			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isEntryFunction && !isStaticClassFn {
+			if !function.IsUsed && !strings.Contains(function.Name, ".") && !isEntryFunction && !isModuleInitFn && !isStaticClassFn {
 				tc.pushError(&zeus_error.ZeusError{
 					Severity: zeus_error.ErrorSeverityWarning,
 					Message:  fmt.Sprintf("function '%s' is declared but not used", function.Name),

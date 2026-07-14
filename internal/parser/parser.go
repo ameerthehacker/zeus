@@ -1108,6 +1108,8 @@ func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {
 
 	if varDeclTypeToken.Type == token.TokenTypeConst {
 		varDeclType = ast.VarDeclTypeConst
+	} else if varDeclTypeToken.Type == token.TokenTypeGlobal {
+		varDeclType = ast.VarDeclTypeGlobal
 	}
 
 	decls := []ast.VarDeclNode{}
@@ -1334,6 +1336,7 @@ func (p *Parser) synchronize() {
 	stopAtTokens := map[token.TokenType]bool{
 		token.TokenTypeLet:        true,
 		token.TokenTypeConst:      true,
+		token.TokenTypeGlobal:     true,
 		token.TokenTypeFunction:   true,
 		token.TokenTypeLeftParen:  true,
 		token.TokenTypeRightParen: true,
@@ -1449,6 +1452,8 @@ func (p *Parser) parseStmt() ast.StmtNode {
 	case token.TokenTypeLet:
 		fallthrough
 	case token.TokenTypeConst:
+		fallthrough
+	case token.TokenTypeGlobal:
 		return p.parseVarDeclStmt()
 	case token.TokenTypeLeftBrace:
 		return p.parseBlockStmt()

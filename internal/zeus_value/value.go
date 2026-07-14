@@ -74,6 +74,12 @@ type Var struct {
 	// IsVariadic marks a function's rest parameter (its type is an array; trailing
 	// call arguments are collected into it during lowering).
 	IsVariadic bool
+	// IsAmbient marks the defining declaration of a `global` — an ambient,
+	// program-wide-unique symbol (external linkage, stable un-mangled name).
+	IsAmbient bool
+	// IsExtern marks a module-local *reference* to an ambient global defined in
+	// another module (external declaration only; no storage/initializer here).
+	IsExtern bool
 }
 
 func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span, isVariadic ...bool) *Var {
@@ -120,6 +126,15 @@ type Function struct {
 	// forwards to (see ClassMethod.IsExtern). It makes an extern method self-describing —
 	// codegen no longer needs the primordial name to derive the runtime symbol.
 	ExternRuntimeName string
+	// ExportModulePath, when non-empty, is the path of the module that `export`s this function.
+	// Codegen gives it the module-scoped external symbol name so importers link to it. Recorded
+	// on the Function (not just the EXPORT instruction) so genDeclFunc can apply the linkage
+	// independently of the order in which EXPORT vs DECL_FUNC are walked.
+	ExportModulePath string
+	// IsOSEntry marks the entry module's `main` as the program's OS entry point (the linker's
+	// `-e` target). Codegen gives it external linkage. The module-init dispatch is emitted as its
+	// first statements, so there is no separate synthetic entry function.
+	IsOSEntry bool
 }
 
 func NewFunction(name string, params []*Var, returnType ValueType, span *token.Span) *Function {

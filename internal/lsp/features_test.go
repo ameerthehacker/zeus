@@ -78,6 +78,28 @@ func labels(items []protocol.CompletionItem) map[string]protocol.CompletionItem 
 	return m
 }
 
+// TestPreludeAmbientGlobalsResolveInLSP guards the regression where deleting the Go-built
+// primordial globals made `console`/`Math` resolve only via the compiler's injected globals.zs —
+// which the language server never compiles. The prelude ambient-global tier must make them resolve
+// on the LSP's single-document path too. Run twice to exercise the process-reuse / reset path.
+func TestPreludeAmbientGlobalsResolveInLSP(t *testing.T) {
+	src := `function main(): i32 {
+  console.log("hi");
+  let r: f64 = Math.sqrt(4.0);
+  return 0;
+}
+`
+	for i := 0; i < 2; i++ {
+		_, errs := NewServer().parseDocument("/sample.zs", src)
+		for _, e := range errs {
+			if strings.Contains(e.Message, "undefined identifier 'console'") ||
+				strings.Contains(e.Message, "undefined identifier 'Math'") {
+				t.Fatalf("iteration %d: ambient global did not resolve in LSP: %s", i, e.Message)
+			}
+		}
+	}
+}
+
 func TestMemberCompletionInstance(t *testing.T) {
 	s, uri := openDoc(t, sampleProgram)
 	// Complete on `d.` (d is a Dog instance).

@@ -360,6 +360,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcReturn(tc, instr)
 	case InstrTypeCallFunc:
 		p.tcCallFunc(tc, instr)
+	case InstrTypeCallModuleInit:
+		// Calls a module's init function by symbol name; no operands to type check.
 	case InstrTypeIndirectFuncCall:
 		p.tcIndirectFuncCall(tc, instr)
 	case InstrTypeExport:
@@ -446,7 +448,7 @@ func (p *TypeCheckingPass) validateFunctionReturns(tc *TypeChecker, function *ze
 func (p *TypeCheckingPass) tcFuncDecl(tc *TypeChecker, instr *Instr) {
 	input := AsDeclFuncInstrInput(instr.Input)
 
-	if (input.Function.Name == token.MAIN_FUNCTION_NAME || input.Function.Name == token.ZEUS_ENTRY_FUNCTION_NAME) && tc.IsEntryPoint {
+	if (input.Function.Name == token.MAIN_FUNCTION_NAME && tc.IsEntryPoint) || input.Function.IsOSEntry {
 		p.hasMainFunction = true
 	}
 
@@ -786,8 +788,12 @@ func (p *TypeCheckingPass) tcStore(tc *TypeChecker, instr *Instr) {
 	}
 
 	if input.Addr.IsConst {
+		name := input.Addr.OriginalName
+		if name == "" {
+			name = input.Addr.Name
+		}
 		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot assign to constant '%s'", input.Addr.Name),
+			Message: fmt.Sprintf("cannot assign to constant '%s'", name),
 			Span:    instr.Span,
 		})
 	}

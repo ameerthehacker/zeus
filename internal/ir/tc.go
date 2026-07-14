@@ -111,7 +111,9 @@ func (tc *TypeChecker) updateContext(instr *Instr) {
 
 // isInstructionAllowed checks if an instruction is allowed in the current context
 func (tc *TypeChecker) isInstructionAllowed(instr *Instr) bool {
-	isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type) || IsPrimordialFunctionDeclInstr(instr.Type)
+	// DECLARE_GLOBAL_VAR is a top-level declaration: ambient-global extern references are emitted at
+	// module scope (outside any function), and it is otherwise only produced for module-scope vars.
+	isTopLevelInstr := IsFunctionDeclInstr(instr.Type) || IsClassDeclInstr(instr.Type) || IsClassMethodDeclInstr(instr.Type) || IsExportInstr(instr.Type) || IsImportInstr(instr.Type) || IsPrimordialFunctionDeclInstr(instr.Type) || instr.Type == InstrTypeDeclGlobalVar
 	return isTopLevelInstr || tc.currentFunction != nil
 }
 

@@ -51,7 +51,7 @@ type IRModule struct {
 	// isEntryPoint is true when this module is the program entry point.
 	isEntryPoint bool
 	// isInModuleScope is true while IREmitPass visits top-level statements inside
-	// the synthetic #_zeus_main body. VisitVarDeclStmt uses BuildGlobalVarDecl when
+	// the module's init-function body. VisitVarDeclStmt uses BuildGlobalVarDecl when
 	// this flag is set. emitFunction saves/restores it so nested function bodies use
 	// ordinary local vars.
 	isInModuleScope bool
@@ -74,6 +74,16 @@ type IRModule struct {
 	// from a declaration annotation or its sibling elements. It is consumed (read then
 	// cleared) at the start of VisitArrayLiteral; nil when no context is available.
 	arrayLiteralExpectedType zeus_value.ValueType
+	// moduleInitOrder is the dependency-ordered list of every module path in the program
+	// (dependencies first, entry last). Only set on the entry module; its `main` runs each
+	// module's init function in this order (injected as main's first statements) at startup.
+	moduleInitOrder []string
+}
+
+// SetModuleInitOrder records the dependency-ordered module paths whose init functions the
+// entry point must run at startup. Called by the compiler before Generate on the entry module.
+func (g *IRModule) SetModuleInitOrder(paths []string) {
+	g.moduleInitOrder = paths
 }
 
 // pendingImplement records one `class implements Interface` obligation to verify.
@@ -289,7 +299,8 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			initializer = decl.Initializer.Accept(g)
 		}
 
-		if decl.DeclType == ast.VarDeclTypeConst {
+		// `global` is immutable (write-once), like `const`, so reassignment is rejected everywhere.
+		if decl.DeclType == ast.VarDeclTypeConst || decl.DeclType == ast.VarDeclTypeGlobal {
 			isConst = true
 		}
 
@@ -301,6 +312,13 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 			if preInferred, ok := g.funcTypeEnv.VarTypes[varName]; ok &&
 				preInferred != nil && !zeus_value.IsUndefinedType(preInferred) {
 				valueType = preInferred
+			}
+		}
+		// With no annotation and no pre-inferred type (module-scope declarations have no funcTypeEnv),
+		// infer the type from the evaluated initializer — e.g. `global console = new Console()`.
+		if (valueType == nil || zeus_value.IsUndefinedType(valueType)) && initializer != nil {
+			if inferred := zeus_value.GetValueType(initializer); inferred != nil && !zeus_value.IsUndefinedType(inferred) {
+				valueType = inferred
 			}
 		}
 		if valueType == nil || zeus_value.IsUndefinedType(valueType) {
@@ -341,7 +359,15 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 
 		varDecl := NewVarDecl(varName, valueType, isConst, initializer, decl.GetSpan())
 		var variable *zeus_value.Var
-		if g.isInModuleScope {
+		if decl.DeclType == ast.VarDeclTypeGlobal {
+			// A `global` is an ambient, program-wide-unique symbol. It was registered (with
+			// cross-module duplicate detection) by the pre-scan; refine its type now that the
+			// initializer has been evaluated so extern references get the concrete type.
+			zeus_value.RefineAmbientGlobalType(varName, g.modulePath, valueType, decl.GetSpan())
+			varDecl.IsAmbient = true
+			variable = g.irBuilder.BuildGlobalVarDecl(varDecl)
+			variable.IsUsed = true // program-wide symbol; never warn "unused"
+		} else if g.isInModuleScope {
 			variable = g.irBuilder.BuildGlobalVarDecl(varDecl)
 		} else {
 			variable = g.irBuilder.BuildVarDecl(varDecl)
@@ -1072,7 +1098,22 @@ func (g *IRModule) isInsideSubclassOf(class *zeus_value.Class) bool {
 	return false
 }
 
+// emitModuleInitDispatch emits a call to every module's init function in dependency order
+// (dependencies first, entry last — g.moduleInitOrder mirrors the sourceFiles order, with the
+// ambient-globals prelude first). Emitted at the top of the entry point's `main`, so all module
+// initializers run before any user code.
+func (g *IRModule) emitModuleInitDispatch(span *token.Span) {
+	for _, modulePath := range g.moduleInitOrder {
+		g.irBuilder.BuildCallModuleInit(module.ModuleInitFuncName(modulePath), span)
+	}
+}
+
 func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
+	// The entry module's top-level `main` is the program's OS entry point: give it external linkage
+	// and inject the module-init dispatch as its first statements (captured now, before
+	// isInModuleScope is reset for the body below).
+	isEntryMain := g.isEntryPoint && g.isInModuleScope && class == nil && name == token.MAIN_FUNCTION_NAME
+
 	params := []*VarDecl{}
 
 	for _, param := range fnParams {
@@ -1125,6 +1166,12 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	}
 
 	g.irBuilder.SetInsertionBlock(body)
+
+	// Entry point `main`: mark it the OS entry and run all module initializers first.
+	if isEntryMain {
+		fn.IsOSEntry = true
+		g.emitModuleInitDispatch(span)
+	}
 
 	// Promote escaped params to ref cells now that we're in the body block.
 	for index, param := range fnParams {
@@ -1439,6 +1486,25 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 	}
 
 	variable, ok := g.symbolTable().GetSymbol(expr.Name.Value)
+
+	// A name that is a registered ambient `global` owned by another module (console/Math or a user
+	// global) is visible here without import. Lazily declare an extern reference on first use — only
+	// when actually used, so modules that never touch a global don't emit dead externs. This also
+	// shadows a primordial class of the same name (e.g. the `Math` instance shadowing the `Math`
+	// class), matching the owning module. Skipped once the extern is already in scope.
+	if info, isAmbient := zeus_value.LookupAmbientGlobal(expr.Name.Value); isAmbient && info.DefiningModulePath != g.modulePath {
+		alreadyExtern := false
+		if ok {
+			if v := zeus_value.AsVar(variable); v != nil && v.IsExtern {
+				alreadyExtern = true
+			}
+		}
+		if !alreadyExtern {
+			externVar := g.irBuilder.BuildExternGlobalVarDecl(info.Name, info.ValueType, true, info.Span)
+			g.symbolTable().DeclareGlobalSymbol(info.Name, externVar)
+			variable, ok = externVar, true
+		}
+	}
 
 	if !ok {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("undefined identifier '%s'", expr.Name.Value), expr.Name.Span))
@@ -1963,7 +2029,15 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 		return nil
 	}
 
-	return g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
+	result := g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
+	// Type the result eagerly from the instantiated class so IR-gen consumers (e.g. module-scope
+	// `global`/`const` type inference) see a concrete ObjectType instead of an untyped temp.
+	if class := zeus_value.AsClass(calleeValue); class != nil {
+		if resultVar := zeus_value.AsVar(result); resultVar != nil {
+			resultVar.ValueType = zeus_value.NewObjectType(class)
+		}
+	}
+	return result
 }
 
 // VisitArrayLiteral lowers an array literal ([1, 2, 3] or [[1], []]) into the same instructions
@@ -2058,6 +2132,9 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	// make the exported function module scoped to avoid conflicts between modules
 	case *zeus_value.Function:
 		g.exportedSymbols[exportedValue.Name] = exportedValue
+		// Record the export on the Function so genDeclFunc applies the scoped external symbol
+		// regardless of whether EXPORT or DECL_FUNC is walked first.
+		exportedValue.ExportModulePath = g.modulePath
 	case *zeus_value.Class:
 		g.exportedSymbols[exportedValue.Name] = exportedValue
 	case *zeus_value.Interface:
@@ -2626,34 +2703,6 @@ func (g *IRModule) getOrCreateErrorClass() *zeus_value.Class {
 		return class
 	}
 	return zeus_value.Registry.GetClass("Error")
-}
-
-// initPrimordialGlobals creates the `console` and `Math` global objects inside the entry function
-// body. `Console`/`Math` are ordinary registered class symbols (declared by initializePrimordials),
-// so they resolve through primordialClassInScope — no dedicated get-or-create helper is needed. This
-// runs before any user statement, so the names cannot be shadowed yet. Must be called while the
-// insertion block is set to the entry function's body block and isInModuleScope is true.
-func (g *IRModule) initPrimordialGlobals(span *token.Span) {
-	consoleClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_CONSOLE)
-	consoleObj := g.irBuilder.BuildNewObj(consoleClass, []zeus_value.Value{}, span)
-
-	consoleVarDecl := NewVarDecl("console", zeus_value.NewObjectType(consoleClass), true, consoleObj, span)
-	consoleVar := g.irBuilder.BuildGlobalVarDecl(consoleVarDecl)
-	consoleVar.IsUsed = true // primordial global — suppress unused warning
-
-	g.symbolTable().DeclareGlobalSymbol("console", consoleVar)
-
-	// `Math` is a singleton instance (JS parity: Math.sqrt/Math.PI). Declaring the instance under
-	// "Math" intentionally shadows the class symbol of the same name — user code only ever
-	// references the instance; the class stays reachable via the object type and the registry.
-	mathClass := g.primordialClassInScope(zeus_value.ZEUS_PRIMORDIAL_MATH)
-	mathObj := g.irBuilder.BuildNewObj(mathClass, []zeus_value.Value{}, span)
-
-	mathVarDecl := NewVarDecl(zeus_value.ZEUS_PRIMORDIAL_MATH, zeus_value.NewObjectType(mathClass), true, mathObj, span)
-	mathVar := g.irBuilder.BuildGlobalVarDecl(mathVarDecl)
-	mathVar.IsUsed = true // primordial global — suppress unused warning
-
-	g.symbolTable().DeclareGlobalSymbol(zeus_value.ZEUS_PRIMORDIAL_MATH, mathVar)
 }
 
 // emitBoundsCheck generates IR to check if an array index is within bounds and throw if not

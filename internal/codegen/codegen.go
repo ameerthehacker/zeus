@@ -764,9 +764,21 @@ func (c *CodegenModule) genFunc(function zeus_value.Function) llvm.Value {
 func (c *CodegenModule) genDeclFunc(input ir.DeclFuncInstrInput) llvm.Value {
 	llvmFunc := c.genFunc(*input.Function)
 
-	// #_zeus_main is the compiler-generated OS entry point; `#` is not a valid Zeus
-	// identifier character so users can never define a function with this name.
-	if input.Function.Name == token.ZEUS_ENTRY_FUNCTION_NAME {
+	// Function linkage, in priority order: exported functions get the module-scoped external symbol
+	// importers link against; the OS-entry `main` and per-module init functions are external so they
+	// can be reached across object files; everything else is internal.
+	if input.Function.ExportModulePath != "" {
+		// Exported function: give it the module-scoped external symbol importers link against.
+		// Applied here (not only in genExport) so it is correct regardless of whether EXPORT or
+		// this DECL_FUNC is walked first — genDeclFunc would otherwise reset it to internal.
+		llvmFunc.SetName(module.GetModuleScopedName(input.Function.ExportModulePath, input.Function.Name))
+		llvmFunc.SetLinkage(llvm.ExternalLinkage)
+	} else if input.Function.IsOSEntry {
+		// The entry module's `main` is the OS entry point (the linker's -e target): external linkage.
+		llvmFunc.SetLinkage(llvm.ExternalLinkage)
+	} else if strings.HasPrefix(input.Function.Name, module.ModuleInitFuncPrefix) {
+		// Per-module init function: external so the entry point's dispatcher can call it
+		// across module (object-file) boundaries.
 		llvmFunc.SetLinkage(llvm.ExternalLinkage)
 	} else if strings.HasPrefix(input.Function.Name, util.FactoryFunctionPrefix) {
 		// Synthesized class factory (zeus_new_<Class>, from FactoryLoweringPass): external so a
@@ -830,8 +842,29 @@ func (c *CodegenModule) genReturn(input ir.ReturnInstrInput) {
 
 func (c *CodegenModule) genDeclGlobalVar(input ir.DeclareVarInstrInput) {
 	llvmType := c.toLLVMType(input.Variable.ValueType)
+
+	// Extern reference to an ambient `global` defined in another module: emit an external
+	// DECLARATION only (no initializer ⇒ declaration, no storage, no default store). The owning
+	// module emits the definition; the linker unifies them by the shared stable symbol name.
+	if input.Variable.IsExtern {
+		// Idempotent: the extern may be pre-declared (predeclareExternGlobals) and then revisited in
+		// the main walk. Declaring the same global twice would make LLVM rename the second one.
+		if _, exists := c.llvmValues[input.Variable.Name]; exists {
+			return
+		}
+		global := llvm.AddGlobal(c.module, llvmType, input.Variable.Name)
+		global.SetLinkage(llvm.ExternalLinkage)
+		c.llvmValues[input.Variable.Name] = global
+		return
+	}
+
 	global := llvm.AddGlobal(c.module, llvmType, input.Variable.Name)
-	global.SetLinkage(llvm.InternalLinkage)
+	if input.Variable.IsAmbient {
+		// Ambient definition: external linkage so extern references in other modules link here.
+		global.SetLinkage(llvm.ExternalLinkage)
+	} else {
+		global.SetLinkage(llvm.InternalLinkage)
+	}
 	global.SetInitializer(llvm.ConstNull(llvmType))
 	c.llvmValues[input.Variable.Name] = global
 	if input.Initializer != nil {
@@ -881,6 +914,19 @@ func (c *CodegenModule) genCallFunc(input ir.CallFuncInstrInput, output zeus_val
 
 	llvmValue := c.builder.CreateCall(llvmFunctionType, function, args, fmt.Sprintf("%s_call_result", function.Name()))
 	c.llvmValues[output.Name] = llvmValue
+}
+
+// genCallModuleInit calls a module's init function by its stable external symbol name. When the
+// definition lives in another module (or hasn't been emitted yet), an extern declaration is added
+// so the linker resolves it. Module init functions are `void()`.
+func (c *CodegenModule) genCallModuleInit(input ir.CallModuleInitInstrInput) {
+	voidFnType := llvm.FunctionType(c.cxt.VoidType(), nil, false)
+	fn := c.module.NamedFunction(input.SymbolName)
+	if fn.IsNil() {
+		fn = llvm.AddFunction(c.module, input.SymbolName, voidFnType)
+		fn.SetLinkage(llvm.ExternalLinkage)
+	}
+	c.builder.CreateCall(voidFnType, fn, nil, "")
 }
 
 func (c *CodegenModule) genJmp(input ir.JmpInstrInput) {
@@ -2518,6 +2564,19 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		}
 	}
 
+	// Phase 2b: Pre-declare ambient-global extern references. They are injected lazily at the first
+	// use site (which may sit inside a function body walked before the extern's own instruction),
+	// so declare them up front to make resolution order-independent (genDeclGlobalVar is idempotent
+	// for externs, so the main walk simply skips them).
+	irBuilder.Walk(func(instr *ir.Instr) {
+		if instr.Type == ir.InstrTypeDeclGlobalVar {
+			input := ir.AsDeclGlobalVarInstrInput(instr.Input)
+			if input.Variable.IsExtern {
+				c.genDeclGlobalVar(*input)
+			}
+		}
+	}, func(block *ir.BasicBlock) {})
+
 	// Phase 3: Process all other instructions
 	irBuilder.Walk(func(instr *ir.Instr) {
 		// Skip already processed DECL_CLASS instructions
@@ -2547,6 +2606,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeCallFunc:
 			c.setDebugLocation(instr.Span)
 			c.genCallFunc(*ir.AsCallFuncInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeCallModuleInit:
+			c.setDebugLocation(instr.Span)
+			c.genCallModuleInit(*ir.AsCallModuleInitInstrInput(instr.Input))
 		case ir.InstrTypeJmp:
 			c.setDebugLocation(instr.Span)
 			c.genJmp(*ir.AsJmpInstrInput(instr.Input))

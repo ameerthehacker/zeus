@@ -72,6 +72,14 @@ func ensurePreludesLoaded() {
 	preludeOnce.Do(loadPreludes)
 }
 
+// EnsurePreludesLoaded compiles the embedded preludes (once, process-wide) so primordial
+// classes/functions and the prelude ambient globals (console/Math) are registered. The compiler
+// calls this before its ambient-global pre-scan so the prelude tier is seeded first (loadPreludes
+// resets the user tier when it freezes console/Math). Safe to call repeatedly.
+func EnsurePreludesLoaded() {
+	ensurePreludesLoaded()
+}
+
 // reservedClassIds pins a fixed class ID for prelude classes that need one — Error's ID backs O(1)
 // exception-type matching (IsErrorClass). Add an entry to reserve an ID for a new prelude class.
 var reservedClassIds = map[string]int{"Error": zeus_value.ERROR_CLASS_ID}
@@ -101,6 +109,11 @@ func loadPreludes() {
 	})
 
 	for _, name := range names {
+		// globals.zs declares ambient globals, not classes; the compiler injects it as a real
+		// module instead of harvesting classes from it here.
+		if name == prelude.GlobalsFile {
+			continue
+		}
 		src, err := prelude.FS.ReadFile(name)
 		if err != nil {
 			panic(fmt.Sprintf("reading prelude %s: %s", name, err))
@@ -130,6 +143,36 @@ func loadPreludes() {
 			zeus_value.Registry.RegisterClass(class)
 		}
 	}
+
+	// Seed the ambient-global registry with globals.zs's console/Math (resolved to concrete object
+	// types) into the never-reset prelude tier, so they resolve on every compile path — including the
+	// language server, which type-checks a single document and never injects/compiles globals.zs.
+	loadPreludeGlobals()
+}
+
+// loadPreludeGlobals compiles globals.zs (which declares `global console`/`global Math`) so the
+// singletons' object types are resolved, then freezes those registrations into the never-reset
+// prelude tier of the ambient-global registry. Runs after the class preludes so Console/Math are in
+// the registry when `new Console()` / `new Math()` are evaluated.
+func loadPreludeGlobals() {
+	src, err := prelude.FS.ReadFile(prelude.GlobalsFile)
+	if err != nil {
+		panic(fmt.Sprintf("reading prelude %s: %s", prelude.GlobalsFile, err))
+	}
+	tokens, lexErrs := lexer.NewLexer(string(src)).Lex()
+	if len(lexErrs) > 0 {
+		panic(fmt.Sprintf("lexing prelude %s: %v", prelude.GlobalsFile, lexErrs))
+	}
+	program, parseErrs := parser.NewParser(tokens).ParseProgram()
+	if len(parseErrs) > 0 {
+		panic(fmt.Sprintf("parsing prelude %s: %v", prelude.GlobalsFile, parseErrs))
+	}
+	// Pre-scan (register names) then IR-gen (refine to concrete initializer types), mirroring the
+	// real compiler, then freeze into the never-reset prelude tier.
+	PrescanAmbientGlobals(program, prelude.GlobalsModulePath)
+	mod := NewIRModule(newIRBuilderInternal(), prelude.GlobalsModulePath, false, nil)
+	mod.Generate(program)
+	zeus_value.FreezeUserAmbientGlobalsAsPrelude()
 }
 
 // compilePrelude lexes, parses, and IR-generates a prelude source, returning the populated builder.
@@ -478,18 +521,48 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 }
 
 func (b *IRBuilder) BuildGlobalVarDecl(v *VarDecl) *zeus_value.Var {
-	unique_name := b.generateUniqueGlobalName(v.Name)
+	// An ambient `global` uses the stable, un-mangled symbol shared by its single definition and
+	// every module's extern reference, so it must NOT be uniquified per module.
+	name := v.Name
+	if v.IsAmbient {
+		name = zeus_value.AmbientGlobalSymbolName(v.Name)
+	} else {
+		name = b.generateUniqueGlobalName(v.Name)
+	}
 
-	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
+	variable := zeus_value.NewVar(name, v.ValueType, true, v.Span)
 	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
+	variable.IsAmbient = v.IsAmbient
 
-	b.symbolTable.DeclareSymbol(unique_name, variable)
+	b.symbolTable.DeclareSymbol(name, variable)
 
 	b.pushInstr(&Instr{
 		Type:  InstrTypeDeclGlobalVar,
 		Input: NewDeclareVarInstrInput(variable, v.Initializer, v.IsConst),
 		Span:  v.Span,
+	})
+
+	return variable
+}
+
+// BuildExternGlobalVarDecl declares a module-local *reference* to an ambient global defined in
+// another module: an external declaration (no initializer/storage) under the shared stable symbol.
+// The returned Var should be registered in the symbol table under the global's source name so
+// ordinary identifier resolution finds it.
+func (b *IRBuilder) BuildExternGlobalVarDecl(sourceName string, valueType zeus_value.ValueType, isConst bool, span *token.Span) *zeus_value.Var {
+	name := zeus_value.AmbientGlobalSymbolName(sourceName)
+
+	variable := zeus_value.NewVar(name, valueType, true, span)
+	variable.OriginalName = sourceName
+	variable.IsConst = isConst
+	variable.IsExtern = true
+	variable.IsUsed = true // referenced across modules; never warn "unused"
+
+	b.pushInstr(&Instr{
+		Type:  InstrTypeDeclGlobalVar,
+		Input: NewDeclareVarInstrInput(variable, nil, isConst),
+		Span:  span,
 	})
 
 	return variable
@@ -686,6 +759,16 @@ func (b *IRBuilder) BuildReturn(value zeus_value.Value, span *token.Span) {
 	b.pushInstr(&Instr{
 		Type:  InstrTypeReturn,
 		Input: NewReturnInstrInput(value),
+		Span:  span,
+	})
+}
+
+// BuildCallModuleInit emits a call to a module's init function by its stable external symbol
+// name. Codegen declares the symbol extern when its definition lives in another module.
+func (b *IRBuilder) BuildCallModuleInit(symbolName string, span *token.Span) {
+	b.pushInstr(&Instr{
+		Type:  InstrTypeCallModuleInit,
+		Input: NewCallModuleInitInstrInput(symbolName),
 		Span:  span,
 	})
 }

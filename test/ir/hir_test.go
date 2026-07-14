@@ -3,8 +3,11 @@ package ir_test
 import (
 	"testing"
 
+	"strings"
+
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
+	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/parser"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
@@ -33,7 +36,10 @@ func generateHIR(t *testing.T, source string) (*ir.IRBuilder, []*ir.Instr) {
 }
 
 // filterUserInstrs removes primordial class and function declarations that are always
-// emitted at the head of every IRBuilder.
+// emitted at the head of every IRBuilder. It also transparently inlines the synthetic
+// per-module init function ($module_init$...) that now wraps every module's top-level
+// statements: the DECL_FUNC wrapper is dropped and its body's instructions are spliced in,
+// so callers see top-level user code as a flat list (as before the init-function refactor).
 func filterUserInstrs(instrs []*ir.Instr) []*ir.Instr {
 	var result []*ir.Instr
 	for _, instr := range instrs {
@@ -45,6 +51,20 @@ func filterUserInstrs(instrs []*ir.Instr) []*ir.Instr {
 		}
 		if instr.Type == ir.InstrTypeDeclPrimordialFunc {
 			continue
+		}
+		if instr.Type == ir.InstrTypeDeclFunc {
+			input := ir.AsDeclFuncInstrInput(instr.Input)
+			if strings.HasPrefix(input.Function.Name, module.ModuleInitFuncPrefix) {
+				// Splice the module-init body in place of its synthetic wrapper, dropping
+				// the trailing void RETURN the wrapper always ends with.
+				for _, bodyInstr := range allBlockInstrs(input.Body) {
+					if bodyInstr.Type == ir.InstrTypeReturn {
+						continue
+					}
+					result = append(result, bodyInstr)
+				}
+				continue
+			}
 		}
 		result = append(result, instr)
 	}
@@ -140,12 +160,13 @@ func mustConstant(t *testing.T, v zeus_value.Value, want string) {
 // ---- Variable Declaration Tests ----
 
 func TestVarDeclLet(t *testing.T) {
+	// A top-level `let`/`const` is a module-scoped variable, so it lowers to DECLARE_GLOBAL_VAR.
 	_, instrs := generateHIR(t, `let x: i32 = 5`)
-	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclVar)
+	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclGlobalVar)
 	if len(decls) == 0 {
-		t.Fatal("expected DECLARE_VAR instruction")
+		t.Fatal("expected DECLARE_GLOBAL_VAR instruction")
 	}
-	input := ir.AsDeclVarInstrInput(decls[0].Input)
+	input := ir.AsDeclGlobalVarInstrInput(decls[0].Input)
 	if input.Variable.Name != "x" {
 		t.Errorf("expected variable name 'x', got '%s'", input.Variable.Name)
 	}
@@ -157,11 +178,11 @@ func TestVarDeclLet(t *testing.T) {
 
 func TestVarDeclConst(t *testing.T) {
 	_, instrs := generateHIR(t, `const y: i32 = 10`)
-	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclVar)
+	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclGlobalVar)
 	if len(decls) == 0 {
-		t.Fatal("expected DECLARE_VAR instruction")
+		t.Fatal("expected DECLARE_GLOBAL_VAR instruction")
 	}
-	input := ir.AsDeclVarInstrInput(decls[0].Input)
+	input := ir.AsDeclGlobalVarInstrInput(decls[0].Input)
 	if input.Variable.Name != "y" {
 		t.Errorf("expected variable name 'y', got '%s'", input.Variable.Name)
 	}
@@ -172,11 +193,11 @@ func TestVarDeclConst(t *testing.T) {
 
 func TestVarDeclWithoutInit(t *testing.T) {
 	_, instrs := generateHIR(t, `let z: i32;`)
-	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclVar)
+	decls := findInstrs(filterUserInstrs(instrs), ir.InstrTypeDeclGlobalVar)
 	if len(decls) == 0 {
-		t.Fatal("expected DECLARE_VAR instruction")
+		t.Fatal("expected DECLARE_GLOBAL_VAR instruction")
 	}
-	input := ir.AsDeclVarInstrInput(decls[0].Input)
+	input := ir.AsDeclGlobalVarInstrInput(decls[0].Input)
 	if input.Variable.Name != "z" {
 		t.Errorf("expected variable name 'z', got '%s'", input.Variable.Name)
 	}
