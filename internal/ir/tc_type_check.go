@@ -67,11 +67,35 @@ func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
 		return
 	}
 
+	// Object → object: legal only within one class hierarchy (up- or down-cast). Unrelated
+	// classes are rejected at compile time. The runtime downcast check (INSTANCEOF + throw) is
+	// emitted during IR gen (VisitCastExpr); here we only validate the static relationship.
+	if srcObj := zeus_value.AsObjectType(sourceType); srcObj != nil {
+		if dstObj, ok := target.(zeus_value.ObjectType); ok {
+			if zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) || zeus_value.IsSubclassOf(dstObj.Class, srcObj.Class) {
+				instr.Output.ValueType = target
+				return
+			}
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot cast '%s' to '%s': unrelated class types", sourceType, target),
+				Span:    instr.Span,
+			})
+			return
+		}
+	}
+
 	// Anything else is an illegal cast, reported at compile time (zero runtime cost).
 	tc.pushError(&zeus_error.ZeusError{
 		Message: fmt.Sprintf("cannot cast '%s' to '%s'", sourceType, target),
 		Span:    instr.Span,
 	})
+}
+
+// tcInstanceOf type-checks a runtime type test (object `as` downcast guard). The output is a bool.
+func (p *TypeCheckingPass) tcInstanceOf(tc *TypeChecker, instr *Instr) {
+	input := AsInstanceOfInstrInput(instr.Input)
+	_ = tc.getValueType(input.Value) // ensure the operand resolves
+	instr.Output.ValueType = zeus_value.BoolType{Span: instr.Span}
 }
 
 // isNumericOrBoolType reports whether a type participates in unchecked numeric/bool `as` casts.
@@ -356,6 +380,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
 		p.tcCast(tc, instr)
+	case InstrTypeInstanceOf:
+		p.tcInstanceOf(tc, instr)
 	case InstrTypeCoerce:
 		p.tcCoerce(tc, instr)
 	case InstrTypeDeclPrimordialFunc:

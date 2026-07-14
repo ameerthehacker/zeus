@@ -169,12 +169,12 @@ func (w *astWalker) VisitInterfaceDeclExpr(*ast.InterfaceDeclExprNode) zeus_valu
 	return nil // interfaces are type-level only; no runtime sub-expressions to walk
 }
 
-func (w *astWalker) VisitNumber(*ast.NumberExprNode) zeus_value.Value          { return nil }
-func (w *astWalker) VisitChar(*ast.CharExprNode) zeus_value.Value              { return nil }
-func (w *astWalker) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value        { return nil }
-func (w *astWalker) VisitNull(*ast.NullExprNode) zeus_value.Value              { return nil }
+func (w *astWalker) VisitNumber(*ast.NumberExprNode) zeus_value.Value                 { return nil }
+func (w *astWalker) VisitChar(*ast.CharExprNode) zeus_value.Value                     { return nil }
+func (w *astWalker) VisitBoolean(*ast.BooleanExprNode) zeus_value.Value               { return nil }
+func (w *astWalker) VisitNull(*ast.NullExprNode) zeus_value.Value                     { return nil }
 func (w *astWalker) VisitStringConstant(*ast.StringConstantExprNode) zeus_value.Value { return nil }
-func (w *astWalker) VisitValueType(*ast.ValueTypeNode) zeus_value.Value        { return nil }
+func (w *astWalker) VisitValueType(*ast.ValueTypeNode) zeus_value.Value               { return nil }
 func (w *astWalker) VisitTemplateString(node *ast.TemplateStringExprNode) zeus_value.Value {
 	for _, part := range node.Parts {
 		if part.IsExpr {

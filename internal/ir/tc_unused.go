@@ -88,6 +88,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeCast:
 		input := AsCastInstrInput(instr.Input)
 		markValueAsUsed(input.Value)
+	case InstrTypeInstanceOf:
+		input := AsInstanceOfInstrInput(instr.Input)
+		markValueAsUsed(input.Value)
 	}
 }
 

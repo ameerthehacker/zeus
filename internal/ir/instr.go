@@ -403,6 +403,32 @@ func AsCastInstrInput(input InstrInput) *CastInstrInput {
 	return nil
 }
 
+// InstanceOfInstrInput is the input to an INSTANCEOF instruction: a runtime type test asking
+// whether Value's dynamic class is (a subclass of) the class with id ClassId. Output is a bool.
+type InstanceOfInstrInput struct {
+	Value   zeus_value.Value
+	ClassId int
+}
+
+func NewInstanceOfInstrInput(value zeus_value.Value, classId int) *InstanceOfInstrInput {
+	return &InstanceOfInstrInput{Value: value, ClassId: classId}
+}
+
+func (i InstanceOfInstrInput) String() string {
+	return fmt.Sprintf("%s isa #%d", i.Value, i.ClassId)
+}
+
+func AsInstanceOfInstrInput(input InstrInput) *InstanceOfInstrInput {
+	switch input := input.(type) {
+	case *InstanceOfInstrInput:
+		return input
+	default:
+		panicInvalidInputType("InstanceOfInstrInput", input)
+	}
+
+	return nil
+}
+
 type CoerceInstrInput struct {
 	Value      zeus_value.Value
 	TargetType zeus_value.ValueType // only used for IR dumps; codegen uses Value's ObjectType directly
@@ -1018,6 +1044,8 @@ const (
 	InstrTypePower // exponentiation (**)
 	// casting
 	InstrTypeCast
+	// runtime downcast type test (object `as` cast): output bool = obj is-a target class id
+	InstrTypeInstanceOf
 	// comparison operations
 	InstrTypeNeg
 	InstrTypeEqEq
@@ -1170,6 +1198,8 @@ func (i InstrType) String() string {
 		return "STORE"
 	case InstrTypeCast:
 		return "CAST"
+	case InstrTypeInstanceOf:
+		return "INSTANCEOF"
 	case InstrTypeImport:
 		return "IMPORT"
 	case InstrTypeExport:
