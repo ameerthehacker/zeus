@@ -46,12 +46,10 @@ let zeros = new i32[100];      // 100 zero-filled elements (length 100)
 ## Basic Operations
 
 ```zeus
-let arr = new i32[];
+let arr: i32[] = [10, 20, 30];
 
-// Add elements
-arr.push(10);
-arr.push(20);
-arr.push(30);        // arr = [10, 20, 30]
+// Add an element
+arr.push(40);        // arr = [10, 20, 30, 40]
 
 // Access elements (bracket notation or .get())
 let first = arr[0];       // 10
@@ -59,13 +57,13 @@ let second = arr.get(1);  // 20
 
 // Modify elements (bracket notation or .set())
 arr[0] = 100;
-arr.set(1, 200);     // arr = [100, 200, 30]
+arr.set(1, 200);     // arr = [100, 200, 30, 40]
 
 // Remove last element
-let last = arr.pop();  // Returns 30, arr = [100, 200]
+let last = arr.pop();  // Returns 40, arr = [100, 200, 30]
 
 // Check length
-let len = arr.length;  // 2
+let len = arr.length;  // 3
 ```
 
 ## Method Reference
@@ -109,12 +107,10 @@ These return **new arrays** without modifying the original:
 ## Non-Mutating Operations
 
 ```zeus
-let arr = new i32[];
-arr.push(1); arr.push(2); arr.push(3);
+let arr = [1, 2, 3];
 
 // concat - combine arrays
-let other = new i32[];
-other.push(4); other.push(5);
+let other = [4, 5];
 let combined = arr.concat(other);  // [1, 2, 3, 4, 5]
 // arr is still [1, 2, 3]
 
@@ -132,8 +128,7 @@ let result = arr.reverse().slice(0, 2);  // [3, 2]
 ## Searching
 
 ```zeus
-let arr: i32[] = new i32[];
-arr.push(10); arr.push(20); arr.push(30); arr.push(20);
+let arr: i32[] = [10, 20, 30, 20];
 
 arr.indexOf(20);      // 1 (first occurrence)
 arr.lastIndexOf(20);  // 3 (last occurrence)
@@ -152,29 +147,20 @@ arr.isEmpty();        // false
 Nested literals build multi-dimensional arrays directly:
 
 ```zeus
-let grid = [[1, 2, 3], [4, 5, 6]];  // u8[][]
-let value = grid[1][2];             // 6
+// 2D
+let matrix = [[1, 2], [3, 4]];
+let value = matrix[0][1];        // 2
+
+// 3D
+let cube = [[[42]]];
+let v = cube[0][0][0];           // 42
+
+// Rows can be jagged, and an empty row is still typed from its siblings
+let jagged = [[1, 2, 3], [4], []];
 ```
 
-Or build them incrementally with `new` and `push`:
-
-```zeus
-// 2D array
-let matrix = new i32[][];
-matrix.push(new i32[]);
-matrix.push(new i32[]);
-matrix[0].push(1); matrix[0].push(2);
-matrix[1].push(3); matrix[1].push(4);
-
-let value = matrix[0][1];  // 2
-
-// 3D array
-let cube = new i32[][][];
-cube.push(new i32[][]);
-cube[0].push(new i32[]);
-cube[0][0].push(42);
-let v = cube[0][0][0];  // 42
-```
+When the shape is only known at runtime, build the rows with `new` and `push`
+instead — see the [Matrix Class](#matrix-class) example below.
 
 ## Object Arrays
 
@@ -251,9 +237,7 @@ class Matrix {
 Zeus performs automatic bounds checking when reading from arrays. Accessing an index outside the valid range throws an `IndexOutOfBoundsException`:
 
 ```zeus
-let arr: i32[] = new i32[];
-arr.push(10);
-arr.push(20);
+let arr = [10, 20];
 
 let safe = arr[0];      // 10 - valid
 let also_safe = arr[1]; // 20 - valid

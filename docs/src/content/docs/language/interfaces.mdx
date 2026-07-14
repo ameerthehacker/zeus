@@ -248,9 +248,7 @@ function sizeOf(s: Sized): i32 {
 }
 
 function main(): i32 {
-  let xs: i32[] = new i32[];
-  xs.push(10);
-  xs.push(20);
+  let xs: i32[] = [10, 20];
   return sizeOf(xs);   // 2 — an array satisfies Sized
 }
 ```
