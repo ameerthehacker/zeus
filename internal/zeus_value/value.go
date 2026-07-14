@@ -216,6 +216,12 @@ type ClassProperty struct {
 	IsReadonly      bool
 	IsStatic        bool
 	StaticGlobalVar *Var // non-nil for static props; the backing LLVM global
+	// StaticInitializer is the evaluated constant value of a static property's `= <expr>`
+	// initializer (nil when absent). It travels with the registered class so codegen can
+	// re-materialize the backing global with a constant initializer in every module that uses
+	// the class — required for primordials (e.g. Math.PI), whose defining DECL_GLOBAL_VAR is
+	// produced only in the throwaway prelude builder and dropped.
+	StaticInitializer Value
 }
 
 func NewClassProperty(property *Var, accessModifier *token.Token, isReadonly bool, isStatic bool, staticGlobalVar *Var) *ClassProperty {

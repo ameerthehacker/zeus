@@ -150,10 +150,10 @@ func loadPreludes() {
 	loadPreludeGlobals()
 }
 
-// loadPreludeGlobals compiles globals.zs (which declares `global console`/`global Math`) so the
-// singletons' object types are resolved, then freezes those registrations into the never-reset
-// prelude tier of the ambient-global registry. Runs after the class preludes so Console/Math are in
-// the registry when `new Console()` / `new Math()` are evaluated.
+// loadPreludeGlobals compiles globals.zs (which declares `global console`) so the singleton's
+// object type is resolved, then freezes those registrations into the never-reset prelude tier of
+// the ambient-global registry. Runs after the class preludes so Console is in the registry when
+// `new Console()` is evaluated. (Math is a pure static class with no singleton.)
 func loadPreludeGlobals() {
 	src, err := prelude.FS.ReadFile(prelude.GlobalsFile)
 	if err != nil {

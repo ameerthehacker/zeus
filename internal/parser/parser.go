@@ -369,7 +369,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					isReadonly = true
 					parser.consume()
 				}
-				property := parser.parseVarDecl(false, false, ast.VarDeclTypeLet, "class property")
+				property := parser.parseVarDecl(true, false, ast.VarDeclTypeLet, "class property")
 				spanStart := property.Identifier.GetSpan().Start
 				if accessModifier != nil {
 					spanStart = accessModifier.Span.Start
@@ -380,6 +380,7 @@ func NewParser(tokens []*token.Token) *Parser {
 					AccessModifier: accessModifier,
 					IsReadonly:     isReadonly,
 					IsStatic:       isStatic,
+					Initializer:    property.Initializer,
 					Span:           &token.Span{Start: spanStart, End: property.Identifier.GetSpan().End},
 				})
 				parser.consumeSemicolon()

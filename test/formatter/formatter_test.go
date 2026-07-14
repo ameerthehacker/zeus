@@ -85,6 +85,15 @@ func TestFormatNoSemicolons(t *testing.T) {
 `,
 		},
 		{
+			name:  "class field initializers are preserved",
+			input: "class C { public x: i32 = 3; public static readonly N: i32 = 42; }",
+			expected: `class C {
+    public x: i32 = 3
+    public static readonly N: i32 = 42
+}
+`,
+		},
+		{
 			name:  "keyword-terminated statements keep their semicolon",
 			input: "function f(): void { while (true) { break; } return; }",
 			expected: `function f(): void {

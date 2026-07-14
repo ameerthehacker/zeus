@@ -455,7 +455,11 @@ type ClassProperty struct {
 	AccessModifier *token.Token
 	IsReadonly     bool
 	IsStatic       bool
-	Span           *token.Span
+	// Initializer is the optional `= <expr>` default value (nil when absent). For instance
+	// properties it runs during construction; for static properties it initializes the backing
+	// global (constant initializers are materialized per-module for primordials).
+	Initializer ExprNode
+	Span        *token.Span
 }
 
 type AccessorKind int

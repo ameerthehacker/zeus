@@ -567,6 +567,9 @@ func (f *formatter) printProperty(p *ast.ClassProperty) Doc {
 	if p.ValueType != nil && p.ValueType.ValueType != nil {
 		parts = append(parts, text(": "+formatType(p.ValueType.ValueType)))
 	}
+	if p.Initializer != nil {
+		parts = append(parts, text(" = "), f.printExpr(p.Initializer))
+	}
 	parts = append(parts, f.semi())
 	return concat(parts...)
 }

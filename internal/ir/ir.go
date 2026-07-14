@@ -9,6 +9,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/module"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
+	"github.com/ameerthehacker/zeus/internal/util"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -1786,6 +1787,14 @@ func (g *IRModule) buildStaticMethods(class *zeus_value.Class, methodASTs []*ast
 	defer func() { g.classStack = g.classStack[:len(g.classStack)-1] }()
 
 	for i, method := range methodASTs {
+		// Static extern methods have no Zeus body — codegen's emitExternMethods synthesizes a
+		// runtime-forwarding function for them. Give it the class-scoped callable name that
+		// emitExternMethods will define so static dispatch (BuildCallFunc by Method.Name) resolves.
+		if method.ExternSymbol != "" {
+			class.Methods[offset+i].Method.Name = util.GetClassMethodName(class.Name, method.Name.Name.Value)
+			class.Methods[offset+i].Method.OriginalName = method.Name.Name.Value
+			continue
+		}
 		var returnType zeus_value.ValueType = zeus_value.VoidType{Span: method.Name.GetSpan()}
 		if method.ReturnType != nil {
 			returnType = g.resolveTypeForIRGen(method.ReturnType.ValueType, true)
@@ -2152,7 +2161,112 @@ func (g *IRModule) VisitExportStmt(stmt *ast.ExportStmtNode) {
 	g.irBuilder.BuildExport(g.modulePath, exportedValue, stmt.GetSpan())
 }
 
+// injectFieldInitializers rewrites the class AST so instance-property initializers
+// (`x: T = <expr>`) run during construction, matching TypeScript semantics: the assignments
+// are spliced into the constructor right after super(...) (or at the top for a base class), so
+// the constructor body can still override a default. When a class declares initialized instance
+// fields but no constructor, an implicit one is synthesized to run them. Static-property
+// initializers are handled separately (they initialize the backing global), so they are ignored
+// here.
+func (g *IRModule) injectFieldInitializers(expr *ast.ClassDeclExprNode) {
+	var initProps []*ast.ClassProperty
+	for _, property := range expr.Properties {
+		if !property.IsStatic && property.Initializer != nil {
+			initProps = append(initProps, property)
+		}
+	}
+	if len(initProps) == 0 {
+		return
+	}
+
+	// Synthesize `this.<name> = <initializer>;` for each initialized instance field.
+	initStmts := make([]ast.StmtNode, len(initProps))
+	for i, property := range initProps {
+		span := property.Name.GetSpan()
+		thisIdent := &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, token.THIS_KEYWORD, span)}
+		target := &ast.ObjectPropertyAccessExprNode{Object: thisIdent, Property: property.Name, Span: span}
+		assign := &ast.BinaryExprNode{
+			Left:     target,
+			Right:    property.Initializer,
+			Operator: token.NewTokenWithValue(token.TokenTypeEqual, "=", span),
+		}
+		initStmts[i] = &ast.ExprStmtNode{Expr: assign}
+	}
+
+	// Does the base chain require a super(...) call? (mirrors buildClass's superRequired check)
+	superRequired := false
+	if expr.ParentClass != nil {
+		if parentVal, ok := g.symbolTable().GetSymbol(expr.ParentClass.Name.Value); ok {
+			if parentClass := zeus_value.AsClass(parentVal); parentClass != nil {
+				superRequired = zeus_value.LookupConstructorClass(parentClass) != nil
+			}
+		}
+	}
+
+	// Splice into an existing constructor, or synthesize an implicit one.
+	for _, method := range expr.Methods {
+		if !method.IsStatic && method.Name.Name.Value == token.CONSTRUCTOR_METHOD_NAME {
+			method.Body.Statements = spliceFieldInits(method.Body.Statements, initStmts, superRequired)
+			return
+		}
+	}
+
+	span := expr.GetSpan()
+	body := initStmts
+	if superRequired {
+		superCall := &ast.ExprStmtNode{Expr: &ast.FunctionCallExprNode{
+			Callee: &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, token.SUPER_KEYWORD, span)},
+			Span:   span,
+		}}
+		body = append([]ast.StmtNode{superCall}, body...)
+	}
+	expr.Methods = append(expr.Methods, &ast.ClassMethod{
+		Name:       &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, token.CONSTRUCTOR_METHOD_NAME, span)},
+		Body:       &ast.BlockStmtNode{Statements: body, Span: span},
+		ReturnType: &ast.ValueTypeNode{ValueType: zeus_value.VoidType{Span: span}, Span: span},
+		Span:       span,
+	})
+}
+
+// spliceFieldInits inserts initStmts into a constructor body: right after the super(...) call
+// when the base requires one, else at the very top. If super(...) is required but missing, the
+// "must call super" diagnostic already fires elsewhere, so injection is skipped to avoid noisy
+// "this before super" errors.
+func spliceFieldInits(body []ast.StmtNode, initStmts []ast.StmtNode, superRequired bool) []ast.StmtNode {
+	insertAt := 0
+	if superRequired {
+		superIdx := -1
+		for i, stmt := range body {
+			exprStmt, ok := stmt.(*ast.ExprStmtNode)
+			if !ok {
+				continue
+			}
+			call, ok := exprStmt.Expr.(*ast.FunctionCallExprNode)
+			if !ok {
+				continue
+			}
+			if ident, ok := call.Callee.(*ast.IdentifierExprNode); ok && ident.Name.Value == token.SUPER_KEYWORD {
+				superIdx = i
+				break
+			}
+		}
+		if superIdx < 0 {
+			return body
+		}
+		insertAt = superIdx + 1
+	}
+	result := make([]ast.StmtNode, 0, len(body)+len(initStmts))
+	result = append(result, body[:insertAt]...)
+	result = append(result, initStmts...)
+	result = append(result, body[insertAt:]...)
+	return result
+}
+
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
+	// Rewrite instance-property initializers into the constructor before any processing so the
+	// synthesized/modified constructor flows through the normal method-emission machinery.
+	g.injectFieldInitializers(expr)
+
 	// Top-level classes use their source name as the IR name (DeclCheckPass guarantees global
 	// uniqueness at top level). Nested classes (inside a function body) can shadow outer names,
 	// so we generate a unique IR name to avoid LLVM struct-name collisions in codegen.
@@ -2178,10 +2292,20 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 
 		if property.IsStatic {
 			globalName := "__static_" + irClassName + "_" + property.Name.Name.Value
-			varDecl := NewVarDecl(globalName, propType, false, nil, property.Name.GetSpan())
+			// Evaluate the `= <expr>` initializer (if any) up front. For a user class this feeds the
+			// backing global's DECL_GLOBAL_VAR so it is stored at module init; for a primordial the
+			// value is also stashed on the ClassProperty so codegen can re-materialize the global in
+			// every consuming module (the prelude's own DECL_GLOBAL_VAR is dropped).
+			var initValue zeus_value.Value
+			if property.Initializer != nil {
+				initValue = property.Initializer.Accept(g)
+			}
+			varDecl := NewVarDecl(globalName, propType, false, initValue, property.Name.GetSpan())
 			emittedGlobal := g.irBuilder.BuildGlobalVarDecl(varDecl)
 			emittedGlobal.OriginalName = property.Name.Name.Value
-			properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, true, emittedGlobal))
+			cp := zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, true, emittedGlobal)
+			cp.StaticInitializer = initValue
+			properties = append(properties, cp)
 		} else {
 			g.symbolTable().DeclareSymbol(property.Name.Name.Value, propVar)
 			properties = append(properties, zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, false, nil))
@@ -2364,6 +2488,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 					stubClass.Properties[i].Property = prop.Property
 					if prop.IsStatic {
 						stubClass.Properties[i].StaticGlobalVar = prop.StaticGlobalVar
+						stubClass.Properties[i].StaticInitializer = prop.StaticInitializer
 					}
 				}
 			}

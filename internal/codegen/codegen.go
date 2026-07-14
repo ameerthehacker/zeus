@@ -495,7 +495,19 @@ func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 			continue
 		}
 
-		// Build the LLVM function using class-prefixed name; set OriginalName for constructor detection.
+		if method.IsStatic {
+			// Static extern method: a plain runtime-forwarding function with no `this` and no vtable
+			// slot, called directly by its class-scoped name (already on Method.Name, set in
+			// buildStaticMethods). InternalLinkage: emitted per-module like other primordial code.
+			scopedFn := zeus_value.NewFunction(method.Method.Name, method.Method.Params, method.Method.ReturnType, method.Method.Span)
+			scopedFn.OriginalName = method.Method.OriginalName
+			classFunction := c.genFunc(*scopedFn)
+			classFunction.SetLinkage(llvm.InternalLinkage)
+			c.emitExternMethodBody(classFunction, method.Method, true)
+			continue
+		}
+
+		// Instance extern method: class-scoped name, `this`-carrying, vtable-dispatched.
 		scopedFn := zeus_value.NewFunction(
 			util.GetClassMethodName(class.Name, method.Method.Name),
 			method.Method.Params,
@@ -507,7 +519,7 @@ func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 		classFunction := c.genClassMethod(*scopedClassMethod.Method, class)
 
 		// The method body is an extern call into the Zig runtime.
-		c.emitExternMethodBody(classFunction, method.Method)
+		c.emitExternMethodBody(classFunction, method.Method, false)
 	}
 	c.builder.SetInsertPointAtEnd(currentInsertionBlock)
 }
@@ -518,7 +530,7 @@ func (c *CodegenModule) emitExternMethods(class zeus_value.Class) {
 // back through the buffer. This is the single "a method whose body is a runtime call"
 // primitive that primordial classes are built from — the seed of treating primordials as
 // ordinary classes whose methods happen to be extern.
-func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *zeus_value.Function) {
+func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *zeus_value.Function, isStatic bool) {
 	// Thin wrappers around runtime functions; inline them away entirely.
 	alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
 	classFunction.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
@@ -529,9 +541,16 @@ func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *z
 	// The runtime symbol is recorded on the method itself (self-describing extern method).
 	runtimeFunction, runtimeFuncType := c.genExternalRuntimeFunction(method.ExternRuntimeName, len(method.Params), true)
 
-	// 'this' is the last parameter.
+	// Instance methods pass their receiver as the trailing param; static extern methods have no
+	// receiver, so forward a null this_ptr (the runtime keeps its ignored this_ptr slot, so its
+	// Zig signature is unchanged either way).
 	params := classFunction.Params()
-	thisPtr := params[len(params)-1]
+	var thisPtr llvm.Value
+	if isStatic {
+		thisPtr = llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	} else {
+		thisPtr = params[len(params)-1]
+	}
 
 	// Runtime ABI: [this_ptr, return_buffer_ptr_ptr, ...param_ptrs].
 	var runtimeArgs []llvm.Value
@@ -1495,6 +1514,36 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// Emit bodies for extern methods (forward to the Zig runtime). No-op for classes with no
 	// extern methods, so this needs no "is this a primordial" special-case.
 	c.emitExternMethods(class)
+
+	// Materialize static-property globals for primordials. Their defining DECL_GLOBAL_VAR is
+	// produced only in the throwaway prelude builder and dropped, yet consuming modules reference
+	// __static_<Class>_<prop> (e.g. Math.PI). Emit each as an internal, constant-initialized global
+	// — constant initializers sidestep any module-init ordering. (User classes take the normal
+	// DECL_GLOBAL_VAR path in their defining module, so they are skipped here.)
+	if isPrimordial {
+		for _, prop := range class.Properties {
+			if !prop.IsStatic || prop.StaticGlobalVar == nil {
+				continue
+			}
+			name := prop.StaticGlobalVar.Name
+			if _, exists := c.llvmValues[name]; exists {
+				continue
+			}
+			llvmType := c.toLLVMType(prop.Property.ValueType)
+			global := llvm.AddGlobal(c.module, llvmType, name)
+			global.SetLinkage(llvm.InternalLinkage)
+			if constInit, ok := prop.StaticInitializer.(*zeus_value.Constant); ok {
+				// Convert against the property's declared type so the constant's LLVM width matches
+				// the global (the literal's own inferred width may be narrower, e.g. i8 for 42).
+				coerced := *constInit
+				coerced.ValueType = prop.Property.ValueType
+				global.SetInitializer(c.toLLVMConstant(coerced))
+			} else {
+				global.SetInitializer(llvm.ConstNull(llvmType))
+			}
+			c.llvmValues[name] = global
+		}
+	}
 
 	// Declare the factory signature for primordials/arrays only. User-class factories are
 	// synthesized as real IR functions by FactoryLoweringPass and declared via their DECL_FUNC,
