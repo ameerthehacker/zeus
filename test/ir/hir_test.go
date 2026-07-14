@@ -248,8 +248,12 @@ function f(): void {
 	if !ok {
 		t.Fatalf("expected IntType after inference, got %T", varDecl.Variable.ValueType)
 	}
-	if intType.Signed {
-		t.Error("expected unsigned int inferred from literal 5")
+	// Context-less integer literals default to a signed int, floored at i32.
+	if !intType.Signed {
+		t.Error("expected signed int inferred from literal 5")
+	}
+	if intType.Size != zeus_value.I32 {
+		t.Errorf("expected i32 default for literal 5, got size %v", intType.Size)
 	}
 }
 

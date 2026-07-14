@@ -777,6 +777,53 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 	return g.irBuilder.BuildLoad(resultVar, span)
 }
 
+// VisitCastExpr emits an explicit `expr as Type` cast. Numeric/bool casts are unchecked
+// (truncate/wrap) and lowered by codegen's genCast. Object→object casts additionally emit a
+// runtime class-id check that throws on a failed downcast (see maybeEmitDowncastCheck).
+func (g *IRModule) VisitCastExpr(expr *ast.CastExprNode) zeus_value.Value {
+	span := expr.GetSpan()
+	value := expr.Expr.Accept(g)
+	if value == nil {
+		return nil
+	}
+	targetType := g.resolveTypeForIRGen(expr.AsType.ValueType, false)
+
+	// Object → object: guard a downcast with a runtime type check that throws on mismatch.
+	g.maybeEmitDowncastCheck(value, targetType, span)
+
+	return g.irBuilder.BuildCast(value, targetType, span)
+}
+
+// maybeEmitDowncastCheck inserts a runtime type check before an object→object `as` cast when it
+// is (or may be) a downcast. Upcasts and same-type casts are skipped — the pointer is already a
+// valid base pointer (base-first layout), so no check is needed. Non-object casts are ignored
+// here (validated/handled elsewhere).
+func (g *IRModule) maybeEmitDowncastCheck(value zeus_value.Value, targetType zeus_value.ValueType, span *token.Span) {
+	dstObj, ok := targetType.(zeus_value.ObjectType)
+	if !ok || dstObj.Class == nil {
+		return
+	}
+	srcObj, ok := zeus_value.GetValueType(value).(zeus_value.ObjectType)
+	if !ok {
+		return // non-object source; tcCast reports any illegal cast
+	}
+	// Upcast or same type: no runtime check needed.
+	if srcObj.Class != nil && zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) {
+		return
+	}
+	// Downcast (or statically-unrelated, which tcCast rejects — the guard is harmless): verify the
+	// object's runtime class is (a subclass of) the target, else throw ClassCastException.
+	ok2 := g.irBuilder.BuildInstanceOf(value, dstObj.Class.Id, span)
+	throwBlock := g.irBuilder.BuildSuccessorBlock()
+	continueBlock := g.irBuilder.BuildSuccessorBlock()
+	g.irBuilder.BuildCondJmp(continueBlock, throwBlock, ok2, span)
+
+	g.irBuilder.SetInsertionBlock(throwBlock)
+	g.emitThrowError("ClassCastException", fmt.Sprintf("cannot cast object to '%s'", dstObj.Class.Name), span)
+
+	g.irBuilder.SetInsertionBlock(continueBlock)
+}
+
 // visitArgs evaluates a list of call/constructor argument expressions. It returns
 // ok=false if any argument is missing or fails to resolve (e.g. an undefined identifier),
 // signalling the caller to abort emitting the call — the underlying error was already
@@ -1463,10 +1510,7 @@ func (g *IRModule) VisitNumber(expr *ast.NumberExprNode) zeus_value.Value {
 	} else {
 		return zeus_value.NewConstant(
 			expr.Value.Value,
-			zeus_value.IntType{
-				Signed: false,
-				Size:   zeus_value.GetSignedIntSize(expr.Value.Value),
-			},
+			zeus_value.DefaultLiteralIntType(expr.Value.Value, expr.Value.Span),
 			expr.Value.Span,
 		)
 	}

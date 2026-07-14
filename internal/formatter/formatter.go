@@ -449,6 +449,8 @@ func (f *formatter) printExpr(expr ast.ExprNode) Doc {
 		return concat(f.printExpr(e.Object), text("."+e.Property.Name.Value))
 	case *ast.TernaryExprNode:
 		return concat(f.printExpr(e.Condition), text(" ? "), f.printExpr(e.Then), text(" : "), f.printExpr(e.Else))
+	case *ast.CastExprNode:
+		return concat(f.printExpr(e.Expr), text(" as "+formatType(e.AsType.ValueType)))
 	case *ast.TemplateStringExprNode:
 		return f.printTemplate(e)
 	case *ast.FunctionDeclExprNode:

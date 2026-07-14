@@ -407,6 +407,12 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	zeusExceptionInstanceofFunc := llvm.AddFunction(module, "zeus_exception_instanceof", zeusExceptionInstanceofType)
 	globalFunctions["zeus_exception_instanceof"] = GlobalLLVMFunction{zeusExceptionInstanceofFunc, zeusExceptionInstanceofType}
 
+	// zeus_instanceof(object_ptr: ptr, target_class_id: i32) -> i1 - runtime downcast check
+	// (walks the object's parent_type_info chain). Used by `as` object downcasts.
+	zeusInstanceofType := llvm.FunctionType(c.cxt.Int1Type(), []llvm.Type{llvm.PointerType(c.cxt.VoidType(), 0), c.cxt.Int32Type()}, false)
+	zeusInstanceofFunc := llvm.AddFunction(module, "zeus_instanceof", zeusInstanceofType)
+	globalFunctions["zeus_instanceof"] = GlobalLLVMFunction{zeusInstanceofFunc, zeusInstanceofType}
+
 	// zeus_clear_exception() - clear current exception
 	zeusClearExceptionType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
 	zeusClearExceptionFunc := llvm.AddFunction(module, "zeus_clear_exception", zeusClearExceptionType)
@@ -1141,42 +1147,88 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 	valueType := zeus_value.GetValueType(input.Value)
 	castErrorMsg := fmt.Sprintf("cannot cast %s to %s", input.Value, input.CastType)
 
-	// ObjectType → FunctionType: both are ptr addrspace(1) at runtime — identity cast
+	// ObjectType → FunctionType / ObjectType: all are ptr addrspace(1) at runtime, so this is an
+	// identity cast. For an object up/down-cast the pointer is already valid (base-first layout);
+	// any downcast type check was emitted separately as INSTANCEOF during IR gen.
 	if zeus_value.IsObjectType(valueType) {
-		if _, ok := input.CastType.(zeus_value.FunctionType); ok {
+		switch input.CastType.(type) {
+		case zeus_value.FunctionType, zeus_value.ObjectType:
 			c.llvmValues[output.Name] = c.toLLVMValue(input.Value)
 			return
 		}
 	}
 
+	src := c.toLLVMValue(input.Value)
+	dstLLVMType := c.toLLVMType(input.CastType)
+	name := fmt.Sprintf("%s_cast", input.CastType)
+
 	switch valueType := valueType.(type) {
 	case zeus_value.IntType:
 		switch castType := input.CastType.(type) {
 		case zeus_value.FloatType:
+			// Signedness of the *source* selects signed vs unsigned int→float.
 			if valueType.Signed {
-				result = c.builder.CreateSIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateSIToFP(src, dstLLVMType, name)
 			} else {
-				result = c.builder.CreateUIToFP(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateUIToFP(src, dstLLVMType, name)
 			}
 		case zeus_value.IntType:
-			if castType.Signed {
-				result = c.builder.CreateSExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
-			} else {
-				result = c.builder.CreateZExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			// LLVM iN is signedness-agnostic: same width is a no-op reinterpret, widening uses
+			// the *source* signedness (sign- vs zero-extend), narrowing truncates (wraps).
+			switch {
+			case castType.Size == valueType.Size:
+				result = src
+			case castType.Size > valueType.Size:
+				if valueType.Signed {
+					result = c.builder.CreateSExt(src, dstLLVMType, name)
+				} else {
+					result = c.builder.CreateZExt(src, dstLLVMType, name)
+				}
+			default:
+				result = c.builder.CreateTrunc(src, dstLLVMType, name)
 			}
+		case zeus_value.BoolType:
+			// int → bool is `x != 0`.
+			zero := llvm.ConstInt(c.toLLVMType(valueType), 0, false)
+			result = c.builder.CreateICmp(llvm.IntNE, src, zero, name)
 		default:
 			panic(castErrorMsg)
 		}
 	case zeus_value.FloatType:
 		switch castType := input.CastType.(type) {
 		case zeus_value.IntType:
+			// Truncates toward zero; out-of-range is unchecked (LLVM poison) by design.
 			if castType.Signed {
-				result = c.builder.CreateFPToSI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateFPToSI(src, dstLLVMType, name)
 			} else {
-				result = c.builder.CreateFPToUI(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+				result = c.builder.CreateFPToUI(src, dstLLVMType, name)
 			}
 		case zeus_value.FloatType:
-			result = c.builder.CreateFPExt(c.toLLVMValue(input.Value), c.toLLVMType(input.CastType), fmt.Sprintf("%s_cast", input.CastType))
+			switch {
+			case castType.Size > valueType.Size:
+				result = c.builder.CreateFPExt(src, dstLLVMType, name)
+			case castType.Size < valueType.Size:
+				result = c.builder.CreateFPTrunc(src, dstLLVMType, name)
+			default:
+				result = src
+			}
+		case zeus_value.BoolType:
+			// float → bool is `x != 0.0` (ordered).
+			zero := llvm.ConstFloat(c.toLLVMType(valueType), 0.0)
+			result = c.builder.CreateFCmp(llvm.FloatONE, src, zero, name)
+		default:
+			panic(castErrorMsg)
+		}
+	case zeus_value.BoolType:
+		switch input.CastType.(type) {
+		case zeus_value.IntType:
+			// bool → int gives 0/1 (i1 zero-extended).
+			result = c.builder.CreateZExt(src, dstLLVMType, name)
+		case zeus_value.FloatType:
+			// bool → float gives 0.0/1.0.
+			result = c.builder.CreateUIToFP(src, dstLLVMType, name)
+		case zeus_value.BoolType:
+			result = src
 		default:
 			panic(castErrorMsg)
 		}
@@ -1298,6 +1350,25 @@ func (c *CodegenModule) genObjectArrayTypeHandle(class zeus_value.Class) *ZeusCl
 	return entry
 }
 
+// genInstanceOf emits a runtime type test by calling zeus_instanceof(object_ptr, target_class_id),
+// which walks the object's parent_type_info chain. The i1 result is stored as the bool output.
+func (c *CodegenModule) genInstanceOf(input ir.InstanceOfInstrInput, output zeus_value.Var) {
+	objPtr := c.toLLVMValue(input.Value)
+	classId := llvm.ConstInt(c.cxt.Int32Type(), uint64(input.ClassId), false)
+	c.llvmValues[output.Name] = c.callGlobalLLVMFunction("zeus_instanceof", objPtr, classId)
+}
+
+// getOrDeclareGlobal returns the named global, creating it as a (forward) declaration if it
+// doesn't exist yet. This lets a derived class reference its base's type-info global before the
+// base has been emitted (or when the base lives in another module), without AddGlobal minting a
+// duplicate suffixed symbol.
+func (c *CodegenModule) getOrDeclareGlobal(name string, t llvm.Type) llvm.Value {
+	if g := c.module.NamedGlobal(name); !g.IsNil() {
+		return g
+	}
+	return llvm.AddGlobal(c.module, t, name)
+}
+
 // genClass generates LLVM code for a Zeus class including struct types, vtable, and object header
 func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	if c.zeusClassLLVMStructMap[class.Name] != nil {
@@ -1327,8 +1398,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	llvmVTable := llvm.AddGlobal(c.module, vtableStructType, GetVTableStructPtrName(structName))
 	llvmVTable.SetInitializer(llvm.ConstNull(vtableStructType))
 	llvmVTable.SetLinkage(globalLinkage)
-	// create the object type info global
-	llvmObjectTypeInfo := llvm.AddGlobal(c.module, c.zeusObjectTypeInfoType, GetObjectTypeInfoStructPtrName(structName))
+	// create the object type info global (get-or-declare: a derived class may have already
+	// forward-declared this global to fill its own parent_type_info pointer).
+	llvmObjectTypeInfo := c.getOrDeclareGlobal(GetObjectTypeInfoStructPtrName(structName), c.zeusObjectTypeInfoType)
 	llvmObjectTypeInfo.SetLinkage(globalLinkage)
 	zeusRuntimeObjectType := ZeusRuntimeObjectTypeObject
 	zeusRuntimeArrayElementType := ZeusRuntimeTypeNull
@@ -1339,11 +1411,18 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		zeusRuntimeArrayElementType = toZeusRuntimeType(class.ArrayElementType)
 	}
 
+	// parent_type_info points at the base class's type info so the runtime can walk the
+	// inheritance chain (downcast checks + catch-by-base-type matching). Null at the root.
+	parentTypeInfo := llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0))
+	if class.ParentClass != nil {
+		parentTypeInfo = c.getOrDeclareGlobal(GetObjectTypeInfoStructPtrName(class.ParentClass.Name), c.zeusObjectTypeInfoType)
+	}
+
 	llvmObjectTypeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
 		llvm.ConstInt(c.cxt.Int32Type(), uint64(class.Id), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeObjectType), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeArrayElementType), false),
-		llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0)),
+		parentTypeInfo,
 	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
@@ -2523,6 +2602,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		case ir.InstrTypeCast:
 			c.setDebugLocation(instr.Span)
 			c.genCast(*ir.AsCastInstrInput(instr.Input), *instr.Output)
+		case ir.InstrTypeInstanceOf:
+			c.setDebugLocation(instr.Span)
+			c.genInstanceOf(*ir.AsInstanceOfInstrInput(instr.Input), *instr.Output)
 		case ir.InstrTypeExport:
 			c.genExport(*ir.AsExportInstrInput(instr.Input))
 		case ir.InstrTypeImport:

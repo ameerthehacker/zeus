@@ -102,15 +102,16 @@ const (
 	TokenTypePrivate
 	TokenTypePublic
 	TokenTypeProtected
-	TokenTypeNew      // new keyword
-	TokenTypeTry      // try keyword
-	TokenTypeCatch    // catch keyword
-	TokenTypeThrow    // throw keyword
-	TokenTypeExtends  // extends keyword for class inheritance
+	TokenTypeNew        // new keyword
+	TokenTypeTry        // try keyword
+	TokenTypeCatch      // catch keyword
+	TokenTypeThrow      // throw keyword
+	TokenTypeExtends    // extends keyword for class inheritance
 	TokenTypeBreak      // break keyword
 	TokenTypeContinue   // continue keyword
 	TokenTypeInterface  // interface keyword
 	TokenTypeImplements // implements keyword
+	TokenTypeAs         // as keyword for explicit casts
 	keyword_end
 	// data types
 	datatype_beg
@@ -322,6 +323,8 @@ func (t TokenType) String() string {
 		return "interface"
 	case TokenTypeImplements:
 		return "implements"
+	case TokenTypeAs:
+		return "as"
 	case TokenTypeNull:
 		return "null"
 	case TokenTypeChar:
@@ -341,33 +344,34 @@ func (t TokenType) String() string {
 }
 
 var Keywords = map[string]TokenType{
-	TokenTypeLet.String():       TokenTypeLet,
-	TokenTypeConst.String():     TokenTypeConst,
-	TokenTypeFunction.String():  TokenTypeFunction,
-	TokenTypeReturn.String():    TokenTypeReturn,
-	TokenTypeIf.String():        TokenTypeIf,
-	TokenTypeElse.String():      TokenTypeElse,
-	TokenTypeWhile.String():     TokenTypeWhile,
-	TokenTypeFor.String():       TokenTypeFor,
-	TokenTypeTrue.String():      TokenTypeTrue,
-	TokenTypeFalse.String():     TokenTypeFalse,
-	TokenTypeImport.String():    TokenTypeImport,
-	TokenTypeExport.String():    TokenTypeExport,
-	TokenTypeFrom.String():      TokenTypeFrom,
-	TokenTypeClass.String():     TokenTypeClass,
-	TokenTypePrivate.String():   TokenTypePrivate,
-	TokenTypePublic.String():    TokenTypePublic,
-	TokenTypeProtected.String(): TokenTypeProtected,
-	TokenTypeNew.String():       TokenTypeNew,
-	TokenTypeTry.String():       TokenTypeTry,
-	TokenTypeCatch.String():     TokenTypeCatch,
-	TokenTypeThrow.String():     TokenTypeThrow,
-	TokenTypeExtends.String():   TokenTypeExtends,
-	TokenTypeNull.String():      TokenTypeNull,
+	TokenTypeLet.String():        TokenTypeLet,
+	TokenTypeConst.String():      TokenTypeConst,
+	TokenTypeFunction.String():   TokenTypeFunction,
+	TokenTypeReturn.String():     TokenTypeReturn,
+	TokenTypeIf.String():         TokenTypeIf,
+	TokenTypeElse.String():       TokenTypeElse,
+	TokenTypeWhile.String():      TokenTypeWhile,
+	TokenTypeFor.String():        TokenTypeFor,
+	TokenTypeTrue.String():       TokenTypeTrue,
+	TokenTypeFalse.String():      TokenTypeFalse,
+	TokenTypeImport.String():     TokenTypeImport,
+	TokenTypeExport.String():     TokenTypeExport,
+	TokenTypeFrom.String():       TokenTypeFrom,
+	TokenTypeClass.String():      TokenTypeClass,
+	TokenTypePrivate.String():    TokenTypePrivate,
+	TokenTypePublic.String():     TokenTypePublic,
+	TokenTypeProtected.String():  TokenTypeProtected,
+	TokenTypeNew.String():        TokenTypeNew,
+	TokenTypeTry.String():        TokenTypeTry,
+	TokenTypeCatch.String():      TokenTypeCatch,
+	TokenTypeThrow.String():      TokenTypeThrow,
+	TokenTypeExtends.String():    TokenTypeExtends,
+	TokenTypeNull.String():       TokenTypeNull,
 	TokenTypeBreak.String():      TokenTypeBreak,
 	TokenTypeContinue.String():   TokenTypeContinue,
 	TokenTypeInterface.String():  TokenTypeInterface,
 	TokenTypeImplements.String(): TokenTypeImplements,
+	TokenTypeAs.String():         TokenTypeAs,
 }
 
 var DataTypes = map[string]TokenType{

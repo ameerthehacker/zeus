@@ -220,6 +220,24 @@ fn checkClassHierarchy(class_id: u32, object_ptr: *anyopaque, target_class_id: u
     return false;
 }
 
+/// Runtime downcast / instanceof check used by `as` casts. Walks the object's class hierarchy
+/// (via parent_type_info) looking for target_class_id, returning true if the object's dynamic
+/// class is target_class_id or a subclass of it. Unlike checkClassHierarchy this has no
+/// Error(id=1) catch-all, so it is a precise type test. A null object is not an instance of
+/// anything. (bool/i1 return matches zeus_exception_instanceof's proven ABI shape.)
+export fn zeus_instanceof(object_ptr: ?*anyopaque, target_class_id: u32) callconv(.C) bool {
+    const ptr = object_ptr orelse return false;
+    const obj = @as(*abi.ZeusObj, @ptrCast(@alignCast(ptr)));
+    var type_info = obj.obj_header.getObjectTypeInfo();
+    if (type_info.object_type_id == target_class_id) return true;
+    while (type_info.parent_type_info != null) {
+        const parent_info = type_info.getParentTypeInfo();
+        if (parent_info.object_type_id == target_class_id) return true;
+        type_info = parent_info;
+    }
+    return false;
+}
+
 /// Capture current stack trace using libunwind, dladdr, and DWARF debug info
 fn captureStackTrace() ?*StackTrace {
     const trace = allocator.create(StackTrace) catch return null;

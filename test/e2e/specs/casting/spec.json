@@ -1,0 +1,58 @@
+[
+    {
+        "name": "Numeric as casts: truncate, wrap, zero-extend, reinterpret",
+        "exit": "0",
+        "entry": "numeric.zs"
+    },
+    {
+        "name": "bool <-> numeric as casts",
+        "exit": "0",
+        "entry": "bool.zs"
+    },
+    {
+        "name": "float widening and narrowing as casts",
+        "exit": "0",
+        "entry": "float.zs"
+    },
+    {
+        "name": "Casting a string to a number is a compile error",
+        "exit": "1",
+        "entry": "string_to_int.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot cast"]
+    },
+    {
+        "name": "Casting an object to a number is a compile error",
+        "exit": "1",
+        "entry": "obj_to_int.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot cast"]
+    },
+    {
+        "name": "Valid object downcast exposes the derived member",
+        "exit": "42",
+        "entry": "downcast_ok.zs"
+    },
+    {
+        "name": "Multi-level downcast walks the parent chain",
+        "exit": "42",
+        "entry": "downcast_multilevel.zs"
+    },
+    {
+        "name": "Explicit upcast via as emits no runtime check",
+        "exit": "42",
+        "entry": "upcast.zs"
+    },
+    {
+        "name": "Invalid downcast throws ClassCastException at runtime",
+        "exit": "42",
+        "entry": "downcast_fail.zs"
+    },
+    {
+        "name": "Casting between unrelated classes is a compile error",
+        "exit": "1",
+        "entry": "downcast_unrelated.zs",
+        "compile_error": true,
+        "stderr_contains": ["unrelated class types"]
+    }
+]

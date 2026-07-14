@@ -35,6 +35,7 @@ var BinaryOperatorPrecedence = map[token.TokenType]int{
 	token.TokenTypePlusPlus:    18, // postfix ++/--
 	token.TokenTypeMinusMinus:  18,
 	// UnaryOperatorPrecedence = 17 (prefix ~, !, -, ++, --)
+	token.TokenTypeAs:               16, // explicit cast: `expr as Type` (tighter than */, looser than unary)
 	token.TokenTypeDoubleStar:       16, // ** (right-associative)
 	token.TokenTypeStar:             15,
 	token.TokenTypeSlash:            15,
@@ -625,6 +626,12 @@ func NewParser(tokens []*token.Token) *Parser {
 		token.TokenTypeLeftBracket:      indexingExpressionParseLet,
 		token.TokenTypePlusPlus:         postfixIncrementParseLet, // postfix ++
 		token.TokenTypeMinusMinus:       postfixIncrementParseLet, // postfix --
+		// explicit cast: `expr as Type` — RHS is a type, not an expression (left-associative)
+		token.TokenTypeAs: func(parser *Parser, left ast.ExprNode, asToken *token.Token) ast.ExprNode {
+			typeNode := parser.consumeDataType("cast type", "in 'as' expression")
+			span := &token.Span{Start: left.GetSpan().Start, End: typeNode.GetSpan().End}
+			return &ast.CastExprNode{Expr: left, AsType: typeNode, Span: span}
+		},
 		// ternary: cond ? then : else (right-associative, prec 3)
 		token.TokenTypeQuestion: func(parser *Parser, condition ast.ExprNode, questionMark *token.Token) ast.ExprNode {
 			thenExpr := parser.parseExprOfPrecedence(0, false)

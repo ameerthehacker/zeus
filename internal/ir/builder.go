@@ -543,6 +543,22 @@ func (b *IRBuilder) BuildCast(value zeus_value.Value, castType zeus_value.ValueT
 	return result
 }
 
+// BuildInstanceOf emits a runtime type test: result (bool) = value's dynamic class is (a
+// subclass of) the class with the given id. Used to guard object `as` downcasts.
+func (b *IRBuilder) BuildInstanceOf(value zeus_value.Value, classId int, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeInstanceOf,
+		Output: result,
+		Input:  NewInstanceOfInstrInput(value, classId),
+		Span:   span,
+	})
+	result.ValueType = zeus_value.BoolType{Span: span}
+
+	return result
+}
+
 func (b *IRBuilder) BuildCoerce(value zeus_value.Value, targetType zeus_value.ValueType, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 	b.pushInstr(&Instr{

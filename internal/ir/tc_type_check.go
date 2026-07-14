@@ -51,7 +51,60 @@ func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
 			return
 		}
 	}
-	// Numeric and string casts are handled by existing codegen/lowering.
+
+	target := input.CastType
+
+	// Explicit `as` (and implicit widening) numeric/bool casts: int/float/bool in any
+	// direction. Unchecked — codegen's genCast truncates/wraps/reinterprets.
+	if isNumericOrBoolType(sourceType) && isNumericOrBoolType(target) {
+		instr.Output.ValueType = target
+		return
+	}
+
+	// Existing implicit string ↔ u8[] casts are emitted as CAST and lowered in a later pass.
+	if (isStringType(sourceType) || isU8ArrayType(sourceType)) &&
+		(isStringType(target) || isU8ArrayType(target)) {
+		return
+	}
+
+	// Object → object: legal only within one class hierarchy (up- or down-cast). Unrelated
+	// classes are rejected at compile time. The runtime downcast check (INSTANCEOF + throw) is
+	// emitted during IR gen (VisitCastExpr); here we only validate the static relationship.
+	if srcObj := zeus_value.AsObjectType(sourceType); srcObj != nil {
+		if dstObj, ok := target.(zeus_value.ObjectType); ok {
+			if zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) || zeus_value.IsSubclassOf(dstObj.Class, srcObj.Class) {
+				instr.Output.ValueType = target
+				return
+			}
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot cast '%s' to '%s': unrelated class types", sourceType, target),
+				Span:    instr.Span,
+			})
+			return
+		}
+	}
+
+	// Anything else is an illegal cast, reported at compile time (zero runtime cost).
+	tc.pushError(&zeus_error.ZeusError{
+		Message: fmt.Sprintf("cannot cast '%s' to '%s'", sourceType, target),
+		Span:    instr.Span,
+	})
+}
+
+// tcInstanceOf type-checks a runtime type test (object `as` downcast guard). The output is a bool.
+func (p *TypeCheckingPass) tcInstanceOf(tc *TypeChecker, instr *Instr) {
+	input := AsInstanceOfInstrInput(instr.Input)
+	_ = tc.getValueType(input.Value) // ensure the operand resolves
+	instr.Output.ValueType = zeus_value.BoolType{Span: instr.Span}
+}
+
+// isNumericOrBoolType reports whether a type participates in unchecked numeric/bool `as` casts.
+func isNumericOrBoolType(valueType zeus_value.ValueType) bool {
+	switch valueType.(type) {
+	case zeus_value.IntType, zeus_value.FloatType, zeus_value.BoolType:
+		return true
+	}
+	return false
 }
 
 func (p *TypeCheckingPass) tcCoerce(tc *TypeChecker, instr *Instr) {
@@ -327,6 +380,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClassMethod(tc, instr)
 	case InstrTypeCast:
 		p.tcCast(tc, instr)
+	case InstrTypeInstanceOf:
+		p.tcInstanceOf(tc, instr)
 	case InstrTypeCoerce:
 		p.tcCoerce(tc, instr)
 	case InstrTypeDeclPrimordialFunc:
@@ -498,15 +553,15 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	case zeus_value.IntType:
 		switch targetType := targetType.(type) {
 		case zeus_value.IntType:
-			// value and target are signed and the target is larger
+			// A literal constant adopts any int type whose range holds it — a compile-time retype
+			// (no runtime cast), which also covers narrowing-that-fits like `let x: u8 = 200`.
+			if c := zeus_value.AsConstant(value); c != nil && zeus_value.ConstantFitsInIntType(c.Value, targetType) {
+				return zeus_value.NewConstant(c.Value, targetType, value.GetSpan()), true
+			}
+			// Non-constant widening: same signedness & larger, or unsigned→signed & larger.
 			canFitValue := targetType.Size > valueType.Size && valueType.Signed == targetType.Signed
-			// value is unsigned and target is signed and the target is larger
 			canFitUnsigned := targetType.Signed && !valueType.Signed && targetType.Size > valueType.Size
-			// value is a constant and the target is larger
-			constant := zeus_value.AsConstant(value)
-			canFitUnsignedConstant := constant != nil && targetType.Size >= zeus_value.GetSignedIntSize(constant.Value)
-
-			if canFitValue || canFitUnsigned || canFitUnsignedConstant {
+			if canFitValue || canFitUnsigned {
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
 		case zeus_value.FloatType:
@@ -515,6 +570,10 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	case zeus_value.FloatType:
 		switch targetType := targetType.(type) {
 		case zeus_value.FloatType:
+			// A float literal adopts the target float size (e.g. `let x: f32 = 2.0`).
+			if c := zeus_value.AsConstant(value); c != nil {
+				return zeus_value.NewConstant(c.Value, targetType, value.GetSpan()), true
+			}
 			if targetType.Size > valueType.Size {
 				return tc.builder.BuildCast(value, targetType, value.GetSpan()), true
 			}
@@ -615,6 +674,14 @@ func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Inst
 	case zeus_value.IntType:
 		switch rightValueType := rightValueType.(type) {
 		case zeus_value.IntType:
+			// If one side is a literal that fits the other's type, retype the literal to match
+			// rather than promoting the typed side up (keeps `b + 1` at u8, not i32).
+			if lc := zeus_value.AsConstant(left); lc != nil && zeus_value.ConstantFitsInIntType(lc.Value, rightValueType) {
+				return zeus_value.NewConstant(lc.Value, rightValueType, left.GetSpan()), right
+			}
+			if rc := zeus_value.AsConstant(right); rc != nil && zeus_value.ConstantFitsInIntType(rc.Value, leftValueType) {
+				return left, zeus_value.NewConstant(rc.Value, leftValueType, right.GetSpan())
+			}
 			if leftValueType.Size > rightValueType.Size {
 				right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 				if !ok {

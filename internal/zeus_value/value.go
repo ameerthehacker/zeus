@@ -874,6 +874,60 @@ func IsFloat(number string) bool {
 	return strings.Contains(number, ".")
 }
 
+// DefaultLiteralIntType returns the type for a context-less integer literal: signed, and at least
+// i32 (i64 when the value doesn't fit i32). A literal narrows to a smaller/unsigned type only when
+// assigned into one that can represent it (see ConstantFitsInIntType) — so `let x = 5` is i32,
+// while `let b: u8 = 200` retypes the constant to u8.
+func DefaultLiteralIntType(valueStr string, span *token.Span) IntType {
+	size := GetSignedIntSize(valueStr)
+	if size < I32 {
+		size = I32
+	}
+	return IntType{Signed: true, Size: size, Span: span}
+}
+
+// ConstantFitsInIntType reports whether the integer literal `valueStr` fits within the range of the
+// target int type (signed or unsigned, i8..i64). Base-0 parsing handles 0x/0b/0o literals.
+func ConstantFitsInIntType(valueStr string, t IntType) bool {
+	if v, err := strconv.ParseInt(valueStr, 0, 64); err == nil {
+		if t.Signed {
+			var min, max int64
+			switch t.Size {
+			case I8:
+				min, max = -128, 127
+			case I16:
+				min, max = -32768, 32767
+			case I32:
+				min, max = -2147483648, 2147483647
+			default: // I64: every int64 fits
+				return true
+			}
+			return v >= min && v <= max
+		}
+		// Unsigned target: value must be non-negative and within the unsigned max.
+		if v < 0 {
+			return false
+		}
+		var max uint64
+		switch t.Size {
+		case I8:
+			max = 255
+		case I16:
+			max = 65535
+		case I32:
+			max = 4294967295
+		default: // u64: every non-negative int64 fits
+			return true
+		}
+		return uint64(v) <= max
+	}
+	// Value overflows int64 — only a large u64 literal can still fit, and only an unsigned i64 target.
+	if _, err := strconv.ParseUint(valueStr, 0, 64); err == nil {
+		return !t.Signed && t.Size == I64
+	}
+	return false
+}
+
 // RefCellVar represents a variable that has been promoted to a GC-managed heap cell
 // for capture-by-reference in closures. The symbol table stores a RefCellVar instead
 // of a plain *Var; VisitIdentifier emits OBJECT_PROPERTY_ACCESS cell.value + LOAD

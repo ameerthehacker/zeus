@@ -1,0 +1,21 @@
+[
+    {
+        "name": "Integer literals are signed and adopt a fitting target type",
+        "exit": "0",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "A literal that overflows the target int type is a compile error",
+        "exit": "1",
+        "entry": "u8_overflow.zs",
+        "compile_error": true,
+        "stderr_contains": ["not assignable"]
+    },
+    {
+        "name": "A float literal cannot implicitly become an integer",
+        "exit": "1",
+        "entry": "float_to_int.zs",
+        "compile_error": true,
+        "stderr_contains": ["not assignable"]
+    }
+]
