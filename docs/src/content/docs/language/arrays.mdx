@@ -9,9 +9,38 @@ Zeus provides dynamic arrays that can grow and shrink at runtime.
 
 ## Creating Arrays
 
+The idiomatic way to create an array is an **array literal** — a comma-separated
+list of values in square brackets:
+
 ```zeus
-let numbers = new i32[];           // Empty array
-let preallocated = new i32[100];   // Pre-allocate capacity
+let numbers = [10, 20, 30];         // inferred: u8[] (each value fits u8)
+let scores: i32[] = [95, 87, 100];  // annotate to pin a wider element type
+let mixed = [1, 2.5];               // inferred: f64[] (widened to a common type)
+```
+
+The element type is inferred the same way as scalar literals: the smallest type
+that fits every element, widening across mixed numeric types. Add a type
+annotation when you want a specific width or signedness.
+
+An **empty literal** has no elements to infer from, so it takes its type from a
+declaration annotation (or, when nested, from its sibling rows):
+
+```zeus
+let todo: string[] = [];       // empty — element type from the annotation
+let rows = [[1], [2], []];     // the empty row is typed u8[] from its siblings
+```
+
+<Aside type="note">
+  A bare `let a = []` with no annotation and no sibling context is a compile
+  error, since there is nothing to infer the element type from.
+</Aside>
+
+You can also construct arrays explicitly with `new`. Passing a size fills that
+many default-valued elements (the array's `length` becomes that size):
+
+```zeus
+let empty = new i32[];         // empty array (length 0)
+let zeros = new i32[100];      // 100 zero-filled elements (length 100)
 ```
 
 ## Basic Operations
@@ -120,6 +149,15 @@ arr.isEmpty();        // false
 
 ## Multi-Dimensional Arrays
 
+Nested literals build multi-dimensional arrays directly:
+
+```zeus
+let grid = [[1, 2, 3], [4, 5, 6]];  // u8[][]
+let value = grid[1][2];             // 6
+```
+
+Or build them incrementally with `new` and `push`:
+
 ```zeus
 // 2D array
 let matrix = new i32[][];
@@ -150,12 +188,15 @@ class Point {
   }
 }
 
-let points = new Point[];
-points.push(new Point(1, 2));
-points.push(new Point(3, 4));
+// Build the array directly with a literal
+let points = [new Point(1, 2), new Point(3, 4)];
 
 let p = points[0];
 let sum = p.x + p.y;  // 3
+
+// ...or incrementally with push
+let more = new Point[];
+more.push(new Point(5, 6));
 ```
 
 ## Practical Examples
