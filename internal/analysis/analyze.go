@@ -15,6 +15,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/parser"
+	"github.com/ameerthehacker/zeus/internal/semantics"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 )
@@ -31,6 +32,9 @@ type Result struct {
 	AST         *ast.ProgramNode
 	Module      *ir.IRModule
 	Diagnostics []*zeus_error.ZeusError
+	// Model is the queryable semantic model (node->symbol bindings, node->type facts) collected
+	// during IR generation. It is non-nil whenever Module is non-nil.
+	Model *semantics.Model
 }
 
 // Analyze runs lex -> parse -> IR gen -> type check over source, tolerating errors at every
@@ -75,7 +79,10 @@ func Analyze(path, source string, resolve ModuleResolver) *Result {
 	}
 	builder := ir.NewIRBuilder()
 	module := ir.NewIRModule(builder, modulePath, true, getModule)
+	model := semantics.NewModel()
+	module.CollectSemantics(model)
 	res.Module = module
+	res.Model = model
 	res.Diagnostics = append(res.Diagnostics, module.Generate(program)...)
 
 	// Type check — fills resolved types onto IR vars; continues past type errors.

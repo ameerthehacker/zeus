@@ -24,6 +24,7 @@ func (s *Server) validateDocument(uri protocol.DocumentURI, content string) erro
 		Content:  content,
 		AST:      res.AST,
 		IRModule: res.Module,
+		Semantic: res.Model,
 		Errors:   res.Diagnostics,
 	}
 

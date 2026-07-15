@@ -11,6 +11,7 @@ import (
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/semantics"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"go.lsp.dev/protocol"
 )
@@ -26,6 +27,9 @@ type DocumentInfo struct {
 	// (ast.NodeAt) so features can map a cursor to the exact node under it instead of scraping text.
 	AST      *ast.ProgramNode
 	IRModule *ir.IRModule
+	// Semantic is the queryable model (node->symbol bindings, node->type facts) resolved during
+	// IR generation. Features query it for scope-correct hover/definition.
+	Semantic *semantics.Model
 	Errors   []*zeus_error.ZeusError
 }
 

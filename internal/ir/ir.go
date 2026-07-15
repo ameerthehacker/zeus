@@ -7,6 +7,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/module"
+	"github.com/ameerthehacker/zeus/internal/semantics"
 	"github.com/ameerthehacker/zeus/internal/symbol_table"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/util"
@@ -79,6 +80,53 @@ type IRModule struct {
 	// (dependencies first, entry last). Only set on the entry module; its `main` runs each
 	// module's init function in this order (injected as main's first statements) at startup.
 	moduleInitOrder []string
+	// semantic, when set (via CollectSemantics), receives node->symbol bindings and node->type
+	// facts as IR is generated, building the queryable model tooling uses. nil for batch compiles,
+	// which pay nothing. All recording goes through the nil-safe Model methods.
+	semantic *semantics.Model
+}
+
+// CollectSemantics attaches a semantic model that this module populates during Generate with
+// node->symbol bindings and node->type facts (used by the language server). Call before Generate.
+func (g *IRModule) CollectSemantics(m *semantics.Model) {
+	g.semantic = m
+}
+
+// recordIdentifier records a resolved identifier's binding and (best-effort) type for the
+// semantic model. It is a no-op unless a model is attached, so batch compiles pay nothing.
+func (g *IRModule) recordIdentifier(node ast.Node, sym zeus_value.Value) {
+	if g.semantic == nil {
+		return
+	}
+	g.semantic.RecordBinding(node, sym)
+	g.semantic.RecordType(node, valueTypeForModel(sym))
+}
+
+// recordExprType records the type an expression node evaluated to. No-op unless collecting.
+func (g *IRModule) recordExprType(node ast.Node, val zeus_value.Value) {
+	if g.semantic == nil {
+		return
+	}
+	g.semantic.RecordType(node, valueTypeForModel(val))
+}
+
+// valueTypeForModel returns v's type for the semantic model without ever panicking. zeus_value's
+// GetValueType panics on value kinds it does not model (e.g. ref cells for escaped locals), which
+// must never crash IR generation just because tooling is observing it, so ref cells are unwrapped
+// and any other unhandled kind recovers to nil.
+func valueTypeForModel(v zeus_value.Value) (t zeus_value.ValueType) {
+	if v == nil {
+		return nil
+	}
+	if rc := zeus_value.AsRefCellVar(v); rc != nil {
+		return rc.ValueType
+	}
+	defer func() {
+		if recover() != nil {
+			t = nil
+		}
+	}()
+	return zeus_value.GetValueType(v)
 }
 
 // SetModuleInitOrder records the dependency-ordered module paths whose init functions the
@@ -1512,6 +1560,11 @@ func (g *IRModule) VisitIdentifier(expr *ast.IdentifierExprNode) zeus_value.Valu
 		return nil
 	}
 
+	// Record the resolved binding for tooling. `variable` came from the scoped symbol table, so
+	// this is the actual in-scope symbol (shadowing/block scope respected) — the basis for
+	// scope-correct hover and go-to-definition.
+	g.recordIdentifier(expr, variable)
+
 	// Interfaces are type-level only; they cannot be used as runtime values (e.g. new Shape()
 	// or `let x = Shape`). Report a clear error instead of falling through to the panic below.
 	if zeus_value.IsInterface(variable) {
@@ -2625,6 +2678,9 @@ func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessE
 	if object == nil {
 		return nil
 	}
+	// Record the receiver's evaluated type so tooling can resolve members on receivers that are
+	// not plain identifier chains (e.g. `foo().bar`, `arr[0].baz`), which a name-based walk cannot.
+	g.recordExprType(expr.Object, object)
 	property := expr.Property.Name.Value
 	asVar := zeus_value.AsVar(object)
 

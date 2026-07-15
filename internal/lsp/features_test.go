@@ -52,7 +52,7 @@ func openDoc(t *testing.T, src string) (*Server, protocol.DocumentURI) {
 	s := NewServer()
 	uri := protocol.DocumentURI("file:///sample.zs")
 	res := analysis.Analyze(uri.Filename(), src, s.makeModuleResolver(uri.Filename()))
-	s.documents[string(uri)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Errors: res.Diagnostics}
+	s.documents[string(uri)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Semantic: res.Model, Errors: res.Diagnostics}
 	return s, uri
 }
 
@@ -170,6 +170,39 @@ func TestHoverVariableClassAndMember(t *testing.T) {
 	h = s.getHover(uri, posAfter(t, sampleProgram, "d.bar"))
 	if h == nil || !strings.Contains(hoverText(h), "bark") {
 		t.Errorf("hover on member bark should mention 'bark', got %v", h)
+	}
+}
+
+// TestScopeCorrectShadowing is the Phase 2 payoff: hover and go-to-definition resolve the symbol
+// actually in scope at the cursor, via the binding index recorded during IR generation — not the
+// flat, scope-blind name table, which would return the same `x` for both uses.
+func TestScopeCorrectShadowing(t *testing.T) {
+	src := `function main(): i32 {
+  let x: i32 = 100;
+  if (true) {
+    let x: string = "hello";
+    console.log(x);
+  }
+  return x;
+}
+`
+	s, uri := openDoc(t, src)
+
+	// Hover reflects the in-scope binding: inner x is a string, outer x is an i32.
+	if h := s.getHover(uri, posAfter(t, src, "log(")); h == nil || !strings.Contains(hoverText(h), "string") {
+		t.Errorf("hover on inner x should be string, got %v", h)
+	}
+	if h := s.getHover(uri, posAfter(t, src, "return ")); h == nil || !strings.Contains(hoverText(h), "i32") {
+		t.Errorf("hover on outer x should be i32, got %v", h)
+	}
+
+	// Go-to-definition jumps to the correct scope-local declaration (inner let on line 3, outer
+	// let on line 1; both 0-based).
+	if def := s.getDefinition(uri, posAfter(t, src, "log(")); len(def) == 0 || def[0].Range.Start.Line != 3 {
+		t.Errorf("inner x definition should be the inner let (line 3), got %v", def)
+	}
+	if def := s.getDefinition(uri, posAfter(t, src, "return ")); len(def) == 0 || def[0].Range.Start.Line != 1 {
+		t.Errorf("outer x definition should be the outer let (line 1), got %v", def)
 	}
 }
 

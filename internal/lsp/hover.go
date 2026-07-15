@@ -18,43 +18,51 @@ func (s *Server) getHover(uri protocol.DocumentURI, position protocol.Position) 
 		return nil
 	}
 
-	word, member := cursorWord(docInfo, position)
-	if word == "" {
-		return nil
-	}
-
-	// Member access: resolve the receiver chain (reconstructed from the AST) and describe the
-	// member under the cursor.
-	if member != nil {
-		if docInfo.IRModule == nil {
-			return nil
-		}
-		if chain, ok := receiverChainFromExpr(member.Object); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
-				if desc, ok := describeMember(r, word); ok {
+	// Prefer the AST + semantic model: resolve the identifier under the cursor to its binding.
+	if docInfo.AST != nil {
+		if id, member := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			if member != nil {
+				// Member access: resolve the receiver and describe the member under the cursor.
+				if r, ok := resolveReceiver(docInfo, member.Object); ok {
+					if desc, ok := describeMember(r, id.Name.Value); ok {
+						return markdownHover(desc)
+					}
+				}
+				return nil
+			}
+			// Plain reference: describe the bound symbol (scope-correct), falling back to a name
+			// lookup when the identifier has no recorded binding.
+			if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+				if desc, ok := renderSymbol(sym, id.Name.Value); ok {
 					return markdownHover(desc)
 				}
 			}
+			if docInfo.IRModule != nil {
+				if desc, ok := describeSymbol(docInfo.IRModule, id.Name.Value); ok {
+					return markdownHover(desc)
+				}
+			}
+			return nil
 		}
-		return nil
 	}
 
-	// Built-in type keyword.
+	// Not on a parsed identifier (a keyword, a built-in type name in an annotation, or a syntax
+	// hole): fall back to a lexeme scan and describe keywords/types/symbols by name.
+	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
+	if word == "" {
+		return nil
+	}
 	if _, ok := token.DataTypes[word]; ok {
 		return markdownHover(fmt.Sprintf("```zeus\n%s\n```\n%s", word, dataTypeDescription(word)))
 	}
-	// Language keyword.
 	if _, ok := token.Keywords[word]; ok {
 		return markdownHover(fmt.Sprintf("**keyword** `%s` — %s", word, keywordDescription(word)))
 	}
-
-	// User-declared symbol (variable, function, or class).
 	if docInfo.IRModule != nil {
 		if desc, ok := describeSymbol(docInfo.IRModule, word); ok {
 			return markdownHover(desc)
 		}
 	}
-
 	return nil
 }
 
@@ -84,9 +92,15 @@ func describeMember(r receiver, name string) (string, bool) {
 	}
 }
 
-// describeSymbol renders a markdown description of a top-level-visible symbol.
+// describeSymbol renders a markdown description of a top-level-visible symbol, looked up by name.
 func describeSymbol(irModule *ir.IRModule, name string) (string, bool) {
-	sym := symbolByName(irModule, name)
+	return renderSymbol(symbolByName(irModule, name), name)
+}
+
+// renderSymbol renders a markdown description of an already-resolved symbol value. Sharing this
+// between name-based lookup and the binding index means hover text is identical whichever path
+// resolved the symbol.
+func renderSymbol(sym zeus_value.Value, name string) (string, bool) {
 	if sym == nil {
 		return "", false
 	}
@@ -106,6 +120,9 @@ func describeSymbol(irModule *ir.IRModule, name string) (string, bool) {
 	}
 	if o := zeus_value.AsObject(sym); o != nil {
 		return fmt.Sprintf("```zeus\n(variable) %s: %s\n```", name, typeString(o.ValueType)), true
+	}
+	if rc := zeus_value.AsRefCellVar(sym); rc != nil {
+		return fmt.Sprintf("```zeus\n(variable) %s: %s\n```", name, typeString(rc.ValueType)), true
 	}
 	return "", false
 }

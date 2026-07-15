@@ -182,19 +182,35 @@ func receiverChainFromExpr(expr ast.ExprNode) ([]string, bool) {
 	}
 }
 
-// cursorWord resolves what the cursor is on, preferring the AST for structure and falling back to
-// a lexeme scan for tokens the AST does not expose as identifiers (keywords, built-in type names,
-// or a position in a syntax hole). When member is non-nil the cursor is on a member access whose
-// member name is word and whose receiver is member.Object.
-func cursorWord(docInfo *DocumentInfo, position protocol.Position) (word string, member *ast.ObjectPropertyAccessExprNode) {
-	if docInfo.AST != nil {
-		if id, m := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
-			return id.Name.Value, m
+// resolveReceiver resolves the receiver expression of a member access to the class whose members
+// should be offered. It first tries the plain identifier-chain path (which distinguishes static
+// vs instance receivers), then falls back to the receiver's recorded expression type — so
+// receivers that are calls or index expressions (`foo().bar`, `arr[0].baz`) resolve too.
+func resolveReceiver(docInfo *DocumentInfo, objExpr ast.ExprNode) (receiver, bool) {
+	// Scope-correct: an identifier receiver with a recorded binding resolves via that binding, so a
+	// shadowed local is honoured rather than a same-named symbol from the flat table.
+	if id, ok := objExpr.(*ast.IdentifierExprNode); ok {
+		if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+			if r, ok := receiverFromSymbol(sym); ok {
+				return r, true
+			}
 		}
 	}
-	// Not on a parsed identifier: fall back to lexeme extraction (keyword / type / annotation name).
-	w, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
-	return w, nil
+	// Identifier chains (including static `Class.x` and `a.b.c`) via the symbol table.
+	if docInfo.IRModule != nil {
+		if chain, ok := receiverChainFromExpr(objExpr); ok {
+			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
+				return r, true
+			}
+		}
+	}
+	// Non-identifier receiver (a call, an index): resolve via the recorded expression type.
+	if t, ok := docInfo.Semantic.TypeAt(objExpr); ok {
+		if class := classOfType(t); class != nil {
+			return receiver{class: class, isInstance: true}, true
+		}
+	}
+	return receiver{}, false
 }
 
 // symbolByName finds a symbol by its source name. GetAllSymbols is keyed by name across all
@@ -227,11 +243,9 @@ func classOfType(t zeus_value.ValueType) *zeus_value.Class {
 	return nil
 }
 
-// resolveReceiverBase maps the first identifier of a receiver chain to a receiver.
-// A class name resolves to a static receiver; a variable/object of object type resolves to an
-// instance receiver.
-func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
-	sym := symbolByName(irModule, name)
+// receiverFromSymbol maps a resolved symbol to a receiver: a class resolves to a static receiver;
+// a variable/object/ref-cell of object type resolves to an instance receiver.
+func receiverFromSymbol(sym zeus_value.Value) (receiver, bool) {
 	if sym == nil {
 		return receiver{}, false
 	}
@@ -248,7 +262,18 @@ func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
 			return receiver{class: class, isInstance: true}, true
 		}
 	}
+	// Escaped local captured as a ref cell.
+	if rc := zeus_value.AsRefCellVar(sym); rc != nil {
+		if class := classOfType(rc.ValueType); class != nil {
+			return receiver{class: class, isInstance: true}, true
+		}
+	}
 	return receiver{}, false
+}
+
+// resolveReceiverBase maps the first identifier of a receiver chain (by name) to a receiver.
+func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
+	return receiverFromSymbol(symbolByName(irModule, name))
 }
 
 // memberKind distinguishes the three flavours of class member the LSP resolves.

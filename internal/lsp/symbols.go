@@ -40,22 +40,33 @@ func (s *Server) getDefinition(uri protocol.DocumentURI, position protocol.Posit
 		return none
 	}
 
-	word, member := cursorWord(docInfo, position)
+	// Prefer the AST + semantic model: resolve the identifier under the cursor to a declaration.
+	if docInfo.AST != nil {
+		if id, member := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			var span *token.Span
+			if member != nil {
+				if r, ok := resolveReceiver(docInfo, member.Object); ok {
+					span = memberSpan(r, id.Name.Value)
+				}
+			} else if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+				// Scope-correct: the recorded binding is the symbol actually in scope here.
+				span = symbolSpan(sym)
+			} else {
+				span = symbolSpan(symbolByName(docInfo.IRModule, id.Name.Value))
+			}
+			if span == nil {
+				return none
+			}
+			return []protocol.Location{{URI: uri, Range: spanToRange(span)}}
+		}
+	}
+
+	// Not on a parsed identifier (e.g. a type name in an annotation): resolve by name.
+	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
 	if word == "" {
 		return none
 	}
-
-	var span *token.Span
-	if member != nil {
-		if chain, ok := receiverChainFromExpr(member.Object); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
-				span = memberSpan(r, word)
-			}
-		}
-	} else {
-		span = symbolSpan(symbolByName(docInfo.IRModule, word))
-	}
-
+	span := symbolSpan(symbolByName(docInfo.IRModule, word))
 	if span == nil {
 		return none
 	}
@@ -78,6 +89,11 @@ func symbolSpan(value zeus_value.Value) *token.Span {
 	}
 	if o := zeus_value.AsObject(value); o != nil {
 		return o.Span
+	}
+	// An escaped local (captured by a closure) is stored as a ref cell; its declaration span still
+	// points at the original `let`/`const`.
+	if rc := zeus_value.AsRefCellVar(value); rc != nil {
+		return rc.Span
 	}
 	return nil
 }
