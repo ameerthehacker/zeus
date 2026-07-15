@@ -24,6 +24,10 @@ type Model struct {
 	// types maps an expression node to the type it evaluated to (used to resolve member access on
 	// receivers that are not plain identifier chains, e.g. `foo().bar`).
 	types map[ast.Node]zeus_value.ValueType
+	// defs maps a symbol to its declaration identifier node. Populated only for function-local
+	// variables and parameters — symbols whose every reference is provably in this one file — so a
+	// recorded def marks a symbol as safe to rename with only single-file edits.
+	defs map[zeus_value.Value]ast.Node
 }
 
 // NewModel returns an empty, ready-to-populate model.
@@ -31,6 +35,7 @@ func NewModel() *Model {
 	return &Model{
 		bindings: map[ast.Node]zeus_value.Value{},
 		types:    map[ast.Node]zeus_value.ValueType{},
+		defs:     map[zeus_value.Value]ast.Node{},
 	}
 }
 
@@ -67,4 +72,40 @@ func (m *Model) TypeAt(n ast.Node) (zeus_value.ValueType, bool) {
 	}
 	t, ok := m.types[n]
 	return t, ok
+}
+
+// RecordDef records a symbol's declaration identifier node. Called only for function-local
+// variables and parameters. Nil model/node/symbol is ignored.
+func (m *Model) RecordDef(sym zeus_value.Value, node ast.Node) {
+	if m == nil || sym == nil || node == nil {
+		return
+	}
+	m.defs[sym] = node
+}
+
+// DefNode returns a symbol's declaration identifier node if one was recorded (i.e. the symbol is a
+// function-local variable or parameter). A recorded def means the symbol is safe to rename with
+// single-file edits, since all of its references live in this file.
+func (m *Model) DefNode(sym zeus_value.Value) (ast.Node, bool) {
+	if m == nil {
+		return nil, false
+	}
+	n, ok := m.defs[sym]
+	return n, ok
+}
+
+// SymbolUses returns every identifier node bound to sym — the declaration (if recorded via
+// RecordDef, which also records a binding) and all references — as the set of occurrences to
+// highlight, list as references, or rewrite on rename.
+func (m *Model) SymbolUses(sym zeus_value.Value) []ast.Node {
+	if m == nil || sym == nil {
+		return nil
+	}
+	var nodes []ast.Node
+	for node, bound := range m.bindings {
+		if bound == sym {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
 }

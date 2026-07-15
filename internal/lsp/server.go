@@ -79,6 +79,10 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 			"documentSymbolProvider":     true,
 			"documentHighlightProvider":  true,
 			"referencesProvider":         true,
+			"renameProvider": map[string]interface{}{
+				// The server validates rename sites via textDocument/prepareRename.
+				"prepareProvider": true,
+			},
 			"inlayHintProvider":          true,
 			"documentFormattingProvider": true,
 		},
@@ -247,6 +251,19 @@ func (s *Server) handleMessage(msg []byte) (err error) {
 			return err
 		}
 		result = s.getReferences(params.TextDocument.URI, params.Position)
+	case "textDocument/prepareRename":
+		var params protocol.PrepareRenameParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		// nil result is a valid "cannot rename here" response.
+		result = s.prepareRename(params.TextDocument.URI, params.Position)
+	case "textDocument/rename":
+		var params protocol.RenameParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		result = s.rename(params.TextDocument.URI, params.Position, params.NewName)
 	case "textDocument/inlayHint":
 		var params inlayHintParams
 		if err := json.Unmarshal(message.Params, &params); err != nil {

@@ -27,18 +27,40 @@ func newModuleCache() *moduleCache {
 	return &moduleCache{entries: map[string]*moduleEntry{}}
 }
 
-// getFresh returns the cached module for path if it is still fresh — the file exists and its
-// modification time matches what it was when the module was generated.
+// getFresh returns the cached module for path if it is still fresh. Freshness is transitive: the
+// module's own file must be unchanged AND every module it (transitively) imports must be fresh too.
+// Checking only the module's own mtime would serve a module that still references an out-of-date
+// dependency — e.g. for A->B->C, if C changes on disk but only A is edited, B's own mtime is
+// unchanged, so without the transitive check B (and its stale C) would be reused.
 func (c *moduleCache) getFresh(path string) (*ir.IRModule, bool) {
+	if !c.isFresh(path, map[string]bool{}) {
+		return nil, false
+	}
+	return c.entries[path].module, true
+}
+
+// isFresh reports whether the cached module at path and its whole import closure are unchanged on
+// disk. visiting guards against import cycles: a module already on the current path is assumed
+// fresh (its own mtime was/will be checked at its entry point in the recursion).
+func (c *moduleCache) isFresh(path string, visiting map[string]bool) bool {
 	e, ok := c.entries[path]
 	if !ok {
-		return nil, false
+		return false
 	}
+	if visiting[path] {
+		return true
+	}
+	visiting[path] = true
 	info, err := os.Stat(path)
 	if err != nil || !info.ModTime().Equal(e.modTime) {
-		return nil, false
+		return false
 	}
-	return e.module, true
+	for _, imp := range e.imports {
+		if !c.isFresh(imp, visiting) {
+			return false
+		}
+	}
+	return true
 }
 
 // put stores a freshly generated module along with its direct imports and the file's mtime.

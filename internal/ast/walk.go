@@ -237,8 +237,26 @@ func spanContains(span *token.Span, pos token.Position) bool {
 	return !posLess(pos, span.Start) && !posLess(span.End, pos)
 }
 
-// spanTighter reports whether span a is smaller (more specific) than span b, comparing line
-// extent first, then column extent. Used to pick the most specific child when spans overlap.
+// safeSpan returns n's span, recovering to nil if GetSpan panics. Node GetSpan methods dereference
+// child nodes (e.g. BinaryExprNode.GetSpan reads b.Right.GetSpan()), which can be typed-nil on the
+// partial ASTs the parser produces during error recovery; a positional query must degrade to "no
+// node here" rather than crash (the language server runs on incomplete code constantly).
+func safeSpan(n Node) (span *token.Span) {
+	if isNilNode(n) {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			span = nil
+		}
+	}()
+	return n.GetSpan()
+}
+
+// spanTighter reports whether span a is more specific (contained in) span b. It compares by
+// containment — a is tighter when it starts no earlier and ends no later than b — which is correct
+// across multi-line spans (a naive column-extent subtraction would mix columns from different
+// lines). When neither contains the other (overlap on a partial AST), the one starting later wins.
 func spanTighter(a, b *token.Span) bool {
 	if a == nil {
 		return false
@@ -246,29 +264,36 @@ func spanTighter(a, b *token.Span) bool {
 	if b == nil {
 		return true
 	}
-	if al, bl := a.End.Line-a.Start.Line, b.End.Line-b.Start.Line; al != bl {
-		return al < bl
+	aStartsNoEarlier := !posLess(a.Start, b.Start) // a.Start >= b.Start
+	aEndsNoLater := !posLess(b.End, a.End)         // a.End <= b.End
+	if aStartsNoEarlier && aEndsNoLater {
+		return true // a ⊆ b
 	}
-	return (a.End.Column - a.Start.Column) < (b.End.Column - b.Start.Column)
+	if !aStartsNoEarlier && !aEndsNoLater {
+		return false // b ⊆ a
+	}
+	return posLess(b.Start, a.Start) // overlap: prefer the later start
 }
 
 // EnclosingPath returns the chain of nodes enclosing pos within the subtree rooted at root,
 // ordered innermost-first (the tightest enclosing node at index 0). It returns nil when pos is
 // outside root. At each level it descends into the tightest child that still contains pos.
 func EnclosingPath(root Node, pos token.Position) []Node {
-	if isNilNode(root) || !spanContains(root.GetSpan(), pos) {
+	if isNilNode(root) || !spanContains(safeSpan(root), pos) {
 		return nil
 	}
 	var outer []Node
 	for cur := root; !isNilNode(cur); {
 		outer = append(outer, cur)
 		var next Node
+		var nextSpan *token.Span
 		for _, c := range Children(cur) {
-			if isNilNode(c) || !spanContains(c.GetSpan(), pos) {
+			cSpan := safeSpan(c)
+			if !spanContains(cSpan, pos) {
 				continue
 			}
-			if next == nil || spanTighter(c.GetSpan(), next.GetSpan()) {
-				next = c
+			if next == nil || spanTighter(cSpan, nextSpan) {
+				next, nextSpan = c, cSpan
 			}
 		}
 		cur = next
@@ -288,7 +313,7 @@ func NodeAt(program *ProgramNode, pos token.Position) []Node {
 		return nil
 	}
 	for _, stmt := range program.Statements {
-		if spanContains(stmt.GetSpan(), pos) {
+		if spanContains(safeSpan(stmt), pos) {
 			return EnclosingPath(stmt, pos)
 		}
 	}

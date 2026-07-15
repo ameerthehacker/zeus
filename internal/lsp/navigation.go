@@ -1,6 +1,8 @@
 package lsp
 
 import (
+	"sort"
+
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -23,40 +25,177 @@ func identifierOccurrences(content, name string) []*token.Span {
 	return spans
 }
 
-// getDocumentHighlights highlights every occurrence of the identifier under the cursor.
+// occurrences returns the source spans of every occurrence of the thing under the cursor. When the
+// cursor is on a resolved symbol it uses the binding index for a precise, scope-aware result (only
+// the symbol actually in scope — a shadowed same-named identifier is not included); otherwise it
+// falls back to a name-based token scan so members, keywords, and unresolved identifiers still
+// highlight. The name-based scan is single-file only.
+func (s *Server) occurrences(docInfo *DocumentInfo, position protocol.Position) []*token.Span {
+	if docInfo.AST != nil {
+		if id, _ := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			// Precise path: the binding index has all occurrences of the symbol — unless it is an
+			// escape-boxed variable (see symbolIsFragmented), whose occurrences are split across
+			// multiple ref-cell objects and would come back incomplete; for those we fall through
+			// to the name scan, which is complete (if over-approximate) rather than missing uses.
+			if sym, ok := docInfo.Semantic.SymbolAt(id); ok && !symbolIsFragmented(sym) {
+				if nodes := docInfo.Semantic.SymbolUses(sym); len(nodes) > 0 {
+					spans := make([]*token.Span, 0, len(nodes))
+					for _, n := range nodes {
+						spans = append(spans, n.GetSpan())
+					}
+					sortSpans(spans)
+					return spans
+				}
+			}
+		}
+	}
+	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
+	if word == "" {
+		return nil
+	}
+	return identifierOccurrences(docInfo.Content, word)
+}
+
+// symbolIsFragmented reports whether a symbol's occurrences are split across multiple symbol
+// objects in the binding index. Escape-boxed variables (*RefCellVar) are represented by a distinct
+// ref cell in the declaring scope and in each capturing closure, so the index cannot group all
+// their uses under one symbol; callers must not treat the index as complete for them.
+func symbolIsFragmented(sym zeus_value.Value) bool {
+	return zeus_value.AsRefCellVar(sym) != nil
+}
+
+// isValidIdentifier reports whether name is a legal Zeus identifier that is safe to rename to: a
+// non-empty run of identifier characters not starting with a digit, and not a reserved keyword or
+// built-in type name. Renaming to anything else would write source that no longer parses.
+func isValidIdentifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		isLetter := r == '_' || r == '$' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		isDigit := r >= '0' && r <= '9'
+		if isLetter || (i > 0 && isDigit) {
+			continue
+		}
+		return false
+	}
+	if _, isKeyword := token.Keywords[name]; isKeyword {
+		return false
+	}
+	if _, isType := token.DataTypes[name]; isType {
+		return false
+	}
+	return true
+}
+
+// sortSpans orders spans by their start position, so highlight/reference results are deterministic.
+func sortSpans(spans []*token.Span) {
+	sort.Slice(spans, func(i, j int) bool {
+		a, b := spans[i].Start, spans[j].Start
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Column < b.Column
+	})
+}
+
+// getDocumentHighlights highlights every occurrence of the symbol under the cursor.
 func (s *Server) getDocumentHighlights(uri protocol.DocumentURI, position protocol.Position) []protocol.DocumentHighlight {
 	highlights := []protocol.DocumentHighlight{}
 	docInfo, ok := s.doc(uri)
 	if !ok {
 		return highlights
 	}
-	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
-	if word == "" {
-		return highlights
-	}
-	for _, span := range identifierOccurrences(docInfo.Content, word) {
+	for _, span := range s.occurrences(docInfo, position) {
 		highlights = append(highlights, protocol.DocumentHighlight{Range: spanToRange(span)})
 	}
 	return highlights
 }
 
-// getReferences returns the locations of every occurrence of the identifier under the cursor.
-// This is single-file only; cross-file references require module resolution the LSP does not
-// yet do.
+// getReferences returns the locations of every occurrence of the symbol under the cursor. For a
+// resolved symbol these are precise (via the binding index); for anything else it falls back to a
+// single-file name-based scan.
 func (s *Server) getReferences(uri protocol.DocumentURI, position protocol.Position) []protocol.Location {
 	locations := []protocol.Location{}
 	docInfo, ok := s.doc(uri)
 	if !ok {
 		return locations
 	}
-	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
-	if word == "" {
-		return locations
-	}
-	for _, span := range identifierOccurrences(docInfo.Content, word) {
+	for _, span := range s.occurrences(docInfo, position) {
 		locations = append(locations, protocol.Location{URI: uri, Range: spanToRange(span)})
 	}
 	return locations
+}
+
+// renameTarget resolves the identifier under the cursor to a symbol that is safe to rename with
+// single-file edits — a function-local variable or parameter (has a recorded def) that is not
+// escape-boxed (whose occurrences the index cannot fully group). prepareRename and rename both go
+// through it, so they can never disagree about what is renameable. It returns the declaration
+// identifier's span (for the prepare highlight) and the symbol (for collecting occurrences).
+func (s *Server) renameTarget(docInfo *DocumentInfo, position protocol.Position) (*token.Span, zeus_value.Value, bool) {
+	if docInfo.AST == nil {
+		return nil, nil, false
+	}
+	id, _ := identifierAt(docInfo.AST, zeusPos(position))
+	if id == nil {
+		return nil, nil, false
+	}
+	sym, ok := docInfo.Semantic.SymbolAt(id)
+	if !ok || symbolIsFragmented(sym) {
+		return nil, nil, false
+	}
+	if _, ok := docInfo.Semantic.DefNode(sym); !ok {
+		return nil, nil, false
+	}
+	return id.GetSpan(), sym, true
+}
+
+// prepareRename reports whether the symbol under the cursor can be renamed, returning the range of
+// the identifier. Only function-local variables and parameters are renameable: all of their
+// references live in this file, so the edit is complete. Everything else (functions, classes,
+// module-level and imported symbols, escape-boxed variables, keywords) returns nil, which the
+// editor shows as "cannot rename here" — safer than an unsafe partial rename.
+func (s *Server) prepareRename(uri protocol.DocumentURI, position protocol.Position) *protocol.Range {
+	docInfo, ok := s.doc(uri)
+	if !ok {
+		return nil
+	}
+	declSpan, _, ok := s.renameTarget(docInfo, position)
+	if !ok {
+		return nil
+	}
+	r := spanToRange(declSpan)
+	return &r
+}
+
+// rename produces the edits that rename the local variable or parameter under the cursor to
+// newName. It shares renameTarget with prepareRename, so a rename is either complete or refused —
+// never a corrupting partial edit — and rewrites every occurrence (declaration and references) of
+// that exact binding.
+func (s *Server) rename(uri protocol.DocumentURI, position protocol.Position, newName string) *protocol.WorkspaceEdit {
+	// Reject an illegal target name up front so a rename never writes source that fails to parse.
+	if !isValidIdentifier(newName) {
+		return nil
+	}
+	docInfo, ok := s.doc(uri)
+	if !ok {
+		return nil
+	}
+	_, sym, ok := s.renameTarget(docInfo, position)
+	if !ok {
+		return nil
+	}
+	nodes := docInfo.Semantic.SymbolUses(sym)
+	if len(nodes) == 0 {
+		return nil
+	}
+	edits := make([]protocol.TextEdit, 0, len(nodes))
+	for _, n := range nodes {
+		edits = append(edits, protocol.TextEdit{Range: spanToRange(n.GetSpan()), NewText: newName})
+	}
+	return &protocol.WorkspaceEdit{
+		Changes: map[protocol.DocumentURI][]protocol.TextEdit{uri: edits},
+	}
 }
 
 // signatureContext scans backward from the cursor (over lexed tokens, so strings/comments do

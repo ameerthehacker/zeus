@@ -110,6 +110,18 @@ func (g *IRModule) recordExprType(node ast.Node, val zeus_value.Value) {
 	g.semantic.RecordType(node, valueTypeForModel(val))
 }
 
+// recordLocalDef records a function-local variable or parameter's declaration identifier: as a
+// definition (marking the symbol renameable with single-file edits) and as a binding (so the
+// declaration identifier itself resolves and is included among the symbol's occurrences). No-op
+// unless collecting.
+func (g *IRModule) recordLocalDef(node ast.Node, sym zeus_value.Value) {
+	if g.semantic == nil {
+		return
+	}
+	g.semantic.RecordDef(sym, node)
+	g.semantic.RecordBinding(node, sym)
+}
+
 // valueTypeForModel returns v's type for the semantic model without ever panicking. zeus_value's
 // GetValueType panics on value kinds it does not model (e.g. ref cells for escaped locals), which
 // must never crash IR generation just because tooling is observing it, so ref cells are unwrapped
@@ -423,6 +435,11 @@ func (g *IRModule) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 		}
 
 		g.symbolTable().DeclareSymbol(varName, variable)
+		// Only function-local variables are single-file renameable; module-scope vars may be
+		// referenced from other files.
+		if !g.isInModuleScope {
+			g.recordLocalDef(decl.Identifier, variable)
+		}
 	}
 }
 
@@ -1204,6 +1221,14 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 		paramName := param.Identifier.Name.Value
 		paramVar := fn.Params[index]
 		g.symbolTable().DeclareSymbol(paramName, paramVar)
+		// Only record a rename-def for params that are NOT escape-boxed. An escaped param is
+		// re-declared below as a *RefCellVar (a different symbol), and its uses inside closures
+		// bind to yet other ref cells, so recording the def under paramVar would let a rename
+		// touch only the declaration and corrupt the body. Leaving it unrecorded makes escaped
+		// params fail safe (rename refused), matching escaped locals in VisitVarDeclStmt.
+		if !escapedNames[paramName] {
+			g.recordLocalDef(param.Identifier, paramVar)
+		}
 	}
 
 	if class != nil {

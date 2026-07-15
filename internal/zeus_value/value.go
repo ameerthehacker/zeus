@@ -36,6 +36,10 @@ func SnapshotPrimordialIds() {
 // call this so user-declared classes/interfaces get the same ids each run and the counters do
 // not grow without bound. Primordial ids are never reissued because the reset stops at the
 // watermark. A batch compile (single run) can simply never call it.
+//
+// These counters are unsynchronized package globals, so callers MUST NOT run analyses
+// concurrently: a reset racing with class creation in another analysis would reissue or duplicate
+// ids. The language server relies on this — it processes messages strictly sequentially.
 func ResetToPrimordialIds() {
 	classIdCounter = primordialClassIdWatermark
 	interfaceIdCounter = primordialInterfaceIdWatermark

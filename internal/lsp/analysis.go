@@ -170,8 +170,15 @@ func identifierAt(program *ast.ProgramNode, pos token.Position) (*ast.Identifier
 func receiverChainFromExpr(expr ast.ExprNode) ([]string, bool) {
 	switch e := expr.(type) {
 	case *ast.IdentifierExprNode:
+		// Parser error recovery can leave a typed-nil node or a node with a nil Name token.
+		if e == nil || e.Name == nil {
+			return nil, false
+		}
 		return []string{e.Name.Value}, true
 	case *ast.ObjectPropertyAccessExprNode:
+		if e == nil || e.Property == nil || e.Property.Name == nil {
+			return nil, false
+		}
 		base, ok := receiverChainFromExpr(e.Object)
 		if !ok {
 			return nil, false

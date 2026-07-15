@@ -75,7 +75,7 @@ func TestReportInternalErrorNotifiesOnce(t *testing.T) {
 // does not implement gets a JSON-RPC "method not found" error, so the client does not hang.
 func TestUnsupportedRequestReturnsMethodNotFound(t *testing.T) {
 	s := NewServer()
-	body := []byte(`{"jsonrpc":"2.0","id":7,"method":"textDocument/rename","params":{}}`)
+	body := []byte(`{"jsonrpc":"2.0","id":7,"method":"textDocument/codeAction","params":{}}`)
 	out := captureStdout(t, func() { _ = s.handleMessage(body) })
 	if !strings.Contains(out, "-32601") {
 		t.Errorf("unsupported request should return method-not-found (-32601), got: %q", out)
