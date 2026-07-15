@@ -33,5 +33,10 @@
         "name": "module-level const may be initialized by a function call",
         "exit": "7",
         "entry": "call-init-main.zs"
+    },
+    {
+        "name": "same-named module-scope locals in sibling if-branches",
+        "exit": "0",
+        "entry": "sibling-scope-module-locals.zs"
     }
 ]

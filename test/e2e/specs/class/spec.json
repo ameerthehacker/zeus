@@ -18,5 +18,10 @@
         "name": "Readonly class properties",
         "exit": "0",
         "entry": "readonly_property.zs"
+    },
+    {
+        "name": "Same-named locals in sibling if-branches returning objects",
+        "exit": "0",
+        "entry": "sibling_scope_locals.zs"
     }
 ]

@@ -1263,9 +1263,12 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 
 	// Save/restore all per-function fields so nested emitFunction calls don't clobber them.
 	// Also reset isInModuleScope so vars declared inside a function body are local.
+	// The variable-name registry is scoped per function too, so same-named locals in different
+	// functions keep clean IR names (see BeginFunctionNameScope).
 	prevEscapedVarNames := g.escapedVarNames
 	prevFuncTypeEnv := g.funcTypeEnv
 	prevIsInModuleScope := g.isInModuleScope
+	g.irBuilder.BeginFunctionNameScope()
 	g.escapedVarNames = escapedNames
 	g.funcTypeEnv = funcTypeEnv
 	g.isInModuleScope = false
@@ -1273,6 +1276,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	g.escapedVarNames = prevEscapedVarNames
 	g.funcTypeEnv = prevFuncTypeEnv
 	g.isInModuleScope = prevIsInModuleScope
+	g.irBuilder.EndFunctionNameScope()
 
 	g.irBuilder.SetInsertionBlock(current_block)
 

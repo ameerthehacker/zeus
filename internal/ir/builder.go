@@ -29,6 +29,9 @@ type IRBuilder struct {
 	symbolTable             *symbol_table.SymbolTable[zeus_value.Value]
 	instrIdCount            int
 	usedFuncIRNames         map[string]bool
+	usedVarNames            map[string]bool
+	varNameScopeStack       []map[string]bool
+	usedGlobalNames         map[string]bool
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -55,6 +58,8 @@ func newIRBuilderInternal() *IRBuilder {
 		blockIdInsetionIndexMap: make(map[int]int),
 		symbolTable:             symbol_table,
 		usedFuncIRNames:         make(map[string]bool),
+		usedVarNames:            make(map[string]bool),
+		usedGlobalNames:         make(map[string]bool),
 	}
 
 	// Register all primordial classes from the registry upfront
@@ -273,20 +278,66 @@ func (b *IRBuilder) generateUniqueGlobalName(name string) string {
 	return unique_name
 }
 
-// generateUniqueFuncIRName returns a function IR name that is unique across the entire module.
-// Unlike generateUniqueGlobalName, it also checks usedFuncIRNames so names from already-exited
-// scopes are still avoided (live symbol-table check alone misses them).
-func (b *IRBuilder) generateUniqueFuncIRName(name string) string {
+// uniqueIRName returns an IR name (suffixing with 1, 2, ... as needed) that is neither currently
+// visible in the symbol table nor already present in `used`, and records it in `used`. The live
+// symbol-table check catches names minted elsewhere but visible here; `used` additionally catches
+// names from already-exited scopes that the live check can no longer see. Callers pick which `used`
+// registry (and thus which lifetime) applies.
+func (b *IRBuilder) uniqueIRName(name string, used map[string]bool) string {
 	unique := name
 	for count := 1; ; count++ {
 		_, inScope := b.symbolTable.GetSymbol(unique)
-		if !inScope && !b.usedFuncIRNames[unique] {
+		if !inScope && !used[unique] {
 			break
 		}
 		unique = name + strconv.Itoa(count)
 	}
-	b.usedFuncIRNames[unique] = true
+	used[unique] = true
 	return unique
+}
+
+// generateUniqueFuncIRName returns a function IR name that is unique across the entire module.
+// Unlike generateUniqueGlobalName, it also checks usedFuncIRNames so names from already-exited
+// scopes are still avoided (live symbol-table check alone misses them).
+func (b *IRBuilder) generateUniqueFuncIRName(name string) string {
+	return b.uniqueIRName(name, b.usedFuncIRNames)
+}
+
+// generateUniqueVarIRName returns a variable IR name that is unique within the current function.
+// It combines two checks that answer different questions, because IR gen (unlike LLVM IR) has real
+// lexical scopes:
+//   - the live symbol table catches names that are VISIBLE here but were minted elsewhere — params,
+//     module globals, enclosing-scope locals — all of which share codegen's one name-keyed value map
+//     (c.llvmValues) with this local;
+//   - usedVarNames catches names from already-EXITED scopes, which the live symbol table can no longer
+//     see. Two locals with the same source name in sibling (non-overlapping) scopes — e.g. `let n` in
+//     two different `if` branches — must NOT share an IR name, or the two allocas collide in
+//     c.llvmValues and a later branch's load resolves to the wrong (uninitialized) slot, producing
+//     malformed LLVM IR that crashes object emission.
+//
+// usedVarNames is scoped per function (see Begin/EndFunctionNameScope): var IR names only need to be
+// unique within a function because codegen processes functions sequentially and rebinds its value map
+// at each entry, so reusing a plain name across functions is safe and keeps the IR readable.
+func (b *IRBuilder) generateUniqueVarIRName(name string) string {
+	return b.uniqueIRName(name, b.usedVarNames)
+}
+
+// BeginFunctionNameScope pushes a fresh per-function variable-name registry (the current one is saved
+// on an internal stack). Wrap a function body's IR gen in a BeginFunctionNameScope/EndFunctionNameScope
+// pair so nested functions (closures/methods) get their own registry and same-named locals in different
+// functions keep their plain IR names instead of accumulating cross-function suffixes. Mirrors the
+// symbol table's EnterScope/ExitScope: the builder owns the saved state, the caller passes nothing back.
+func (b *IRBuilder) BeginFunctionNameScope() {
+	b.varNameScopeStack = append(b.varNameScopeStack, b.usedVarNames)
+	b.usedVarNames = make(map[string]bool)
+}
+
+// EndFunctionNameScope pops the registry saved by the matching BeginFunctionNameScope.
+func (b *IRBuilder) EndFunctionNameScope() {
+	last := len(b.varNameScopeStack) - 1
+	zeus_error.Assert(last >= 0, "EndFunctionNameScope without a matching BeginFunctionNameScope")
+	b.usedVarNames = b.varNameScopeStack[last]
+	b.varNameScopeStack = b.varNameScopeStack[:last]
 }
 
 func (b *IRBuilder) createTempVariable(span *token.Span) *zeus_value.Var {
@@ -503,13 +554,19 @@ func (b *IRBuilder) BuildLoad(addr *zeus_value.Var, span *token.Span) zeus_value
 }
 
 func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
-	unique_name := b.generateUniqueGlobalName(v.Name)
+	// The IR name (variable.Name) must be unique across the whole function — codegen keys llvmValues
+	// by it — so it is uniquified against already-exited scopes too (generateUniqueVarIRName). The
+	// symbol table, however, is registered under the SOURCE name so scoped identifier resolution
+	// (VisitIdentifier -> GetSymbol(sourceName)) still finds the right binding in each scope. This
+	// mirrors how parameters (BuildFuncDecl) and functions register under their source name while
+	// carrying a separately-uniquified IR name.
+	irName := b.generateUniqueVarIRName(v.Name)
 
-	variable := zeus_value.NewVar(unique_name, v.ValueType, true, v.Span)
+	variable := zeus_value.NewVar(irName, v.ValueType, true, v.Span)
 	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
 
-	b.symbolTable.DeclareSymbol(unique_name, variable)
+	b.symbolTable.DeclareSymbol(v.Name, variable)
 
 	b.pushInstr(&Instr{
 		Type:  InstrTypeDeclVar,
@@ -522,20 +579,27 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 
 func (b *IRBuilder) BuildGlobalVarDecl(v *VarDecl) *zeus_value.Var {
 	// An ambient `global` uses the stable, un-mangled symbol shared by its single definition and
-	// every module's extern reference, so it must NOT be uniquified per module.
-	name := v.Name
+	// every module's extern reference, so it must NOT be uniquified per module; its symbol-table key
+	// is that same stable name. A plain module-scope var, by contrast, gets a module-unique IR name
+	// (usedGlobalNames is module-lifetime because globals all coexist, unlike per-function locals) while
+	// its symbol is registered under the SOURCE name for scoped resolution — the exact same reasoning as
+	// BuildVarDecl. Without this, two same-named module-scope locals in sibling scopes (e.g. `let n` in
+	// two module-level `if` branches) share one IR name and collide in codegen's name-keyed value map.
+	var irName, symbolKey string
 	if v.IsAmbient {
-		name = zeus_value.AmbientGlobalSymbolName(v.Name)
+		irName = zeus_value.AmbientGlobalSymbolName(v.Name)
+		symbolKey = irName
 	} else {
-		name = b.generateUniqueGlobalName(v.Name)
+		irName = b.uniqueIRName(v.Name, b.usedGlobalNames)
+		symbolKey = v.Name
 	}
 
-	variable := zeus_value.NewVar(name, v.ValueType, true, v.Span)
+	variable := zeus_value.NewVar(irName, v.ValueType, true, v.Span)
 	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
 	variable.IsAmbient = v.IsAmbient
 
-	b.symbolTable.DeclareSymbol(name, variable)
+	b.symbolTable.DeclareSymbol(symbolKey, variable)
 
 	b.pushInstr(&Instr{
 		Type:  InstrTypeDeclGlobalVar,
