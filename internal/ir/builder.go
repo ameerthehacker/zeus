@@ -173,6 +173,10 @@ func loadPreludeGlobals() {
 	mod := NewIRModule(newIRBuilderInternal(), prelude.GlobalsModulePath, false, nil)
 	mod.Generate(program)
 	zeus_value.FreezeUserAmbientGlobalsAsPrelude()
+
+	// All primordial classes/interfaces now have their ids; pin the watermark so a later
+	// ResetToPrimordialIds (per-analysis id rewind) never reissues a primordial id.
+	zeus_value.SnapshotPrimordialIds()
 }
 
 // compilePrelude lexes, parses, and IR-generates a prelude source, returning the populated builder.

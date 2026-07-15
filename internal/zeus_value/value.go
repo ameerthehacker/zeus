@@ -14,6 +14,33 @@ const NULL_CONSTANT_VALUE = "null"
 // first 100 ids are reserved for primordial classes
 var classIdCounter = 100
 
+// primordialClassIdWatermark / primordialInterfaceIdWatermark capture the id counters right
+// after the preludes finish loading, so ResetToPrimordialIds can rewind user class/interface
+// ids to a stable, collision-free starting point at the top of every fresh analysis. They
+// default to the initial counter values in case a reset happens before a snapshot (no-op).
+var (
+	primordialClassIdWatermark     = classIdCounter
+	primordialInterfaceIdWatermark = 0
+)
+
+// SnapshotPrimordialIds records the current class/interface id counters as the primordial
+// watermark. Called once, right after the preludes are compiled and their classes/interfaces
+// registered, so everything below the watermark is a primordial that must keep its id.
+func SnapshotPrimordialIds() {
+	primordialClassIdWatermark = classIdCounter
+	primordialInterfaceIdWatermark = interfaceIdCounter
+}
+
+// ResetToPrimordialIds rewinds the class/interface id counters to the primordial watermark.
+// Repeated in-process analyses (e.g. the language server, which analyzes on every keystroke)
+// call this so user-declared classes/interfaces get the same ids each run and the counters do
+// not grow without bound. Primordial ids are never reissued because the reset stops at the
+// watermark. A batch compile (single run) can simply never call it.
+func ResetToPrimordialIds() {
+	classIdCounter = primordialClassIdWatermark
+	interfaceIdCounter = primordialInterfaceIdWatermark
+}
+
 type Value interface {
 	String() string
 	GetSpan() *token.Span
