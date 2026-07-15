@@ -1,11 +1,45 @@
 package lsp
 
 import (
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/ameerthehacker/zeus/internal/analysis"
 	"go.lsp.dev/protocol"
 )
+
+// shadowSrc has an inner `x: string` shadowing an outer `x: i32`, used by the scope-precision tests.
+const shadowSrc = `function main(): i32 {
+  let x: i32 = 100;
+  if (true) {
+    let x: string = "hello";
+    console.log(x);
+  }
+  return x;
+}
+`
+
+func refLines(refs []protocol.Location) []int {
+	lines := []int{}
+	for _, r := range refs {
+		lines = append(lines, int(r.Range.Start.Line))
+	}
+	sort.Ints(lines)
+	return lines
+}
+
+func equalInts(got, want []int) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
 
 const sampleProgram = `class Animal {
   public name: string;
@@ -50,8 +84,8 @@ func openDoc(t *testing.T, src string) (*Server, protocol.DocumentURI) {
 	t.Helper()
 	s := NewServer()
 	uri := protocol.DocumentURI("file:///sample.zs")
-	irModule, errs := s.parseDocument(uri.Filename(), src)
-	s.documents[string(uri)] = &DocumentInfo{Content: src, IRModule: irModule, Errors: errs}
+	res := analysis.Analyze(uri.Filename(), src, s.makeModuleResolver(uri.Filename()))
+	s.documents[string(uri)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Semantic: res.Model, Errors: res.Diagnostics}
 	return s, uri
 }
 
@@ -169,6 +203,177 @@ func TestHoverVariableClassAndMember(t *testing.T) {
 	h = s.getHover(uri, posAfter(t, sampleProgram, "d.bar"))
 	if h == nil || !strings.Contains(hoverText(h), "bark") {
 		t.Errorf("hover on member bark should mention 'bark', got %v", h)
+	}
+}
+
+// TestScopeCorrectShadowing is the Phase 2 payoff: hover and go-to-definition resolve the symbol
+// actually in scope at the cursor, via the binding index recorded during IR generation — not the
+// flat, scope-blind name table, which would return the same `x` for both uses.
+func TestScopeCorrectShadowing(t *testing.T) {
+	src := `function main(): i32 {
+  let x: i32 = 100;
+  if (true) {
+    let x: string = "hello";
+    console.log(x);
+  }
+  return x;
+}
+`
+	s, uri := openDoc(t, src)
+
+	// Hover reflects the in-scope binding: inner x is a string, outer x is an i32.
+	if h := s.getHover(uri, posAfter(t, src, "log(")); h == nil || !strings.Contains(hoverText(h), "string") {
+		t.Errorf("hover on inner x should be string, got %v", h)
+	}
+	if h := s.getHover(uri, posAfter(t, src, "return ")); h == nil || !strings.Contains(hoverText(h), "i32") {
+		t.Errorf("hover on outer x should be i32, got %v", h)
+	}
+
+	// Go-to-definition jumps to the correct scope-local declaration (inner let on line 3, outer
+	// let on line 1; both 0-based).
+	if def := s.getDefinition(uri, posAfter(t, src, "log(")); len(def) == 0 || def[0].Range.Start.Line != 3 {
+		t.Errorf("inner x definition should be the inner let (line 3), got %v", def)
+	}
+	if def := s.getDefinition(uri, posAfter(t, src, "return ")); len(def) == 0 || def[0].Range.Start.Line != 1 {
+		t.Errorf("outer x definition should be the outer let (line 1), got %v", def)
+	}
+}
+
+// TestReferencesAreScopePrecise: references use the binding index, so a shadowed local's
+// references include only its own occurrences — not the same-named variable in another scope.
+func TestReferencesAreScopePrecise(t *testing.T) {
+	s, uri := openDoc(t, shadowSrc)
+
+	// Inner x: its declaration (line 3) and its use in console.log (line 4). Not the outer x.
+	if got := refLines(s.getReferences(uri, posAfter(t, shadowSrc, "log("))); !equalInts(got, []int{3, 4}) {
+		t.Errorf("inner x references should be lines {3,4}, got %v", got)
+	}
+	// Outer x: its declaration (line 1) and its use in `return x` (line 6).
+	if got := refLines(s.getReferences(uri, posAfter(t, shadowSrc, "return "))); !equalInts(got, []int{1, 6}) {
+		t.Errorf("outer x references should be lines {1,6}, got %v", got)
+	}
+}
+
+// TestRenameLocalVariable: renaming a function-local rewrites exactly its own occurrences.
+func TestRenameLocalVariable(t *testing.T) {
+	s, uri := openDoc(t, shadowSrc)
+
+	if r := s.prepareRename(uri, posAfter(t, shadowSrc, "log(")); r == nil {
+		t.Fatalf("a function-local variable should be renameable")
+	}
+
+	edit := s.rename(uri, posAfter(t, shadowSrc, "log("), "y")
+	if edit == nil {
+		t.Fatalf("rename should produce edits")
+	}
+	edits := edit.Changes[uri]
+	if len(edits) != 2 {
+		t.Fatalf("expected 2 edits for the inner x (decl + use), got %d", len(edits))
+	}
+	for _, e := range edits {
+		if e.NewText != "y" {
+			t.Errorf("edit should insert 'y', got %q", e.NewText)
+		}
+		if e.Range.Start.Line != 3 && e.Range.Start.Line != 4 {
+			t.Errorf("rename touched line %d, outside the inner x's scope (expected 3 or 4)", e.Range.Start.Line)
+		}
+	}
+}
+
+// TestRenameRefusesNonLocal: only function-locals are renameable (single-file complete). A
+// function name — which could be referenced from other files — is refused rather than
+// partially/incorrectly renamed.
+func TestRenameRefusesNonLocal(t *testing.T) {
+	s, uri := openDoc(t, "function main(): i32 {\n  return 0;\n}\n")
+	if r := s.prepareRename(uri, posAfter(t, "function main", "function ma")); r != nil {
+		t.Errorf("a function name should not be renameable, got %v", r)
+	}
+}
+
+// TestCapturedVariableRenameRefusedAndRefsComplete guards the review fix: a closure-captured
+// variable is escape-boxed into multiple ref-cell symbols, so the binding index cannot rewrite all
+// its occurrences. Rename must therefore be REFUSED (never a corrupting partial edit), and
+// references must still be COMPLETE via the name-scan fallback.
+func TestCapturedVariableRenameRefusedAndRefsComplete(t *testing.T) {
+	src := `function make(seed: i32): i32 {
+  let f = () => { return seed; };
+  return seed + f();
+}
+`
+	s, uri := openDoc(t, src)
+
+	if r := s.prepareRename(uri, posAfter(t, src, "return seed")); r != nil {
+		t.Errorf("rename of a closure-captured variable must be refused, got %v", r)
+	}
+	if e := s.rename(uri, posAfter(t, src, "return seed"), "renamed"); e != nil {
+		t.Errorf("rename of a closure-captured variable must produce no edit, got %v", e)
+	}
+
+	// `seed` occurs 3 times (param decl, closure use, body use); the fallback must find them all.
+	if refs := s.getReferences(uri, posAfter(t, src, "return seed")); len(refs) != 3 {
+		t.Errorf("captured-variable references should find all 3 occurrences, got %d", len(refs))
+	}
+}
+
+// TestRenameToInvalidNameRefused guards the newName validation: renaming to a keyword or a
+// non-identifier must be refused so a rename never writes source that fails to parse.
+func TestRenameToInvalidNameRefused(t *testing.T) {
+	s, uri := openDoc(t, shadowSrc)
+	for _, bad := range []string{"return", "class", "123", "x y", ""} {
+		if e := s.rename(uri, posAfter(t, shadowSrc, "log("), bad); e != nil {
+			t.Errorf("rename to invalid name %q must produce no edit, got %v", bad, e)
+		}
+	}
+	if e := s.rename(uri, posAfter(t, shadowSrc, "log("), "y"); e == nil {
+		t.Errorf("rename to a valid identifier should still work")
+	}
+}
+
+// TestInterfaceFeatures checks the LSP is interface-aware: hover/definition on interface names and
+// their members, member completion on interface-typed values, and interfaces in the outline.
+func TestInterfaceFeatures(t *testing.T) {
+	src := `interface Shape {
+  name: string;
+  area(): f64;
+}
+function describe(s: Shape): f64 {
+  return s.area();
+}
+`
+	sv, uri := openDoc(t, src)
+
+	// Hover on the interface name in its declaration.
+	if h := sv.getHover(uri, posAfter(t, src, "interface Sha")); h == nil || !strings.Contains(hoverText(h), "interface Shape") {
+		t.Errorf("hover on interface name should say 'interface Shape', got %v", h)
+	}
+	// Hover on the interface used as a type annotation.
+	if h := sv.getHover(uri, posAfter(t, src, "s: Sha")); h == nil || !strings.Contains(hoverText(h), "interface Shape") {
+		t.Errorf("hover on interface type annotation should say 'interface Shape', got %v", h)
+	}
+	// Hover on a member of an interface-typed value.
+	if h := sv.getHover(uri, posAfter(t, src, "s.are")); h == nil || !strings.Contains(hoverText(h), "area") {
+		t.Errorf("hover on interface member should mention 'area', got %v", h)
+	}
+	// Go-to-definition on the interface member resolves to its signature.
+	if def := sv.getDefinition(uri, posAfter(t, src, "s.are")); len(def) == 0 {
+		t.Errorf("go-to-definition on interface member should resolve")
+	}
+	// Member completion on an interface-typed value lists the interface's members.
+	got := labels(sv.getCompletions(uri, posAfter(t, src, "return s.")).Items)
+	for _, want := range []string{"name", "area"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("interface member completion missing %q; got %v", want, keysOf(got))
+		}
+	}
+	// The document outline includes the interface.
+	foundIface := false
+	for _, ds := range sv.getDocumentSymbols(uri) {
+		if ds.Name == "Shape" && ds.Kind == protocol.SymbolKindInterface {
+			foundIface = true
+		}
+	}
+	if !foundIface {
+		t.Errorf("document symbols should include the Shape interface")
 	}
 }
 

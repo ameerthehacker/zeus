@@ -3,9 +3,11 @@ package lsp
 import (
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
+	"go.lsp.dev/protocol"
 )
 
 // This file contains the position/text analysis and symbol-resolution helpers shared
@@ -126,6 +128,98 @@ func parseMemberContext(content string, line, col int) (memberContext, bool) {
 	return memberContext{chain: chain, partial: partial}, true
 }
 
+// --- AST-based cursor resolution (preferred over the text helpers above) ---
+//
+// Hover and go-to-definition act on tokens the user has already typed, so the parsed AST is
+// authoritative there: ast.NodeAt maps the cursor to the exact identifier/member node, which is
+// robust across line breaks, comments, and receiver chains the text scanner cannot follow.
+// (Completion and signature help still scan text/tokens on purpose — they must work at a broken
+// AST like `obj.` or `f(a, ` where the cursor sits in a syntax hole.)
+
+// zeusPos converts an LSP position (0-based) to a Zeus source position (1-based).
+func zeusPos(position protocol.Position) token.Position {
+	return token.Position{Line: int(position.Line) + 1, Column: int(position.Character) + 1}
+}
+
+// identifierAt returns the identifier under pos and, when that identifier is the property of a
+// member access (`receiver.ident`), the enclosing member-access node. Both are nil when the
+// cursor is not on an identifier.
+func identifierAt(program *ast.ProgramNode, pos token.Position) (*ast.IdentifierExprNode, *ast.ObjectPropertyAccessExprNode) {
+	path := ast.NodeAt(program, pos)
+	if len(path) == 0 {
+		return nil, nil
+	}
+	id, ok := path[0].(*ast.IdentifierExprNode)
+	if !ok {
+		return nil, nil
+	}
+	// The parent is the member access only when the identifier is its property, not its receiver
+	// (hovering the `a` in `a.b` is a plain reference to `a`, so path[1].Property != id there).
+	if len(path) >= 2 {
+		if member, ok := path[1].(*ast.ObjectPropertyAccessExprNode); ok && member.Property == id {
+			return id, member
+		}
+	}
+	return id, nil
+}
+
+// receiverChainFromExpr reconstructs a plain identifier chain (a, a.b, a.b.c) from a receiver
+// expression so it can be resolved by resolveReceiverChain. It returns ok=false when the chain is
+// interrupted by anything else (a call, an index, a parenthesized expression) — those receiver
+// types cannot be resolved without an expression-type map (Phase 2).
+func receiverChainFromExpr(expr ast.ExprNode) ([]string, bool) {
+	switch e := expr.(type) {
+	case *ast.IdentifierExprNode:
+		// Parser error recovery can leave a typed-nil node or a node with a nil Name token.
+		if e == nil || e.Name == nil {
+			return nil, false
+		}
+		return []string{e.Name.Value}, true
+	case *ast.ObjectPropertyAccessExprNode:
+		if e == nil || e.Property == nil || e.Property.Name == nil {
+			return nil, false
+		}
+		base, ok := receiverChainFromExpr(e.Object)
+		if !ok {
+			return nil, false
+		}
+		return append(base, e.Property.Name.Value), true
+	default:
+		return nil, false
+	}
+}
+
+// resolveReceiver resolves the receiver expression of a member access to the class whose members
+// should be offered. It first tries the plain identifier-chain path (which distinguishes static
+// vs instance receivers), then falls back to the receiver's recorded expression type — so
+// receivers that are calls or index expressions (`foo().bar`, `arr[0].baz`) resolve too.
+func resolveReceiver(docInfo *DocumentInfo, objExpr ast.ExprNode) (receiver, bool) {
+	// Scope-correct: an identifier receiver with a recorded binding resolves via that binding, so a
+	// shadowed local is honoured rather than a same-named symbol from the flat table.
+	if id, ok := objExpr.(*ast.IdentifierExprNode); ok {
+		if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+			if r, ok := receiverFromSymbol(sym); ok {
+				return r, true
+			}
+		}
+	}
+	// Identifier chains (including static `Class.x` and `a.b.c`) via the symbol table.
+	if docInfo.IRModule != nil {
+		if chain, ok := receiverChainFromExpr(objExpr); ok {
+			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
+				return r, true
+			}
+		}
+	}
+	// Non-identifier receiver (a call, an index): resolve via the recorded expression type.
+	if t, ok := docInfo.Semantic.TypeAt(objExpr); ok {
+		if r, ok := receiverFromValueType(t); ok {
+			return r, true
+		}
+	}
+	return receiver{}, false
+}
+
 // symbolByName finds a symbol by its source name. GetAllSymbols is keyed by name across all
 // scopes (a locally-declared variable is therefore found too); temporary IR variables are
 // never user-referenceable, so they are ignored.
@@ -140,10 +234,11 @@ func symbolByName(irModule *ir.IRModule, name string) zeus_value.Value {
 	return value
 }
 
-// receiver is the resolved target of a member access: a class, plus whether the access is on
-// an instance (obj.x → instance members) or on the class itself (Class.x → static members).
+// receiver is the resolved target of a member access. It is a class (instance or, for `Class.x`,
+// static members) OR an interface (a value typed as an interface exposes that interface's members).
 type receiver struct {
 	class      *zeus_value.Class
+	iface      *zeus_value.Interface
 	isInstance bool
 }
 
@@ -156,11 +251,30 @@ func classOfType(t zeus_value.ValueType) *zeus_value.Class {
 	return nil
 }
 
-// resolveReceiverBase maps the first identifier of a receiver chain to a receiver.
-// A class name resolves to a static receiver; a variable/object of object type resolves to an
-// instance receiver.
-func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
-	sym := symbolByName(irModule, name)
+// interfaceOfType returns the interface backing an interface type, or nil otherwise.
+func interfaceOfType(t zeus_value.ValueType) *zeus_value.Interface {
+	if it := zeus_value.AsInterfaceType(t); it != nil {
+		return it.Interface
+	}
+	return nil
+}
+
+// receiverFromValueType resolves a value type to the receiver whose members it exposes: an object
+// type yields its class, an interface type yields its interface. Both are instance receivers.
+func receiverFromValueType(t zeus_value.ValueType) (receiver, bool) {
+	if class := classOfType(t); class != nil {
+		return receiver{class: class, isInstance: true}, true
+	}
+	if iface := interfaceOfType(t); iface != nil {
+		return receiver{iface: iface, isInstance: true}, true
+	}
+	return receiver{}, false
+}
+
+// receiverFromSymbol maps a resolved symbol to a receiver: a class name resolves to a static
+// receiver; a variable/object/ref-cell resolves to an instance receiver of its class or interface
+// type.
+func receiverFromSymbol(sym zeus_value.Value) (receiver, bool) {
 	if sym == nil {
 		return receiver{}, false
 	}
@@ -168,16 +282,21 @@ func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
 		return receiver{class: class, isInstance: false}, true
 	}
 	if v := zeus_value.AsVar(sym); v != nil {
-		if class := classOfType(v.ValueType); class != nil {
-			return receiver{class: class, isInstance: true}, true
-		}
+		return receiverFromValueType(v.ValueType)
 	}
 	if o := zeus_value.AsObject(sym); o != nil {
-		if class := classOfType(o.ValueType); class != nil {
-			return receiver{class: class, isInstance: true}, true
-		}
+		return receiverFromValueType(o.ValueType)
+	}
+	// Escaped local captured as a ref cell.
+	if rc := zeus_value.AsRefCellVar(sym); rc != nil {
+		return receiverFromValueType(rc.ValueType)
 	}
 	return receiver{}, false
+}
+
+// resolveReceiverBase maps the first identifier of a receiver chain (by name) to a receiver.
+func resolveReceiverBase(irModule *ir.IRModule, name string) (receiver, bool) {
+	return receiverFromSymbol(symbolByName(irModule, name))
 }
 
 // memberKind distinguishes the three flavours of class member the LSP resolves.
@@ -196,8 +315,8 @@ const (
 type member struct {
 	kind       memberKind
 	name       string
-	owner      *zeus_value.Class // the class that declares this member
-	access     *token.Token      // access modifier token (nil means the default, public)
+	ownerName  string       // source name of the class or interface that declares this member
+	access     *token.Token // access modifier token (nil means the default, public)
 	isStatic   bool
 	isReadonly bool                      // properties only
 	valueType  zeus_value.ValueType      // property/accessor value type, or method return type
@@ -210,10 +329,10 @@ type member struct {
 func (m member) isPublic() bool { return isPublicModifier(m.access) }
 
 // eachMember visits every user-facing member of the receiver, honoring the static/instance
-// context. It walks the class then its ancestors so a derived member is visited before (and
-// thus shadows) a same-named base member; each name is visited at most once. Compiler-internal
-// methods (the constructor, synthesized accessor methods, and the functor `__call__`) are not
-// members and are skipped.
+// context. For a class it walks the class then its ancestors so a derived member is visited before
+// (and thus shadows) a same-named base member; for an interface it walks the interface and its
+// extended interfaces. Each name is visited at most once. Compiler-internal methods (the
+// constructor, synthesized accessor methods, and the functor `__call__`) are not members.
 func eachMember(r receiver, visit func(member)) {
 	seen := map[string]bool{}
 	emit := func(m member) {
@@ -224,6 +343,11 @@ func eachMember(r receiver, visit func(member)) {
 		visit(m)
 	}
 
+	if r.iface != nil {
+		eachInterfaceMember(r.iface, emit, map[int]bool{})
+		return
+	}
+
 	wantStatic := !r.isInstance
 	for cur := r.class; cur != nil; cur = cur.ParentClass {
 		for _, prop := range cur.Properties {
@@ -231,7 +355,7 @@ func eachMember(r receiver, visit func(member)) {
 				continue
 			}
 			emit(member{
-				kind: memberProperty, name: prop.Property.Name, owner: cur,
+				kind: memberProperty, name: prop.Property.Name, ownerName: cur.SourceName(),
 				access: prop.AccessModifier, isStatic: prop.IsStatic, isReadonly: prop.IsReadonly,
 				valueType: prop.Property.ValueType, span: prop.Property.Span,
 			})
@@ -251,7 +375,7 @@ func eachMember(r receiver, visit func(member)) {
 				span = acc.Setter.Span
 			}
 			emit(member{
-				kind: memberAccessor, name: acc.Name, owner: cur,
+				kind: memberAccessor, name: acc.Name, ownerName: cur.SourceName(),
 				access: acc.AccessModifier, isStatic: acc.IsStatic,
 				valueType: valueType, span: span, fn: acc.Getter, accessor: acc,
 			})
@@ -265,11 +389,37 @@ func eachMember(r receiver, visit func(member)) {
 				continue
 			}
 			emit(member{
-				kind: memberMethod, name: name, owner: cur,
+				kind: memberMethod, name: name, ownerName: cur.SourceName(),
 				access: m.AccessModifier, isStatic: m.IsStatic,
 				valueType: m.Method.ReturnType, span: m.Method.Span, fn: m.Method,
 			})
 		}
+	}
+}
+
+// eachInterfaceMember emits every member of an interface and its extended interfaces (the
+// structural union), deduping by name through emit's shared seen-set. Interface members are always
+// public and non-static; methods carry a signature but no body. visited guards against cyclic
+// `extends` chains.
+func eachInterfaceMember(iface *zeus_value.Interface, emit func(member), visited map[int]bool) {
+	if iface == nil || visited[iface.Id] {
+		return
+	}
+	visited[iface.Id] = true
+	for _, prop := range iface.Properties {
+		emit(member{
+			kind: memberProperty, name: prop.Property.Name, ownerName: iface.Name,
+			isReadonly: prop.IsReadonly, valueType: prop.Property.ValueType, span: prop.Property.Span,
+		})
+	}
+	for _, fn := range iface.Methods {
+		emit(member{
+			kind: memberMethod, name: fn.SourceName(), ownerName: iface.Name,
+			valueType: fn.ReturnType, span: fn.Span, fn: fn,
+		})
+	}
+	for _, parent := range iface.Parents {
+		eachInterfaceMember(parent, emit, visited)
 	}
 }
 
@@ -310,12 +460,12 @@ func resolveReceiverChain(irModule *ir.IRModule, chain []string) (receiver, bool
 		if !ok {
 			return receiver{}, false
 		}
-		class := classOfType(t)
-		if class == nil {
+		// A member access always yields an instance of the member's type (class or interface).
+		next, ok := receiverFromValueType(t)
+		if !ok {
 			return receiver{}, false
 		}
-		// A member access always yields an instance of the member's type.
-		r = receiver{class: class, isInstance: true}
+		r = next
 	}
 	return r, true
 }

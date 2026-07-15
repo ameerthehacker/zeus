@@ -40,25 +40,33 @@ func (s *Server) getDefinition(uri protocol.DocumentURI, position protocol.Posit
 		return none
 	}
 
-	line := int(position.Line)
-	col := int(position.Character)
-	word, isMember := wordAt(docInfo.Content, line, col)
+	// Prefer the AST + semantic model: resolve the identifier under the cursor to a declaration.
+	if docInfo.AST != nil {
+		if id, member := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			var span *token.Span
+			if member != nil {
+				if r, ok := resolveReceiver(docInfo, member.Object); ok {
+					span = memberSpan(r, id.Name.Value)
+				}
+			} else if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+				// Scope-correct: the recorded binding is the symbol actually in scope here.
+				span = symbolSpan(sym)
+			} else {
+				span = symbolSpan(symbolByName(docInfo.IRModule, id.Name.Value))
+			}
+			if span == nil {
+				return none
+			}
+			return []protocol.Location{{URI: uri, Range: spanToRange(span)}}
+		}
+	}
+
+	// Not on a parsed identifier (e.g. a type name in an annotation): resolve by name.
+	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
 	if word == "" {
 		return none
 	}
-
-	var span *token.Span
-	if isMember {
-		wordStart := wordStartColumn(docInfo.Content, line, col)
-		if mctx, ok := parseMemberContext(docInfo.Content, line, wordStart); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, mctx.chain); ok {
-				span = memberSpan(r, word)
-			}
-		}
-	} else {
-		span = symbolSpan(symbolByName(docInfo.IRModule, word))
-	}
-
+	span := symbolSpan(symbolByName(docInfo.IRModule, word))
 	if span == nil {
 		return none
 	}
@@ -79,8 +87,16 @@ func symbolSpan(value zeus_value.Value) *token.Span {
 	if class := zeus_value.AsClass(value); class != nil {
 		return class.Span
 	}
+	if iface := zeus_value.AsInterface(value); iface != nil {
+		return iface.Span
+	}
 	if o := zeus_value.AsObject(value); o != nil {
 		return o.Span
+	}
+	// An escaped local (captured by a closure) is stored as a ref cell; its declaration span still
+	// points at the original `let`/`const`.
+	if rc := zeus_value.AsRefCellVar(value); rc != nil {
+		return rc.Span
 	}
 	return nil
 }
@@ -93,8 +109,8 @@ func memberSpan(r receiver, name string) *token.Span {
 	return nil
 }
 
-// getDocumentSymbols returns an outline of the user-defined classes and functions in the
-// document. Primordial and synthesized symbols (Console, array classes, etc.) are excluded.
+// getDocumentSymbols returns an outline of the user-defined classes, interfaces, and functions in
+// the document. Primordial and synthesized symbols (Console, array classes, etc.) are excluded.
 func (s *Server) getDocumentSymbols(uri protocol.DocumentURI) []protocol.DocumentSymbol {
 	symbols := []protocol.DocumentSymbol{}
 	docInfo, ok := s.doc(uri)
@@ -111,6 +127,14 @@ func (s *Server) getDocumentSymbols(uri protocol.DocumentURI) []protocol.Documen
 			}
 			seen["class:"+class.SourceName()] = true
 			symbols = append(symbols, classDocumentSymbol(class))
+			continue
+		}
+		if iface := zeus_value.AsInterface(value); iface != nil {
+			if iface.Span == nil || seen["interface:"+iface.Name] {
+				continue
+			}
+			seen["interface:"+iface.Name] = true
+			symbols = append(symbols, interfaceDocumentSymbol(iface))
 			continue
 		}
 		if fn := zeus_value.AsFunction(value); fn != nil {
@@ -184,6 +208,37 @@ func classDocumentSymbol(class *zeus_value.Class) protocol.DocumentSymbol {
 		Kind:           protocol.SymbolKindClass,
 		Range:          spanToRange(class.Span),
 		SelectionRange: spanToRange(class.Span),
+		Children:       children,
+	}
+}
+
+// interfaceDocumentSymbol builds a document symbol for a user interface, nesting its (own, not
+// inherited) property and method signatures as children.
+func interfaceDocumentSymbol(iface *zeus_value.Interface) protocol.DocumentSymbol {
+	children := []protocol.DocumentSymbol{}
+	for _, prop := range iface.Properties {
+		children = append(children, protocol.DocumentSymbol{
+			Name:           prop.Property.Name,
+			Detail:         typeString(prop.Property.ValueType),
+			Kind:           protocol.SymbolKindField,
+			Range:          spanToRange(prop.Property.Span),
+			SelectionRange: spanToRange(prop.Property.Span),
+		})
+	}
+	for _, fn := range iface.Methods {
+		children = append(children, protocol.DocumentSymbol{
+			Name:           fn.SourceName(),
+			Detail:         funcSignature(fn),
+			Kind:           protocol.SymbolKindMethod,
+			Range:          spanToRange(fn.Span),
+			SelectionRange: spanToRange(fn.Span),
+		})
+	}
+	return protocol.DocumentSymbol{
+		Name:           iface.Name,
+		Kind:           protocol.SymbolKindInterface,
+		Range:          spanToRange(iface.Span),
+		SelectionRange: spanToRange(iface.Span),
 		Children:       children,
 	}
 }

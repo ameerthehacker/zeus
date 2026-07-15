@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -18,59 +19,52 @@ func (s *Server) getHover(uri protocol.DocumentURI, position protocol.Position) 
 		return nil
 	}
 
-	line := int(position.Line)
-	col := int(position.Character)
-
-	word, isMember := wordAt(docInfo.Content, line, col)
-	if word == "" {
-		return nil
-	}
-
-	// Member access: resolve the receiver chain that precedes this word and describe the
-	// member. parseMemberContext is evaluated at the word's start column so the word itself
-	// is treated as the (empty-partial) member being hovered.
-	if isMember && docInfo.IRModule != nil {
-		wordStart := wordStartColumn(docInfo.Content, line, col)
-		if mctx, ok := parseMemberContext(docInfo.Content, line, wordStart); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, mctx.chain); ok {
-				if desc, ok := describeMember(r, word); ok {
+	// Prefer the AST + semantic model: resolve the identifier under the cursor to its binding.
+	if docInfo.AST != nil {
+		if id, member := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			if member != nil {
+				// Member access: resolve the receiver and describe the member under the cursor.
+				if r, ok := resolveReceiver(docInfo, member.Object); ok {
+					if desc, ok := describeMember(r, id.Name.Value); ok {
+						return markdownHover(desc)
+					}
+				}
+				return nil
+			}
+			// Plain reference: describe the bound symbol (scope-correct), falling back to a name
+			// lookup when the identifier has no recorded binding.
+			if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
+				if desc, ok := renderSymbol(sym, id.Name.Value); ok {
 					return markdownHover(desc)
 				}
 			}
+			if docInfo.IRModule != nil {
+				if desc, ok := describeSymbol(docInfo.IRModule, id.Name.Value); ok {
+					return markdownHover(desc)
+				}
+			}
+			return nil
 		}
-		return nil
 	}
 
-	// Built-in type keyword.
+	// Not on a parsed identifier (a keyword, a built-in type name in an annotation, or a syntax
+	// hole): fall back to a lexeme scan and describe keywords/types/symbols by name.
+	word, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
+	if word == "" {
+		return nil
+	}
 	if _, ok := token.DataTypes[word]; ok {
 		return markdownHover(fmt.Sprintf("```zeus\n%s\n```\n%s", word, dataTypeDescription(word)))
 	}
-	// Language keyword.
 	if _, ok := token.Keywords[word]; ok {
 		return markdownHover(fmt.Sprintf("**keyword** `%s` — %s", word, keywordDescription(word)))
 	}
-
-	// User-declared symbol (variable, function, or class).
 	if docInfo.IRModule != nil {
 		if desc, ok := describeSymbol(docInfo.IRModule, word); ok {
 			return markdownHover(desc)
 		}
 	}
-
 	return nil
-}
-
-// wordStartColumn returns the rune column at which the identifier under `col` begins.
-func wordStartColumn(content string, line, col int) int {
-	runes := []rune(lineAt(content, line))
-	if col > len(runes) {
-		col = len(runes)
-	}
-	start := col
-	for start > 0 && isIdentRune(runes[start-1]) {
-		start--
-	}
-	return start
 }
 
 // describeMember renders a markdown description of a named member on a receiver.
@@ -90,18 +84,24 @@ func describeMember(r receiver, name string) (string, bool) {
 			readonly = "readonly "
 		}
 		return fmt.Sprintf("```zeus\n(property) %s.%s%s%s: %s\n```",
-			m.owner.SourceName(), staticKw, accessModifierString(m.access)+readonly, name, typeString(m.valueType)), true
+			m.ownerName, staticKw, accessModifierString(m.access)+readonly, name, typeString(m.valueType)), true
 	case memberAccessor:
-		return fmt.Sprintf("```zeus\n(accessor) %s.%s — %s\n```", m.owner.SourceName(), name, m.accessor.String()), true
+		return fmt.Sprintf("```zeus\n(accessor) %s.%s — %s\n```", m.ownerName, name, m.accessor.String()), true
 	default: // memberMethod
 		return fmt.Sprintf("```zeus\n(method) %s.%s%s%s\n```",
-			m.owner.SourceName(), staticKw, name, funcSignature(m.fn)), true
+			m.ownerName, staticKw, name, funcSignature(m.fn)), true
 	}
 }
 
-// describeSymbol renders a markdown description of a top-level-visible symbol.
+// describeSymbol renders a markdown description of a top-level-visible symbol, looked up by name.
 func describeSymbol(irModule *ir.IRModule, name string) (string, bool) {
-	sym := symbolByName(irModule, name)
+	return renderSymbol(symbolByName(irModule, name), name)
+}
+
+// renderSymbol renders a markdown description of an already-resolved symbol value. Sharing this
+// between name-based lookup and the binding index means hover text is identical whichever path
+// resolved the symbol.
+func renderSymbol(sym zeus_value.Value, name string) (string, bool) {
 	if sym == nil {
 		return "", false
 	}
@@ -113,6 +113,17 @@ func describeSymbol(irModule *ir.IRModule, name string) (string, bool) {
 		}
 		return fmt.Sprintf("```zeus\n%s\n```", header), true
 	}
+	if iface := zeus_value.AsInterface(sym); iface != nil {
+		header := "interface " + iface.Name
+		if len(iface.Parents) > 0 {
+			parents := make([]string, 0, len(iface.Parents))
+			for _, p := range iface.Parents {
+				parents = append(parents, p.Name)
+			}
+			header += " extends " + strings.Join(parents, ", ")
+		}
+		return fmt.Sprintf("```zeus\n%s\n```", header), true
+	}
 	if fn := zeus_value.AsFunction(sym); fn != nil {
 		return fmt.Sprintf("```zeus\nfunction %s%s\n```", fn.SourceName(), funcSignature(fn)), true
 	}
@@ -121,6 +132,9 @@ func describeSymbol(irModule *ir.IRModule, name string) (string, bool) {
 	}
 	if o := zeus_value.AsObject(sym); o != nil {
 		return fmt.Sprintf("```zeus\n(variable) %s: %s\n```", name, typeString(o.ValueType)), true
+	}
+	if rc := zeus_value.AsRefCellVar(sym); rc != nil {
+		return fmt.Sprintf("```zeus\n(variable) %s: %s\n```", name, typeString(rc.ValueType)), true
 	}
 	return "", false
 }

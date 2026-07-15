@@ -8,8 +8,10 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/logger"
+	"github.com/ameerthehacker/zeus/internal/semantics"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"go.lsp.dev/protocol"
 )
@@ -20,14 +22,23 @@ import (
 // imports.go), with shared resolution helpers in analysis.go.
 
 type DocumentInfo struct {
-	Content  string
+	Content string
+	// AST is the parsed program (possibly partial on syntax errors). It backs positional queries
+	// (ast.NodeAt) so features can map a cursor to the exact node under it instead of scraping text.
+	AST      *ast.ProgramNode
 	IRModule *ir.IRModule
+	// Semantic is the queryable model (node->symbol bindings, node->type facts) resolved during
+	// IR generation. Features query it for scope-correct hover/definition.
+	Semantic *semantics.Model
 	Errors   []*zeus_error.ZeusError
 }
 
 type Server struct {
 	client    protocol.Client
 	documents map[string]*DocumentInfo // URI -> DocumentInfo
+	// modules caches generated import modules across edits so unchanged imports are not
+	// regenerated on every keystroke.
+	modules *moduleCache
 	// reportedPanics remembers panic signatures already surfaced to the user so the same
 	// internal error is not popped up on every keystroke (didChange fires constantly).
 	reportedPanics map[string]bool
@@ -36,6 +47,7 @@ type Server struct {
 func NewServer() *Server {
 	return &Server{
 		documents:      make(map[string]*DocumentInfo),
+		modules:        newModuleCache(),
 		reportedPanics: make(map[string]bool),
 	}
 }
@@ -67,6 +79,10 @@ func (s *Server) Initialize(ctx context.Context, params *protocol.InitializePara
 			"documentSymbolProvider":     true,
 			"documentHighlightProvider":  true,
 			"referencesProvider":         true,
+			"renameProvider": map[string]interface{}{
+				// The server validates rename sites via textDocument/prepareRename.
+				"prepareProvider": true,
+			},
 			"inlayHintProvider":          true,
 			"documentFormattingProvider": true,
 		},
@@ -183,6 +199,9 @@ func (s *Server) handleMessage(msg []byte) (err error) {
 		fmt.Fprintf(os.Stderr, "Document closed: %s\n", params.TextDocument.URI)
 		// Remove document from cache
 		delete(s.documents, string(params.TextDocument.URI))
+		// Drop any cached module for this file (and its dependents); the on-disk version may
+		// diverge from what was analyzed while it was open.
+		s.modules.invalidate(params.TextDocument.URI.Filename())
 		// Clear diagnostics
 		return s.sendDiagnostics(params.TextDocument.URI, []protocol.Diagnostic{})
 	case "textDocument/didSave":
@@ -232,6 +251,19 @@ func (s *Server) handleMessage(msg []byte) (err error) {
 			return err
 		}
 		result = s.getReferences(params.TextDocument.URI, params.Position)
+	case "textDocument/prepareRename":
+		var params protocol.PrepareRenameParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		// nil result is a valid "cannot rename here" response.
+		result = s.prepareRename(params.TextDocument.URI, params.Position)
+	case "textDocument/rename":
+		var params protocol.RenameParams
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		result = s.rename(params.TextDocument.URI, params.Position, params.NewName)
 	case "textDocument/inlayHint":
 		var params inlayHintParams
 		if err := json.Unmarshal(message.Params, &params); err != nil {
