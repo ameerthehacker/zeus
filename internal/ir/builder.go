@@ -31,6 +31,7 @@ type IRBuilder struct {
 	usedFuncIRNames         map[string]bool
 	usedVarNames            map[string]bool
 	varNameScopeStack       []map[string]bool
+	usedGlobalNames         map[string]bool
 }
 
 func NewIRBuilder() *IRBuilder {
@@ -58,6 +59,7 @@ func newIRBuilderInternal() *IRBuilder {
 		symbolTable:             symbol_table,
 		usedFuncIRNames:         make(map[string]bool),
 		usedVarNames:            make(map[string]bool),
+		usedGlobalNames:         make(map[string]bool),
 	}
 
 	// Register all primordial classes from the registry upfront
@@ -577,20 +579,27 @@ func (b *IRBuilder) BuildVarDecl(v *VarDecl) *zeus_value.Var {
 
 func (b *IRBuilder) BuildGlobalVarDecl(v *VarDecl) *zeus_value.Var {
 	// An ambient `global` uses the stable, un-mangled symbol shared by its single definition and
-	// every module's extern reference, so it must NOT be uniquified per module.
-	name := v.Name
+	// every module's extern reference, so it must NOT be uniquified per module; its symbol-table key
+	// is that same stable name. A plain module-scope var, by contrast, gets a module-unique IR name
+	// (usedGlobalNames is module-lifetime because globals all coexist, unlike per-function locals) while
+	// its symbol is registered under the SOURCE name for scoped resolution — the exact same reasoning as
+	// BuildVarDecl. Without this, two same-named module-scope locals in sibling scopes (e.g. `let n` in
+	// two module-level `if` branches) share one IR name and collide in codegen's name-keyed value map.
+	var irName, symbolKey string
 	if v.IsAmbient {
-		name = zeus_value.AmbientGlobalSymbolName(v.Name)
+		irName = zeus_value.AmbientGlobalSymbolName(v.Name)
+		symbolKey = irName
 	} else {
-		name = b.generateUniqueGlobalName(v.Name)
+		irName = b.uniqueIRName(v.Name, b.usedGlobalNames)
+		symbolKey = v.Name
 	}
 
-	variable := zeus_value.NewVar(name, v.ValueType, true, v.Span)
+	variable := zeus_value.NewVar(irName, v.ValueType, true, v.Span)
 	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
 	variable.IsAmbient = v.IsAmbient
 
-	b.symbolTable.DeclareSymbol(name, variable)
+	b.symbolTable.DeclareSymbol(symbolKey, variable)
 
 	b.pushInstr(&Instr{
 		Type:  InstrTypeDeclGlobalVar,
