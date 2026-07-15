@@ -1,8 +1,6 @@
 package lsp
 
 import (
-	"os"
-
 	"github.com/ameerthehacker/zeus/internal/analysis"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/lexer"
@@ -25,43 +23,62 @@ func (s *Server) parseDocument(docPath, content string) (*ir.IRModule, []*zeus_e
 }
 
 // makeModuleResolver returns the getModule callback the IR generator uses to resolve imports.
-// The IR generator resolves the import path to an absolute file path before calling this, so
-// the callback just reads, parses, and IR-generates that file on demand. Results (including
-// failures) are cached, and a module is cached before its body is generated so an import cycle
-// resolves to the in-progress module instead of recursing forever. Errors inside imported
+// The IR generator resolves the import path to an absolute file path before calling this, so the
+// callback reads, parses, and IR-generates that file on demand. Generated modules are stored in
+// the server's persistent moduleCache and reused across edits as long as the file (by mtime) is
+// unchanged, so an unchanged import is not regenerated on every keystroke. Errors inside imported
 // modules are intentionally not surfaced on the importing document.
 //
-// A cache is created per call, so every edit re-resolves against the current files on disk.
 // When baseDocPath is empty (fuzzing), resolution is disabled and no files are read.
 func (s *Server) makeModuleResolver(baseDocPath string) func(string) *ir.IRModule {
 	if baseDocPath == "" {
 		return func(string) *ir.IRModule { return nil }
 	}
-	cache := map[string]*ir.IRModule{}
+	// Per-analysis state: modules already resolved this pass (dedup + import-cycle break), the stack
+	// of modules currently being generated (to attribute each resolved import to its importer), and
+	// the direct imports collected for each module built this pass.
+	seen := map[string]*ir.IRModule{}
+	var stack []string
+	directImports := map[string][]string{}
+
 	var resolve func(path string) *ir.IRModule
 	resolve = func(path string) *ir.IRModule {
-		if m, ok := cache[path]; ok {
+		// Attribute this import to the module currently being generated, for reverse invalidation.
+		if len(stack) > 0 {
+			parent := stack[len(stack)-1]
+			directImports[parent] = appendUnique(directImports[parent], path)
+		}
+		if m, ok := seen[path]; ok {
 			return m
 		}
-		// Reserve the slot before generating so a cyclic import terminates.
-		cache[path] = nil
+		// Reuse an unchanged module instead of regenerating it.
+		if m, ok := s.modules.getFresh(path); ok {
+			seen[path] = m
+			return m
+		}
 
-		data, err := os.ReadFile(path)
+		data, modTime, err := readModuleFile(path)
 		if err != nil {
+			seen[path] = nil
 			return nil
 		}
 		tokens, _ := lexer.NewLexer(string(data)).Lex()
 		if len(tokens) == 0 {
+			seen[path] = nil
 			return nil
 		}
 		program, _ := parser.NewParser(tokens).ParseProgram()
 		if program == nil {
+			seen[path] = nil
 			return nil
 		}
 		builder := ir.NewIRBuilder()
 		m := ir.NewIRModule(builder, path, false, resolve)
-		cache[path] = m
+		seen[path] = m // visible to cyclic imports during Generate
+		stack = append(stack, path)
 		m.Generate(program)
+		stack = stack[:len(stack)-1]
+		s.modules.put(path, m, modTime, directImports[path])
 		return m
 	}
 	return resolve

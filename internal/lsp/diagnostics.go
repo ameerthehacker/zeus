@@ -17,6 +17,10 @@ import (
 // publishes diagnostics. It keeps the AST so positional features (hover, definition) can query
 // it directly.
 func (s *Server) validateDocument(uri protocol.DocumentURI, content string) error {
+	// This document just changed, so drop its cached module and any module that imports it; unchanged
+	// imports of this document stay cached and are reused by the analysis below.
+	s.modules.invalidate(uri.Filename())
+
 	// uri.Filename() gives the on-disk path, used to resolve imports relative to this file.
 	res := analysis.Analyze(uri.Filename(), content, s.makeModuleResolver(uri.Filename()))
 

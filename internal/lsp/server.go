@@ -36,6 +36,9 @@ type DocumentInfo struct {
 type Server struct {
 	client    protocol.Client
 	documents map[string]*DocumentInfo // URI -> DocumentInfo
+	// modules caches generated import modules across edits so unchanged imports are not
+	// regenerated on every keystroke.
+	modules *moduleCache
 	// reportedPanics remembers panic signatures already surfaced to the user so the same
 	// internal error is not popped up on every keystroke (didChange fires constantly).
 	reportedPanics map[string]bool
@@ -44,6 +47,7 @@ type Server struct {
 func NewServer() *Server {
 	return &Server{
 		documents:      make(map[string]*DocumentInfo),
+		modules:        newModuleCache(),
 		reportedPanics: make(map[string]bool),
 	}
 }
@@ -191,6 +195,9 @@ func (s *Server) handleMessage(msg []byte) (err error) {
 		fmt.Fprintf(os.Stderr, "Document closed: %s\n", params.TextDocument.URI)
 		// Remove document from cache
 		delete(s.documents, string(params.TextDocument.URI))
+		// Drop any cached module for this file (and its dependents); the on-disk version may
+		// diverge from what was analyzed while it was open.
+		s.modules.invalidate(params.TextDocument.URI.Filename())
 		// Clear diagnostics
 		return s.sendDiagnostics(params.TextDocument.URI, []protocol.Diagnostic{})
 	case "textDocument/didSave":
