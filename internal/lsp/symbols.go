@@ -87,6 +87,9 @@ func symbolSpan(value zeus_value.Value) *token.Span {
 	if class := zeus_value.AsClass(value); class != nil {
 		return class.Span
 	}
+	if iface := zeus_value.AsInterface(value); iface != nil {
+		return iface.Span
+	}
 	if o := zeus_value.AsObject(value); o != nil {
 		return o.Span
 	}
@@ -106,8 +109,8 @@ func memberSpan(r receiver, name string) *token.Span {
 	return nil
 }
 
-// getDocumentSymbols returns an outline of the user-defined classes and functions in the
-// document. Primordial and synthesized symbols (Console, array classes, etc.) are excluded.
+// getDocumentSymbols returns an outline of the user-defined classes, interfaces, and functions in
+// the document. Primordial and synthesized symbols (Console, array classes, etc.) are excluded.
 func (s *Server) getDocumentSymbols(uri protocol.DocumentURI) []protocol.DocumentSymbol {
 	symbols := []protocol.DocumentSymbol{}
 	docInfo, ok := s.doc(uri)
@@ -124,6 +127,14 @@ func (s *Server) getDocumentSymbols(uri protocol.DocumentURI) []protocol.Documen
 			}
 			seen["class:"+class.SourceName()] = true
 			symbols = append(symbols, classDocumentSymbol(class))
+			continue
+		}
+		if iface := zeus_value.AsInterface(value); iface != nil {
+			if iface.Span == nil || seen["interface:"+iface.Name] {
+				continue
+			}
+			seen["interface:"+iface.Name] = true
+			symbols = append(symbols, interfaceDocumentSymbol(iface))
 			continue
 		}
 		if fn := zeus_value.AsFunction(value); fn != nil {
@@ -197,6 +208,37 @@ func classDocumentSymbol(class *zeus_value.Class) protocol.DocumentSymbol {
 		Kind:           protocol.SymbolKindClass,
 		Range:          spanToRange(class.Span),
 		SelectionRange: spanToRange(class.Span),
+		Children:       children,
+	}
+}
+
+// interfaceDocumentSymbol builds a document symbol for a user interface, nesting its (own, not
+// inherited) property and method signatures as children.
+func interfaceDocumentSymbol(iface *zeus_value.Interface) protocol.DocumentSymbol {
+	children := []protocol.DocumentSymbol{}
+	for _, prop := range iface.Properties {
+		children = append(children, protocol.DocumentSymbol{
+			Name:           prop.Property.Name,
+			Detail:         typeString(prop.Property.ValueType),
+			Kind:           protocol.SymbolKindField,
+			Range:          spanToRange(prop.Property.Span),
+			SelectionRange: spanToRange(prop.Property.Span),
+		})
+	}
+	for _, fn := range iface.Methods {
+		children = append(children, protocol.DocumentSymbol{
+			Name:           fn.SourceName(),
+			Detail:         funcSignature(fn),
+			Kind:           protocol.SymbolKindMethod,
+			Range:          spanToRange(fn.Span),
+			SelectionRange: spanToRange(fn.Span),
+		})
+	}
+	return protocol.DocumentSymbol{
+		Name:           iface.Name,
+		Kind:           protocol.SymbolKindInterface,
+		Range:          spanToRange(iface.Span),
+		SelectionRange: spanToRange(iface.Span),
 		Children:       children,
 	}
 }

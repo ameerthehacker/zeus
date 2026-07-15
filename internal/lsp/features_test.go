@@ -329,6 +329,54 @@ func TestRenameToInvalidNameRefused(t *testing.T) {
 	}
 }
 
+// TestInterfaceFeatures checks the LSP is interface-aware: hover/definition on interface names and
+// their members, member completion on interface-typed values, and interfaces in the outline.
+func TestInterfaceFeatures(t *testing.T) {
+	src := `interface Shape {
+  name: string;
+  area(): f64;
+}
+function describe(s: Shape): f64 {
+  return s.area();
+}
+`
+	sv, uri := openDoc(t, src)
+
+	// Hover on the interface name in its declaration.
+	if h := sv.getHover(uri, posAfter(t, src, "interface Sha")); h == nil || !strings.Contains(hoverText(h), "interface Shape") {
+		t.Errorf("hover on interface name should say 'interface Shape', got %v", h)
+	}
+	// Hover on the interface used as a type annotation.
+	if h := sv.getHover(uri, posAfter(t, src, "s: Sha")); h == nil || !strings.Contains(hoverText(h), "interface Shape") {
+		t.Errorf("hover on interface type annotation should say 'interface Shape', got %v", h)
+	}
+	// Hover on a member of an interface-typed value.
+	if h := sv.getHover(uri, posAfter(t, src, "s.are")); h == nil || !strings.Contains(hoverText(h), "area") {
+		t.Errorf("hover on interface member should mention 'area', got %v", h)
+	}
+	// Go-to-definition on the interface member resolves to its signature.
+	if def := sv.getDefinition(uri, posAfter(t, src, "s.are")); len(def) == 0 {
+		t.Errorf("go-to-definition on interface member should resolve")
+	}
+	// Member completion on an interface-typed value lists the interface's members.
+	got := labels(sv.getCompletions(uri, posAfter(t, src, "return s.")).Items)
+	for _, want := range []string{"name", "area"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("interface member completion missing %q; got %v", want, keysOf(got))
+		}
+	}
+	// The document outline includes the interface.
+	foundIface := false
+	for _, ds := range sv.getDocumentSymbols(uri) {
+		if ds.Name == "Shape" && ds.Kind == protocol.SymbolKindInterface {
+			foundIface = true
+		}
+	}
+	if !foundIface {
+		t.Errorf("document symbols should include the Shape interface")
+	}
+}
+
 func TestHoverKeywordAndType(t *testing.T) {
 	s, uri := openDoc(t, sampleProgram)
 	h := s.getHover(uri, posAfter(t, sampleProgram, "i3"))
