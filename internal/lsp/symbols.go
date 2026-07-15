@@ -40,18 +40,15 @@ func (s *Server) getDefinition(uri protocol.DocumentURI, position protocol.Posit
 		return none
 	}
 
-	line := int(position.Line)
-	col := int(position.Character)
-	word, isMember := wordAt(docInfo.Content, line, col)
+	word, member := cursorWord(docInfo, position)
 	if word == "" {
 		return none
 	}
 
 	var span *token.Span
-	if isMember {
-		wordStart := wordStartColumn(docInfo.Content, line, col)
-		if mctx, ok := parseMemberContext(docInfo.Content, line, wordStart); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, mctx.chain); ok {
+	if member != nil {
+		if chain, ok := receiverChainFromExpr(member.Object); ok {
+			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
 				span = memberSpan(r, word)
 			}
 		}

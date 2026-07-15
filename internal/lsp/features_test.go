@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ameerthehacker/zeus/internal/analysis"
 	"go.lsp.dev/protocol"
 )
 
@@ -50,8 +51,8 @@ func openDoc(t *testing.T, src string) (*Server, protocol.DocumentURI) {
 	t.Helper()
 	s := NewServer()
 	uri := protocol.DocumentURI("file:///sample.zs")
-	irModule, errs := s.parseDocument(uri.Filename(), src)
-	s.documents[string(uri)] = &DocumentInfo{Content: src, IRModule: irModule, Errors: errs}
+	res := analysis.Analyze(uri.Filename(), src, s.makeModuleResolver(uri.Filename()))
+	s.documents[string(uri)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Errors: res.Diagnostics}
 	return s, uri
 }
 

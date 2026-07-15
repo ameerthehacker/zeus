@@ -3,9 +3,11 @@ package lsp
 import (
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
+	"go.lsp.dev/protocol"
 )
 
 // This file contains the position/text analysis and symbol-resolution helpers shared
@@ -124,6 +126,75 @@ func parseMemberContext(content string, line, col int) (memberContext, bool) {
 		return memberContext{}, false
 	}
 	return memberContext{chain: chain, partial: partial}, true
+}
+
+// --- AST-based cursor resolution (preferred over the text helpers above) ---
+//
+// Hover and go-to-definition act on tokens the user has already typed, so the parsed AST is
+// authoritative there: ast.NodeAt maps the cursor to the exact identifier/member node, which is
+// robust across line breaks, comments, and receiver chains the text scanner cannot follow.
+// (Completion and signature help still scan text/tokens on purpose — they must work at a broken
+// AST like `obj.` or `f(a, ` where the cursor sits in a syntax hole.)
+
+// zeusPos converts an LSP position (0-based) to a Zeus source position (1-based).
+func zeusPos(position protocol.Position) token.Position {
+	return token.Position{Line: int(position.Line) + 1, Column: int(position.Character) + 1}
+}
+
+// identifierAt returns the identifier under pos and, when that identifier is the property of a
+// member access (`receiver.ident`), the enclosing member-access node. Both are nil when the
+// cursor is not on an identifier.
+func identifierAt(program *ast.ProgramNode, pos token.Position) (*ast.IdentifierExprNode, *ast.ObjectPropertyAccessExprNode) {
+	path := ast.NodeAt(program, pos)
+	if len(path) == 0 {
+		return nil, nil
+	}
+	id, ok := path[0].(*ast.IdentifierExprNode)
+	if !ok {
+		return nil, nil
+	}
+	// The parent is the member access only when the identifier is its property, not its receiver
+	// (hovering the `a` in `a.b` is a plain reference to `a`, so path[1].Property != id there).
+	if len(path) >= 2 {
+		if member, ok := path[1].(*ast.ObjectPropertyAccessExprNode); ok && member.Property == id {
+			return id, member
+		}
+	}
+	return id, nil
+}
+
+// receiverChainFromExpr reconstructs a plain identifier chain (a, a.b, a.b.c) from a receiver
+// expression so it can be resolved by resolveReceiverChain. It returns ok=false when the chain is
+// interrupted by anything else (a call, an index, a parenthesized expression) — those receiver
+// types cannot be resolved without an expression-type map (Phase 2).
+func receiverChainFromExpr(expr ast.ExprNode) ([]string, bool) {
+	switch e := expr.(type) {
+	case *ast.IdentifierExprNode:
+		return []string{e.Name.Value}, true
+	case *ast.ObjectPropertyAccessExprNode:
+		base, ok := receiverChainFromExpr(e.Object)
+		if !ok {
+			return nil, false
+		}
+		return append(base, e.Property.Name.Value), true
+	default:
+		return nil, false
+	}
+}
+
+// cursorWord resolves what the cursor is on, preferring the AST for structure and falling back to
+// a lexeme scan for tokens the AST does not expose as identifiers (keywords, built-in type names,
+// or a position in a syntax hole). When member is non-nil the cursor is on a member access whose
+// member name is word and whose receiver is member.Object.
+func cursorWord(docInfo *DocumentInfo, position protocol.Position) (word string, member *ast.ObjectPropertyAccessExprNode) {
+	if docInfo.AST != nil {
+		if id, m := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
+			return id.Name.Value, m
+		}
+	}
+	// Not on a parsed identifier: fall back to lexeme extraction (keyword / type / annotation name).
+	w, _ := wordAt(docInfo.Content, int(position.Line), int(position.Character))
+	return w, nil
 }
 
 // symbolByName finds a symbol by its source name. GetAllSymbols is keyed by name across all

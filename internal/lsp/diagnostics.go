@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ameerthehacker/zeus/internal/analysis"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
 	"go.lsp.dev/protocol"
 )
@@ -12,18 +13,21 @@ import (
 // This file turns compiler errors into LSP diagnostics, drives (re)validation of a document,
 // and surfaces recovered internal errors to the editor.
 
-// validateDocument parses a document, caches the result, and publishes diagnostics.
+// validateDocument analyzes a document, caches the result (AST + IR + diagnostics), and
+// publishes diagnostics. It keeps the AST so positional features (hover, definition) can query
+// it directly.
 func (s *Server) validateDocument(uri protocol.DocumentURI, content string) error {
 	// uri.Filename() gives the on-disk path, used to resolve imports relative to this file.
-	irModule, errors := s.parseDocument(uri.Filename(), content)
+	res := analysis.Analyze(uri.Filename(), content, s.makeModuleResolver(uri.Filename()))
 
 	s.documents[string(uri)] = &DocumentInfo{
 		Content:  content,
-		IRModule: irModule,
-		Errors:   errors,
+		AST:      res.AST,
+		IRModule: res.Module,
+		Errors:   res.Diagnostics,
 	}
 
-	diagnostics := s.convertToLSPDiagnostics(errors)
+	diagnostics := s.convertToLSPDiagnostics(res.Diagnostics)
 	fmt.Fprintf(os.Stderr, "Generated %d diagnostics for %s\n", len(diagnostics), uri)
 	return s.sendDiagnostics(uri, diagnostics)
 }

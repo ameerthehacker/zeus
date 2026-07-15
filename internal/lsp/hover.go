@@ -18,21 +18,19 @@ func (s *Server) getHover(uri protocol.DocumentURI, position protocol.Position) 
 		return nil
 	}
 
-	line := int(position.Line)
-	col := int(position.Character)
-
-	word, isMember := wordAt(docInfo.Content, line, col)
+	word, member := cursorWord(docInfo, position)
 	if word == "" {
 		return nil
 	}
 
-	// Member access: resolve the receiver chain that precedes this word and describe the
-	// member. parseMemberContext is evaluated at the word's start column so the word itself
-	// is treated as the (empty-partial) member being hovered.
-	if isMember && docInfo.IRModule != nil {
-		wordStart := wordStartColumn(docInfo.Content, line, col)
-		if mctx, ok := parseMemberContext(docInfo.Content, line, wordStart); ok {
-			if r, ok := resolveReceiverChain(docInfo.IRModule, mctx.chain); ok {
+	// Member access: resolve the receiver chain (reconstructed from the AST) and describe the
+	// member under the cursor.
+	if member != nil {
+		if docInfo.IRModule == nil {
+			return nil
+		}
+		if chain, ok := receiverChainFromExpr(member.Object); ok {
+			if r, ok := resolveReceiverChain(docInfo.IRModule, chain); ok {
 				if desc, ok := describeMember(r, word); ok {
 					return markdownHover(desc)
 				}
@@ -58,19 +56,6 @@ func (s *Server) getHover(uri protocol.DocumentURI, position protocol.Position) 
 	}
 
 	return nil
-}
-
-// wordStartColumn returns the rune column at which the identifier under `col` begins.
-func wordStartColumn(content string, line, col int) int {
-	runes := []rune(lineAt(content, line))
-	if col > len(runes) {
-		col = len(runes)
-	}
-	start := col
-	for start > 0 && isIdentRune(runes[start-1]) {
-		start--
-	}
-	return start
 }
 
 // describeMember renders a markdown description of a named member on a receiver.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/logger"
 	"github.com/ameerthehacker/zeus/internal/zeus_error"
@@ -20,7 +21,10 @@ import (
 // imports.go), with shared resolution helpers in analysis.go.
 
 type DocumentInfo struct {
-	Content  string
+	Content string
+	// AST is the parsed program (possibly partial on syntax errors). It backs positional queries
+	// (ast.NodeAt) so features can map a cursor to the exact node under it instead of scraping text.
+	AST      *ast.ProgramNode
 	IRModule *ir.IRModule
 	Errors   []*zeus_error.ZeusError
 }
