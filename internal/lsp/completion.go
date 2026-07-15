@@ -85,7 +85,7 @@ func memberCompletionItem(m member) protocol.CompletionItem {
 			Label:         m.name,
 			Kind:          protocol.CompletionItemKindField,
 			Detail:        accessModifierString(m.access) + detail,
-			Documentation: fmt.Sprintf("%s.%s: %s", m.owner.SourceName(), m.name, detail),
+			Documentation: fmt.Sprintf("%s.%s: %s", m.ownerName, m.name, detail),
 		}
 	case memberAccessor:
 		kinds := []string{}
@@ -99,7 +99,7 @@ func memberCompletionItem(m member) protocol.CompletionItem {
 			Label:         m.name,
 			Kind:          protocol.CompletionItemKindProperty,
 			Detail:        fmt.Sprintf("%s(%s) %s", accessModifierString(m.access), strings.Join(kinds, "/"), typeString(m.valueType)),
-			Documentation: fmt.Sprintf("accessor %s.%s: %s", m.owner.SourceName(), m.name, typeString(m.valueType)),
+			Documentation: fmt.Sprintf("accessor %s.%s: %s", m.ownerName, m.name, typeString(m.valueType)),
 		}
 	default: // memberMethod
 		sig := funcSignature(m.fn)
@@ -107,7 +107,7 @@ func memberCompletionItem(m member) protocol.CompletionItem {
 			Label:            m.name,
 			Kind:             protocol.CompletionItemKindMethod,
 			Detail:           accessModifierString(m.access) + sig,
-			Documentation:    fmt.Sprintf("%s.%s%s", m.owner.SourceName(), m.name, sig),
+			Documentation:    fmt.Sprintf("%s.%s%s", m.ownerName, m.name, sig),
 			InsertText:       m.name + "($0)",
 			InsertTextFormat: protocol.InsertTextFormatSnippet,
 		}

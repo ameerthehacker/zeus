@@ -2,6 +2,7 @@ package lsp
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ameerthehacker/zeus/internal/ir"
 	"github.com/ameerthehacker/zeus/internal/token"
@@ -83,12 +84,12 @@ func describeMember(r receiver, name string) (string, bool) {
 			readonly = "readonly "
 		}
 		return fmt.Sprintf("```zeus\n(property) %s.%s%s%s: %s\n```",
-			m.owner.SourceName(), staticKw, accessModifierString(m.access)+readonly, name, typeString(m.valueType)), true
+			m.ownerName, staticKw, accessModifierString(m.access)+readonly, name, typeString(m.valueType)), true
 	case memberAccessor:
-		return fmt.Sprintf("```zeus\n(accessor) %s.%s — %s\n```", m.owner.SourceName(), name, m.accessor.String()), true
+		return fmt.Sprintf("```zeus\n(accessor) %s.%s — %s\n```", m.ownerName, name, m.accessor.String()), true
 	default: // memberMethod
 		return fmt.Sprintf("```zeus\n(method) %s.%s%s%s\n```",
-			m.owner.SourceName(), staticKw, name, funcSignature(m.fn)), true
+			m.ownerName, staticKw, name, funcSignature(m.fn)), true
 	}
 }
 
@@ -109,6 +110,17 @@ func renderSymbol(sym zeus_value.Value, name string) (string, bool) {
 		header := "class " + class.SourceName()
 		if class.ParentClass != nil {
 			header += " extends " + class.ParentClass.SourceName()
+		}
+		return fmt.Sprintf("```zeus\n%s\n```", header), true
+	}
+	if iface := zeus_value.AsInterface(sym); iface != nil {
+		header := "interface " + iface.Name
+		if len(iface.Parents) > 0 {
+			parents := make([]string, 0, len(iface.Parents))
+			for _, p := range iface.Parents {
+				parents = append(parents, p.Name)
+			}
+			header += " extends " + strings.Join(parents, ", ")
 		}
 		return fmt.Sprintf("```zeus\n%s\n```", header), true
 	}
