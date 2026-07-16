@@ -89,6 +89,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeCast:
 		input := AsCastInstrInput(instr.Input)
 		markValueAsUsed(input.Value)
+	case InstrTypeBox:
+		// The autoboxed scalar is used (it becomes the box's field value).
+		markValueAsUsed(AsBoxInstrInput(instr.Input).Value)
 	case InstrTypeInstanceOf:
 		input := AsInstanceOfInstrInput(instr.Input)
 		markValueAsUsed(input.Value)

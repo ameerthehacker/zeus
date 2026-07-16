@@ -8,6 +8,15 @@ const ZEUS_PRIMORDIAL_ARRAY = "array"
 const ZEUS_PRIMORDIAL_STRING = "string"
 const ZEUS_PRIMORDIAL_ERROR = "error"
 
+// Boxed-primitive primordials (prelude/number.zs, prelude/bool.zs). A scalar is autoboxed into one
+// of these at object boundaries (method call on a primitive, interface/Number/Bool-typed slot). The
+// single `value` field is written directly by the autobox lowering, so no constructor is needed.
+const ZEUS_PRIMORDIAL_NUMBER = "Number"
+const ZEUS_PRIMORDIAL_BOOL = "Bool"
+
+// ZEUS_BOX_VALUE_PROPERTY is the field the boxed scalar is stored in on Number/Bool.
+const ZEUS_BOX_VALUE_PROPERTY = "value"
+
 // Reserved class ID for Error - used for exception type matching
 const ERROR_CLASS_ID = 1
 

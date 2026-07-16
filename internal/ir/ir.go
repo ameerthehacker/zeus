@@ -1010,7 +1010,10 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		if object == nil {
 			return nil
 		}
-		if !g.isThisExpression(propAccess.Object) {
+		// A primitive receiver (i32.toString(), etc.) is autoboxed into Number/Bool by the type
+		// checker and is never null, so skip the receiver null check — `scalar == null` would not
+		// type check anyway.
+		if !g.isThisExpression(propAccess.Object) && !zeus_value.IsPrimitiveType(zeus_value.GetValueType(object)) {
 			g.emitNullCheck(object, propAccess.Property.Name.Value, propAccess.GetSpan())
 		}
 		args, ok := g.visitArgs(expr.Params)
@@ -1375,6 +1378,30 @@ func (g *IRModule) getOrCreateRefCellClass(valueType zeus_value.ValueType, span 
 	g.irBuilder.EmitClassDeclAtStart(refCellClass)
 	g.symbolTable().DeclareSymbol(className, refCellClass)
 	return refCellClass
+}
+
+// boxClassForPrimitive returns the boxed primordial a scalar autoboxes into — Number for any
+// int/float, Bool for boolean — or nil if valueType is not an autoboxable primitive. The classes
+// are registered from prelude/number.zs and prelude/bool.zs and declared into every module.
+func boxClassForPrimitive(valueType zeus_value.ValueType) *zeus_value.Class {
+	switch valueType.(type) {
+	case zeus_value.IntType, zeus_value.FloatType:
+		return zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_NUMBER)
+	case zeus_value.BoolType:
+		return zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_BOOL)
+	}
+	return nil
+}
+
+// boxFieldType returns the `value` field type of a boxed primordial (f64 for Number, boolean for
+// Bool) — the type the scalar must be before it is stored into the box.
+func boxFieldType(class *zeus_value.Class) zeus_value.ValueType {
+	for _, prop := range class.Properties {
+		if prop.Property.Name == zeus_value.ZEUS_BOX_VALUE_PROPERTY {
+			return prop.Property.ValueType
+		}
+	}
+	return nil
 }
 
 // getRefCellValueType extracts the inner scalar type from a ref cell class's `value` property.

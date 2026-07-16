@@ -894,6 +894,23 @@ func (b *IRBuilder) BuildAllocObj(class *zeus_value.Class, span *token.Span) zeu
 	return result
 }
 
+// BuildBox emits a BOX autoboxing value into targetClass (Number/Bool). The output is typed as an
+// object of that class here (rather than by the type checker) because BOX is emitted while type
+// checking is already in progress and the result is used immediately by the consuming instruction.
+func (b *IRBuilder) BuildBox(value zeus_value.Value, targetClass *zeus_value.Class, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = zeus_value.NewObjectType(targetClass)
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeBox,
+		Output: result,
+		Input:  NewBoxInstrInput(value, targetClass),
+		Span:   span,
+	})
+
+	return result
+}
+
 func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.Value, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 

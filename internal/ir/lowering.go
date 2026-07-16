@@ -50,6 +50,9 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	l.passes = []LowerPass{
 		// Runs first so all later passes see a normalized fixed-arity argument list.
 		NewVariadicCallLoweringPass(),
+		// Expands autobox BOX instructions into ALLOC_OBJ + field store early, so later passes and
+		// codegen only ever see ordinary object-construction instructions.
+		NewBoxLoweringPass(),
 		// Folds interface property access (OBJECT_PROPERTY_ACCESS + LOAD/STORE) into
 		// INTERFACE_PROP_GET/SET early, so later passes and codegen see a self-contained instr.
 		NewInterfacePropertyLoweringPass(),
@@ -1767,6 +1770,66 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 	builder.RestoreInsertionPoint(saved)
 
 	return wrapperClass
+}
+
+// =============================================================================
+// BoxLoweringPass — expands each BOX (autobox of a scalar into Number/Bool, emitted by the type
+// checker at object boundaries) into ALLOC_OBJ + a store of the scalar into the box's `value`
+// field. Reuses existing instructions, so codegen needs no BOX case — analogous to how ref cells
+// are allocated and filled (allocRefCell). Deferred to Finalize so the block isn't mutated while
+// being iterated, mirroring CastLoweringPass.
+// =============================================================================
+
+type boxToLower struct {
+	instr *Instr
+	block *BasicBlock
+}
+
+type BoxLoweringPass struct {
+	boxes []boxToLower
+}
+
+func NewBoxLoweringPass() *BoxLoweringPass { return &BoxLoweringPass{} }
+
+func (p *BoxLoweringPass) GetName() string { return "BoxLowering" }
+
+func (p *BoxLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type == InstrTypeBox {
+		// block is nil for a module-level box (e.g. a global `let n: Number = 5`), handled below.
+		p.boxes = append(p.boxes, boxToLower{instr: instr, block: l.GetCurrentBlock()})
+	}
+}
+
+func (p *BoxLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, b := range p.boxes {
+		p.lowerBox(builder, b.instr, b.block)
+	}
+}
+
+func (p *BoxLoweringPass) lowerBox(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsBoxInstrInput(instr.Input)
+	class := input.TargetClass
+	span := instr.Span
+
+	// Rewrite BOX in place into ALLOC_OBJ; its output var now names the freshly allocated box.
+	instr.Type = InstrTypeAllocObj
+	instr.Input = NewAllocObjInstrInput(class)
+	instr.Output.ValueType = zeus_value.NewObjectType(class)
+
+	// Store the scalar into box.value, immediately after the alloc. The instr pointer is unchanged
+	// by the in-place rewrite, so it is still locatable in its block (or the global list).
+	if block != nil {
+		builder.SetBlockInsertionAfter(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionAfter(instr)
+	}
+	propPtr := builder.BuildObjectPropertyAccess(instr.Output, zeus_value.ZEUS_BOX_VALUE_PROPERTY, true, span)
+	if propVar := zeus_value.AsVar(propPtr); propVar != nil {
+		propVar.ValueType = boxFieldType(class)
+	}
+	builder.BuildStore(zeus_value.AsVar(propPtr), input.Value, span)
 }
 
 // =============================================================================

@@ -569,6 +569,33 @@ func AsAllocObjInstrInput(input InstrInput) *AllocObjInstrInput {
 	return nil
 }
 
+// BoxInstrInput autoboxes Value (a scalar of the box's field type) into the boxed primordial
+// TargetClass (Number or Bool). BoxLoweringPass expands it to ALLOC_OBJ + a store of Value into the
+// box's `value` field.
+type BoxInstrInput struct {
+	Value       zeus_value.Value
+	TargetClass *zeus_value.Class
+}
+
+func NewBoxInstrInput(value zeus_value.Value, targetClass *zeus_value.Class) *BoxInstrInput {
+	return &BoxInstrInput{Value: value, TargetClass: targetClass}
+}
+
+func (i BoxInstrInput) String() string {
+	return fmt.Sprintf("box %s as %s", i.Value, i.TargetClass.Name)
+}
+
+func AsBoxInstrInput(input InstrInput) *BoxInstrInput {
+	switch input := input.(type) {
+	case *BoxInstrInput:
+		return input
+	default:
+		panicInvalidInputType("BoxInstrInput", input)
+	}
+
+	return nil
+}
+
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
@@ -1122,6 +1149,10 @@ const (
 	// allocate a zeroed object of a class + install its header (mechanism half of NEW_OBJ,
 	// synthesized by FactoryLoweringPass into a class's zeus_new_<Class> factory function)
 	InstrTypeAllocObj
+	// autobox a scalar into its boxed primordial (Number/Bool). Emitted by the type checker at
+	// object boundaries; BoxLoweringPass rewrites it to ALLOC_OBJ + store of the scalar into the
+	// box's `value` field. The scalar is already the box's field type (int/float pre-cast to f64).
+	InstrTypeBox
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1243,6 +1274,8 @@ func (i InstrType) String() string {
 		return "NEW_OBJ"
 	case InstrTypeAllocObj:
 		return "ALLOC_OBJ"
+	case InstrTypeBox:
+		return "BOX"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

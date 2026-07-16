@@ -1,0 +1,7 @@
+[
+    { "name": "toString on an integer literal (autobox)", "entry": "to_string_int.zs", "exit": "0", "stdout": "5\n" },
+    { "name": "toString on primitive variables (i32 and boolean)", "entry": "to_string_var.zs", "exit": "0", "stdout": "42\nfalse\n" },
+    { "name": "assigning a scalar into a Number binding autoboxes", "entry": "annotate.zs", "exit": "0", "stdout": "7\n" },
+    { "name": "primitive satisfies a structural interface via autobox", "entry": "interface_conform.zs", "exit": "0", "stdout": "5\ntrue\n" },
+    { "name": "pure scalar arithmetic is not autoboxed", "entry": "no_box_hotpath.zs", "exit": "45" }
+]

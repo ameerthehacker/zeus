@@ -393,6 +393,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClass(tc, instr)
 	case InstrTypeNewObj:
 		p.tcNewObj(tc, instr)
+	case InstrTypeBox:
+		p.tcBox(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
@@ -532,10 +534,31 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 	return b
 }
 
+// tcBox is a defensive no-op: BOX is only emitted by this pass (emitBox) with its output type
+// already set, so the walk never reaches an unset one. The case exists so a re-walk of an inserted
+// BOX doesn't fall through to HandleInstruction's default panic.
+func (p *TypeCheckingPass) tcBox(instr *Instr) {
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		instr.Output.ValueType = zeus_value.NewObjectType(AsBoxInstrInput(instr.Input).TargetClass)
+	}
+}
+
+// emitBox autoboxes value (a scalar) into boxClass (Number/Bool), inserting the scalar→field cast
+// (int/float → f64 for Number; boolean matches Bool's field exactly) and the BOX before instr. The
+// builder's insertion point must already be positioned before instr.
+func (p *TypeCheckingPass) emitBox(tc *TypeChecker, value zeus_value.Value, valueType zeus_value.ValueType, boxClass *zeus_value.Class, span *token.Span) zeus_value.Value {
+	scalar := value
+	if fieldType := boxFieldType(boxClass); fieldType != nil && !zeus_value.CmpValueType(valueType, fieldType) {
+		scalar = tc.builder.BuildCast(value, fieldType, span)
+	}
+	return tc.builder.BuildBox(scalar, boxClass, span)
+}
+
 // Performs the following implicit casts:
 // - int to float
 // - int to int of bigger size
 // - float to float of bigger size
+// - primitive → Number/Bool (autobox) and primitive → interface satisfied by its box
 func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
 
@@ -543,7 +566,18 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	// (CmpValueType is otherwise symmetric), so it must be tested target-first here. An
 	// interface value is represented identically to the object, so no runtime cast is emitted.
 	if zeus_value.IsInterfaceType(targetType) {
-		return value, zeus_value.CmpValueType(targetType, valueType)
+		if zeus_value.CmpValueType(targetType, valueType) {
+			return value, true
+		}
+		// A primitive can satisfy an interface by first autoboxing into Number/Bool, when that box
+		// structurally conforms to the interface (e.g. `let p: Printable = 5` where Number has the
+		// interface's methods).
+		if boxClass := boxClassForPrimitive(valueType); boxClass != nil &&
+			zeus_value.CmpValueType(targetType, zeus_value.NewObjectType(boxClass)) {
+			tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+			return p.emitBox(tc, value, valueType, boxClass, value.GetSpan()), true
+		}
+		return value, false
 	}
 
 	// *Function → FunctionType: wrap in a functor class (all FunctionType values are objects at runtime)
@@ -562,6 +596,14 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	}
 
 	tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+
+	// Autobox a scalar into Number/Bool when that exact box class is the target
+	// (`let n: Number = 5`, passing a bool where a Bool is expected, etc.).
+	if objTarget := zeus_value.AsObjectType(targetType); objTarget != nil {
+		if boxClass := boxClassForPrimitive(valueType); boxClass != nil && objTarget.Class.Name == boxClass.Name {
+			return p.emitBox(tc, value, valueType, boxClass, value.GetSpan()), true
+		}
+	}
 
 	castIntToFloat := func(intType zeus_value.IntType, value zeus_value.Value) zeus_value.Value {
 		size := zeus_value.F32
@@ -1335,11 +1377,20 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	if !zeus_value.IsObjectType(valueType) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot call method %s on non-object type '%s'", input.MethodName, valueType),
-			Span:    instr.Output.Span,
-		})
-		return
+		// Autobox a primitive receiver so a method can be called on it: `(5).toString()`,
+		// `x.toString()`. Non-boxable receivers (e.g. void) remain an error.
+		boxClass := boxClassForPrimitive(valueType)
+		if boxClass == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot call method %s on non-object type '%s'", input.MethodName, valueType),
+				Span:    instr.Output.Span,
+			})
+			return
+		}
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		// input is the live *MethodCallInstrInput, so mutating Object updates instr.Input in place.
+		input.Object = p.emitBox(tc, input.Object, valueType, boxClass, instr.Output.Span)
+		valueType = zeus_value.NewObjectType(boxClass)
 	}
 
 	class := zeus_value.AsObjectType(valueType).Class
