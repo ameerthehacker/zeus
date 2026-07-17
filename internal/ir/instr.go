@@ -596,6 +596,31 @@ func AsBoxInstrInput(input InstrInput) *BoxInstrInput {
 	return nil
 }
 
+// UnboxInstrInput reads the scalar `value` out of Value, a boxed primordial (Number/Bool).
+// BoxLoweringPass expands it to OBJECT_PROPERTY_ACCESS + LOAD.
+type UnboxInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewUnboxInstrInput(value zeus_value.Value) *UnboxInstrInput {
+	return &UnboxInstrInput{Value: value}
+}
+
+func (i UnboxInstrInput) String() string {
+	return fmt.Sprintf("unbox %s", i.Value)
+}
+
+func AsUnboxInstrInput(input InstrInput) *UnboxInstrInput {
+	switch input := input.(type) {
+	case *UnboxInstrInput:
+		return input
+	default:
+		panicInvalidInputType("UnboxInstrInput", input)
+	}
+
+	return nil
+}
+
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
@@ -1153,6 +1178,10 @@ const (
 	// object boundaries; BoxLoweringPass rewrites it to ALLOC_OBJ + store of the scalar into the
 	// box's `value` field. The scalar is already the box's field type (int/float pre-cast to f64).
 	InstrTypeBox
+	// unbox a Number/Bool back to its scalar `value`. Emitted by the type checker when a box flows
+	// into a primitive slot or an arithmetic operand; BoxLoweringPass rewrites it to
+	// OBJECT_PROPERTY_ACCESS + LOAD. Output is the box's field type (f64/boolean).
+	InstrTypeUnbox
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1276,6 +1305,8 @@ func (i InstrType) String() string {
 		return "ALLOC_OBJ"
 	case InstrTypeBox:
 		return "BOX"
+	case InstrTypeUnbox:
+		return "UNBOX"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

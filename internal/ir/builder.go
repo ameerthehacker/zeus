@@ -147,6 +147,15 @@ func loadPreludes() {
 			}
 			zeus_value.Registry.RegisterClass(class)
 		}
+
+		// Interfaces emit no IR (VisitInterfaceDeclExpr only declares them in the symbol table), so
+		// harvest them from the compiled prelude's symbol table. Register only interfaces not already
+		// registered, so a primordial injected into a later prelude's symbol table isn't re-added.
+		builder.symbolTable.Walk(func(_ string, value zeus_value.Value) {
+			if iface := zeus_value.AsInterface(value); iface != nil && zeus_value.Registry.GetInterface(iface.Name) == nil {
+				zeus_value.Registry.RegisterInterface(iface)
+			}
+		})
 	}
 
 	// Seed the ambient-global registry with globals.zs's console/Math (resolved to concrete object
@@ -221,6 +230,12 @@ func (b *IRBuilder) initializePrimordials() {
 	// Register primordial functions in symbol table (DECL_PRIMORDIAL_FUNC is emitted in Generate)
 	for _, fn := range registry.GetAllFunctions() {
 		b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	}
+
+	// Inject primordial interfaces harvested from preludes (e.g. the umbrella `Number`) so
+	// `let n: Number` resolves in every module. Interfaces are type-level only (no IR).
+	for _, iface := range registry.GetAllInterfaces() {
+		b.symbolTable.DeclareGlobalSymbol(iface.Name, iface)
 	}
 }
 
@@ -905,6 +920,23 @@ func (b *IRBuilder) BuildBox(value zeus_value.Value, targetClass *zeus_value.Cla
 		Type:   InstrTypeBox,
 		Output: result,
 		Input:  NewBoxInstrInput(value, targetClass),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildUnbox emits an UNBOX reading the scalar `value` out of boxValue (a Number/Bool). fieldType is
+// the box's field type (f64/boolean) and becomes the output type; the type checker sets it here for
+// the same reason as BuildBox (the result is consumed immediately).
+func (b *IRBuilder) BuildUnbox(boxValue zeus_value.Value, fieldType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = fieldType
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeUnbox,
+		Output: result,
+		Input:  NewUnboxInstrInput(boxValue),
 		Span:   span,
 	})
 

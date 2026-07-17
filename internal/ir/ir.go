@@ -1380,17 +1380,28 @@ func (g *IRModule) getOrCreateRefCellClass(valueType zeus_value.ValueType, span 
 	return refCellClass
 }
 
-// boxClassForPrimitive returns the boxed primordial a scalar autoboxes into — Number for any
-// int/float, Bool for boolean — or nil if valueType is not an autoboxable primitive. The classes
-// are registered from prelude/number.zs and prelude/bool.zs and declared into every module.
+// boxClassForPrimitive returns the concrete class a scalar autoboxes into — a first-class numeric
+// box (I32, U8, F64, …) for any int/float, the concrete Bool for boolean — or nil if valueType is
+// not an autoboxable primitive. The classes come from prelude/boxes.zs and prelude/bool.zs and are
+// declared into every module.
 func boxClassForPrimitive(valueType zeus_value.ValueType) *zeus_value.Class {
 	switch valueType.(type) {
 	case zeus_value.IntType, zeus_value.FloatType:
-		return zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_NUMBER)
+		return zeus_value.Registry.GetClass(zeus_value.BoxClassName(valueType))
 	case zeus_value.BoolType:
 		return zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_BOOL)
 	}
 	return nil
+}
+
+// isBoxedPrimordial reports whether class is an autobox target with a directly-readable `value`
+// field (a per-type numeric box or the concrete Bool).
+func isBoxedPrimordial(class *zeus_value.Class) bool {
+	// PrimordialName is only set on prelude-registered classes, so a user class that merely reuses a
+	// box name (e.g. `class I32 {}`) is NOT treated as a box — that would type-pun two different
+	// LLVM structs sharing a name and corrupt memory.
+	return class != nil && class.PrimordialName != "" &&
+		(zeus_value.IsBoxClassName(class.Name) || class.Name == zeus_value.ZEUS_PRIMORDIAL_BOOL)
 }
 
 // boxFieldType returns the `value` field type of a boxed primordial (f64 for Number, boolean for

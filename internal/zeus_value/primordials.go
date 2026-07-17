@@ -1,6 +1,8 @@
 package zeus_value
 
 import (
+	"strings"
+
 	"github.com/ameerthehacker/zeus/internal/token"
 )
 
@@ -8,14 +10,49 @@ const ZEUS_PRIMORDIAL_ARRAY = "array"
 const ZEUS_PRIMORDIAL_STRING = "string"
 const ZEUS_PRIMORDIAL_ERROR = "error"
 
-// Boxed-primitive primordials (prelude/number.zs, prelude/bool.zs). A scalar is autoboxed into one
-// of these at object boundaries (method call on a primitive, interface/Number/Bool-typed slot). The
-// single `value` field is written directly by the autobox lowering, so no constructor is needed.
-const ZEUS_PRIMORDIAL_NUMBER = "Number"
+// Boxed-primitive primordials. A scalar is autoboxed at object boundaries (method call on a
+// primitive, interface/Number/Bool slot). Each numeric scalar `t` has a first-class boxed form `T`
+// (i32 -> I32, u8 -> U8, f64 -> F64; prelude/boxes.zs), so toString, round-trips, and arithmetic on
+// the concrete boxed type stay type-exact. Booleans box into the concrete `Bool` (prelude/bool.zs).
+// The single `value` field is written directly by the autobox lowering.
 const ZEUS_PRIMORDIAL_BOOL = "Bool"
 
-// ZEUS_BOX_VALUE_PROPERTY is the field the boxed scalar is stored in on Number/Bool.
+// ZEUS_BOX_VALUE_PROPERTY is the field the boxed scalar is stored in.
 const ZEUS_BOX_VALUE_PROPERTY = "value"
+
+// ZEUS_NUMBER_INTERFACE is the umbrella interface every numeric box structurally satisfies, so a
+// boxed number can be held/printed polymorphically as a `Number`. Declared in prelude/boxes.zs and
+// harvested + injected by loadPreludes/initializePrimordials.
+const ZEUS_NUMBER_INTERFACE = "Number"
+
+// boxedScalarTypes is the single source of truth for which scalars have a first-class box (and thus
+// their box class names, via BoxClassName). Keep in sync with prelude/boxes.zs.
+var boxedScalarTypes = []ValueType{
+	IntType{Size: I8, Signed: true}, IntType{Size: I16, Signed: true},
+	IntType{Size: I32, Signed: true}, IntType{Size: I64, Signed: true},
+	IntType{Size: I8, Signed: false}, IntType{Size: I16, Signed: false},
+	IntType{Size: I32, Signed: false}, IntType{Size: I64, Signed: false},
+	FloatType{Size: F32}, FloatType{Size: F64},
+}
+
+// BoxClassName returns the boxed class name for a numeric scalar: the primitive's name uppercased
+// (i32 -> I32, u8 -> U8, f64 -> F64). `i32` is the primitive; `I32` is its boxed, object form.
+func BoxClassName(valueType ValueType) string {
+	return strings.ToUpper(valueType.String())
+}
+
+var boxClassNames = func() map[string]bool {
+	m := make(map[string]bool, len(boxedScalarTypes))
+	for _, t := range boxedScalarTypes {
+		m[BoxClassName(t)] = true
+	}
+	return m
+}()
+
+// IsBoxClassName reports whether name is a first-class numeric box (I8..F64).
+func IsBoxClassName(name string) bool {
+	return boxClassNames[name]
+}
 
 // Reserved class ID for Error - used for exception type matching
 const ERROR_CLASS_ID = 1

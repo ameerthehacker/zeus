@@ -26,6 +26,12 @@ type PrimordialRegistry struct {
 	// Primordial functions (log, etc.)
 	functions map[string]*Function
 
+	// Primordial interfaces (Number, ...) declared in preludes. Interfaces emit no IR, so
+	// ir.loadPreludes harvests them from the compiled prelude's symbol table and registers them
+	// here; initializePrimordials injects them into every module. interfaceOrder is insertion order.
+	interfaces     map[string]*Interface
+	interfaceOrder []string
+
 	// Default span for generated primordials
 	defaultSpan *token.Span
 }
@@ -37,11 +43,13 @@ func newPrimordialRegistry() *PrimordialRegistry {
 	defaultSpan := token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1))
 
 	r := &PrimordialRegistry{
-		classes:      make(map[string]*Class),
-		arrayClasses: make(map[string]*Class),
-		classOrder:   make([]string, 0),
-		functions:    make(map[string]*Function),
-		defaultSpan:  defaultSpan,
+		classes:        make(map[string]*Class),
+		arrayClasses:   make(map[string]*Class),
+		classOrder:     make([]string, 0),
+		functions:      make(map[string]*Function),
+		interfaces:     make(map[string]*Interface),
+		interfaceOrder: make([]string, 0),
+		defaultSpan:    defaultSpan,
 	}
 
 	r.registerBaseClasses()
@@ -168,6 +176,36 @@ func (r *PrimordialRegistry) RegisterClass(class *Class) {
 		r.classOrder = append(r.classOrder, class.Name)
 	}
 	r.classes[class.Name] = class
+}
+
+// RegisterInterface registers a primordial interface declared in a prelude (Number, …), idempotent
+// by name. Interfaces emit no IR, so ir.loadPreludes harvests them from the compiled prelude's
+// symbol table; initializePrimordials injects them into every module via GetAllInterfaces.
+func (r *PrimordialRegistry) RegisterInterface(iface *Interface) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.interfaces[iface.Name]; !exists {
+		r.interfaceOrder = append(r.interfaceOrder, iface.Name)
+	}
+	r.interfaces[iface.Name] = iface
+}
+
+// GetInterface returns a registered primordial interface by name, or nil.
+func (r *PrimordialRegistry) GetInterface(name string) *Interface {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.interfaces[name]
+}
+
+// GetAllInterfaces returns the registered primordial interfaces in insertion order.
+func (r *PrimordialRegistry) GetAllInterfaces() []*Interface {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Interface, 0, len(r.interfaceOrder))
+	for _, name := range r.interfaceOrder {
+		out = append(out, r.interfaces[name])
+	}
+	return out
 }
 
 // RegisterFunction registers a primordial free function — e.g. an extern function compiled from a

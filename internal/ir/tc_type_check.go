@@ -395,6 +395,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcNewObj(tc, instr)
 	case InstrTypeBox:
 		p.tcBox(instr)
+	case InstrTypeUnbox:
+		p.tcUnbox(instr)
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
@@ -543,6 +545,17 @@ func (p *TypeCheckingPass) tcBox(instr *Instr) {
 	}
 }
 
+// tcUnbox is a defensive no-op, mirroring tcBox: UNBOX is only emitted by this pass with its output
+// type set, so this only guards against a re-walk hitting the default panic.
+func (p *TypeCheckingPass) tcUnbox(instr *Instr) {
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		box := AsUnboxInstrInput(instr.Input).Value
+		if objType := zeus_value.AsObjectType(zeus_value.GetValueType(box)); objType != nil {
+			instr.Output.ValueType = boxFieldType(objType.Class)
+		}
+	}
+}
+
 // emitBox autoboxes value (a scalar) into boxClass (Number/Bool), inserting the scalar→field cast
 // (int/float → f64 for Number; boolean matches Bool's field exactly) and the BOX before instr. The
 // builder's insertion point must already be positioned before instr.
@@ -597,11 +610,28 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 
 	tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
 
-	// Autobox a scalar into Number/Bool when that exact box class is the target
-	// (`let n: Number = 5`, passing a bool where a Bool is expected, etc.).
+	// Autobox a scalar into its box class when that exact primordial box is the target
+	// (`let n: I32 = 5`, passing a bool where a Bool is expected). Compared by identity, not name, so
+	// a user class that shadows a box name is not an autobox target (it fails assignability instead).
 	if objTarget := zeus_value.AsObjectType(targetType); objTarget != nil {
-		if boxClass := boxClassForPrimitive(valueType); boxClass != nil && objTarget.Class.Name == boxClass.Name {
+		if boxClass := boxClassForPrimitive(valueType); boxClass != nil && objTarget.Class == boxClass {
 			return p.emitBox(tc, value, valueType, boxClass, value.GetSpan()), true
+		}
+	}
+
+	// Auto-unbox a boxed value flowing into a primitive slot. A `Number` (umbrella) unboxes to f64
+	// via valueOf() — assigning to a narrower numeric type (`let x: i32 = n`) still needs an explicit
+	// cast, the same no-silent-lossy-narrowing rule the language applies to any f64 -> i32. A concrete
+	// box / Bool reads its exact field (`let flag: boolean = b`).
+	if isNumberInterface(valueType) {
+		if ft, ok := targetType.(zeus_value.FloatType); ok && ft.Size == zeus_value.F64 {
+			return p.emitValueOf(tc, value, value.GetSpan()), true
+		}
+	}
+	if srcObj := zeus_value.AsObjectType(valueType); srcObj != nil && isBoxedPrimordial(srcObj.Class) {
+		fieldType := boxFieldType(srcObj.Class)
+		if zeus_value.CmpValueType(fieldType, targetType) {
+			return tc.builder.BuildUnbox(value, fieldType, value.GetSpan()), true
 		}
 	}
 
@@ -794,8 +824,56 @@ func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Inst
 	return left, right
 }
 
+// isNumberInterface reports whether vt is the umbrella `Number` interface.
+// isNumberInterface reports whether vt is the primordial `Number` umbrella — by identity, not name,
+// so a user-declared `interface Number` that shadows it is not treated as the umbrella.
+func isNumberInterface(vt zeus_value.ValueType) bool {
+	it := zeus_value.AsInterfaceType(vt)
+	return it != nil && it.Interface == zeus_value.Registry.GetInterface(zeus_value.ZEUS_NUMBER_INTERFACE)
+}
+
+// emitValueOf emits `value.valueOf()` (the Number umbrella's f64 accessor) before instr; the builder
+// insertion point must already be positioned. Returns the f64 result.
+//
+// This CALL_METHOD is inserted after tcMethodCall would run and is not itself routed through it, but
+// it needs no further type checking: it has no arguments, valueOf is a public interface method, and
+// its output type is set here (f64). It stays a dynamic call and codegen dispatches it through the
+// Number itable like any other interface method call. If a future pass makes tcMethodCall a
+// precondition for CALL_METHOD, this insertion site must be revisited.
+func (p *TypeCheckingPass) emitValueOf(tc *TypeChecker, value zeus_value.Value, span *token.Span) zeus_value.Value {
+	return tc.builder.BuildMethodCall(value, "valueOf", []zeus_value.Value{}, zeus_value.FloatType{Size: zeus_value.F64, Span: span}, nil, span)
+}
+
+// maybeUnboxOperand unboxes a boxed binary-operand to its scalar so operators compute on scalars
+// (n + 1, n < m, b == c → value comparison). A `Number` (umbrella) unboxes to f64 via valueOf(); a
+// concrete box / Bool reads its exact `value` field. Non-box operands pass through unchanged.
+func (p *TypeCheckingPass) maybeUnboxOperand(tc *TypeChecker, instr *Instr, value zeus_value.Value) zeus_value.Value {
+	vt := tc.getValueType(value)
+	if isNumberInterface(vt) {
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		return p.emitValueOf(tc, value, value.GetSpan())
+	}
+	if objType := zeus_value.AsObjectType(vt); objType != nil && isBoxedPrimordial(objType.Class) {
+		// isBoxedPrimordial guarantees the primordial box has a `value` field, but guard anyway so a
+		// nil field type never reaches BuildUnbox as an untyped instruction.
+		if fieldType := boxFieldType(objType.Class); fieldType != nil {
+			tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+			return tc.builder.BuildUnbox(value, fieldType, value.GetSpan())
+		}
+	}
+	return value
+}
+
 func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a, b zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a, b zeus_value.ValueType) bool) {
 	input := AsBinaryOpInstrInput(instr.Input)
+
+	// Arithmetic/comparison on boxed primitives operates on the unboxed scalar — but never against
+	// null. A box is never null, so `box == null` stays an identity check; this also keeps the
+	// compiler-generated receiver null check (`obj == null` before a method call) valid on boxes.
+	if !zeus_value.IsNullType(tc.getValueType(input.Left)) && !zeus_value.IsNullType(tc.getValueType(input.Right)) {
+		input.Left = p.maybeUnboxOperand(tc, instr, input.Left)
+		input.Right = p.maybeUnboxOperand(tc, instr, input.Right)
+	}
 
 	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
 		tc.pushError(&zeus_error.ZeusError{
@@ -814,6 +892,9 @@ func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeF
 func (p *TypeCheckingPass) tcUnaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a zeus_value.ValueType) bool) {
 	input := AsUnaryOpInstrInput(instr.Input)
 
+	// A unary operator on a boxed value computes on the unboxed scalar (`!b`, `-n`, `~n`).
+	input.Value = p.maybeUnboxOperand(tc, instr, input.Value)
+
 	if !cmpTypeFn(tc.getValueType(input.Value)) {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("invalid operand of type '%s' for unary operation", tc.getValueType(input.Value)),
@@ -826,6 +907,10 @@ func (p *TypeCheckingPass) tcUnaryOp(tc *TypeChecker, instr *Instr, resultTypeFn
 
 func (p *TypeCheckingPass) tcCondJmp(tc *TypeChecker, instr *Instr) {
 	input := AsCondJmpInstrInput(instr.Input)
+
+	// A boxed condition (e.g. `if (b)` where b: Bool) computes on the unboxed scalar. Bool unboxes
+	// to boolean; a non-bool box unboxes to its scalar and then fails the bool check below cleanly.
+	input.Condition = p.maybeUnboxOperand(tc, instr, input.Condition)
 
 	if !zeus_value.IsBoolType(tc.getValueType(input.Condition)) {
 		tc.pushError(&zeus_error.ZeusError{

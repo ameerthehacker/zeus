@@ -1773,11 +1773,12 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 }
 
 // =============================================================================
-// BoxLoweringPass — expands each BOX (autobox of a scalar into Number/Bool, emitted by the type
-// checker at object boundaries) into ALLOC_OBJ + a store of the scalar into the box's `value`
-// field. Reuses existing instructions, so codegen needs no BOX case — analogous to how ref cells
-// are allocated and filled (allocRefCell). Deferred to Finalize so the block isn't mutated while
-// being iterated, mirroring CastLoweringPass.
+// BoxLoweringPass — expands autobox/unbox instructions (emitted by the type checker at object
+// boundaries) into ordinary object instructions, so codegen needs no BOX/UNBOX case:
+//   BOX   -> ALLOC_OBJ + STORE of the scalar into the box's `value` field
+//   UNBOX -> OBJECT_PROPERTY_ACCESS(value) + LOAD
+// This mirrors how ref cells are allocated/read (allocRefCell). Deferred to Finalize so the block
+// isn't mutated while being iterated, mirroring CastLoweringPass.
 // =============================================================================
 
 type boxToLower struct {
@@ -1794,7 +1795,7 @@ func NewBoxLoweringPass() *BoxLoweringPass { return &BoxLoweringPass{} }
 func (p *BoxLoweringPass) GetName() string { return "BoxLowering" }
 
 func (p *BoxLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
-	if instr.Type == InstrTypeBox {
+	if instr.Type == InstrTypeBox || instr.Type == InstrTypeUnbox {
 		// block is nil for a module-level box (e.g. a global `let n: Number = 5`), handled below.
 		p.boxes = append(p.boxes, boxToLower{instr: instr, block: l.GetCurrentBlock()})
 	}
@@ -1803,8 +1804,41 @@ func (p *BoxLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
 func (p *BoxLoweringPass) Finalize(l *Lowerer) {
 	builder := l.GetBuilder()
 	for _, b := range p.boxes {
-		p.lowerBox(builder, b.instr, b.block)
+		// Dispatch on the original type; lowerBox/lowerUnbox mutate the instruction in place.
+		switch b.instr.Type {
+		case InstrTypeBox:
+			p.lowerBox(builder, b.instr, b.block)
+		case InstrTypeUnbox:
+			p.lowerUnbox(builder, b.instr, b.block)
+		}
 	}
+}
+
+func (p *BoxLoweringPass) lowerUnbox(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsUnboxInstrInput(instr.Input)
+	box := input.Value
+	objType := zeus_value.AsObjectType(zeus_value.GetValueType(box))
+	// The type checker only emits UNBOX for a boxed-object operand; assert rather than silently
+	// leaving an unlowered UNBOX, which codegen has no case for (it would hit the default panic).
+	zeus_error.Assert(objType != nil, "UNBOX operand must be a boxed-object type at lowering")
+	fieldType := boxFieldType(objType.Class)
+	span := instr.Span
+
+	// Emit the property access just before the unbox, then rewrite the unbox in place into the LOAD
+	// that reads it — so the unbox's output var keeps naming the loaded scalar.
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionBefore(instr)
+	}
+	propPtr := builder.BuildObjectPropertyAccess(box, zeus_value.ZEUS_BOX_VALUE_PROPERTY, false, span)
+	if propVar := zeus_value.AsVar(propPtr); propVar != nil {
+		propVar.ValueType = fieldType
+	}
+	instr.Type = InstrTypeLoad
+	instr.Input = NewLoadInstrInput(zeus_value.AsVar(propPtr))
+	instr.Output.ValueType = fieldType
 }
 
 func (p *BoxLoweringPass) lowerBox(builder *IRBuilder, instr *Instr, block *BasicBlock) {

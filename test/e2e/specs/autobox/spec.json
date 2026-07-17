@@ -3,5 +3,10 @@
     { "name": "toString on primitive variables (i32 and boolean)", "entry": "to_string_var.zs", "exit": "0", "stdout": "42\nfalse\n" },
     { "name": "assigning a scalar into a Number binding autoboxes", "entry": "annotate.zs", "exit": "0", "stdout": "7\n" },
     { "name": "primitive satisfies a structural interface via autobox", "entry": "interface_conform.zs", "exit": "0", "stdout": "5\ntrue\n" },
-    { "name": "pure scalar arithmetic is not autoboxed", "entry": "no_box_hotpath.zs", "exit": "45" }
+    { "name": "pure scalar arithmetic is not autoboxed", "entry": "no_box_hotpath.zs", "exit": "45" },
+    { "name": "Number/Bool unbox into a primitive slot", "entry": "unbox_assign.zs", "exit": "0", "stdout": "6\nfalse\n" },
+    { "name": "arithmetic and comparison on boxed Numbers", "entry": "arithmetic_on_boxes.zs", "exit": "0", "stdout": "7\n12\ntrue\nfalse\n" },
+    { "name": "per-type boxing keeps toString exact (i64)", "entry": "exact_types.zs", "exit": "0", "stdout": "9007199254740993\n9007199254740993\n" },
+    { "name": "first-class boxed types (I32/I64) with exact unbox + arithmetic", "entry": "first_class_boxes.zs", "exit": "0", "stdout": "5\n42\n9007199254740993\n" },
+    { "name": "boxed values in conditions, comparisons, unary; exact f32 toString", "entry": "box_ops.zs", "exit": "0", "stdout": "if-ok\ncmp-ok\nfalse\n0.1\n" }
 ]

@@ -92,6 +92,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeBox:
 		// The autoboxed scalar is used (it becomes the box's field value).
 		markValueAsUsed(AsBoxInstrInput(instr.Input).Value)
+	case InstrTypeUnbox:
+		// The unboxed box object is used (its `value` field is read out).
+		markValueAsUsed(AsUnboxInstrInput(instr.Input).Value)
 	case InstrTypeInstanceOf:
 		input := AsInstanceOfInstrInput(instr.Input)
 		markValueAsUsed(input.Value)
