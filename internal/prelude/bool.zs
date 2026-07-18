@@ -3,5 +3,5 @@
 // to zeus_bool_*.
 class Bool {
     private value: boolean;
-    public extern("zeus_bool_toString") toString(): string;
+    @extern("zeus_bool_toString") public toString(): string;
 }

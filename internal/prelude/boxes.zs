@@ -17,60 +17,60 @@ interface Number {
 
 class I8 {
     private value: i8;
-    public extern("zeus_box_i8_toString") toString(): string;
-    public extern("zeus_box_i8_valueOf") valueOf(): f64;
+    @extern("zeus_box_i8_toString") public toString(): string;
+    @extern("zeus_box_i8_valueOf") public valueOf(): f64;
 }
 
 class I16 {
     private value: i16;
-    public extern("zeus_box_i16_toString") toString(): string;
-    public extern("zeus_box_i16_valueOf") valueOf(): f64;
+    @extern("zeus_box_i16_toString") public toString(): string;
+    @extern("zeus_box_i16_valueOf") public valueOf(): f64;
 }
 
 class I32 {
     private value: i32;
-    public extern("zeus_box_i32_toString") toString(): string;
-    public extern("zeus_box_i32_valueOf") valueOf(): f64;
+    @extern("zeus_box_i32_toString") public toString(): string;
+    @extern("zeus_box_i32_valueOf") public valueOf(): f64;
 }
 
 class I64 {
     private value: i64;
-    public extern("zeus_box_i64_toString") toString(): string;
-    public extern("zeus_box_i64_valueOf") valueOf(): f64;
+    @extern("zeus_box_i64_toString") public toString(): string;
+    @extern("zeus_box_i64_valueOf") public valueOf(): f64;
 }
 
 class U8 {
     private value: u8;
-    public extern("zeus_box_u8_toString") toString(): string;
-    public extern("zeus_box_u8_valueOf") valueOf(): f64;
+    @extern("zeus_box_u8_toString") public toString(): string;
+    @extern("zeus_box_u8_valueOf") public valueOf(): f64;
 }
 
 class U16 {
     private value: u16;
-    public extern("zeus_box_u16_toString") toString(): string;
-    public extern("zeus_box_u16_valueOf") valueOf(): f64;
+    @extern("zeus_box_u16_toString") public toString(): string;
+    @extern("zeus_box_u16_valueOf") public valueOf(): f64;
 }
 
 class U32 {
     private value: u32;
-    public extern("zeus_box_u32_toString") toString(): string;
-    public extern("zeus_box_u32_valueOf") valueOf(): f64;
+    @extern("zeus_box_u32_toString") public toString(): string;
+    @extern("zeus_box_u32_valueOf") public valueOf(): f64;
 }
 
 class U64 {
     private value: u64;
-    public extern("zeus_box_u64_toString") toString(): string;
-    public extern("zeus_box_u64_valueOf") valueOf(): f64;
+    @extern("zeus_box_u64_toString") public toString(): string;
+    @extern("zeus_box_u64_valueOf") public valueOf(): f64;
 }
 
 class F32 {
     private value: f32;
-    public extern("zeus_box_f32_toString") toString(): string;
-    public extern("zeus_box_f32_valueOf") valueOf(): f64;
+    @extern("zeus_box_f32_toString") public toString(): string;
+    @extern("zeus_box_f32_valueOf") public valueOf(): f64;
 }
 
 class F64 {
     private value: f64;
-    public extern("zeus_box_f64_toString") toString(): string;
-    public extern("zeus_box_f64_valueOf") valueOf(): f64;
+    @extern("zeus_box_f64_toString") public toString(): string;
+    @extern("zeus_box_f64_valueOf") public valueOf(): f64;
 }
