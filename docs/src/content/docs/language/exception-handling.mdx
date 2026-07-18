@@ -132,6 +132,32 @@ function main(): i32 {
 }
 ```
 
+## Custom Exception Types
+
+Subclass `Error` to define your own exception types. Call `super(name, message)` from the
+constructor to set the two `Error` properties, then throw and catch the subclass like any other type:
+
+```zeus
+class NotFoundError extends Error {
+  constructor(what: string) {
+    super("NotFoundError", what + " was not found");
+  }
+}
+
+function main(): i32 {
+  try {
+    throw new NotFoundError("user 42");
+  } catch (e: NotFoundError) {
+    console.log(e.name + ": " + e.message);
+    return 0;
+  }
+  return 1;
+}
+```
+
+A `catch (e: NotFoundError)` matches only that type (and its subclasses); a `catch (e: Error)` still
+catches everything, since every exception derives from `Error`.
+
 ## Multiple Catch Clauses
 
 A `try` can have several `catch` clauses. They are tried top-to-bottom and the **first** whose type
@@ -191,10 +217,6 @@ function main(): i32 {
   }
 }
 ```
-
-<Aside type="note">
-  Custom exception types that subclass `Error` are matched by type in `catch` clauses, as shown above.
-</Aside>
 
 ## Best Practices
 
