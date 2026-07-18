@@ -7,6 +7,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/analysis"
 	"go.lsp.dev/protocol"
+	"go.lsp.dev/uri"
 )
 
 // shadowSrc has an inner `x: string` shadowing an outer `x: i32`, used by the scope-precision tests.
@@ -83,10 +84,20 @@ function main(): i32 {
 func openDoc(t *testing.T, src string) (*Server, protocol.DocumentURI) {
 	t.Helper()
 	s := NewServer()
-	uri := protocol.DocumentURI("file:///sample.zs")
-	res := analysis.Analyze(uri.Filename(), src, s.makeModuleResolver(uri.Filename()))
-	s.documents[string(uri)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Semantic: res.Model, Errors: res.Diagnostics}
-	return s, uri
+	docURI := protocol.DocumentURI("file:///sample.zs")
+	res := analysis.Analyze(docURI.Filename(), src, s.makeModuleResolver(docURI.Filename()))
+	s.documents[string(docURI)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Semantic: res.Model, Errors: res.Diagnostics}
+	return s, docURI
+}
+
+// openDocPath analyzes an on-disk file into a Server as if the editor opened it, keyed by its file
+// URI so imports resolve relative to it. Used by cross-file navigation tests.
+func openDocPath(t *testing.T, s *Server, path, src string) protocol.DocumentURI {
+	t.Helper()
+	fileURI := uri.File(path)
+	res := analysis.Analyze(path, src, s.makeModuleResolver(path))
+	s.documents[string(fileURI)] = &DocumentInfo{Content: src, AST: res.AST, IRModule: res.Module, Semantic: res.Model, Errors: res.Diagnostics}
+	return fileURI
 }
 
 // posAfter returns the 0-based (line, character) position immediately after the first
@@ -523,4 +534,78 @@ func keysOfSym(m map[string]protocol.DocumentSymbol) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// TestInStringOrComment unit-tests the cursor-context state machine that gates completion.
+func TestInStringOrComment(t *testing.T) {
+	cases := []struct {
+		src  string
+		col  int
+		want bool
+	}{
+		{`let s = "hello`, len(`let s = "hello`), true},   // inside an (unterminated) string
+		{`let s = "hi";`, len(`let s = "hi";`), false},    // after the string closes
+		{`let s = "a\"b`, len(`let s = "a\"b`), true},     // escaped quote stays in the string
+		{`// comment`, len(`// comment`), true},           // line comment
+		{`let x = 1; // c`, len(`let x = 1; // c`), true}, // trailing line comment
+		{`let x = 1;`, len(`let x = 1;`), false},          // plain code
+		{`let c = 'a`, len(`let c = 'a`), true},           // char literal
+		{"let s = `tmpl ", len("let s = `tmpl "), true},   // template literal text
+		{"let s = `a${b", len("let s = `a${b"), false},    // interpolation is code
+		{"let s = `a${b}c", len("let s = `a${b}c"), true}, // back to template text after }
+	}
+	for _, c := range cases {
+		if got := inStringOrComment(c.src, 0, c.col); got != c.want {
+			t.Errorf("inStringOrComment(%q, col=%d) = %v, want %v", c.src, c.col, got, c.want)
+		}
+	}
+	// Multi-line block comment: the cursor on line 1 is still inside the comment opened on line 0.
+	if !inStringOrComment("/* line one\nstill inside", 1, 5) {
+		t.Errorf("cursor inside a multi-line block comment should be suppressed")
+	}
+}
+
+// TestCompletionSuppressedInStringAndComment checks the end-to-end completion gate: no items are
+// offered inside a string literal or comment, but code positions still complete.
+func TestCompletionSuppressedInStringAndComment(t *testing.T) {
+	src := "function main(): i32 {\n" +
+		"  let s: string = \"hello world\";\n" +
+		"  // a comment here\n" +
+		"  return 0;\n" +
+		"}\n"
+	s, docURI := openDoc(t, src)
+
+	if items := s.getCompletions(docURI, posAfter(t, src, `"hello `)).Items; len(items) != 0 {
+		t.Errorf("expected no completions inside a string, got %d", len(items))
+	}
+	if items := s.getCompletions(docURI, posAfter(t, src, "// a comment ")).Items; len(items) != 0 {
+		t.Errorf("expected no completions inside a comment, got %d", len(items))
+	}
+	if items := s.getCompletions(docURI, posAfter(t, src, "  return ")).Items; len(items) == 0 {
+		t.Errorf("expected completions in code position, got 0")
+	}
+}
+
+// TestCompletionOffersAmbientGlobals guards that `console`/`Math` appear in completion while typing,
+// even though they only enter a module's symbol table lazily on first reference.
+func TestCompletionOffersAmbientGlobals(t *testing.T) {
+	src := "function main(): i32 {\n  return 0;\n}\n"
+	s, docURI := openDoc(t, src)
+	got := labels(s.getCompletions(docURI, posAfter(t, src, "  return ")).Items)
+	for _, name := range []string{"console", "Math"} {
+		if _, ok := got[name]; !ok {
+			t.Errorf("completion should offer ambient global %q, got %v", name, keysOf(got))
+		}
+	}
+}
+
+// TestCompletionHidesInternalSymbols asserts no compiler-internal names (%/$/# prefixed) leak into
+// completion for a normal program.
+func TestCompletionHidesInternalSymbols(t *testing.T) {
+	s, docURI := openDoc(t, sampleProgram)
+	for _, it := range s.getCompletions(docURI, posAfter(t, sampleProgram, "d.bark();\n  ")).Items {
+		if isInternalSymbolName(it.Label) {
+			t.Errorf("completion leaked internal symbol %q", it.Label)
+		}
+	}
 }

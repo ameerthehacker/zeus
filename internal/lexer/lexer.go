@@ -116,7 +116,9 @@ func (l *Lexer) consumeNewLine() {
 	l.newLine()
 }
 
-func isIdentifierRune(char rune) bool {
+// IsIdentifierRune reports whether char may appear within a Zeus identifier. It is exported so
+// other tools (the language server) share the compiler's exact notion of an identifier.
+func IsIdentifierRune(char rune) bool {
 	return unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '$'
 }
 
@@ -125,7 +127,7 @@ func (l *Lexer) eatIdentifierOrKeywordOrDatatype() {
 	start := l.cursor
 	var endPosition *token.Position = nil
 
-	for !l.isEOF(0) && isIdentifierRune(l.source[l.cursor]) {
+	for !l.isEOF(0) && IsIdentifierRune(l.source[l.cursor]) {
 		endPosition = l.getCurrentPosition()
 		l.advance()
 	}
@@ -734,7 +736,7 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			l.eatNumber()
 		case char == '"':
 			l.eatStringOrChar(false)
-		case isIdentifierRune(char):
+		case IsIdentifierRune(char):
 			l.eatIdentifierOrKeywordOrDatatype()
 		default:
 			l.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("unknown token '%c'", char), token.NewSpan(*position, *position)))

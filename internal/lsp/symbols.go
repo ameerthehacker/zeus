@@ -39,21 +39,38 @@ func (s *Server) getDefinition(uri protocol.DocumentURI, position protocol.Posit
 	if !ok || docInfo.IRModule == nil {
 		return none
 	}
+	docPath := uri.Filename()
+
+	// Import path string (`from "./x"`): jump to the top of the resolved module file.
+	if loc, ok := s.importPathDefinition(docInfo, docPath, zeusPos(position)); ok {
+		return []protocol.Location{loc}
+	}
 
 	// Prefer the AST + semantic model: resolve the identifier under the cursor to a declaration.
 	if docInfo.AST != nil {
 		if id, member := identifierAt(docInfo.AST, zeusPos(position)); id != nil {
-			var span *token.Span
 			if member != nil {
+				var span *token.Span
 				if r, ok := resolveReceiver(docInfo, member.Object); ok {
 					span = memberSpan(r, id.Name.Value)
 				}
-			} else if sym, ok := docInfo.Semantic.SymbolAt(id); ok {
-				// Scope-correct: the recorded binding is the symbol actually in scope here.
-				span = symbolSpan(sym)
-			} else {
-				span = symbolSpan(symbolByName(docInfo.IRModule, id.Name.Value))
+				if span == nil {
+					return none
+				}
+				return []protocol.Location{{URI: uri, Range: spanToRange(span)}}
 			}
+			// Resolve scope-correctly first: the recorded binding is the symbol actually in scope,
+			// so a local/parameter shadow wins over a same-named import.
+			resolved, ok := docInfo.Semantic.SymbolAt(id)
+			if !ok {
+				resolved = symbolByName(docInfo.IRModule, id.Name.Value)
+			}
+			// When that binding is an imported symbol, its declaration lives in another file; jump
+			// there so the location carries the source module's URI rather than the current document.
+			if loc, ok := s.importedSymbolLocation(docInfo, docPath, id.Name.Value, resolved); ok {
+				return []protocol.Location{loc}
+			}
+			span := symbolSpan(resolved)
 			if span == nil {
 				return none
 			}
@@ -66,7 +83,11 @@ func (s *Server) getDefinition(uri protocol.DocumentURI, position protocol.Posit
 	if word == "" {
 		return none
 	}
-	span := symbolSpan(symbolByName(docInfo.IRModule, word))
+	resolved := symbolByName(docInfo.IRModule, word)
+	if loc, ok := s.importedSymbolLocation(docInfo, docPath, word, resolved); ok {
+		return []protocol.Location{loc}
+	}
+	span := symbolSpan(resolved)
 	if span == nil {
 		return none
 	}

@@ -27,9 +27,17 @@ func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Posi
 
 	// Import completion: `from "./|"` (paths) or `import { | } from "./mod"` (exported symbols).
 	// Checked first because an import statement is unambiguous and must not fall through to
-	// keyword/member completion.
+	// keyword/member completion — and the `from "..."` path is itself a string literal, so it must
+	// be handled before the string/comment guard below.
 	if items, ok := s.importCompletions(uri.Filename(), content, position); ok {
 		return &protocol.CompletionList{IsIncomplete: false, Items: items}
+	}
+
+	// Suppress completion inside ordinary string literals and comments: offering variables,
+	// keywords, or members there is noise. Import paths are already handled above, and template
+	// `${ ... }` interpolations are treated as code (not suppressed).
+	if inStringOrComment(content, line, col) {
+		return empty
 	}
 
 	// Member completion: `obj.` or `obj.parti|`. This is detected from the text alone, so a '.'
@@ -46,11 +54,75 @@ func (s *Server) getCompletions(uri protocol.DocumentURI, position protocol.Posi
 	}
 
 	items := keywordAndTypeCompletionItems()
-	if docInfo != nil && docInfo.IRModule != nil {
-		items = append(items, symbolCompletionItems(docInfo.IRModule, position)...)
+	seen := map[string]bool{}
+	// Keywords and built-in type names are already listed; record them so a primordial class of the
+	// same name (e.g. the `string` class vs the `string` type) is not offered twice.
+	for _, item := range items {
+		seen[item.Label] = true
 	}
+	if docInfo != nil && docInfo.IRModule != nil {
+		for _, item := range symbolCompletionItems(docInfo.IRModule, position) {
+			seen[item.Label] = true
+			items = append(items, item)
+		}
+	}
+	// Globals that are visible without import — the `console` singleton and user `global`s, plus
+	// primordial namespaces/types (`Math`, `Error`, ...) and free functions (`setTimeout`, ...) —
+	// only enter a module's symbol table lazily on first reference, so they are added explicitly
+	// here; otherwise they never appear while typing.
+	items = append(items, globalCompletionItems(seen)...)
 
 	return &protocol.CompletionList{IsIncomplete: false, Items: items}
+}
+
+// globalCompletionItems returns completion items for every symbol available without import:
+// ambient globals (`console` + user `global`s), primordial classes with identifier names
+// (`Math`, `Error`, `Console`, `string`), and primordial free functions (`setTimeout`, ...).
+// Names already emitted (via `seen`), compiler-internal names, and non-identifier primordials
+// (e.g. array classes like `u8[]`) are skipped.
+func globalCompletionItems(seen map[string]bool) []protocol.CompletionItem {
+	items := []protocol.CompletionItem{}
+	add := func(name string, item protocol.CompletionItem) {
+		if seen[name] || isInternalSymbolName(name) || !isIdentifierName(name) {
+			return
+		}
+		seen[name] = true
+		items = append(items, item)
+	}
+
+	for _, info := range zeus_value.AllAmbientGlobals() {
+		detail := "global"
+		if info.ValueType != nil {
+			detail = info.ValueType.String()
+		}
+		add(info.Name, protocol.CompletionItem{
+			Label:         info.Name,
+			Kind:          protocol.CompletionItemKindVariable,
+			Detail:        detail,
+			Documentation: "Global " + info.Name,
+		})
+	}
+	for _, class := range zeus_value.Registry.GetAllClasses() {
+		name := class.SourceName()
+		add(name, protocol.CompletionItem{
+			Label:         name,
+			Kind:          protocol.CompletionItemKindClass,
+			Detail:        "class " + name,
+			Documentation: "Built-in class " + name,
+		})
+	}
+	for _, fn := range zeus_value.Registry.GetAllFunctions() {
+		name := fn.SourceName()
+		add(name, protocol.CompletionItem{
+			Label:            name,
+			Kind:             protocol.CompletionItemKindFunction,
+			Detail:           funcSignature(fn),
+			Documentation:    "Built-in function " + name + funcSignature(fn),
+			InsertText:       name + "($0)",
+			InsertTextFormat: protocol.InsertTextFormatSnippet,
+		})
+	}
+	return items
 }
 
 // memberCompletionItems lists the members (properties, accessors, methods) offered on a
@@ -146,6 +218,11 @@ func symbolCompletionItems(irModule *ir.IRModule, cursorPosition protocol.Positi
 
 	for name, value := range irModule.GetAllSymbols() {
 		if seen[name] {
+			continue
+		}
+		// Compiler-internal symbols (temp vars, module-init/module-scoped `$` names, `#` accessor
+		// helpers) are never user-typable, so they must not surface in completion.
+		if isInternalSymbolName(name) {
 			continue
 		}
 		if asVar := zeus_value.AsVar(value); asVar != nil && asVar.IsTempVariable() {
