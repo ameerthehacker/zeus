@@ -1,0 +1,7 @@
+[
+    {
+        "name": "@link('sqlite3') links a third-party lib; sqlite3_libversion() resolves",
+        "exit": "0",
+        "entry": "version.zs"
+    }
+]

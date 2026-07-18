@@ -240,13 +240,12 @@ func (f *FunctionCallExprNode) Accept(visitor ExprVisitor[zeus_value.Value]) zeu
 
 // FunctionDeclExprNode and its methods
 type FunctionDeclExprNode struct {
-	Name       *IdentifierExprNode
-	Params     []*VarDeclNode
-	Body       *BlockStmtNode // nil for extern functions
-	ReturnType *ValueTypeNode
-	// ExternSymbol, when non-empty, marks a body-less function forwarding to the named Zig runtime
-	// symbol (a primordial function defined in a prelude). Body is nil in that case.
+	Name         *IdentifierExprNode
+	Params       []*VarDeclNode
+	Body         *BlockStmtNode // nil for extern functions
+	ReturnType   *ValueTypeNode
 	ExternSymbol string
+	IsCExtern    bool
 	Span         *token.Span
 }
 

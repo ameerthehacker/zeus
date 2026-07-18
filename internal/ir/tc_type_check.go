@@ -55,8 +55,17 @@ func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
 	target := input.CastType
 
 	// Explicit `as` (and implicit widening) numeric/bool casts: int/float/bool in any
-	// direction. Unchecked — codegen's genCast truncates/wraps/reinterprets.
-	if isNumericOrBoolType(sourceType) && isNumericOrBoolType(target) {
+	// direction, plus the C-numeric bridge (cint/clong/csize/cdouble ↔ Zeus scalars). Unchecked —
+	// codegen's genCast truncates/wraps/reinterprets. cptr/cstr are deliberately excluded: they are
+	// strict and only cross the FFI boundary or convert via the generic runtime helpers.
+	if isCastableNumeric(sourceType) && isCastableNumeric(target) {
+		instr.Output.ValueType = target
+		return
+	}
+
+	// cptr <-> cstr: both are raw addrspace(0) pointers (void* / char*), freely interchangeable at
+	// the FFI boundary. The cast is an identity in codegen. (Numeric<->pointer punning stays illegal.)
+	if isCPointerType(sourceType) && isCPointerType(target) {
 		instr.Output.ValueType = target
 		return
 	}
@@ -105,6 +114,18 @@ func isNumericOrBoolType(valueType zeus_value.ValueType) bool {
 		return true
 	}
 	return false
+}
+
+// isCastableNumeric extends isNumericOrBoolType with the C-numeric types (cint/clong/csize/cdouble),
+// which bridge to/from Zeus scalars via `as`. Pointer C types (cptr/cstr) are excluded — strict.
+func isCastableNumeric(valueType zeus_value.ValueType) bool {
+	return isNumericOrBoolType(valueType) || zeus_value.IsCNumericType(valueType)
+}
+
+// isCPointerType reports whether a type is a raw C pointer (cptr or cstr).
+func isCPointerType(valueType zeus_value.ValueType) bool {
+	c, ok := valueType.(zeus_value.CType)
+	return ok && (c.Kind == zeus_value.CPtr || c.Kind == zeus_value.CStr)
 }
 
 func (p *TypeCheckingPass) tcCoerce(tc *TypeChecker, instr *Instr) {

@@ -1,0 +1,150 @@
+---
+title: Foreign Function Interface (FFI)
+description: Bind and call C libraries directly from Zeus with @extern, C types, and marshalling helpers.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Zeus compiles to a native binary and links like C, so it can call a C function with a **direct C‑ABI
+call** — no wrapper library, no per‑function glue. You declare the C function with the `@extern`
+annotation and call it like any Zeus function.
+
+```zeus
+@extern("C", "abs") function cAbs(x: cint): cint;
+
+function main(): i32 {
+  return cAbs(-42) as i32;  // 42
+}
+```
+
+## The `@` annotation system
+
+`@extern` is one of Zeus's first‑class **annotations** — `@name(args)` markers that either decorate a
+declaration or stand alone as a directive:
+
+| Annotation | Kind | Purpose |
+|---|---|---|
+| `@extern(...)` | decorator on a function/method | bind an external symbol |
+| `@link(...)` | standalone directive | link a native library ([see Linking Libraries](/c-interop/linking/)) |
+
+Annotations lead the declaration and their arguments are string literals. Only the two above are
+recognized today; the mechanism is general so more can be added later.
+
+## `@extern` forms
+
+`@extern` has three forms, distinguished by their arguments:
+
+```zeus
+@extern("C", "open")     function cOpen(path: cstr, flags: cint): cint;   // libc symbol `open`
+@extern("zeus", "malloc") function cMalloc(size: csize): cptr;            // runtime symbol `zeus_malloc`
+```
+
+- **`@extern("C", "sym")`** — a **direct C‑ABI** call to the raw C symbol `sym` (e.g. libc's `open`).
+  Arguments are passed by value; the return value is used directly.
+- **`@extern("zeus", "sym")`** — the same direct C‑ABI call, but to a **Zeus runtime** symbol; the
+  `zeus_` prefix is added automatically (`@extern("zeus", "malloc")` binds `zeus_malloc`). This is sugar
+  for binding the runtime's own helpers.
+- **`@extern("sym")`** — a single string binds an internal runtime primordial through the fat ABI. This
+  form is used by the standard library's built‑ins and is rarely needed in application code.
+
+An `@extern` function has no body — it ends with `;`.
+
+## C types
+
+C functions speak C types, not Zeus types. Zeus provides a small set of inert C‑ABI primitives that
+only cross the FFI boundary (they support no arithmetic or indexing):
+
+| Zeus | C meaning | Notes |
+|---|---|---|
+| `cint` | `int` | 32‑bit; file descriptors, flags, most return codes, `errno` |
+| `clong` | `long` / `ssize_t` / `off_t` | 64‑bit on macOS/Linux |
+| `csize` | `size_t` | 64‑bit, unsigned |
+| `cptr` | `void*` | a raw, non‑GC pointer / opaque handle |
+| `cstr` | `char*` | a raw C string pointer |
+| `cdouble` | `double` | |
+
+<Aside type="note">
+`cptr`/`cstr` are **raw** pointers the garbage collector never touches or moves — distinct from Zeus
+object references. This is what makes handing memory to C safe: Zeus's collector is non‑moving, so a
+pointer stays valid across a C call.
+</Aside>
+
+## Converting between C and Zeus types
+
+C numbers bridge to Zeus numbers with an explicit `as` cast; the pointer types `cptr` and `cstr` are
+freely interchangeable with each other but not with numbers:
+
+```zeus
+let fd: i32 = cOpen(pathCStr, 0 as cint) as i32;   // cint result -> i32
+let n:  cint = 42 as cint;                           // i32 literal -> cint
+let raw: cptr = someCStr as cptr;                    // cstr <-> cptr identity
+```
+
+## Marshalling helpers
+
+Strings and buffers need conversion at the boundary. Zeus exposes a set of **ambient** primitives
+(available everywhere, no import) for building bindings:
+
+```zeus
+// strings <-> C strings
+cStrFromString(s: string): cstr    // NUL-terminated copy (GC-managed)
+cStrToString(p: cstr): string      // read a NUL-terminated C string
+cBytesToString(p: cptr, len: clong): string  // read `len` raw bytes
+
+// raw memory (caller frees)
+cMalloc(size: csize): cptr
+cRealloc(p: cptr, size: csize): cptr
+cFree(p: cptr): void
+
+// read C struct fields / buffers by byte offset
+cReadI32(base: cptr, offset: clong): cint
+cReadI64(base: cptr, offset: clong): clong
+cReadF64(base: cptr, offset: clong): cdouble
+cPtrOffset(base: cptr, offset: clong): cptr
+// ...cReadI8/I16/U32/Ptr and cWriteI32/I64
+
+cErrno(): cint          // read errno
+cIsNull(p: cptr): cint  // 1 if the pointer is NULL
+```
+
+## A complete binding
+
+```zeus
+@extern("C", "puts") function cPuts(s: cstr): cint;
+
+function main(): i32 {
+  cPuts(cStrFromString("hello from C"));
+  return 0;
+}
+```
+
+Reading a value back out — here, a string returned by C:
+
+```zeus
+@extern("C", "getenv") function cGetenv(name: cstr): cstr;
+
+function readEnv(name: string): string {
+  let result: cstr = cGetenv(cStrFromString(name));
+  if (cIsNull(result as cptr) as i32 != 0) {
+    return "";
+  }
+  return cStrToString(result);
+}
+```
+
+<Aside type="tip">
+The `@std/fs`, `@std/os` and global `process` modules are written entirely in Zeus over these
+primitives — read their sources for real‑world examples of binding libc.
+</Aside>
+
+## Safety at the boundary
+
+- **Transient arguments** (a pointer passed only for the duration of a call) are always safe — the
+  collector scans the stack and never moves the data.
+- **Retained pointers** (C stores a Zeus pointer in its own heap) are **not** tracked by the collector;
+  keep a Zeus‑side reference alive.
+- C types are strict by default: arithmetic on them, or passing a `string` where a `cstr` is expected,
+  is a compile error — exactly the safety you want at an unsafe boundary.
+
+To link against a third‑party library (not libc, which links automatically), see
+[Linking Libraries](/c-interop/linking/).

@@ -249,6 +249,8 @@ func NewParser(tokens []*token.Token) *Parser {
 		properties := []*ast.ClassProperty{}
 
 		for !parser.isEOF() && parser.peek().Type != token.TokenTypeRightBrace {
+			// Annotations lead the member: `@extern(...) public log(...): void;`
+			annotations := parser.parseAnnotations()
 			accessModifier := parser.consumeAccessModifier()
 
 			// Detect optional 'static' soft keyword
@@ -258,25 +260,19 @@ func NewParser(tokens []*token.Token) *Parser {
 				parser.consume() // eat 'static'
 			}
 
-			// Detect an extern method: `extern("runtime_symbol") name(params): Ret;` — a body-less
-			// method whose body forwards to a Zig runtime symbol (used by prelude/primordial
-			// classes). `extern` + `(` + string literal disambiguates it from a method named
-			// `extern`.
-			if parser.peek().Type == token.TokenTypeIdentifier && parser.peek().Value == token.EXTERN_KEYWORD &&
-				parser.lookahead(1, token.TokenTypeLeftParen) && parser.lookahead(2, token.TokenTypeString) {
-				externKw := parser.consume() // eat 'extern'
-				parser.consumeToken(token.TokenTypeLeftParen, "after 'extern'")
-				symbolToken := parser.consumeToken(token.TokenTypeString, "extern runtime symbol")
-				parser.consumeToken(token.TokenTypeRightParen, "after extern symbol")
-
+			// @extern method: body-less, forwards to a runtime symbol. Methods are fat-ABI only, so a
+			// C-ABI marker ("C"/"zeus") isn't valid here.
+			parser.rejectNonExtern(annotations)
+			if externAnn := findAnnotation(annotations, "extern"); externAnn != nil {
+				symbol, isCExtern := parser.resolveExternAnnotation(externAnn)
+				if isCExtern {
+					parser.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+						"C-ABI @extern is only supported on free functions, not methods", externAnn.Span))
+				}
 				methodName := parser.consumeIdentifier("method name")
 				name, params, returnType := parser.parseFunctionSignature(methodName, true)
 				semi := parser.consumeToken(token.TokenTypeSemicolon, "after extern method signature")
 
-				spanStart := externKw.Span.Start
-				if accessModifier != nil {
-					spanStart = accessModifier.Span.Start
-				}
 				methods = append(methods, &ast.ClassMethod{
 					Name:           name,
 					Params:         params,
@@ -284,8 +280,8 @@ func NewParser(tokens []*token.Token) *Parser {
 					ReturnType:     returnType,
 					AccessModifier: accessModifier,
 					IsStatic:       isStatic,
-					ExternSymbol:   symbolToken.Value,
-					Span:           &token.Span{Start: spanStart, End: semi.Span.End},
+					ExternSymbol:   symbol,
+					Span:           &token.Span{Start: externAnn.Span.Start, End: semi.Span.End},
 				})
 				continue
 			}
@@ -1388,27 +1384,137 @@ func (p *Parser) handlePanic() {
 	}
 }
 
-// parseExternFunctionStmt parses `extern("runtime_symbol") function name(params): Ret;` — a
-// body-less free function that forwards to a Zig runtime symbol (used by prelude/primordial fns).
-func (p *Parser) parseExternFunctionStmt() ast.StmtNode {
-	externKw := p.consume() // 'extern'
-	p.consumeToken(token.TokenTypeLeftParen, "after 'extern'")
-	symbolToken := p.consumeToken(token.TokenTypeString, "extern runtime symbol")
-	p.consumeToken(token.TokenTypeRightParen, "after extern symbol")
-	p.consumeToken(token.TokenTypeFunction, "'function' after extern(...)")
+// parseAnnotation parses `@name` with optional string args `("a", "b")`.
+func (p *Parser) parseAnnotation() *ast.Annotation {
+	at := p.consumeToken(token.TokenTypeAt, "'@'")
+	nameTok := p.consumeToken(token.TokenTypeIdentifier, "annotation name")
+	ann := &ast.Annotation{Name: nameTok.Value, Span: &token.Span{Start: at.Span.Start, End: nameTok.Span.End}}
+	if p.peek().Type == token.TokenTypeLeftParen {
+		p.consume() // '('
+		if p.peek().Type != token.TokenTypeRightParen {
+			for {
+				// consumeToken here rejects a trailing comma (a comma must be followed by another arg).
+				ann.Args = append(ann.Args, p.consumeToken(token.TokenTypeString, "annotation string argument"))
+				if p.peek().Type != token.TokenTypeComma {
+					break
+				}
+				p.consume() // ','
+			}
+		}
+		rp := p.consumeToken(token.TokenTypeRightParen, "after annotation arguments")
+		ann.Span.End = rp.Span.End
+	}
+	return ann
+}
 
+func (p *Parser) parseAnnotations() []*ast.Annotation {
+	var anns []*ast.Annotation
+	for p.peek().Type == token.TokenTypeAt {
+		anns = append(anns, p.parseAnnotation())
+	}
+	return anns
+}
+
+// resolveExternAnnotation maps an @extern annotation's args to (symbol, isCExtern):
+//   @extern("sym")         -> fat-ABI Zig symbol `sym`
+//   @extern("C", "sym")    -> direct C-ABI symbol `sym`
+//   @extern("zeus", "sym") -> direct C-ABI symbol `zeus_sym`
+func (p *Parser) resolveExternAnnotation(ann *ast.Annotation) (string, bool) {
+	switch len(ann.Args) {
+	case 1:
+		return ann.Args[0].Value, false
+	case 2:
+		marker, name := ann.Args[0].Value, ann.Args[1].Value
+		switch marker {
+		case "C":
+			return name, true
+		case "zeus":
+			return "zeus_" + name, true
+		default:
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+				fmt.Sprintf("unknown extern ABI %q; expected \"C\" or \"zeus\"", marker), ann.Args[0].Span))
+			return name, true
+		}
+	default:
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+			"@extern expects (\"symbol\") or (\"C\"|\"zeus\", \"symbol\")", ann.Span))
+		return "", false
+	}
+}
+
+// findAnnotation returns the annotation with the given name, or nil.
+func findAnnotation(anns []*ast.Annotation, name string) *ast.Annotation {
+	for _, ann := range anns {
+		if ann.Name == name {
+			return ann
+		}
+	}
+	return nil
+}
+
+// rejectNonExtern errors on any decorator other than @extern (the only supported declaration decorator).
+func (p *Parser) rejectNonExtern(anns []*ast.Annotation) {
+	for _, ann := range anns {
+		if ann.Name != "extern" {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+				fmt.Sprintf("unknown decorator @%s; only @extern is supported here", ann.Name), ann.Span))
+		}
+	}
+}
+
+// parseAnnotatedStmt handles a run of @annotations: either a decorator on a function declaration
+// (@extern) or a standalone directive (@link).
+func (p *Parser) parseAnnotatedStmt() ast.StmtNode {
+	anns := p.parseAnnotations()
+
+	if p.peek().Type == token.TokenTypeFunction {
+		return p.parseExternFunction(anns)
+	}
+
+	// Standalone directive: exactly one annotation, ';'-terminated (ASI supplies it after ')').
+	if len(anns) != 1 {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "expected a declaration after annotations", anns[0].Span))
+		return nil
+	}
+	ann := anns[0]
+	if ann.Name != "link" {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("unknown directive @%s", ann.Name), ann.Span))
+		return nil
+	}
+	if len(ann.Args) < 1 || len(ann.Args) > 2 {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+			"@link expects (\"library\") or (\"library\", \"searchpath\")", ann.Span))
+		return nil
+	}
+	p.consumeToken(token.TokenTypeSemicolon, "after @link(...)")
+	return &ast.AnnotationStmtNode{Annotation: ann}
+}
+
+// parseExternFunction parses `@extern(...) function name(params): Ret;` — a body-less free function.
+func (p *Parser) parseExternFunction(anns []*ast.Annotation) ast.StmtNode {
+	p.rejectNonExtern(anns)
+	externAnn := findAnnotation(anns, "extern")
+	if externAnn == nil {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "functions can only be decorated with @extern", anns[0].Span))
+	}
+
+	fnKw := p.consumeToken(token.TokenTypeFunction, "'function' after @extern(...)")
 	functionName := p.consumeIdentifier("for function name")
 	name, params, returnType := p.parseFunctionSignature(functionName, false)
 	semi := p.consumeToken(token.TokenTypeSemicolon, "after extern function signature")
 
-	return &ast.ExprStmtNode{Expr: &ast.FunctionDeclExprNode{
-		Name:         name,
-		Params:       params,
-		Body:         nil,
-		ReturnType:   returnType,
-		ExternSymbol: symbolToken.Value,
-		Span:         &token.Span{Start: externKw.Span.Start, End: semi.Span.End},
-	}}
+	node := &ast.FunctionDeclExprNode{
+		Name:       name,
+		Params:     params,
+		Body:       nil,
+		ReturnType: returnType,
+		Span:       &token.Span{Start: fnKw.Span.Start, End: semi.Span.End},
+	}
+	if externAnn != nil {
+		node.Span.Start = externAnn.Span.Start
+		node.ExternSymbol, node.IsCExtern = p.resolveExternAnnotation(externAnn)
+	}
+	return &ast.ExprStmtNode{Expr: node}
 }
 
 // isNilNode reports whether an AST node interface holds a nil concrete pointer.
@@ -1443,10 +1549,9 @@ func (p *Parser) parseStmt() ast.StmtNode {
 	// handle panics and synchronize the parser
 	defer p.handlePanic()
 
-	// extern free function (prelude/primordial): `extern("sym") function name(params): Ret;`
-	if p.peek().Type == token.TokenTypeIdentifier && p.peek().Value == token.EXTERN_KEYWORD &&
-		p.lookahead(1, token.TokenTypeLeftParen) && p.lookahead(2, token.TokenTypeString) {
-		return p.parseExternFunctionStmt()
+	// @annotations: a decorated declaration (@extern) or a standalone directive (@link).
+	if p.peek().Type == token.TokenTypeAt {
+		return p.parseAnnotatedStmt()
 	}
 
 	switch p.peek().Type {

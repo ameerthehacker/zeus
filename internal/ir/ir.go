@@ -572,6 +572,10 @@ func (g *IRModule) VisitContinueStmt(stmt *ast.ContinueStmtNode) {
 	g.irBuilder.BuildJmp(ctx.ContinueTarget, stmt.Span)
 }
 
+// VisitAnnotationDirective is a no-op: standalone @directives (e.g. @link) are build metadata the
+// compiler collects separately; they emit no code.
+func (g *IRModule) VisitAnnotationDirective(*ast.AnnotationStmtNode) {}
+
 // buildPowerOp casts both operands to f64, computes ** via InstrTypePower, and casts
 // the result back to originalType so the caller can store it in the original variable.
 func (g *IRModule) buildPowerOp(left, right zeus_value.Value, originalType zeus_value.ValueType, span *token.Span) zeus_value.Value {
@@ -1519,6 +1523,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		}
 		fn := zeus_value.NewFunction(expr.Name.Name.Value, params, returnType, expr.Name.GetSpan())
 		fn.ExternRuntimeName = expr.ExternSymbol
+		fn.IsCExtern = expr.IsCExtern
 		zeus_value.Registry.RegisterFunction(fn)
 		return fn
 	}

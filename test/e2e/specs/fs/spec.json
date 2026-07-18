@@ -1,0 +1,27 @@
+[
+    {
+        "name": "fs.writeFileSync/readFileSync/existsSync/unlinkSync round-trip",
+        "exit": "0",
+        "entry": "read_write.zs"
+    },
+    {
+        "name": "fs.mkdirSync/renameSync + read back",
+        "exit": "0",
+        "entry": "mkdir_rename.zs"
+    },
+    {
+        "name": "fs.statSync reads size + isFile/isDirectory via struct offsets",
+        "exit": "0",
+        "entry": "stat.zs"
+    },
+    {
+        "name": "fs.readdirSync lists directory entries via dirent d_name offset",
+        "exit": "0",
+        "entry": "readdir.zs"
+    },
+    {
+        "name": "fs.readFileSync grow-and-read loop handles a large multi-chunk file",
+        "exit": "0",
+        "entry": "large_read.zs"
+    }
+]

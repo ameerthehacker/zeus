@@ -5,8 +5,8 @@
 class string {
     private data: u8[];
     public readonly length: i32;
-    public extern("zeus_string_constructor") constructor(bytes: u8[]): void;
-    public extern("zeus_string_compare") compare(other: string): i8;
-    public extern("zeus_string_equals") equals(other: string): boolean;
-    public extern("zeus_string_concat") concat(other: string): string;
+    @extern("zeus_string_constructor") public constructor(bytes: u8[]): void;
+    @extern("zeus_string_compare") public compare(other: string): i8;
+    @extern("zeus_string_equals") public equals(other: string): boolean;
+    @extern("zeus_string_concat") public concat(other: string): string;
 }

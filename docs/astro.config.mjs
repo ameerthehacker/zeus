@@ -12,11 +12,15 @@ const zeusGrammar = {
     },
     {
       name: 'storage.type.zeus',
-      match: '\\b(type|function|extern)\\b'
+      match: '\\b(type|function)\\b'
     },
     {
       name: 'storage.modifier.zeus',
       match: '\\b(let|const)\\b'
+    },
+    {
+      name: 'entity.name.tag.zeus',
+      match: '@[a-zA-Z_][a-zA-Z0-9_]*'
     },
     {
       name: 'constant.numeric.zeus',
@@ -51,7 +55,7 @@ const zeusGrammar = {
     },
     {
       name: 'support.type.zeus',
-      match: '\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|f16|f32|f64|f128|boolean|void|string|null)\\b'
+      match: '\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|f16|f32|f64|f128|boolean|void|string|null|cint|clong|csize|cptr|cstr|cdouble)\\b'
     },
     {
       name: 'keyword.control.import.zeus',
@@ -141,12 +145,22 @@ export default defineConfig({
           ],
         },
         {
+          label: 'C Interop',
+          items: [
+            { label: 'Foreign Function Interface', slug: 'c-interop/ffi' },
+            { label: 'Linking Libraries', slug: 'c-interop/linking' },
+          ],
+        },
+        {
           label: 'Standard Library',
           items: [
             { label: 'Console', slug: 'language/console' },
             { label: 'Math', slug: 'language/math' },
             { label: 'Colors', slug: 'language/colors' },
             { label: 'Timers', slug: 'language/timers' },
+            { label: 'process', slug: 'stdlib/process' },
+            { label: 'File System (fs)', slug: 'stdlib/fs' },
+            { label: 'Operating System (os)', slug: 'stdlib/os' },
           ],
         },
         {

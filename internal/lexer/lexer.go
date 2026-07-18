@@ -79,7 +79,14 @@ func (l *Lexer) shouldInsertSemicolon() bool {
 		token.TokenTypeFloat32,
 		token.TokenTypeFloat64,
 		token.TokenTypeBoolean,
-		token.TokenTypeVoid:
+		token.TokenTypeVoid,
+		// C-ABI type keywords likewise end a declaration (`x: cint`, `open(...): cptr`).
+		token.TokenTypeCInt,
+		token.TokenTypeCLong,
+		token.TokenTypeCSize,
+		token.TokenTypeCPtr,
+		token.TokenTypeCStr,
+		token.TokenTypeCDouble:
 		return true
 	}
 	return false
@@ -512,6 +519,9 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 			l.advance()
 		case char == ',':
 			l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(*position, *position)))
+			l.advance()
+		case char == '@':
+			l.pushToken(token.NewToken(token.TokenTypeAt, token.NewSpan(*position, *position)))
 			l.advance()
 		case char == '+':
 			startPosition := position

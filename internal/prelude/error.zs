@@ -3,5 +3,5 @@
 class Error {
     public name: string;
     public message: string;
-    public extern("zeus_error_constructor") constructor(name: string, msg: string): void;
+    @extern("zeus_error_constructor") public constructor(name: string, msg: string): void;
 }

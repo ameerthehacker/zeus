@@ -151,6 +151,74 @@ func NewOpaqueType(span *token.Span) OpaqueType {
 	return OpaqueType{Span: span}
 }
 
+// CTypeKind enumerates the C-ABI primitive types Zeus can name at the FFI boundary.
+type CTypeKind int
+
+const (
+	CInt    CTypeKind = iota // C `int`      -> i32 (signed)
+	CLong                    // C `long`/`ssize_t`/`off_t` -> i64 (signed); LP64 on macOS/Linux
+	CSize                    // C `size_t`   -> i64 (unsigned)
+	CPtr                     // C `void*`    -> ptr addrspace(0) (raw, non-GC)
+	CStr                     // C `char*`    -> ptr addrspace(0) (raw, non-GC)
+	CDouble                  // C `double`   -> f64
+)
+
+// CType is an inert C-ABI type used only to cross the FFI boundary or convert explicitly to/from a
+// Zeus type via `as`. Unlike OpaqueType (a GC pointer, addrspace 1), CPtr/CStr are raw addrspace(0)
+// pointers the collector never treats as roots. C types support no arithmetic/indexing/member access.
+type CType struct {
+	Kind CTypeKind
+	Span *token.Span
+}
+
+func (c CType) GetSpan() *token.Span {
+	return c.Span
+}
+
+func (c CType) String() string {
+	switch c.Kind {
+	case CInt:
+		return "cint"
+	case CLong:
+		return "clong"
+	case CSize:
+		return "csize"
+	case CPtr:
+		return "cptr"
+	case CStr:
+		return "cstr"
+	case CDouble:
+		return "cdouble"
+	default:
+		return "cunknown"
+	}
+}
+
+func NewCType(kind CTypeKind, span *token.Span) CType {
+	return CType{Kind: kind, Span: span}
+}
+
+func IsCType(value ValueType) bool {
+	_, ok := value.(CType)
+	return ok
+}
+
+func AsCType(value ValueType) *CType {
+	if c, ok := value.(CType); ok {
+		return &c
+	}
+	return nil
+}
+
+// IsCNumericType reports whether a C type participates in unchecked numeric `as` casts (the
+// cint/clong/csize/cdouble bridge). Pointer kinds (cptr/cstr) are strict and never bridge.
+func IsCNumericType(value ValueType) bool {
+	if c, ok := value.(CType); ok {
+		return c.Kind == CInt || c.Kind == CLong || c.Kind == CSize || c.Kind == CDouble
+	}
+	return false
+}
+
 type FunctionType struct {
 	ReturnType ValueType
 	ParamTypes []ValueType
@@ -359,6 +427,18 @@ func ToValueType(t *token.Token) ValueType {
 		return UserDefinedType{Name: t.Value, Span: t.Span}
 	case token.TokenTypeNull:
 		return NullType{Span: t.Span}
+	case token.TokenTypeCInt:
+		return CType{Kind: CInt, Span: t.Span}
+	case token.TokenTypeCLong:
+		return CType{Kind: CLong, Span: t.Span}
+	case token.TokenTypeCSize:
+		return CType{Kind: CSize, Span: t.Span}
+	case token.TokenTypeCPtr:
+		return CType{Kind: CPtr, Span: t.Span}
+	case token.TokenTypeCStr:
+		return CType{Kind: CStr, Span: t.Span}
+	case token.TokenTypeCDouble:
+		return CType{Kind: CDouble, Span: t.Span}
 	default:
 		panic(fmt.Sprintf("unknown data type token: %s", t.Type))
 	}
@@ -547,6 +627,9 @@ func CmpValueType(a, b ValueType) bool {
 	case VoidType:
 		_, ok := b.(VoidType)
 		return ok
+	case CType:
+		bc, ok := b.(CType)
+		return ok && a.Kind == bc.Kind
 	case FunctionType:
 		b, ok := b.(FunctionType)
 		if !ok || len(a.ParamTypes) != len(b.ParamTypes) || a.IsVariadic != b.IsVariadic {

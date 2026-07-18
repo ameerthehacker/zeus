@@ -16,10 +16,6 @@ const SETTER_KEYWORD = "set"
 const READONLY_KEYWORD = "readonly"
 const STATIC_KEYWORD = "static"
 
-// EXTERN_KEYWORD marks a class method whose body forwards to a named Zig runtime symbol
-// (`extern("zeus_...") name(...): T;`). Used by prelude/primordial classes; no user body.
-const EXTERN_KEYWORD = "extern"
-
 type TokenType int
 
 const (
@@ -33,6 +29,7 @@ const (
 	TokenTypeRightBracket
 	TokenTypeComma
 	TokenTypeDot
+	TokenTypeAt // '@' — introduces a compiler directive (e.g. @link)
 	// operators
 	operator_beg
 	TokenTypePlus
@@ -133,6 +130,13 @@ const (
 	TokenTypeBoolean
 	// null type
 	TokenTypeNull
+	// C ABI types (FFI boundary; see internal/zeus_value CType)
+	TokenTypeCInt
+	TokenTypeCLong
+	TokenTypeCSize
+	TokenTypeCPtr
+	TokenTypeCStr
+	TokenTypeCDouble
 	datatype_end
 	// template literal markers
 	TokenTypeTemplateLiteralStr       // static segment (always emitted, possibly "")
@@ -165,6 +169,8 @@ func (t TokenType) String() string {
 		return ","
 	case TokenTypeDot:
 		return "."
+	case TokenTypeAt:
+		return "@"
 	case TokenTypePlus:
 		return "+"
 	case TokenTypeMinus:
@@ -299,6 +305,18 @@ func (t TokenType) String() string {
 		return "f64"
 	case TokenTypeBoolean:
 		return "boolean"
+	case TokenTypeCInt:
+		return "cint"
+	case TokenTypeCLong:
+		return "clong"
+	case TokenTypeCSize:
+		return "csize"
+	case TokenTypeCPtr:
+		return "cptr"
+	case TokenTypeCStr:
+		return "cstr"
+	case TokenTypeCDouble:
+		return "cdouble"
 	case TokenTypeClass:
 		return "class"
 	case TokenTypePrivate:
@@ -391,6 +409,12 @@ var DataTypes = map[string]TokenType{
 	TokenTypeBoolean.String(): TokenTypeBoolean,
 	TokenTypeVoid.String():    TokenTypeVoid,
 	TokenTypeNull.String():    TokenTypeNull,
+	TokenTypeCInt.String():    TokenTypeCInt,
+	TokenTypeCLong.String():   TokenTypeCLong,
+	TokenTypeCSize.String():   TokenTypeCSize,
+	TokenTypeCPtr.String():    TokenTypeCPtr,
+	TokenTypeCStr.String():    TokenTypeCStr,
+	TokenTypeCDouble.String(): TokenTypeCDouble,
 }
 
 type Position struct {

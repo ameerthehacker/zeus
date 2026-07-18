@@ -363,6 +363,19 @@ func (p *DeclCheckPass) registerFunctionStub(g *IRModule, expr *ast.FunctionDecl
 	}
 	fn := zeus_value.NewFunction(name, params, returnType, expr.Name.Name.Span)
 	fn.OriginalName = name
+
+	// A user extern("C",...) is a body-less, module-level function whose wrapper must be emitted at
+	// module scope (currentBlock == nil). IREmitPass emits every registered primordial function at
+	// the top of the module, BEFORE visiting statements — so the C-extern must be in the Registry by
+	// then. Registering it only when its statement is visited (VisitFunctionDeclExpr) is too late and
+	// mis-nests the wrapper into #_zeus_main. Pre-register it here, in DeclCheckPass (a pre-pass).
+	if expr.IsCExtern {
+		fn.OriginalName = ""
+		fn.ExternRuntimeName = expr.ExternSymbol
+		fn.IsCExtern = true
+		zeus_value.Registry.RegisterFunction(fn)
+	}
+
 	g.irBuilder.symbolTable.DeclareGlobalSymbol(name, fn)
 }
 
