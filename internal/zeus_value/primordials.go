@@ -25,6 +25,10 @@ const ZEUS_BOX_VALUE_PROPERTY = "value"
 // harvested + injected by loadPreludes/initializePrimordials.
 const ZEUS_NUMBER_INTERFACE = "Number"
 
+// ZEUS_STRINGIFY_INTERFACE is the ambient interface (prelude/stringify.zs) a type implements by
+// declaring `toString(): string`; it gates the implicit conversion of any value to `string`.
+const ZEUS_STRINGIFY_INTERFACE = "Stringify"
+
 // boxedScalarTypes is the single source of truth for which scalars have a first-class box (and thus
 // their box class names, via BoxClassName). Keep in sync with prelude/boxes.zs.
 var boxedScalarTypes = []ValueType{

@@ -610,6 +610,15 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 
 	tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
 
+	// Any value whose type implements Stringify converts to `string` by calling toString()
+	// (autoboxing a primitive first): powers console.log(5), `let s: string = x`, string params and
+	// returns. The source is never itself a string here (that returns early above).
+	if isStringType(targetType) {
+		if converted, ok := p.emitToString(tc, value, valueType, value.GetSpan()); ok {
+			return converted, true
+		}
+	}
+
 	// Autobox a scalar into its box class when that exact primordial box is the target
 	// (`let n: I32 = 5`, passing a bool where a Bool is expected). Compared by identity, not name, so
 	// a user class that shadows a box name is not an autobox target (it fails assignability instead).
@@ -844,6 +853,33 @@ func (p *TypeCheckingPass) emitValueOf(tc *TypeChecker, value zeus_value.Value, 
 	return tc.builder.BuildMethodCall(value, "valueOf", []zeus_value.Value{}, zeus_value.FloatType{Size: zeus_value.F64, Span: span}, nil, span)
 }
 
+// emitToString converts value to a `string` by calling toString(), autoboxing a primitive first (its
+// box carries toString). Returns (converted, true) when value's type implements Stringify (has
+// `toString(): string`, checked structurally), else (value, false). The builder insertion point must
+// already be positioned before the consuming instruction.
+func (p *TypeCheckingPass) emitToString(tc *TypeChecker, value zeus_value.Value, valueType zeus_value.ValueType, span *token.Span) (zeus_value.Value, bool) {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING)
+	if stringify == nil || stringClass == nil {
+		return value, false
+	}
+	// A primitive is stringified through its box (I32/Bool/...); an object/interface directly.
+	receiverType := valueType
+	boxClass := boxClassForPrimitive(valueType)
+	if boxClass != nil {
+		receiverType = zeus_value.NewObjectType(boxClass)
+	}
+	if !zeus_value.CmpValueType(zeus_value.NewInterfaceType(stringify), receiverType) {
+		return value, false
+	}
+	receiver := value
+	if boxClass != nil {
+		receiver = p.emitBox(tc, value, valueType, boxClass, span)
+	}
+	stringType := zeus_value.NewObjectType(stringClass)
+	return tc.builder.BuildMethodCall(receiver, "toString", []zeus_value.Value{}, stringType, nil, span), true
+}
+
 // maybeUnboxOperand unboxes a boxed binary-operand to its scalar so operators compute on scalars
 // (n + 1, n < m, b == c → value comparison). A `Number` (umbrella) unboxes to f64 via valueOf(); a
 // concrete box / Bool reads its exact `value` field. Non-box operands pass through unchanged.
@@ -864,8 +900,39 @@ func (p *TypeCheckingPass) maybeUnboxOperand(tc *TypeChecker, instr *Instr, valu
 	return value
 }
 
+// coerceStringConcatOperands converts the non-string operand of a `string + X` (or `X + string`) to
+// string so it concatenates (`"n=" + 5`, template `${n}`). When both operands are strings (normal
+// concat) or neither is (numeric add), operands pass through unchanged. Non-Stringify operands stay
+// as-is and fail the operator type check below cleanly.
+func (p *TypeCheckingPass) coerceStringConcatOperands(tc *TypeChecker, instr *Instr, left, right zeus_value.Value) (zeus_value.Value, zeus_value.Value) {
+	leftIsStr := isStringType(tc.getValueType(left))
+	rightIsStr := isStringType(tc.getValueType(right))
+	if leftIsStr == rightIsStr {
+		return left, right
+	}
+	stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING)
+	if stringClass == nil {
+		return left, right
+	}
+	stringType := zeus_value.NewObjectType(stringClass)
+	if leftIsStr {
+		if converted, ok := p.tryImplicitCast(tc, instr, right, stringType); ok {
+			right = converted
+		}
+	} else if converted, ok := p.tryImplicitCast(tc, instr, left, stringType); ok {
+		left = converted
+	}
+	return left, right
+}
+
 func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a, b zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a, b zeus_value.ValueType) bool) {
 	input := AsBinaryOpInstrInput(instr.Input)
+
+	// String concatenation coerces the non-string operand to string (via toString). Done before the
+	// unbox step so a boxed operand stringifies directly rather than unboxing to a scalar first.
+	if instr.Type == InstrTypeAdd {
+		input.Left, input.Right = p.coerceStringConcatOperands(tc, instr, input.Left, input.Right)
+	}
 
 	// Arithmetic/comparison on boxed primitives operates on the unboxed scalar — but never against
 	// null. A box is never null, so `box == null` stays an identity check; this also keeps the

@@ -1,0 +1,5 @@
+[
+    { "name": "console.log accepts all primitives + Number via Stringify", "entry": "log_all.zs", "exit": "0", "stdout": "5\ntrue\n3.14\n9007199254740993\n7\n" },
+    { "name": "string concat + template interpolation convert via toString", "entry": "concat.zs", "exit": "0", "stdout": "count: 42\nhello world\nn=3\nbool: true\n" },
+    { "name": "user class toString + string as Stringify", "entry": "user_class.zs", "exit": "0", "stdout": "Point(9)\nhi\n42\n" }
+]

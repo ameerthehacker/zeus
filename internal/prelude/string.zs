@@ -9,4 +9,6 @@ class string {
     @extern("zeus_string_compare") public compare(other: string): i8;
     @extern("zeus_string_equals") public equals(other: string): boolean;
     @extern("zeus_string_concat") public concat(other: string): string;
+    // Makes `string` a Stringify (returns itself), so a string flows into a `Stringify` slot.
+    @extern("zeus_string_toString") public toString(): string;
 }
