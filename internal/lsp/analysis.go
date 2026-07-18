@@ -5,6 +5,7 @@ import (
 
 	"github.com/ameerthehacker/zeus/internal/ast"
 	"github.com/ameerthehacker/zeus/internal/ir"
+	"github.com/ameerthehacker/zeus/internal/lexer"
 	"github.com/ameerthehacker/zeus/internal/token"
 	"github.com/ameerthehacker/zeus/internal/zeus_value"
 	"go.lsp.dev/protocol"
@@ -16,10 +17,43 @@ import (
 // parseDocument runs the type checker — holds every declared symbol with a resolved type
 // (Walk visits all scopes, so locals are included, not just globals).
 
-// isIdentRune reports whether r can appear in a Zeus identifier.
+// isIdentRune reports whether r can appear in a Zeus identifier. It delegates to the lexer so the
+// language server's notion of an identifier stays byte-for-byte consistent with the compiler's
+// (including Unicode letters/digits).
 func isIdentRune(r rune) bool {
-	return r == '_' || r == '$' ||
-		(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	return lexer.IsIdentifierRune(r)
+}
+
+// isInternalSymbolName reports whether a symbol name is compiler-internal and must never be
+// offered to the user. Temp IR variables are `%`-prefixed; module-init and module-scoped symbols
+// are `$`-prefixed (see internal/module: GetModulePrefix / ModuleInitFuncPrefix); synthesized
+// accessor helpers are `#`-prefixed. None are user-typable.
+func isInternalSymbolName(name string) bool {
+	if name == "" {
+		return false
+	}
+	switch name[0] {
+	case '%', '$', '#':
+		return true
+	}
+	return false
+}
+
+// isIdentifierName reports whether name is a plain Zeus identifier a user could type. It rejects
+// synthesized primordial names that are not identifiers, e.g. array classes like `u8[]`.
+func isIdentifierName(name string) bool {
+	for i, r := range name {
+		if i == 0 {
+			if !(r == '_' || r == '$' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+				return false
+			}
+			continue
+		}
+		if !isIdentRune(r) {
+			return false
+		}
+	}
+	return name != ""
 }
 
 // lineAt returns the given 0-based line of content, or "" if out of range.
@@ -45,6 +79,116 @@ func runePrefix(s string, col int) string {
 		col = len(runes)
 	}
 	return string(runes[:col])
+}
+
+// docPrefix returns the document text from the start of the file up to (but not including) the
+// cursor at 0-based line/character, with column math done in runes to match runePrefix.
+func docPrefix(content string, line, character int) string {
+	lines := strings.Split(content, "\n")
+	if line < 0 {
+		line = 0
+	}
+	if line >= len(lines) {
+		line = len(lines) - 1
+	}
+	var b strings.Builder
+	for i := 0; i < line; i++ {
+		b.WriteString(strings.TrimSuffix(lines[i], "\r"))
+		b.WriteByte('\n')
+	}
+	b.WriteString(runePrefix(strings.TrimSuffix(lines[line], "\r"), character))
+	return b.String()
+}
+
+// inStringOrComment reports whether the cursor at 0-based line/character sits inside a string
+// literal (`"..."`, `'...'`, or a “ `...` “ template) or a comment (`//` or `/* */`). It runs a
+// small state machine over the document prefix, mirroring the lexer's literal/comment forms
+// (escape sequences included). Inside a template, `${ ... }` interpolation is treated as code, so
+// completion still fires there — only the literal text portions suppress completion.
+func inStringOrComment(content string, line, character int) bool {
+	runes := []rune(docPrefix(content, line, character))
+
+	const (
+		code = iota
+		lineComment
+		blockComment
+		dqString // "..."
+		sqString // '...'
+		template // `...`
+	)
+	state := code
+	// braceStack tracks nested `${ ... }` interpolations: each entry is the unmatched-brace depth
+	// of one interpolation. When it returns to zero the matching `}` restores the template state.
+	var braceStack []int
+
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		var next rune
+		if i+1 < len(runes) {
+			next = runes[i+1]
+		}
+		switch state {
+		case code:
+			switch {
+			case c == '/' && next == '/':
+				state = lineComment
+				i++
+			case c == '/' && next == '*':
+				state = blockComment
+				i++
+			case c == '"':
+				state = dqString
+			case c == '\'':
+				state = sqString
+			case c == '`':
+				state = template
+			case c == '{' && len(braceStack) > 0:
+				braceStack[len(braceStack)-1]++
+			case c == '}' && len(braceStack) > 0:
+				braceStack[len(braceStack)-1]--
+				if braceStack[len(braceStack)-1] == 0 {
+					braceStack = braceStack[:len(braceStack)-1]
+					state = template
+				}
+			}
+		case lineComment:
+			if c == '\n' {
+				state = code
+			}
+		case blockComment:
+			if c == '*' && next == '/' {
+				state = code
+				i++
+			}
+		case dqString:
+			if c == '\\' {
+				i++ // skip the escaped rune
+			} else if c == '"' {
+				state = code
+			}
+		case sqString:
+			if c == '\\' {
+				i++
+			} else if c == '\'' {
+				state = code
+			}
+		case template:
+			if c == '\\' {
+				i++
+			} else if c == '`' {
+				state = code
+			} else if c == '$' && next == '{' {
+				// Enter interpolation: code context whose matching `}` returns to the template.
+				braceStack = append(braceStack, 1)
+				state = code
+				i++ // consume '{'
+			}
+		}
+	}
+
+	// The cursor is "in string/comment" unless the scan ends in code state — which includes being
+	// inside a template interpolation (state == code with a non-empty brace stack).
+	return state != code
 }
 
 // wordAt returns the identifier surrounding rune-column `col` on `line`, along with whether
@@ -224,6 +368,9 @@ func resolveReceiver(docInfo *DocumentInfo, objExpr ast.ExprNode) (receiver, boo
 // scopes (a locally-declared variable is therefore found too); temporary IR variables are
 // never user-referenceable, so they are ignored.
 func symbolByName(irModule *ir.IRModule, name string) zeus_value.Value {
+	if isInternalSymbolName(name) {
+		return nil
+	}
 	value, ok := irModule.GetAllSymbols()[name]
 	if !ok {
 		return nil
