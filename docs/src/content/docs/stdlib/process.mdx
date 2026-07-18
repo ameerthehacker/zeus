@@ -1,0 +1,61 @@
+---
+title: process
+description: The ambient global process object — environment, working directory, pid, and exit.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`process` is an **ambient global object**, available in every module without an import — just like
+`console`. It exposes synchronous access to the running process, backed by libc.
+
+```zeus
+function main(): i32 {
+  console.log("running in: " + process.cwd());
+  process.setEnv("GREETING", "hi");
+  console.log(process.getEnv("GREETING"));  // "hi"
+  return 0;
+}
+```
+
+<Aside type="note">
+`process` is global because it is global in Node. Other modules like `fs` and `os` are imported, as
+they are in Node.
+</Aside>
+
+## Environment
+
+```zeus
+process.getEnv(name: string): string   // value, or "" if unset
+process.hasEnv(name: string): boolean  // distinguishes "set but empty" from "unset"
+process.setEnv(name: string, value: string): void
+```
+
+```zeus
+if (process.hasEnv("HOME")) {
+  console.log(process.getEnv("HOME"));
+}
+```
+
+## Working directory
+
+```zeus
+process.cwd(): string           // current working directory
+process.chdir(path: string): boolean  // change directory; true on success
+```
+
+## Process control
+
+```zeus
+process.pid(): i32              // this process's id
+process.exit(code: i32): void   // terminate immediately with an exit code
+```
+
+```zeus
+function main(): i32 {
+  if (!process.hasEnv("REQUIRED_TOKEN")) {
+    console.error("REQUIRED_TOKEN is not set");
+    process.exit(1);
+  }
+  return 0;
+}
+```

@@ -42,19 +42,19 @@ const PLATFORM_LINUX: string = "linux";
 const ARCH_ARM64: string = "arm64";
 
 // ---- raw libc/POSIX bindings (direct C ABI) ----
-extern("C", "open")   function c_open(path: cstr, flags: cint): cint;   // used only with O_RDONLY
-extern("C", "creat")  function c_creat(path: cstr, mode: cint): cint;   // O_WRONLY|O_CREAT|O_TRUNC
-extern("C", "read")   function c_read(fd: cint, buf: cptr, count: csize): clong;
-extern("C", "write")  function c_write(fd: cint, buf: cptr, count: csize): clong;
-extern("C", "close")  function c_close(fd: cint): cint;
-extern("C", "access") function c_access(path: cstr, mode: cint): cint;
-extern("C", "mkdir")  function c_mkdir(path: cstr, mode: cint): cint;
-extern("C", "unlink") function c_unlink(path: cstr): cint;
-extern("C", "rename") function c_rename(oldPath: cstr, newPath: cstr): cint;
-extern("C", "stat")     function c_stat(path: cstr, buf: cptr): cint;
-extern("C", "opendir")  function c_opendir(path: cstr): cptr;
-extern("C", "readdir")  function c_readdir(dir: cptr): cptr;
-extern("C", "closedir") function c_closedir(dir: cptr): cint;
+@extern("C", "open")   function c_open(path: cstr, flags: cint): cint;   // used only with O_RDONLY
+@extern("C", "creat")  function c_creat(path: cstr, mode: cint): cint;   // O_WRONLY|O_CREAT|O_TRUNC
+@extern("C", "read")   function c_read(fd: cint, buf: cptr, count: csize): clong;
+@extern("C", "write")  function c_write(fd: cint, buf: cptr, count: csize): clong;
+@extern("C", "close")  function c_close(fd: cint): cint;
+@extern("C", "access") function c_access(path: cstr, mode: cint): cint;
+@extern("C", "mkdir")  function c_mkdir(path: cstr, mode: cint): cint;
+@extern("C", "unlink") function c_unlink(path: cstr): cint;
+@extern("C", "rename") function c_rename(oldPath: cstr, newPath: cstr): cint;
+@extern("C", "stat")     function c_stat(path: cstr, buf: cptr): cint;
+@extern("C", "opendir")  function c_opendir(path: cstr): cptr;
+@extern("C", "readdir")  function c_readdir(dir: cptr): cptr;
+@extern("C", "closedir") function c_closedir(dir: cptr): cint;
 
 // readFileSync reads an entire file and returns its contents as a string. Throws on open/read error.
 // A grow-and-read loop (rather than lseek-sizing + one read) correctly handles short reads, pipes

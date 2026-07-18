@@ -1,0 +1,50 @@
+---
+title: Linking Libraries
+description: Declare native library dependencies with the @link directive.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Binding libc needs nothing special — the C library is linked automatically. Binding a **third‑party**
+library (SQLite, zlib, curl, …) requires telling the linker which library to link and, optionally,
+where to find it. The `@link` directive does exactly that.
+
+## Syntax
+
+```zeus
+@link("sqlite3");                       // links -lsqlite3
+@link("sqlite3", "/opt/homebrew/lib");  // adds -L/opt/homebrew/lib, then -lsqlite3
+```
+
+- The first argument is the library name (without the `lib` prefix or extension) — it becomes
+  `-l<name>`.
+- The optional second argument is a search directory — it becomes `-L<path>`.
+
+Place `@link` at the top of the file that declares the bindings. Any program that imports that module
+picks up the link automatically — the user writes nothing extra.
+
+## Example
+
+```zeus
+@link("sqlite3");
+
+@extern("C", "sqlite3_libversion") function sqlite3Version(): cstr;
+
+function main(): i32 {
+  let version: string = cStrToString(sqlite3Version());
+  console.log(version);  // e.g. "3.43.2"
+  return 0;
+}
+```
+
+## How it works
+
+The compiler collects every `@link` directive across all compiled modules (the entry file plus every
+imported binding), de‑duplicates them, and appends the corresponding `-L`/`-l` flags to the final
+link. Search paths are emitted before library flags so the lookups resolve.
+
+<Aside type="caution">
+`@link` requires one or two string arguments; `@link()` or `@link("a", "b", "c")` is a compile error.
+The library must be present on the system at link time — a missing library surfaces as an
+"undefined symbol" link error for the functions you bound.
+</Aside>
