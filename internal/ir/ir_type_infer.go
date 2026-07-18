@@ -368,6 +368,9 @@ func (g *IRModule) inferFunctionEnv(body *ast.BlockStmtNode) *FunctionTypeEnv {
 				}
 				scanStmt(clause.Body)
 			}
+			if s.FinallyBody != nil {
+				scanStmt(s.FinallyBody)
+			}
 			// ExprStmt, ReturnStmt, ThrowStmt, BreakStmt, ContinueStmt, ImportStmt,
 			// ExportStmt: no variable declarations — skip.
 			// FunctionDeclExprNode bodies are never recursed into because function

@@ -25,6 +25,8 @@ type VarDecl struct {
 	// IsAmbient marks a `global` definition — the built Var gets the stable, un-mangled ambient
 	// symbol name and external linkage instead of a per-module unique name (see BuildGlobalVarDecl).
 	IsAmbient bool
+	// IsStatic marks a class's static-member backing global; propagated onto the built Var.
+	IsStatic bool
 }
 
 func NewVarDecl(name string, valueType zeus_value.ValueType, isConst bool, initializer zeus_value.Value, span *token.Span) *VarDecl {
@@ -1276,6 +1278,7 @@ const (
 	InstrTypeCheckException // Check if exception pending after call in try block
 	InstrTypeGetException   // Get current exception object for catch binding
 	InstrTypeClearException // Clear exception after successful catch
+	InstrTypeRethrow        // Re-propagate the current exception: calls zeus_rethrow (noreturn)
 	// type coercion: ObjectType value whose __call__ is compatible with the target FunctionType;
 	// output has the source ObjectType so FunctorCallLoweringPass handles downstream calls naturally.
 	InstrTypeCoerce
@@ -1417,6 +1420,8 @@ func (i InstrType) String() string {
 		return "GET_EXCEPTION"
 	case InstrTypeClearException:
 		return "CLEAR_EXCEPTION"
+	case InstrTypeRethrow:
+		return "RETHROW"
 	case InstrTypeCoerce:
 		return "COERCE"
 	default:
@@ -1425,7 +1430,7 @@ func (i InstrType) String() string {
 }
 
 func IsControlFlowInstr(instrType InstrType) bool {
-	return instrType == InstrTypeJmp || instrType == InstrTypeCondJmp || instrType == InstrTypeReturn || instrType == InstrTypeThrow || instrType == InstrTypeCheckException || instrType == InstrTypePushHandler
+	return instrType == InstrTypeJmp || instrType == InstrTypeCondJmp || instrType == InstrTypeReturn || instrType == InstrTypeThrow || instrType == InstrTypeRethrow || instrType == InstrTypeCheckException || instrType == InstrTypePushHandler
 }
 
 func IsFunctionDeclInstr(instrType InstrType) bool {

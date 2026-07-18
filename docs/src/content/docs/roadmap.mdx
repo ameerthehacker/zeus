@@ -65,16 +65,6 @@ let server = createServer((req: Request, res: Response) => {
 server.listen(3000);
 ```
 
-## Custom exception types
-
-Subclassing `Error` to define your own exception hierarchy:
-
-```zeus
-class NotFoundError extends Error {
-  constructor(message: string) { super(message); }
-}
-```
-
 ## An expanded standard library
 
 The [file system](/stdlib/fs/), [OS info](/stdlib/os/) and global [process](/stdlib/process/) modules

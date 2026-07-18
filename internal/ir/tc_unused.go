@@ -192,7 +192,10 @@ func (p *UnusedWarningPass) handleCondJmp(instr *Instr) {
 func (p *UnusedWarningPass) handleNewObj(instr *Instr) {
 	input := AsNewObjInstrInput(instr.Input)
 	if class := zeus_value.AsClass(input.Callee); class != nil {
-		class.IsUsed = true
+		// Mark the base chain used too — a base reached only via `extends` isn't "unused".
+		for c := class; c != nil; c = c.ParentClass {
+			c.IsUsed = true
+		}
 	}
 	markValuesAsUsed(input.Args)
 }

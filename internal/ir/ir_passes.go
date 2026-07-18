@@ -239,6 +239,9 @@ func (p *DeclCheckPass) walkStmt(g *IRModule, stmt ast.StmtNode, isTopLevel bool
 			p.walkStmt(g, clause.Body, false)
 			p.st.ExitScope()
 		}
+		if s.FinallyBody != nil {
+			p.walkStmt(g, s.FinallyBody, false)
+		}
 
 	case *ast.ThrowStmtNode:
 		if s.Expr != nil {

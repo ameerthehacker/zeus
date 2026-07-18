@@ -93,6 +93,14 @@ func (p *TypeCheckingPass) tcCast(tc *TypeChecker, instr *Instr) {
 		}
 	}
 
+	// Interface value -> concrete class: allowed, verified at runtime (INSTANCEOF, in VisitCastExpr).
+	if zeus_value.IsInterfaceType(sourceType) {
+		if _, ok := target.(zeus_value.ObjectType); ok {
+			instr.Output.ValueType = target
+			return
+		}
+	}
+
 	// Anything else is an illegal cast, reported at compile time (zero runtime cost).
 	tc.pushError(&zeus_error.ZeusError{
 		Message: fmt.Sprintf("cannot cast '%s' to '%s'", sourceType, target),
@@ -441,6 +449,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		// This will be resolved when binding to catch variable
 	case InstrTypeClearException:
 		// Clear exception doesn't require type checking
+	case InstrTypeRethrow:
+		// Rethrow doesn't require type checking
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}
@@ -914,6 +924,14 @@ func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Inst
 	case zeus_value.FloatType:
 		switch rightValueType := rightValueType.(type) {
 		case zeus_value.FloatType:
+			// Retype a float literal (always f64) to the other's type rather than widening the
+			// typed side, so `f32var + 0.2` stays f32. Mirrors the int-literal case above.
+			if lc := zeus_value.AsConstant(left); lc != nil && leftValueType.Size != rightValueType.Size {
+				return zeus_value.NewConstant(lc.Value, rightValueType, left.GetSpan()), right
+			}
+			if rc := zeus_value.AsConstant(right); rc != nil && leftValueType.Size != rightValueType.Size {
+				return left, zeus_value.NewConstant(rc.Value, leftValueType, right.GetSpan())
+			}
 			if leftValueType.Size > rightValueType.Size {
 				right, ok = p.tryImplicitCast(tc, instr, right, leftValueType)
 				zeus_error.Assert(ok, "failed to cast smaller float to larger float")
@@ -1188,6 +1206,14 @@ func (p *TypeCheckingPass) tcImport(tc *TypeChecker, instr *Instr) {
 	}
 }
 
+// argCountErrorSpan prefers the call-site span, falling back to the callee span.
+func argCountErrorSpan(instr *Instr, calleeSpan *token.Span) *token.Span {
+	if instr != nil && instr.Span != nil {
+		return instr.Span
+	}
+	return calleeSpan
+}
+
 // tcFunctionCall performs common type checking logic for function calls
 // It validates arguments and performs implicit casting based on function signature
 func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functionType zeus_value.FunctionType, args []zeus_value.Value, calleeSpan *token.Span) []zeus_value.Value {
@@ -1196,9 +1222,10 @@ func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functio
 	}
 
 	if len(args) != len(functionType.ParamTypes) {
+		// Anchor to the call site, not calleeSpan (the declaration).
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("expected %d arguments for function, but found %d", len(functionType.ParamTypes), len(args)),
-			Span:    calleeSpan,
+			Span:    argCountErrorSpan(instr, calleeSpan),
 		})
 		return args
 	}
@@ -1229,7 +1256,7 @@ func (p *TypeCheckingPass) tcVariadicFunctionCall(tc *TypeChecker, instr *Instr,
 	if len(args) < fixedCount {
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("expected at least %d arguments for function, but found %d", fixedCount, len(args)),
-			Span:    calleeSpan,
+			Span:    argCountErrorSpan(instr, calleeSpan),
 		})
 		return args
 	}
@@ -1728,6 +1755,12 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 				instr.Output.ValueType = ft.ReturnType
 				return
 			}
+			// Field exists but isn't callable — "not found" would mislead.
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("property '%s' of class '%s' is of type '%s' and is not callable", input.MethodName, class.SourceName(), property.Property.ValueType),
+				Span:    instr.Output.Span,
+			})
+			return
 		}
 		tc.pushError(&zeus_error.ZeusError{
 			Message: fmt.Sprintf("property %s not found in class %s", input.MethodName, class.SourceName()),

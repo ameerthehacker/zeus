@@ -1318,13 +1318,39 @@ func (p *ArrayMethodLoweringPass) lowerArrayConcat(l *Lowerer, method arrayMetho
 	method.deleteAllInstrs(builder)
 }
 
-// lowerArraySlice lowers arr.slice(start, end) to use factory function
-// Generates:
-//
-//	sliceLen = end - start (clamped)
-//	newArr = new T[sliceLen]
-//	newArr.copyRange(arr, start, 0, sliceLen)
-//	result = newArr
+func i32SliceType(span *token.Span) zeus_value.IntType {
+	return zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+}
+func i64SliceType(span *token.Span) zeus_value.IntType {
+	return zeus_value.IntType{Size: zeus_value.I64, Signed: true, Span: span}
+}
+
+func buildTypedBinOp(builder *IRBuilder, a, b zeus_value.Value, op InstrType, t zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	r := builder.BuildBinaryOp(a, b, op, span)
+	zeus_value.AsVar(r).ValueType = t
+	return r
+}
+
+// signMaskDiffI64 returns `(a-b) & ((a-b)>>63)`: 0 when a>=b, else a-b. In i64 so the subtraction
+// can't overflow — the i32 version wraps for INT_MIN and inverts the min/max.
+func signMaskDiffI64(builder *IRBuilder, a, b zeus_value.Value, span *token.Span) zeus_value.Value {
+	i64Type := i64SliceType(span)
+	diff := buildTypedBinOp(builder, a, b, InstrTypeSub, i64Type, span)
+	sign := buildTypedBinOp(builder, diff, zeus_value.NewConstant("63", i64Type, span), InstrTypeShr, i64Type, span)
+	return buildTypedBinOp(builder, diff, sign, InstrTypeBitAnd, i64Type, span)
+}
+
+// Branchless signed min/max (no block-splitting in the lowering pass).
+func buildMinI64(builder *IRBuilder, a, b zeus_value.Value, span *token.Span) zeus_value.Value {
+	return buildTypedBinOp(builder, b, signMaskDiffI64(builder, a, b, span), InstrTypeAdd, i64SliceType(span), span)
+}
+func buildMaxI64(builder *IRBuilder, a, b zeus_value.Value, span *token.Span) zeus_value.Value {
+	return buildTypedBinOp(builder, a, signMaskDiffI64(builder, a, b, span), InstrTypeSub, i64SliceType(span), span)
+}
+
+// lowerArraySlice lowers arr.slice(start, end) to `new T[len]; copyRange(...)` with start/end
+// clamped into [0, length] and len >= 0. Clamp math is in i64 so start-length can't overflow;
+// unclamped, out-of-range args over-read, under-read, or segfaulted on a negative length.
 func (p *ArrayMethodLoweringPass) lowerArraySlice(l *Lowerer, method arrayMethodToLower) {
 	span := method.callInstr.Span
 	builder := l.GetBuilder()
@@ -1334,19 +1360,30 @@ func (p *ArrayMethodLoweringPass) lowerArraySlice(l *Lowerer, method arrayMethod
 	startArg := method.args[0]
 	endArg := method.args[1]
 	arrayClass := getArrayClassFromValue(arr)
-	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+	i32Type := i32SliceType(span)
+	i64Type := i64SliceType(span)
 	arrayObjType := zeus_value.NewObjectType(arrayClass)
+	zero32 := zeus_value.NewConstant("0", i32Type, span)
+	zero64 := zeus_value.NewConstant("0", i64Type, span)
 
-	// sliceLen = end - start
-	sliceLen := builder.BuildBinaryOp(endArg, startArg, InstrTypeSub, span)
-	zeus_value.AsVar(sliceLen).ValueType = i32Type
+	length := builder.BuildLoadProperty(arr, zeus_value.ARRAY_PROPERTY_LENGTH, i32Type, span)
 
-	// Create new array and copy elements
+	start64 := builder.BuildCast(startArg, i64Type, span)
+	end64 := builder.BuildCast(endArg, i64Type, span)
+	len64 := builder.BuildCast(length, i64Type, span)
+
+	clampedStart64 := buildMaxI64(builder, zero64, buildMinI64(builder, start64, len64, span), span)
+	clampedEnd64 := buildMaxI64(builder, zero64, buildMinI64(builder, end64, len64, span), span)
+	sliceLen64 := buildMaxI64(builder, zero64, buildTypedBinOp(builder, clampedEnd64, clampedStart64, InstrTypeSub, i64Type, span), span)
+
+	clampedStart := builder.BuildCast(clampedStart64, i32Type, span)
+	sliceLen := builder.BuildCast(sliceLen64, i32Type, span)
+
+	// Create new array and copy the in-bounds range
 	newArr := createTypedNewObj(builder, arrayClass, []zeus_value.Value{sliceLen}, span)
-	zero := zeus_value.NewConstant("0", i32Type, span)
 
 	builder.BuildMethodCall(newArr, zeus_value.ARRAY_METHOD_COPY_RANGE,
-		[]zeus_value.Value{arr, startArg, zero, sliceLen},
+		[]zeus_value.Value{arr, clampedStart, zero32, sliceLen},
 		zeus_value.VoidType{Span: span},
 		[]zeus_value.ValueType{arrayObjType, i32Type, i32Type, i32Type},
 		span)

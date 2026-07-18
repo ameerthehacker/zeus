@@ -55,5 +55,79 @@
         "name": "Null reference two frames deep is caught by try-catch",
         "entry": "null-check-cross-frame.zs",
         "exit": "0"
+    },
+    {
+        "name": "Multiple catch clauses dispatch to the first matching type",
+        "entry": "multi-catch-first-match.zs",
+        "exit": "0"
+    },
+    {
+        "name": "Multiple catch clauses fall through to a later matching clause",
+        "entry": "multi-catch-order.zs",
+        "exit": "0"
+    },
+    {
+        "name": "finally runs on normal completion",
+        "entry": "finally-on-normal.zs",
+        "exit": "11"
+    },
+    {
+        "name": "finally runs after a caught exception",
+        "entry": "finally-on-caught.zs",
+        "exit": "11"
+    },
+    {
+        "name": "finally runs then rethrows when no clause matches",
+        "entry": "finally-on-uncaught.zs",
+        "exit": "0",
+        "stdout": "finally\n"
+    },
+    {
+        "name": "finally runs when a catch body throws, then rethrows",
+        "entry": "finally-catch-throws.zs",
+        "exit": "0",
+        "stdout": "cleanup\n"
+    },
+    {
+        "name": "finally runs when returning from the try",
+        "entry": "finally-on-return.zs",
+        "exit": "5",
+        "stdout": "done\n"
+    },
+    {
+        "name": "A return in finally overrides the pending return",
+        "entry": "finally-overrides-return.zs",
+        "exit": "9"
+    },
+    {
+        "name": "finally runs when breaking out of a loop",
+        "entry": "finally-on-break.zs",
+        "exit": "32"
+    },
+    {
+        "name": "finally runs when continuing a loop",
+        "entry": "finally-on-continue.zs",
+        "exit": "32"
+    },
+    {
+        "name": "Nested try-finally runs finallys innermost-first",
+        "entry": "nested-try-finally.zs",
+        "exit": "1",
+        "stdout": "inner\nouter\n"
+    },
+    {
+        "name": "try/finally with no catch runs the finally",
+        "entry": "catchless-try-finally.zs",
+        "exit": "6"
+    },
+    {
+        "name": "A nested function's return does not run the enclosing finally",
+        "entry": "finally-closure-in-try.zs",
+        "exit": "1"
+    },
+    {
+        "name": "Return from a loop-body try runs its finally (value snapshotted first)",
+        "entry": "finally-return-in-loop-body.zs",
+        "exit": "23"
     }
 ]

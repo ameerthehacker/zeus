@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 
@@ -17,27 +18,33 @@ import (
 
 const anonymousName = "anonymous"
 
-// TryContext holds information about the current try block being processed
+// TryContext describes a try-body or catch-body region whose finally (if any) and handlers must
+// be run/popped when control-flow (return/break/continue) escapes it.
 type TryContext struct {
-	HandlerBlock *BasicBlock // The exception handler block
-	ClassIds     []int       // Class IDs of catch clauses
+	FinallyBody   *ast.BlockStmtNode // finally block to inline on escape, or nil
+	HandlersToPop int                // POP_HANDLER count before escaping this region
+	Seq           int                // monotonic nesting sequence (see controlSeq)
 }
 
 // LoopContext holds the break/continue targets for the current loop
 type LoopContext struct {
 	BreakTarget    *BasicBlock // merge block — where break jumps
 	ContinueTarget *BasicBlock // condition block (while) or update block (for)
+	Seq            int         // monotonic nesting sequence (see controlSeq)
 }
 
 type IRModule struct {
-	irBuilder        *IRBuilder
-	isLValueExpr     bool
-	errors           []*zeus_error.ZeusError
-	modulePath       string
-	exportedSymbols  map[string]zeus_value.Value
-	getModule        func(modulePath string) *IRModule
+	irBuilder       *IRBuilder
+	isLValueExpr    bool
+	errors          []*zeus_error.ZeusError
+	modulePath      string
+	exportedSymbols map[string]zeus_value.Value
+	getModule       func(modulePath string) *IRModule
+	// importedNames: names already imported into this module, to reject a duplicate import.
+	importedNames    map[string]bool
 	tryContextStack  []*TryContext  // Stack of try contexts for nested try blocks
 	loopContextStack []*LoopContext // Stack of loop contexts for nested loops
+	controlSeq       int            // monotonic counter stamped on each loop/try context push
 	// usedIRNames tracks every IR-level name ever emitted in this module (functions,
 	// class methods, locals) so generateUniqueName can guarantee global uniqueness.
 	usedIRNames map[string]bool
@@ -163,6 +170,7 @@ func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, ge
 		exportedSymbols: map[string]zeus_value.Value{},
 		getModule:       getIRModule,
 		usedIRNames:     map[string]bool{},
+		importedNames:   map[string]bool{},
 		isEntryPoint:    isEntryPoint,
 	}
 }
@@ -193,7 +201,8 @@ func (g *IRModule) pushError(err *zeus_error.ZeusError) {
 }
 
 func (g *IRModule) pushLoopContext(brk, cont *BasicBlock) {
-	g.loopContextStack = append(g.loopContextStack, &LoopContext{BreakTarget: brk, ContinueTarget: cont})
+	g.controlSeq++
+	g.loopContextStack = append(g.loopContextStack, &LoopContext{BreakTarget: brk, ContinueTarget: cont, Seq: g.controlSeq})
 }
 
 func (g *IRModule) popLoopContext() {
@@ -448,11 +457,17 @@ func (g *IRModule) VisitExprStmt(stmt *ast.ExprStmtNode) {
 }
 
 func (g *IRModule) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
-	if stmt.Expr == nil {
-		g.irBuilder.BuildReturn(nil, stmt.GetSpan())
-	} else {
-		g.irBuilder.BuildReturn(stmt.Expr.Accept(g), stmt.GetSpan())
+	// Evaluate the return value first (Java-style: finallys observe the already-computed value), then
+	// run every enclosing finally + pop its handlers before actually returning. A finally that itself
+	// returns overrides this one (runEscapeFinallys returns true → skip the pending return).
+	var value zeus_value.Value
+	if stmt.Expr != nil {
+		value = stmt.Expr.Accept(g)
 	}
+	if g.runEscapeFinallys(0, stmt.GetSpan()) {
+		return
+	}
+	g.irBuilder.BuildReturn(value, stmt.GetSpan())
 }
 
 func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
@@ -560,6 +575,9 @@ func (g *IRModule) VisitBreakStmt(stmt *ast.BreakStmtNode) {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "break statement outside of loop", stmt.Span))
 		return
 	}
+	if g.runEscapeFinallys(g.firstTryContextInside(ctx.Seq), stmt.Span) {
+		return
+	}
 	g.irBuilder.BuildJmp(ctx.BreakTarget, stmt.Span)
 }
 
@@ -567,6 +585,9 @@ func (g *IRModule) VisitContinueStmt(stmt *ast.ContinueStmtNode) {
 	ctx := g.currentLoopContext()
 	if ctx == nil {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "continue statement outside of loop", stmt.Span))
+		return
+	}
+	if g.runEscapeFinallys(g.firstTryContextInside(ctx.Seq), stmt.Span) {
 		return
 	}
 	g.irBuilder.BuildJmp(ctx.ContinueTarget, stmt.Span)
@@ -700,7 +721,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			if op == InstrTypePower {
 				newValue = g.buildPowerOp(currentValue, right, nil, expr.GetSpan())
 			} else {
-				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+				newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 
 			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, newValue, expr.GetSpan())
@@ -715,7 +736,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			if op == InstrTypePower {
 				newValue = g.buildPowerOp(currentValue, right, nil, expr.GetSpan())
 			} else {
-				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+				newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 			return g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, newValue, expr.GetSpan())
 		}
@@ -737,7 +758,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		if op == InstrTypePower {
 			newValue = g.buildPowerOp(currentValue, right, addr.ValueType, expr.GetSpan())
 		} else {
-			newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+			newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 		}
 		g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
 		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
@@ -774,9 +795,9 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypeStar:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMul, expr.GetSpan())
 	case token.TokenTypeSlash:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
+		return g.buildArithBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
 	case token.TokenTypePercent:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMod, expr.GetSpan())
+		return g.buildArithBinaryOp(left, right, InstrTypeMod, expr.GetSpan())
 	case token.TokenTypeDoubleStar:
 		return g.buildPowerOp(left, right, nil, expr.GetSpan())
 	case token.TokenTypeBangEqual:
@@ -836,6 +857,45 @@ func (g *IRModule) VisitGroupingExpr(expr *ast.GroupingExprNode) zeus_value.Valu
 	return expr.Expr.Accept(g)
 }
 
+// ternaryUnifiedType returns the type both ternary branches should widen to for a numeric
+// int/float (or float/float) mismatch — the exact case that first-store inference gets wrong
+// (e.g. `cond ? 1 : 2.0` must be f64, not i32). It returns nil for every other combination
+// (equal types, int/int widening, object/null), leaving those to the type checker's existing
+// inference, which already handles them correctly.
+// ternaryUnifiedType returns the type both ternary branches should widen to for a float-involved
+// numeric mismatch (e.g. `cond ? 1 : 2.0` -> f64), or nil to leave it to first-store inference.
+func ternaryUnifiedType(a, b zeus_value.ValueType) zeus_value.ValueType {
+	if a == nil || b == nil || zeus_value.IsUndefinedType(a) || zeus_value.IsUndefinedType(b) {
+		return nil
+	}
+	// Only a float-involved numeric mismatch needs unifying here; equal/int-int/object types already
+	// resolve via first-store inference (nil). Reuse GetBiggerType so ternaries widen like arithmetic.
+	if zeus_value.CmpValueType(a, b) {
+		return nil
+	}
+	if (zeus_value.IsFloatType(a) || zeus_value.IsFloatType(b)) &&
+		zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
+		return zeus_value.GetBiggerType(a, b)
+	}
+	return nil
+}
+
+// inheritanceReaches reports whether `parent`'s ancestor chain reaches the class being declared
+// (matched by name — that class object doesn't exist yet); i.e. an inheritance cycle.
+func inheritanceReaches(parent *zeus_value.Class, sourceName, irName string) bool {
+	seen := map[*zeus_value.Class]bool{}
+	for c := parent; c != nil; c = c.ParentClass {
+		if seen[c] {
+			return true
+		}
+		seen[c] = true
+		if c.Name == sourceName || c.OriginalName == sourceName || c.Name == irName {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value {
 	span := expr.GetSpan()
 
@@ -847,30 +907,48 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 	thenBlock := g.irBuilder.BuildSuccessorBlock()
 	elseBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// Evaluate the then-branch first (in thenBlock) to discover the result type.
-	// The type checker will later resolve any unresolved types from the stores.
+	// Evaluate both branches up front to unify their result type. Capture where each branch *ends*
+	// (a nested ternary moves the insertion point) so the store/jmp lands where the value is live.
 	g.irBuilder.SetInsertionBlock(thenBlock)
 	thenValue := expr.Then.Accept(g)
+	thenEndBlock := g.irBuilder.GetInsertionBlock()
+	g.irBuilder.SetInsertionBlock(elseBlock)
+	elseValue := expr.Else.Accept(g)
+	elseEndBlock := g.irBuilder.GetInsertionBlock()
+
+	var resultDeclType zeus_value.ValueType = zeus_value.UndefinedType{Span: span}
+	unified := ternaryUnifiedType(zeus_value.GetValueType(thenValue), zeus_value.GetValueType(elseValue))
+	if unified != nil {
+		resultDeclType = unified
+	}
 
 	// Return to parentBlock to declare the result variable and emit the conditional jump.
 	g.irBuilder.SetInsertionBlock(parentBlock)
-	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", zeus_value.UndefinedType{Span: span}, false, nil, span))
+	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", resultDeclType, false, nil, span))
 	g.irBuilder.BuildCondJmp(thenBlock, elseBlock, condition, span)
 
-	// Finish the then-block: store the then-value and jump to merge.
-	g.irBuilder.SetInsertionBlock(thenBlock)
+	g.irBuilder.SetInsertionBlock(thenEndBlock)
 	mergeBlock := g.irBuilder.BuildSuccessorBlock()
-	g.irBuilder.BuildStore(resultVar, thenValue, span)
+	g.irBuilder.BuildStore(resultVar, g.widenTernaryBranch(thenValue, unified, span), span)
 	g.irBuilder.BuildJmp(mergeBlock, span)
 
-	// Else-block: evaluate else-branch, store, and jump to merge.
-	g.irBuilder.SetInsertionBlock(elseBlock)
-	elseValue := expr.Else.Accept(g)
-	g.irBuilder.BuildStore(resultVar, elseValue, span)
+	g.irBuilder.SetInsertionBlock(elseEndBlock)
+	g.irBuilder.BuildStore(resultVar, g.widenTernaryBranch(elseValue, unified, span), span)
 	g.irBuilder.BuildJmp(mergeBlock, span)
 
 	g.irBuilder.SetInsertionBlock(mergeBlock)
 	return g.irBuilder.BuildLoad(resultVar, span)
+}
+
+// widenTernaryBranch casts a branch value to the unified type; no-op when target is nil or matches.
+func (g *IRModule) widenTernaryBranch(value zeus_value.Value, target zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	if target == nil || value == nil {
+		return value
+	}
+	if vt := zeus_value.GetValueType(value); vt != nil && !zeus_value.CmpValueType(vt, target) {
+		return g.irBuilder.BuildCast(value, target, span)
+	}
+	return value
 }
 
 // VisitCastExpr emits an explicit `expr as Type` cast. Numeric/bool casts are unchecked
@@ -899,12 +977,14 @@ func (g *IRModule) maybeEmitDowncastCheck(value zeus_value.Value, targetType zeu
 	if !ok || dstObj.Class == nil {
 		return
 	}
-	srcObj, ok := zeus_value.GetValueType(value).(zeus_value.ObjectType)
-	if !ok {
-		return // non-object source; tcCast reports any illegal cast
+	srcType := zeus_value.GetValueType(value)
+	srcObj, isObj := srcType.(zeus_value.ObjectType)
+	if !isObj && !zeus_value.IsInterfaceType(srcType) {
+		return // non-object, non-interface source; tcCast reports any illegal cast
 	}
-	// Upcast or same type: no runtime check needed.
-	if srcObj.Class != nil && zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) {
+	// Upcast or same type: no runtime check needed. (Interface sources always need the check —
+	// the concrete runtime class is unknown statically.)
+	if isObj && srcObj.Class != nil && zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) {
 		return
 	}
 	// Downcast (or statically-unrelated, which tcCast rejects — the guard is harmless): verify the
@@ -1348,14 +1428,23 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	prevEscapedVarNames := g.escapedVarNames
 	prevFuncTypeEnv := g.funcTypeEnv
 	prevIsInModuleScope := g.isInModuleScope
+	// A nested function is its own control-flow scope: its return/break/continue must not see the
+	// enclosing function's try/loop contexts (else they'd inline the outer finally or pop a handler
+	// that was never pushed in this frame).
+	prevTryContextStack := g.tryContextStack
+	prevLoopContextStack := g.loopContextStack
 	g.irBuilder.BeginFunctionNameScope()
 	g.escapedVarNames = escapedNames
 	g.funcTypeEnv = funcTypeEnv
 	g.isInModuleScope = false
+	g.tryContextStack = nil
+	g.loopContextStack = nil
 	fnBody.Accept(g)
 	g.escapedVarNames = prevEscapedVarNames
 	g.funcTypeEnv = prevFuncTypeEnv
 	g.isInModuleScope = prevIsInModuleScope
+	g.tryContextStack = prevTryContextStack
+	g.loopContextStack = prevLoopContextStack
 	g.irBuilder.EndFunctionNameScope()
 
 	g.irBuilder.SetInsertionBlock(current_block)
@@ -2069,8 +2158,26 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 		g.emitBoundsCheck(currentValue, indices[0], expr.GetSpan())
 	}
 
-	// Emit GET_INDEX with all indices (lowering pass will handle the .get() calls)
-	return g.irBuilder.BuildGetIndex(currentValue, indices, expr.GetSpan())
+	result := g.irBuilder.BuildGetIndex(currentValue, indices, expr.GetSpan())
+
+	// Type the result with the element type now (peeling one dim per index) so a following member
+	// access like `arr[i].getter` can resolve accessors/fields; otherwise it's untyped until later.
+	if resultVar := zeus_value.AsVar(result); resultVar != nil {
+		elemType := zeus_value.GetValueType(currentValue)
+		for range indices {
+			peeled := arrayElementTypeOf(elemType)
+			if peeled == nil {
+				elemType = nil
+				break
+			}
+			elemType = peeled
+		}
+		if elemType != nil {
+			resultVar.ValueType = elemType
+		}
+	}
+
+	return result
 }
 
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
@@ -2464,6 +2571,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 				initValue = property.Initializer.Accept(g)
 			}
 			varDecl := NewVarDecl(globalName, propType, false, initValue, property.Name.GetSpan())
+			varDecl.IsStatic = true
 			emittedGlobal := g.irBuilder.BuildGlobalVarDecl(varDecl)
 			emittedGlobal.OriginalName = property.Name.Name.Value
 			cp := zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, true, emittedGlobal)
@@ -2610,6 +2718,14 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	if expr.ParentClass != nil {
 		if parentVal, ok := g.symbolTable().GetSymbol(expr.ParentClass.Name.Value); ok {
 			parentClass = zeus_value.AsClass(parentVal)
+		}
+		// Reject inheritance cycles — otherwise they compile and recurse forever at construction.
+		if parentClass != nil && inheritanceReaches(parentClass, sourceName, irClassName) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("circular inheritance: class '%s' cannot extend itself, directly or indirectly", sourceName),
+				Span:    expr.ParentClass.Name.Span,
+			})
+			parentClass = nil // break the cycle so later passes/codegen don't loop
 		}
 	}
 
@@ -2785,7 +2901,15 @@ func (g *IRModule) VisitInterfaceDeclExpr(expr *ast.InterfaceDeclExprNode) zeus_
 }
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
+	// A member receiver is always an rvalue, even in `arr[i].prop = x`. For a subscript receiver,
+	// clear isLValueExpr so it loads the typed element instead of an untyped element-ref (which
+	// defeats accessor/field resolution).
+	savedLValue := g.isLValueExpr
+	if g.isLValueExpr && ast.AsIndexingExpr(expr.Object) != nil {
+		g.isLValueExpr = false
+	}
 	object := expr.Object.Accept(g)
+	g.isLValueExpr = savedLValue
 	// The object sub-expression failed to resolve (e.g. undefined identifier); the
 	// underlying error was already reported. Bail out instead of dereferencing nil.
 	if object == nil {
@@ -3034,6 +3158,63 @@ func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Valu
 	g.irBuilder.SetInsertionBlock(continueBlock)
 }
 
+// emitIntDivByZeroCheck throws a catchable ArithmeticException before an integer div/mod by zero
+// (otherwise UB). Float div-by-zero is well-defined (Infinity) and left unchecked.
+func (g *IRModule) emitIntDivByZeroCheck(divisor zeus_value.Value, span *token.Span) {
+	divisorType := zeus_value.GetValueType(divisor)
+	if _, isInt := divisorType.(zeus_value.IntType); !isInt {
+		return // only integer division needs the guard
+	}
+
+	// Constant divisor: literal 0 is a compile error, any non-zero literal needs no guard.
+	if c := zeus_value.AsConstant(divisor); c != nil {
+		if isZeroIntLiteral(c.Value) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: "division by zero",
+				Span:    span,
+			})
+		}
+		return
+	}
+
+	throwBlock := g.irBuilder.BuildSuccessorBlock()
+	continueBlock := g.irBuilder.BuildSuccessorBlock()
+
+	zero := zeus_value.NewConstant("0", divisorType, span)
+	isZero := g.irBuilder.BuildBinaryOp(divisor, zero, InstrTypeEqEq, span)
+	g.irBuilder.BuildCondJmp(throwBlock, continueBlock, isZero, span)
+
+	g.irBuilder.SetInsertionBlock(throwBlock)
+	g.emitThrowError("ArithmeticException", "division by zero", span)
+
+	g.irBuilder.SetInsertionBlock(continueBlock)
+}
+
+// maybeEmitDivByZeroCheck emits the divide-by-zero guard only for the div/modulo operators.
+func (g *IRModule) maybeEmitDivByZeroCheck(op InstrType, divisor zeus_value.Value, span *token.Span) {
+	if op == InstrTypeDiv || op == InstrTypeMod {
+		g.emitIntDivByZeroCheck(divisor, span)
+	}
+}
+
+// buildArithBinaryOp is the single emit path for arithmetic ops in VisitBinaryExpr, so the
+// div-by-zero guard (a no-op for non-div/mod) can't be forgotten at any site.
+func (g *IRModule) buildArithBinaryOp(left, right zeus_value.Value, op InstrType, span *token.Span) zeus_value.Value {
+	g.maybeEmitDivByZeroCheck(op, right, span)
+	return g.irBuilder.BuildBinaryOp(left, right, op, span)
+}
+
+// isZeroIntLiteral reports whether an integer literal string denotes zero in any radix.
+func isZeroIntLiteral(s string) bool {
+	if v, err := strconv.ParseInt(s, 0, 64); err == nil {
+		return v == 0
+	}
+	if v, err := strconv.ParseUint(s, 0, 64); err == nil {
+		return v == 0
+	}
+	return false
+}
+
 // emitThrowError creates an Error object with the given name and message and throws it
 func (g *IRModule) emitThrowError(errorName string, errorMessage string, span *token.Span) {
 	// Get the Error class from symbol table
@@ -3100,6 +3281,13 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	}
 
 	for _, _import := range stmt.Imports {
+		// One import per name per module (previously the last silently won).
+		if g.importedNames[_import.Name.Value] {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("duplicate import of '%s'", _import.Name.Value), _import.Name.Span))
+			continue
+		}
+		g.importedNames[_import.Name.Value] = true
+
 		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)
 
 		if !ok {
@@ -3211,11 +3399,14 @@ func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
 	return nil
 }
 
-// pushTryContext pushes a new try context onto the stack
-func (g *IRModule) pushTryContext(handlerBlock *BasicBlock, classIds []int) {
+// pushTryContext pushes a try/catch-body region whose finally + handlers must be run/popped on
+// an escaping return/break/continue.
+func (g *IRModule) pushTryContext(finallyBody *ast.BlockStmtNode, handlersToPop int) {
+	g.controlSeq++
 	g.tryContextStack = append(g.tryContextStack, &TryContext{
-		HandlerBlock: handlerBlock,
-		ClassIds:     classIds,
+		FinallyBody:   finallyBody,
+		HandlersToPop: handlersToPop,
+		Seq:           g.controlSeq,
 	})
 }
 
@@ -3256,103 +3447,182 @@ func (g *IRModule) getClassIdFromType(valueType zeus_value.ValueType) int {
 	}
 }
 
-// VisitTryCatchStmt generates IR for try-catch statements
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// popHandlers emits n POP_HANDLER instructions.
+func (g *IRModule) popHandlers(n int, span *token.Span) {
+	for i := 0; i < n; i++ {
+		g.irBuilder.BuildPopHandler(span)
+	}
+}
+
+// emitFinallyBody inlines a finally block in a fresh scope; no-op if body is nil. Called on every
+// exit path of a try, so it may run several times across the emitted IR (only one path runs at
+// runtime).
+func (g *IRModule) emitFinallyBody(body *ast.BlockStmtNode) {
+	if body == nil {
+		return
+	}
+	g.symbolTable().EnterScope()
+	body.Accept(g)
+	g.symbolTable().ExitScope()
+}
+
+// jmpIfOpen / rethrowIfOpen emit a terminator only when the block is still open. An inlined finally
+// can end in its own return/break/continue/throw, which already terminates the block; emitting a
+// trailing jmp/rethrow after that would produce two terminators (invalid LLVM).
+func (g *IRModule) jmpIfOpen(target *BasicBlock, span *token.Span) {
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.irBuilder.BuildJmp(target, span)
+	}
+}
+
+func (g *IRModule) rethrowIfOpen(span *token.Span) {
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.irBuilder.BuildRethrow(span)
+	}
+}
+
+// runEscapeFinallys runs the finally bodies and pops the handlers of the enclosing try contexts at
+// index >= from (innermost first) when a return/break/continue leaves them. While a context's finally
+// runs, the active stack is narrowed to the outer contexts so a transfer inside that finally routes
+// correctly and never re-enters the same finally. Returns true if a finally performed its own
+// transfer (terminated the block) — the caller must then not emit the pending transfer.
+func (g *IRModule) runEscapeFinallys(from int, span *token.Span) bool {
+	original := g.tryContextStack
+	defer func() { g.tryContextStack = original }()
+	for i := len(original) - 1; i >= from; i-- {
+		ctx := original[i]
+		g.tryContextStack = slices.Clone(original[:i]) // finally sees only outer contexts
+		g.popHandlers(ctx.HandlersToPop, span)
+		g.emitFinallyBody(ctx.FinallyBody)
+		if g.irBuilder.CurrentBlockTerminated() {
+			return true
+		}
+	}
+	return false
+}
+
+// firstTryContextInside returns the index of the innermost-outward try context that lies inside the
+// loop with the given sequence (i.e. was pushed after it). Contexts at or below this index enclose
+// the loop and must not run when a break/continue jumps out of it.
+func (g *IRModule) firstTryContextInside(loopSeq int) int {
+	i := 0
+	for i < len(g.tryContextStack) && g.tryContextStack[i].Seq <= loopSeq {
+		i++
+	}
+	return i
+}
+
+// VisitTryCatchStmt lowers `try B catch C1..Cn finally F`. When a finally is present it desugars to
+// an OUTER catch-all handler (so F runs on the uncaught / catch-throws paths) wrapping the INNER
+// multi-catch handler, with F inlined on every exit path. The inner handler dispatches to the first
+// clause whose type matches the caught object; no match rethrows outward.
 func (g *IRModule) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
-	// 1. Create blocks for try body, handler (catch dispatch), and merge (after try-catch)
-	tryBodyBlock := g.irBuilder.BuildSuccessorBlock()
-	handlerBlock := g.irBuilder.BuildSuccessorBlock()
+	hasFinally := stmt.FinallyBody != nil
+	hasCatch := len(stmt.CatchClauses) > 0
+
 	mergeBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// 2. Collect class IDs from all catch clauses
-	classIds := []int{}
-	for _, clause := range stmt.CatchClauses {
-		// The type checker should have validated that this is an Error class or subclass
-		classId := g.getClassIdFromType(clause.ErrorType.ValueType)
-		classIds = append(classIds, classId)
-	}
-
-	// 3. Push handler at try block entry - this emits setjmp and conditional branch
-	// Will branch to tryBodyBlock if setjmp returns 0, handlerBlock if returns 1
-	g.irBuilder.BuildPushHandler(handlerBlock, tryBodyBlock, classIds, stmt.GetSpan())
-
-	// 4. Switch to try body block
-	g.irBuilder.SetInsertionBlock(tryBodyBlock)
-
-	// 5. Mark that we're in a try block (affects call generation)
-	g.pushTryContext(handlerBlock, classIds)
-
-	// 6. Generate try body
-	stmt.TryBody.Accept(g)
-
-	// 7. Pop handler and jump to merge block at end of try block (if no exception)
-	g.irBuilder.BuildPopHandler(stmt.GetSpan())
-	g.irBuilder.BuildJmp(mergeBlock, stmt.GetSpan())
-
-	// 7. Exit try context
-	g.popTryContext()
-
-	// 8. Generate exception handler block
-	g.irBuilder.SetInsertionBlock(handlerBlock)
-
-	// Generate catch clause matching logic
-	// For now, we only support a single catch clause per try block
-	// Multiple catch clauses would need proper instanceof checking
+	classIds := make([]int, len(stmt.CatchClauses))
 	for i, clause := range stmt.CatchClauses {
-		classId := classIds[i]
-		_ = classId // Will be used for instanceof check in future
-
-		// Create block for this catch clause body
-		catchBodyBlock := g.irBuilder.BuildSuccessorBlock()
-
-		// For now, jump directly to the catch body
-		// TODO: Add instanceof check for multiple catch clauses
-		g.irBuilder.BuildJmp(catchBodyBlock, clause.GetSpan())
-
-		// Generate catch body
-		g.irBuilder.SetInsertionBlock(catchBodyBlock)
-
-		// Enter a new scope for the catch variable
-		g.symbolTable().EnterScope()
-
-		// Get the exception with the expected type
-		catchType := g.resolveTypeForIRGen(clause.ErrorType.ValueType, false)
-		exception := g.irBuilder.BuildGetException(catchType, clause.GetSpan())
-
-		// Declare the catch variable (e.g., 'e' in catch (e: Error))
-		errorVar := zeus_value.NewVar(
-			clause.ErrorVar.Name.Value,
-			catchType,
-			true,
-			clause.GetSpan(),
-		)
-		g.symbolTable().DeclareSymbol(clause.ErrorVar.Name.Value, errorVar)
-
-		// Store the exception object in the catch variable
-		declInput := NewDeclareVarInstrInput(errorVar, exception, false)
-		g.irBuilder.pushInstr(&Instr{
-			Type:  InstrTypeDeclVar,
-			Input: declInput,
-			Span:  clause.GetSpan(),
-		})
-
-		// Clear the exception (it's been caught)
-		g.irBuilder.BuildClearException(clause.GetSpan())
-
-		// Generate catch body statements
-		clause.Body.Accept(g)
-
-		// Exit catch variable scope
-		g.symbolTable().ExitScope()
-
-		// Jump to merge block after catch body
-		g.irBuilder.BuildJmp(mergeBlock, clause.GetSpan())
-
-		// Note: For multiple catch clauses, we'd need instanceof checks here
-		// For now, we only support a single catch clause
-		break
+		classIds[i] = g.getClassIdFromType(clause.ErrorType.ValueType)
 	}
 
-	// 9. Continue at merge block
+	tryBodyBlock := g.irBuilder.BuildSuccessorBlock()
+
+	// Outer catch-all handler catches everything so the finally runs even when no clause matches
+	// (case 3) or a catch body itself throws (case 4). Pushed before the inner handler.
+	var outerHandlerBlock *BasicBlock
+	if hasFinally {
+		outerHandlerBlock = g.irBuilder.BuildSuccessorBlock()
+		errorClassId := 0
+		if errorClass := g.getOrCreateErrorClass(); errorClass != nil {
+			errorClassId = errorClass.Id
+		}
+		if hasCatch {
+			innerEntry := g.irBuilder.BuildSuccessorBlock()
+			g.irBuilder.BuildPushHandler(outerHandlerBlock, innerEntry, []int{errorClassId}, stmt.GetSpan())
+			g.irBuilder.SetInsertionBlock(innerEntry)
+		} else {
+			g.irBuilder.BuildPushHandler(outerHandlerBlock, tryBodyBlock, []int{errorClassId}, stmt.GetSpan())
+		}
+	}
+
+	var innerHandlerBlock *BasicBlock
+	if hasCatch {
+		innerHandlerBlock = g.irBuilder.BuildSuccessorBlock()
+		g.irBuilder.BuildPushHandler(innerHandlerBlock, tryBodyBlock, classIds, stmt.GetSpan())
+	}
+
+	// --- try body ---
+	g.irBuilder.SetInsertionBlock(tryBodyBlock)
+	tryHandlersToPop := boolToInt(hasCatch) + boolToInt(hasFinally)
+	g.pushTryContext(stmt.FinallyBody, tryHandlersToPop)
+	stmt.TryBody.Accept(g)
+	g.popTryContext()
+	// normal completion: pop handlers, run finally, merge. Skipped when the body already exited via
+	// throw/return (an escaping return runs the finally through the TryContext, not here). jmpIfOpen
+	// guards the case where the finally itself ends in a return/break/continue.
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.popHandlers(tryHandlersToPop, stmt.GetSpan())
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.jmpIfOpen(mergeBlock, stmt.GetSpan())
+	}
+
+	// --- inner handler: multi-catch dispatch (inner already popped on landing, outer still live) ---
+	if hasCatch {
+		g.irBuilder.SetInsertionBlock(innerHandlerBlock)
+		// Fetch the caught object once for instanceof dispatch; static type is irrelevant here.
+		excObj := g.irBuilder.BuildGetException(g.resolveTypeForIRGen(stmt.CatchClauses[0].ErrorType.ValueType, false), stmt.GetSpan())
+		catchHandlersToPop := boolToInt(hasFinally) // only the outer handler remains
+
+		for i, clause := range stmt.CatchClauses {
+			bodyBlock := g.irBuilder.BuildSuccessorBlock()
+			nextBlock := g.irBuilder.BuildSuccessorBlock()
+			cond := g.irBuilder.BuildInstanceOf(excObj, classIds[i], clause.GetSpan())
+			g.irBuilder.BuildCondJmp(bodyBlock, nextBlock, cond, clause.GetSpan())
+
+			g.irBuilder.SetInsertionBlock(bodyBlock)
+			g.symbolTable().EnterScope()
+			catchType := g.resolveTypeForIRGen(clause.ErrorType.ValueType, false)
+			exception := g.irBuilder.BuildGetException(catchType, clause.GetSpan())
+			errorVar := zeus_value.NewVar(clause.ErrorVar.Name.Value, catchType, true, clause.GetSpan())
+			g.symbolTable().DeclareSymbol(clause.ErrorVar.Name.Value, errorVar)
+			g.irBuilder.pushInstr(&Instr{Type: InstrTypeDeclVar, Input: NewDeclareVarInstrInput(errorVar, exception, false), Span: clause.GetSpan()})
+			g.irBuilder.BuildClearException(clause.GetSpan())
+			g.pushTryContext(stmt.FinallyBody, catchHandlersToPop)
+			clause.Body.Accept(g)
+			g.popTryContext()
+			g.symbolTable().ExitScope()
+			// catch body completed normally: pop outer, run finally, merge. Skipped when the body
+			// already exited via throw/return.
+			if !g.irBuilder.CurrentBlockTerminated() {
+				g.popHandlers(catchHandlersToPop, clause.GetSpan())
+				g.emitFinallyBody(stmt.FinallyBody)
+				g.jmpIfOpen(mergeBlock, clause.GetSpan())
+			}
+
+			g.irBuilder.SetInsertionBlock(nextBlock)
+		}
+		// No clause matched (defensive: the inner handler only catches its clause ids).
+		g.popHandlers(catchHandlersToPop, stmt.GetSpan())
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.rethrowIfOpen(stmt.GetSpan())
+	}
+
+	// --- outer handler: uncaught by any clause, or a catch body threw (both handlers popped) ---
+	if hasFinally {
+		g.irBuilder.SetInsertionBlock(outerHandlerBlock)
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.rethrowIfOpen(stmt.GetSpan())
+	}
+
 	g.irBuilder.SetInsertionBlock(mergeBlock)
 }
 

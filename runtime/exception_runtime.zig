@@ -75,14 +75,31 @@ fn ensureHandlerStackInit() void {
 
 /// Throw an exception - called from generated code
 /// Uses longjmp to transfer control to the nearest matching handler
+// dispatchToHandler walks the handler stack top-down for the first handler matching exc, pops it
+// (and inner handlers unwound past) so a re-throw in the catch body targets the next outer handler,
+// then longjmps to it. Aborts if no handler matches.
+fn dispatchToHandler(exc: *ZeusException) noreturn {
+    var i = handler_stack.items.len;
+    while (i > 0) {
+        i -= 1;
+        const handler = handler_stack.items[i];
+        for (handler.class_ids) |handler_class_id| {
+            if (checkClassHierarchy(exc.class_id, exc.object_ptr, handler_class_id)) {
+                handler_stack.shrinkRetainingCapacity(i);
+                c.longjmp(handler.jmp_buf, 1);
+            }
+        }
+    }
+    printUnhandledException(exc);
+    std.process.exit(1);
+}
+
 export fn zeus_throw(class_id: u32, object_ptr: *anyopaque, source_file: [*:0]const u8, source_line: u32) callconv(.C) noreturn {
     ensureHandlerStackInit();
 
-    // Allocate and populate exception
     const exc = allocator.create(ZeusException) catch {
         @panic("Failed to allocate exception");
     };
-
     exc.* = ZeusException{
         .class_id = class_id,
         .object_ptr = object_ptr,
@@ -90,28 +107,16 @@ export fn zeus_throw(class_id: u32, object_ptr: *anyopaque, source_file: [*:0]co
         .source_file = source_file,
         .source_line = source_line,
     };
-
     current_exception = exc;
+    dispatchToHandler(exc);
+}
 
-    // Walk handler stack from top to find matching handler
-    var i = handler_stack.items.len;
-    while (i > 0) {
-        i -= 1;
-        const handler = handler_stack.items[i];
-
-        // Check if any class ID in handler matches exception
-        for (handler.class_ids) |handler_class_id| {
-            if (checkClassHierarchy(class_id, object_ptr, handler_class_id)) {
-                // Found matching handler - longjmp to it
-                // longjmp will transfer control to the setjmp call in zeus_push_handler
-                c.longjmp(handler.jmp_buf, 1);
-            }
-        }
-    }
-
-    // No handler found - print stack trace and abort
-    printUnhandledException(exc);
-    std.process.exit(1);
+// zeus_rethrow re-propagates the current exception (preserving its original stack trace) to the
+// next outer handler. Used by a try that catches only for `finally`, or a no-match catch tail.
+export fn zeus_rethrow() callconv(.C) noreturn {
+    ensureHandlerStackInit();
+    const exc = current_exception orelse @panic("zeus_rethrow with no current exception");
+    dispatchToHandler(exc);
 }
 
 /// Get current exception (for checking after calls)

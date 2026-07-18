@@ -1259,28 +1259,36 @@ func (p *Parser) parseTryCatchStmt() *ast.TryCatchStmtNode {
 	// Parse the try block
 	tryBody := p.parseBlockStmt()
 
-	// Parse one or more catch clauses
+	// Parse zero or more catch clauses
 	catchClauses := []*ast.CatchClause{}
 	for p.peek().Type == token.TokenTypeCatch {
 		catchClause := p.parseCatchClause()
 		catchClauses = append(catchClauses, catchClause)
 	}
 
-	if len(catchClauses) == 0 {
-		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "try statement must have at least one catch clause", tryBody.GetSpan()))
+	// Parse the optional finally block
+	var finallyBody *ast.BlockStmtNode
+	if p.peek().Type == token.TokenTypeFinally {
+		p.consumeToken(token.TokenTypeFinally)
+		finallyBody = p.parseBlockStmt()
+	}
+
+	if len(catchClauses) == 0 && finallyBody == nil {
+		p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "try statement must have at least one catch clause or a finally block", tryBody.GetSpan()))
 	}
 
 	// Calculate span
-	var endSpan token.Position
-	if len(catchClauses) > 0 {
+	endSpan := tryBody.Span.End
+	if finallyBody != nil {
+		endSpan = finallyBody.Span.End
+	} else if len(catchClauses) > 0 {
 		endSpan = catchClauses[len(catchClauses)-1].Span.End
-	} else {
-		endSpan = tryBody.Span.End
 	}
 
 	return &ast.TryCatchStmtNode{
 		TryBody:      tryBody,
 		CatchClauses: catchClauses,
+		FinallyBody:  finallyBody,
 		Span:         &token.Span{Start: tryKeyword.Span.Start, End: endSpan},
 	}
 }
@@ -1343,6 +1351,7 @@ func (p *Parser) synchronize() {
 		token.TokenTypeTry:        true,
 		token.TokenTypeCatch:      true,
 		token.TokenTypeThrow:      true,
+		token.TokenTypeFinally:    true,
 	}
 	stopAfterTokens := map[token.TokenType]bool{
 		token.TokenTypeSemicolon: true,

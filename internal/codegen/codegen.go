@@ -415,6 +415,12 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	zeusPopHandlerFunc := llvm.AddFunction(module, "zeus_pop_handler", zeusPopHandlerType)
 	globalFunctions["zeus_pop_handler"] = GlobalLLVMFunction{zeusPopHandlerFunc, zeusPopHandlerType}
 
+	// zeus_rethrow() - re-propagate the current exception (noreturn)
+	zeusRethrowType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
+	zeusRethrowFunc := llvm.AddFunction(module, "zeus_rethrow", zeusRethrowType)
+	zeusRethrowFunc.AddFunctionAttr(c.cxt.CreateEnumAttribute(llvm.AttributeKindID("noreturn"), 0))
+	globalFunctions["zeus_rethrow"] = GlobalLLVMFunction{zeusRethrowFunc, zeusRethrowType}
+
 	// zeus_get_current_exception() -> ptr - get current exception (or null)
 	zeusGetCurrentExceptionType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{}, false)
 	zeusGetCurrentExceptionFunc := llvm.AddFunction(module, "zeus_get_current_exception", zeusGetCurrentExceptionType)
@@ -463,6 +469,22 @@ func (c *CodegenModule) getSymbol(name string) llvm.Value {
 		panic(fmt.Sprintf("symbol %s not found", name))
 	}
 	return v
+}
+
+// getVarAddr resolves a variable's storage for a load/store. An imported class's static member
+// (IsStatic) is defined in another module, so declare it extern on demand; a missing non-static
+// symbol still panics rather than being silently deferred to link time.
+func (c *CodegenModule) getVarAddr(v *zeus_value.Var) llvm.Value {
+	if sym, ok := c.llvmValues[v.Name]; ok {
+		return sym
+	}
+	if v.IsStatic {
+		global := llvm.AddGlobal(c.module, c.toLLVMType(v.ValueType), v.Name)
+		global.SetLinkage(llvm.ExternalLinkage)
+		c.llvmValues[v.Name] = global
+		return global
+	}
+	panic(fmt.Sprintf("symbol %s not found", v.Name))
 }
 
 func (c *CodegenModule) getFunctionSymbol(name string) llvm.Value {
@@ -933,8 +955,9 @@ func (c *CodegenModule) genDeclGlobalVar(input ir.DeclareVarInstrInput) {
 	}
 
 	global := llvm.AddGlobal(c.module, llvmType, input.Variable.Name)
-	if input.Variable.IsAmbient {
-		// Ambient definition: external linkage so extern references in other modules link here.
+	if input.Variable.IsAmbient || input.Variable.IsStatic {
+		// Ambient definition, or a class's static-member storage: use external linkage so extern
+		// references from other modules link to this one definition.
 		global.SetLinkage(llvm.ExternalLinkage)
 	} else {
 		global.SetLinkage(llvm.InternalLinkage)
@@ -968,11 +991,11 @@ func (c *CodegenModule) genDeclVar(input ir.DeclareVarInstrInput) {
 }
 
 func (c *CodegenModule) genStore(input ir.StoreInstrInput) {
-	c.builder.CreateStore(c.toLLVMValue(input.Value), c.getSymbol(input.Addr.Name))
+	c.builder.CreateStore(c.toLLVMValue(input.Value), c.getVarAddr(input.Addr))
 }
 
 func (c *CodegenModule) genLoad(input ir.LoadInstrInput, output zeus_value.Var) {
-	llvmValue := c.builder.CreateLoad(c.toLLVMType(input.Addr.ValueType), c.getSymbol(input.Addr.Name), input.Addr.Name)
+	llvmValue := c.builder.CreateLoad(c.toLLVMType(input.Addr.ValueType), c.getVarAddr(input.Addr), input.Addr.Name)
 	c.llvmValues[output.Name] = llvmValue
 }
 
@@ -1289,10 +1312,9 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 	valueType := zeus_value.GetValueType(input.Value)
 	castErrorMsg := fmt.Sprintf("cannot cast %s to %s", input.Value, input.CastType)
 
-	// ObjectType → FunctionType / ObjectType: all are ptr addrspace(1) at runtime, so this is an
-	// identity cast. For an object up/down-cast the pointer is already valid (base-first layout);
-	// any downcast type check was emitted separately as INSTANCEOF during IR gen.
-	if zeus_value.IsObjectType(valueType) {
+	// Object/interface -> function/object is an identity cast (all ptr addrspace(1)); any downcast
+	// check was already emitted as INSTANCEOF during IR gen.
+	if zeus_value.IsObjectType(valueType) || zeus_value.IsInterfaceType(valueType) {
 		switch input.CastType.(type) {
 		case zeus_value.FunctionType, zeus_value.ObjectType:
 			c.llvmValues[output.Name] = c.toLLVMValue(input.Value)
@@ -1631,7 +1653,9 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	// unit. Use InternalLinkage so the linker sees only one definition per TU instead of
 	// reporting duplicate-symbol errors. User-defined classes keep ExternalLinkage so they
 	// can be referenced after export (genExport renames them to a module-scoped symbol).
-	isPrimordial := class.PrimordialName != ""
+	// The synthetic Object base has no PrimordialName but is emitted into every TU that uses an
+	// object array; give its globals InternalLinkage too, else two such modules duplicate _Object.*.
+	isPrimordial := class.PrimordialName != "" || class.Name == ZeusObjectClassName
 	globalLinkage := llvm.ExternalLinkage
 	if isPrimordial {
 		globalLinkage = llvm.InternalLinkage
@@ -3021,6 +3045,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genPushHandler(*input, currentFunction)
 		case ir.InstrTypePopHandler:
 			c.genPopHandler()
+		case ir.InstrTypeRethrow:
+			c.genRethrow()
 		case ir.InstrTypeCheckException:
 			c.genCheckException(*ir.AsCheckExceptionInstrInput(instr.Input))
 		case ir.InstrTypeGetException:
@@ -3170,6 +3196,11 @@ func (c *CodegenModule) genPushHandler(input ir.PushHandlerInstrInput, currentFu
 // genPopHandler generates LLVM code for unregistering an exception handler
 func (c *CodegenModule) genPopHandler() {
 	c.callGlobalLLVMFunction("zeus_pop_handler")
+}
+
+func (c *CodegenModule) genRethrow() {
+	c.callGlobalLLVMFunction("zeus_rethrow")
+	c.builder.CreateUnreachable() // zeus_rethrow is noreturn
 }
 
 // genCheckException generates LLVM code for checking if an exception is pending

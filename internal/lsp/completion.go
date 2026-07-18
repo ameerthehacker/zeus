@@ -309,6 +309,7 @@ func keywordDescription(keyword string) string {
 		"null":       "Null value",
 		"try":        "Try block",
 		"catch":      "Catch block",
+		"finally":    "Finally block",
 		"throw":      "Throw statement",
 		"break":      "Break statement",
 		"continue":   "Continue statement",

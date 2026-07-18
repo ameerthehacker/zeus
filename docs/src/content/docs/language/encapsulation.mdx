@@ -18,6 +18,10 @@ Every field and method carries one of three access levels:
 - **`protected`** — reachable from within the same class *and* its subclasses, but not from outside
   the class hierarchy.
 
+A member declared **without** a modifier is **private** by default (encapsulation-first, unlike
+TypeScript). Write `public` explicitly on any field or method you want to access from outside the
+class — e.g. `public name: string;`.
+
 ```zeus
 class Account {
   private balance: i32;
