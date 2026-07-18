@@ -569,6 +569,117 @@ func AsAllocObjInstrInput(input InstrInput) *AllocObjInstrInput {
 	return nil
 }
 
+// BoxInstrInput autoboxes Value (a scalar of the box's field type) into the boxed primordial
+// TargetClass (Number or Bool). BoxLoweringPass expands it to ALLOC_OBJ + a store of Value into the
+// box's `value` field.
+type BoxInstrInput struct {
+	Value       zeus_value.Value
+	TargetClass *zeus_value.Class
+}
+
+func NewBoxInstrInput(value zeus_value.Value, targetClass *zeus_value.Class) *BoxInstrInput {
+	return &BoxInstrInput{Value: value, TargetClass: targetClass}
+}
+
+func (i BoxInstrInput) String() string {
+	return fmt.Sprintf("box %s as %s", i.Value, i.TargetClass.Name)
+}
+
+func AsBoxInstrInput(input InstrInput) *BoxInstrInput {
+	switch input := input.(type) {
+	case *BoxInstrInput:
+		return input
+	default:
+		panicInvalidInputType("BoxInstrInput", input)
+	}
+
+	return nil
+}
+
+// UnboxInstrInput reads the scalar `value` out of Value, a boxed primordial (Number/Bool).
+// BoxLoweringPass expands it to OBJECT_PROPERTY_ACCESS + LOAD.
+type UnboxInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewUnboxInstrInput(value zeus_value.Value) *UnboxInstrInput {
+	return &UnboxInstrInput{Value: value}
+}
+
+func (i UnboxInstrInput) String() string {
+	return fmt.Sprintf("unbox %s", i.Value)
+}
+
+func AsUnboxInstrInput(input InstrInput) *UnboxInstrInput {
+	switch input := input.(type) {
+	case *UnboxInstrInput:
+		return input
+	default:
+		panicInvalidInputType("UnboxInstrInput", input)
+	}
+
+	return nil
+}
+
+// StringTemplatePart is one segment of a template literal instruction — either a static string
+// chunk (IsExpr=false, Str) or an interpolated value (IsExpr=true, Value). Mirrors ast.TemplateStringPart
+// but holds the already-evaluated interpolated Value; the type checker replaces it with its stringified form.
+type StringTemplatePart struct {
+	IsExpr bool
+	Str    string
+	Value  zeus_value.Value
+}
+
+// StringTemplateInstrInput is a template literal kept whole through type checking (see InstrTypeStringTemplate).
+type StringTemplateInstrInput struct {
+	Parts []*StringTemplatePart
+}
+
+func NewStringTemplateInstrInput(parts []*StringTemplatePart) *StringTemplateInstrInput {
+	return &StringTemplateInstrInput{Parts: parts}
+}
+
+func (i StringTemplateInstrInput) String() string {
+	return fmt.Sprintf("string_template(%d parts)", len(i.Parts))
+}
+
+func AsStringTemplateInstrInput(input InstrInput) *StringTemplateInstrInput {
+	switch input := input.(type) {
+	case *StringTemplateInstrInput:
+		return input
+	default:
+		panicInvalidInputType("StringTemplateInstrInput", input)
+	}
+
+	return nil
+}
+
+// ReflectToStringInstrInput converts Value (a reference — object/array/interface/function/null) to
+// its debug `string` via the runtime reflection printer. Codegen emits the zeus_reflect_to_string
+// runtime call directly; there is no lowering pass.
+type ReflectToStringInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewReflectToStringInstrInput(value zeus_value.Value) *ReflectToStringInstrInput {
+	return &ReflectToStringInstrInput{Value: value}
+}
+
+func (i ReflectToStringInstrInput) String() string {
+	return fmt.Sprintf("reflect_to_string %s", i.Value)
+}
+
+func AsReflectToStringInstrInput(input InstrInput) *ReflectToStringInstrInput {
+	switch input := input.(type) {
+	case *ReflectToStringInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ReflectToStringInstrInput", input)
+	}
+
+	return nil
+}
+
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
@@ -1122,6 +1233,23 @@ const (
 	// allocate a zeroed object of a class + install its header (mechanism half of NEW_OBJ,
 	// synthesized by FactoryLoweringPass into a class's zeus_new_<Class> factory function)
 	InstrTypeAllocObj
+	// autobox a scalar into its boxed primordial (Number/Bool). Emitted by the type checker at
+	// object boundaries; BoxLoweringPass rewrites it to ALLOC_OBJ + store of the scalar into the
+	// box's `value` field. The scalar is already the box's field type (int/float pre-cast to f64).
+	InstrTypeBox
+	// unbox a Number/Bool back to its scalar `value`. Emitted by the type checker when a box flows
+	// into a primitive slot or an arithmetic operand; BoxLoweringPass rewrites it to
+	// OBJECT_PROPERTY_ACCESS + LOAD. Output is the box's field type (f64/boolean).
+	InstrTypeUnbox
+	// a template literal `a ${x} b` kept as one node (static chunks + interpolated values) through
+	// type checking so interpolation errors are template-specific; StringTemplateLoweringPass rewrites
+	// it to the `+`/concat chain. Output is always `string`.
+	InstrTypeStringTemplate
+	// convert a reference value (object/array/interface/function/null) to its `string` debug
+	// representation via the runtime reflection printer (zeus_reflect_to_string), which walks the
+	// value's emitted type-info metadata. Emitted by the type checker's emitToString when the value
+	// has no user-defined toString; codegen calls the runtime fn directly (no lowering pass).
+	InstrTypeReflectToString
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1243,6 +1371,14 @@ func (i InstrType) String() string {
 		return "NEW_OBJ"
 	case InstrTypeAllocObj:
 		return "ALLOC_OBJ"
+	case InstrTypeBox:
+		return "BOX"
+	case InstrTypeUnbox:
+		return "UNBOX"
+	case InstrTypeStringTemplate:
+		return "STRING_TEMPLATE"
+	case InstrTypeReflectToString:
+		return "REFLECT_TO_STRING"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

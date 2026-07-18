@@ -393,6 +393,16 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcDeclClass(tc, instr)
 	case InstrTypeNewObj:
 		p.tcNewObj(tc, instr)
+	case InstrTypeBox:
+		p.tcBox(instr)
+	case InstrTypeUnbox:
+		p.tcUnbox(instr)
+	case InstrTypeStringTemplate:
+		p.tcStringTemplate(tc, instr)
+	case InstrTypeReflectToString:
+		// Emitted by emitToString mid-pass with its output type (string) already set; the input is any
+		// reference value, so there is nothing to validate. A case is still required so a REFLECT_TO_STRING
+		// never reaches the default panic if a future path revisits it (mirrors Box/Unbox/StringTemplate).
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
@@ -525,6 +535,7 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType.String(), targetType.String()),
 				Span:    instr.Span,
+				Hint:    stringMismatchHint(targetType, bType),
 			})
 		}
 	}
@@ -532,10 +543,117 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 	return b
 }
 
+// tcBox is a defensive no-op: BOX is only emitted by this pass (emitBox) with its output type
+// already set, so the walk never reaches an unset one. The case exists so a re-walk of an inserted
+// BOX doesn't fall through to HandleInstruction's default panic.
+func (p *TypeCheckingPass) tcBox(instr *Instr) {
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		instr.Output.ValueType = zeus_value.NewObjectType(AsBoxInstrInput(instr.Input).TargetClass)
+	}
+}
+
+// tcUnbox is a defensive no-op, mirroring tcBox: UNBOX is only emitted by this pass with its output
+// type set, so this only guards against a re-walk hitting the default panic.
+func (p *TypeCheckingPass) tcUnbox(instr *Instr) {
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		box := AsUnboxInstrInput(instr.Input).Value
+		if objType := zeus_value.AsObjectType(zeus_value.GetValueType(box)); objType != nil {
+			instr.Output.ValueType = boxFieldType(objType.Class)
+		}
+	}
+}
+
+// tcStringTemplate type-checks a template literal as a whole (before it lowers to a concat chain),
+// converting each interpolated part to a string via toString(). A part that does not implement
+// Stringify produces a template-specific error anchored at the interpolated expression, instead of
+// the generic "invalid operands for binary operation".
+func (p *TypeCheckingPass) tcStringTemplate(tc *TypeChecker, instr *Instr) {
+	input := AsStringTemplateInstrInput(instr.Input)
+	for _, part := range input.Parts {
+		if !part.IsExpr {
+			continue
+		}
+		partType := tc.getValueType(part.Value)
+		if isStringType(partType) {
+			continue // already a string
+		}
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		if converted, ok := p.emitToString(tc, part.Value, partType, part.Value.GetSpan()); ok {
+			part.Value = converted
+		} else {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot interpolate a value of type '%s' in a template string", partType),
+				Span:    part.Value.GetSpan(),
+				Hint:    stringifyHint(partType),
+			})
+		}
+	}
+	// A template is always a string (set by BuildStringTemplate); ensure it if the class was late-bound.
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+			instr.Output.ValueType = zeus_value.NewObjectType(stringClass)
+		}
+	}
+}
+
+// stringifyHint suggests how to make a user-definable type (object/interface) satisfy Stringify when
+// it fails to convert to string. It explains the specific reason — missing / private / wrong-signature
+// toString. Returns "" for other types (primitives always convert, so they never fail).
+func stringifyHint(sourceType zeus_value.ValueType) string {
+	objType := zeus_value.AsObjectType(sourceType)
+	if objType == nil {
+		if zeus_value.IsInterfaceType(sourceType) {
+			return fmt.Sprintf("declare a `toString(): string` method on interface '%s' so it satisfies Stringify", sourceType)
+		}
+		return ""
+	}
+	m := zeus_value.LookupMethod(objType.Class, "toString")
+	switch {
+	case m == nil:
+		return fmt.Sprintf("implement Stringify by adding a public `toString(): string` method to '%s'", sourceType)
+	case !m.IsPublic():
+		return fmt.Sprintf("make '%s.toString' public so it satisfies Stringify", sourceType)
+	default:
+		// toString exists and is public but has a non-conforming signature.
+		return fmt.Sprintf("'%s.toString' must have the signature `toString(): string` to satisfy Stringify", sourceType)
+	}
+}
+
+// stringMismatchHint returns the Stringify hint when a value fails to convert to a `string` target.
+func stringMismatchHint(targetType, sourceType zeus_value.ValueType) string {
+	if isStringType(targetType) {
+		return stringifyHint(sourceType)
+	}
+	return ""
+}
+
+// binaryOpStringHint returns the Stringify hint for a failed `string + X` (or `X + string`) concat.
+func binaryOpStringHint(leftType, rightType zeus_value.ValueType) string {
+	if isStringType(leftType) && !isStringType(rightType) {
+		return stringifyHint(rightType)
+	}
+	if isStringType(rightType) && !isStringType(leftType) {
+		return stringifyHint(leftType)
+	}
+	return ""
+}
+
+// emitBox autoboxes value (a scalar) into boxClass (Number/Bool), inserting the scalar→field cast
+// (int/float → f64 for Number; boolean matches Bool's field exactly) and the BOX before instr. The
+// builder's insertion point must already be positioned before instr.
+func (p *TypeCheckingPass) emitBox(tc *TypeChecker, value zeus_value.Value, valueType zeus_value.ValueType, boxClass *zeus_value.Class, span *token.Span) zeus_value.Value {
+	scalar := value
+	if fieldType := boxFieldType(boxClass); fieldType != nil && !zeus_value.CmpValueType(valueType, fieldType) {
+		scalar = tc.builder.BuildCast(value, fieldType, span)
+	}
+	return tc.builder.BuildBox(scalar, boxClass, span)
+}
+
 // Performs the following implicit casts:
 // - int to float
 // - int to int of bigger size
 // - float to float of bigger size
+// - primitive → Number/Bool (autobox) and primitive → interface satisfied by its box
 func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value zeus_value.Value, targetType zeus_value.ValueType) (zeus_value.Value, bool) {
 	valueType := tc.getValueType(value)
 
@@ -543,7 +661,18 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	// (CmpValueType is otherwise symmetric), so it must be tested target-first here. An
 	// interface value is represented identically to the object, so no runtime cast is emitted.
 	if zeus_value.IsInterfaceType(targetType) {
-		return value, zeus_value.CmpValueType(targetType, valueType)
+		if zeus_value.CmpValueType(targetType, valueType) {
+			return value, true
+		}
+		// A primitive can satisfy an interface by first autoboxing into Number/Bool, when that box
+		// structurally conforms to the interface (e.g. `let p: Printable = 5` where Number has the
+		// interface's methods).
+		if boxClass := boxClassForPrimitive(valueType); boxClass != nil &&
+			zeus_value.CmpValueType(targetType, zeus_value.NewObjectType(boxClass)) {
+			tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+			return p.emitBox(tc, value, valueType, boxClass, value.GetSpan()), true
+		}
+		return value, false
 	}
 
 	// *Function → FunctionType: wrap in a functor class (all FunctionType values are objects at runtime)
@@ -562,6 +691,40 @@ func (p *TypeCheckingPass) tryImplicitCast(tc *TypeChecker, instr *Instr, value 
 	}
 
 	tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+
+	// Any value whose type implements Stringify converts to `string` by calling toString()
+	// (autoboxing a primitive first): powers console.log(5), `let s: string = x`, string params and
+	// returns. The source is never itself a string here (that returns early above).
+	if isStringType(targetType) {
+		if converted, ok := p.emitToString(tc, value, valueType, value.GetSpan()); ok {
+			return converted, true
+		}
+	}
+
+	// Autobox a scalar into its box class when that exact primordial box is the target
+	// (`let n: I32 = 5`, passing a bool where a Bool is expected). Compared by identity, not name, so
+	// a user class that shadows a box name is not an autobox target (it fails assignability instead).
+	if objTarget := zeus_value.AsObjectType(targetType); objTarget != nil {
+		if boxClass := boxClassForPrimitive(valueType); boxClass != nil && objTarget.Class == boxClass {
+			return p.emitBox(tc, value, valueType, boxClass, value.GetSpan()), true
+		}
+	}
+
+	// Auto-unbox a boxed value flowing into a primitive slot. A `Number` (umbrella) unboxes to f64
+	// via valueOf() — assigning to a narrower numeric type (`let x: i32 = n`) still needs an explicit
+	// cast, the same no-silent-lossy-narrowing rule the language applies to any f64 -> i32. A concrete
+	// box / Bool reads its exact field (`let flag: boolean = b`).
+	if isNumberInterface(valueType) {
+		if ft, ok := targetType.(zeus_value.FloatType); ok && ft.Size == zeus_value.F64 {
+			return p.emitValueOf(tc, value, value.GetSpan()), true
+		}
+	}
+	if srcObj := zeus_value.AsObjectType(valueType); srcObj != nil && isBoxedPrimordial(srcObj.Class) {
+		fieldType := boxFieldType(srcObj.Class)
+		if zeus_value.CmpValueType(fieldType, targetType) {
+			return tc.builder.BuildUnbox(value, fieldType, value.GetSpan()), true
+		}
+	}
 
 	castIntToFloat := func(intType zeus_value.IntType, value zeus_value.Value) zeus_value.Value {
 		size := zeus_value.F32
@@ -669,6 +832,23 @@ func isStringType(valueType zeus_value.ValueType) bool {
 	return false
 }
 
+// isReflectable reports whether a value of this type can be rendered to `string` by the runtime
+// reflection printer — every heap reference (object/array/interface/function) plus null. Primitives
+// never reach the reflection fallback (they stringify through their box); void and the like are not
+// reflectable. This is the universal "log anything" fallback used by emitToString.
+func isReflectable(valueType zeus_value.ValueType) bool {
+	// u8[] has a dedicated byte→string decode (it backs `string`); it converts to its text, never a
+	// reflected `[104, 105]` dump — so let it fall through to that cast path.
+	if isU8ArrayType(valueType) {
+		return false
+	}
+	switch valueType.(type) {
+	case zeus_value.ObjectType, zeus_value.ArrayType, zeus_value.InterfaceType, zeus_value.FunctionType, zeus_value.NullType:
+		return true
+	}
+	return false
+}
+
 // isU8ArrayType checks if a type is u8[] (array of unsigned 8-bit integers)
 func isU8ArrayType(valueType zeus_value.ValueType) bool {
 	arrayType, ok := valueType.(zeus_value.ArrayType)
@@ -752,14 +932,132 @@ func (p *TypeCheckingPass) doImplicitCastToSameType(tc *TypeChecker, instr *Inst
 	return left, right
 }
 
+// isNumberInterface reports whether vt is the umbrella `Number` interface.
+// isNumberInterface reports whether vt is the primordial `Number` umbrella — by identity, not name,
+// so a user-declared `interface Number` that shadows it is not treated as the umbrella.
+func isNumberInterface(vt zeus_value.ValueType) bool {
+	it := zeus_value.AsInterfaceType(vt)
+	return it != nil && it.Interface == zeus_value.Registry.GetInterface(zeus_value.ZEUS_NUMBER_INTERFACE)
+}
+
+// emitValueOf emits `value.valueOf()` (the Number umbrella's f64 accessor) before instr; the builder
+// insertion point must already be positioned. Returns the f64 result.
+//
+// This CALL_METHOD is inserted after tcMethodCall would run and is not itself routed through it, but
+// it needs no further type checking: it has no arguments, valueOf is a public interface method, and
+// its output type is set here (f64). It stays a dynamic call and codegen dispatches it through the
+// Number itable like any other interface method call. If a future pass makes tcMethodCall a
+// precondition for CALL_METHOD, this insertion site must be revisited.
+func (p *TypeCheckingPass) emitValueOf(tc *TypeChecker, value zeus_value.Value, span *token.Span) zeus_value.Value {
+	return tc.builder.BuildMethodCall(value, "valueOf", []zeus_value.Value{}, zeus_value.FloatType{Size: zeus_value.F64, Span: span}, nil, span)
+}
+
+// emitToString converts value to a `string` by calling toString(), autoboxing a primitive first (its
+// box carries toString). Returns (converted, true) when value's type implements Stringify (has
+// `toString(): string`, checked structurally), else (value, false). The builder insertion point must
+// already be positioned before the consuming instruction.
+func (p *TypeCheckingPass) emitToString(tc *TypeChecker, value zeus_value.Value, valueType zeus_value.ValueType, span *token.Span) (zeus_value.Value, bool) {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING)
+	if stringify == nil || stringClass == nil {
+		return value, false
+	}
+	// A primitive is stringified through its box (I32/Bool/...); an object/interface directly.
+	receiverType := valueType
+	boxClass := boxClassForPrimitive(valueType)
+	if boxClass != nil {
+		receiverType = zeus_value.NewObjectType(boxClass)
+	}
+	if !zeus_value.CmpValueType(zeus_value.NewInterfaceType(stringify), receiverType) {
+		// No user-defined toString and not a Stringify box: fall back to the runtime reflection
+		// printer for any reference value (object/array/interface/function/null). This is what lets
+		// `console.log`/concat/templates render *anything* (TS-style debug), driven by the type-info
+		// metadata codegen emits per class. Primitives never reach here — they stringify via their box.
+		if isReflectable(valueType) {
+			return tc.builder.BuildReflectToString(value, span), true
+		}
+		return value, false
+	}
+	receiver := value
+	if boxClass != nil {
+		receiver = p.emitBox(tc, value, valueType, boxClass, span)
+	}
+	stringType := zeus_value.NewObjectType(stringClass)
+	return tc.builder.BuildMethodCall(receiver, "toString", []zeus_value.Value{}, stringType, nil, span), true
+}
+
+// maybeUnboxOperand unboxes a boxed binary-operand to its scalar so operators compute on scalars
+// (n + 1, n < m, b == c → value comparison). A `Number` (umbrella) unboxes to f64 via valueOf(); a
+// concrete box / Bool reads its exact `value` field. Non-box operands pass through unchanged.
+func (p *TypeCheckingPass) maybeUnboxOperand(tc *TypeChecker, instr *Instr, value zeus_value.Value) zeus_value.Value {
+	vt := tc.getValueType(value)
+	if isNumberInterface(vt) {
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		return p.emitValueOf(tc, value, value.GetSpan())
+	}
+	if objType := zeus_value.AsObjectType(vt); objType != nil && isBoxedPrimordial(objType.Class) {
+		// isBoxedPrimordial guarantees the primordial box has a `value` field, but guard anyway so a
+		// nil field type never reaches BuildUnbox as an untyped instruction.
+		if fieldType := boxFieldType(objType.Class); fieldType != nil {
+			tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+			return tc.builder.BuildUnbox(value, fieldType, value.GetSpan())
+		}
+	}
+	return value
+}
+
+// coerceStringConcatOperands converts the non-string operand of a `string + X` (or `X + string`) to
+// string so it concatenates (`"n=" + 5`, template `${n}`). When both operands are strings (normal
+// concat) or neither is (numeric add), operands pass through unchanged. Non-Stringify operands stay
+// as-is and fail the operator type check below cleanly.
+func (p *TypeCheckingPass) coerceStringConcatOperands(tc *TypeChecker, instr *Instr, left, right zeus_value.Value) (zeus_value.Value, zeus_value.Value) {
+	leftIsStr := isStringType(tc.getValueType(left))
+	rightIsStr := isStringType(tc.getValueType(right))
+	if leftIsStr == rightIsStr {
+		return left, right
+	}
+	stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING)
+	if stringClass == nil {
+		return left, right
+	}
+	stringType := zeus_value.NewObjectType(stringClass)
+	if leftIsStr {
+		if converted, ok := p.tryImplicitCast(tc, instr, right, stringType); ok {
+			right = converted
+		}
+	} else if converted, ok := p.tryImplicitCast(tc, instr, left, stringType); ok {
+		left = converted
+	}
+	return left, right
+}
+
 func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a, b zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a, b zeus_value.ValueType) bool) {
 	input := AsBinaryOpInstrInput(instr.Input)
 
+	// String concatenation coerces the non-string operand to string (via toString). Done before the
+	// unbox step so a boxed operand stringifies directly rather than unboxing to a scalar first.
+	if instr.Type == InstrTypeAdd {
+		input.Left, input.Right = p.coerceStringConcatOperands(tc, instr, input.Left, input.Right)
+	}
+
+	// Arithmetic/comparison on boxed primitives operates on the unboxed scalar — but never against
+	// null. A box is never null, so `box == null` stays an identity check; this also keeps the
+	// compiler-generated receiver null check (`obj == null` before a method call) valid on boxes.
+	if !zeus_value.IsNullType(tc.getValueType(input.Left)) && !zeus_value.IsNullType(tc.getValueType(input.Right)) {
+		input.Left = p.maybeUnboxOperand(tc, instr, input.Left)
+		input.Right = p.maybeUnboxOperand(tc, instr, input.Right)
+	}
+
 	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
-		tc.pushError(&zeus_error.ZeusError{
+		binErr := &zeus_error.ZeusError{
 			Message: fmt.Sprintf("invalid operands of type '%s' and '%s' for binary operation", tc.getValueType(input.Left), tc.getValueType(input.Right)),
 			Span:    instr.Span,
-		})
+		}
+		// For string concatenation (`"x" + o`), suggest Stringify on the non-string operand.
+		if instr.Type == InstrTypeAdd {
+			binErr.Hint = binaryOpStringHint(tc.getValueType(input.Left), tc.getValueType(input.Right))
+		}
+		tc.pushError(binErr)
 	} else {
 		left, right := p.doImplicitCastToSameType(tc, instr, input.Left, input.Right)
 		input.Left = left
@@ -771,6 +1069,9 @@ func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeF
 
 func (p *TypeCheckingPass) tcUnaryOp(tc *TypeChecker, instr *Instr, resultTypeFn func(a zeus_value.ValueType) zeus_value.ValueType, cmpTypeFn func(a zeus_value.ValueType) bool) {
 	input := AsUnaryOpInstrInput(instr.Input)
+
+	// A unary operator on a boxed value computes on the unboxed scalar (`!b`, `-n`, `~n`).
+	input.Value = p.maybeUnboxOperand(tc, instr, input.Value)
 
 	if !cmpTypeFn(tc.getValueType(input.Value)) {
 		tc.pushError(&zeus_error.ZeusError{
@@ -784,6 +1085,10 @@ func (p *TypeCheckingPass) tcUnaryOp(tc *TypeChecker, instr *Instr, resultTypeFn
 
 func (p *TypeCheckingPass) tcCondJmp(tc *TypeChecker, instr *Instr) {
 	input := AsCondJmpInstrInput(instr.Input)
+
+	// A boxed condition (e.g. `if (b)` where b: Bool) computes on the unboxed scalar. Bool unboxes
+	// to boolean; a non-bool box unboxes to its scalar and then fails the bool check below cleanly.
+	input.Condition = p.maybeUnboxOperand(tc, instr, input.Condition)
 
 	if !zeus_value.IsBoolType(tc.getValueType(input.Condition)) {
 		tc.pushError(&zeus_error.ZeusError{
@@ -906,6 +1211,7 @@ func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functio
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), functionType.ParamTypes[i]),
 				Span:    args[i].GetSpan(),
+				Hint:    stringMismatchHint(functionType.ParamTypes[i], tc.getValueType(args[i])),
 			})
 		}
 	}
@@ -947,6 +1253,7 @@ func (p *TypeCheckingPass) tcVariadicFunctionCall(tc *TypeChecker, instr *Instr,
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), expected),
 				Span:    args[i].GetSpan(),
+				Hint:    stringMismatchHint(expected, tc.getValueType(args[i])),
 			})
 		}
 	}
@@ -1299,6 +1606,30 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	}
 }
 
+// classConformsToStringify reports whether class has a public toString(): string (the Stringify
+// contract) — an explicit user/box toString that should be dispatched, rather than reflected.
+func classConformsToStringify(class *zeus_value.Class) bool {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	return stringify != nil && zeus_value.ClassConformsToInterface(class, stringify)
+}
+
+// rewriteMethodCallAsReflect turns an `x.toString()` CALL_METHOD (on a receiver with no conforming
+// toString) into a REFLECT_TO_STRING in place, so reflection — the value's structural debug string —
+// is callable on ANY value, keeping the same output var. Nothing else re-visits this instruction.
+func (p *TypeCheckingPass) rewriteMethodCallAsReflect(instr *Instr, obj zeus_value.Value) {
+	instr.Type = InstrTypeReflectToString
+	instr.Input = NewReflectToStringInstrInput(obj)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		instr.Output.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+}
+
+// isToStringCall reports whether a method call is a no-arg `x.toString()` (the universal stringify
+// entry point) not going through an explicit super dispatch.
+func isToStringCall(input *MethodCallInstrInput) bool {
+	return input.MethodName == "toString" && len(input.Args) == 0 && input.StaticClass == nil
+}
+
 func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	input := AsMethodCallInstrInput(instr.Input)
 
@@ -1321,6 +1652,12 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 			}
 		}
 		if ifaceMethod == nil {
+			// Universal toString: an interface value reflects (via its concrete runtime type) when the
+			// interface itself doesn't declare toString.
+			if isToStringCall(input) {
+				p.rewriteMethodCallAsReflect(instr, input.Object)
+				return
+			}
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("interface '%s' has no method '%s'", iface.Name, input.MethodName),
 				Span:    instr.Output.Span,
@@ -1335,17 +1672,33 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	}
 
 	if !zeus_value.IsObjectType(valueType) {
-		tc.pushError(&zeus_error.ZeusError{
-			Message: fmt.Sprintf("cannot call method %s on non-object type '%s'", input.MethodName, valueType),
-			Span:    instr.Output.Span,
-		})
-		return
+		// Autobox a primitive receiver so a method can be called on it: `(5).toString()`,
+		// `x.toString()`. Non-boxable receivers (e.g. void) remain an error.
+		boxClass := boxClassForPrimitive(valueType)
+		if boxClass == nil {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot call method %s on non-object type '%s'", input.MethodName, valueType),
+				Span:    instr.Output.Span,
+			})
+			return
+		}
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		// input is the live *MethodCallInstrInput, so mutating Object updates instr.Input in place.
+		input.Object = p.emitBox(tc, input.Object, valueType, boxClass, instr.Output.Span)
+		valueType = zeus_value.NewObjectType(boxClass)
 	}
 
 	class := zeus_value.AsObjectType(valueType).Class
 	// super.method() resolves non-virtually on the base class, not the receiver's dynamic class.
 	if input.StaticClass != nil {
 		class = input.StaticClass
+	}
+	// Universal toString: every value is stringifiable. `x.toString()` on a class with no public
+	// Stringify-conforming toString reflects (its structural debug string) instead of erroring, so
+	// reflection is callable on ANY value. A user/box toString (conforming) dispatches normally below.
+	if isToStringCall(input) && !classConformsToStringify(class) {
+		p.rewriteMethodCallAsReflect(instr, input.Object)
+		return
 	}
 	// Walk the inheritance chain so an inherited (or overridden) method is found; a derived
 	// method shadows a same-named base method.

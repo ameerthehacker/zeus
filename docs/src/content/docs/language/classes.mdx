@@ -100,6 +100,27 @@ let acc: Accumulator = new Accumulator(10);
 let total: i32 = acc.sum(1, 2, 3);  // 16
 ```
 
+## String representation
+
+Every value can be turned into a string, so `console.log`, string concatenation, and template strings
+work on any object out of the box. By default an object prints structurally (`ClassName { field:
+value }`). Define a public `toString(): string` to customize it — it's used everywhere the object
+becomes a string, including nested inside other objects:
+
+```zeus
+class Temperature {
+  celsius: f64;
+  constructor(celsius: f64) { this.celsius = celsius; }
+  toString(): string { return this.celsius + "°C"; }
+}
+
+let t: Temperature = new Temperature(21.5);
+console.log(t);             // 21.5°C
+console.log("now: " + t);  // now: 21.5°C
+```
+
+See [Console](/language/console/) for the full details of how values render.
+
 ## The `this` keyword
 
 Inside a method, `this` refers to the current instance — use it to read and update the object's own

@@ -23,5 +23,13 @@
         "name": "Same-named locals in sibling if-branches returning objects",
         "exit": "0",
         "entry": "sibling_scope_locals.zs"
+    },
+    {
+        "name": "override cannot reduce visibility",
+        "entry": "narrowing_override_err.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "reduce the visibility"
+        ]
     }
 ]

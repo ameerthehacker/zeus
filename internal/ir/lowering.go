@@ -50,6 +50,12 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 	l.passes = []LowerPass{
 		// Runs first so all later passes see a normalized fixed-arity argument list.
 		NewVariadicCallLoweringPass(),
+		// Expands autobox BOX instructions into ALLOC_OBJ + field store early, so later passes and
+		// codegen only ever see ordinary object-construction instructions.
+		NewBoxLoweringPass(),
+		// Expands STRING_TEMPLATE into the `+`/concat chain (must run before StringOperatorLoweringPass,
+		// which lowers those `+` to string.concat).
+		NewStringTemplateLoweringPass(),
 		// Folds interface property access (OBJECT_PROPERTY_ACCESS + LOAD/STORE) into
 		// INTERFACE_PROP_GET/SET early, so later passes and codegen see a self-contained instr.
 		NewInterfacePropertyLoweringPass(),
@@ -1767,6 +1773,180 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 	builder.RestoreInsertionPoint(saved)
 
 	return wrapperClass
+}
+
+// =============================================================================
+// BoxLoweringPass — expands autobox/unbox instructions (emitted by the type checker at object
+// boundaries) into ordinary object instructions, so codegen needs no BOX/UNBOX case:
+//   BOX   -> ALLOC_OBJ + STORE of the scalar into the box's `value` field
+//   UNBOX -> OBJECT_PROPERTY_ACCESS(value) + LOAD
+// This mirrors how ref cells are allocated/read (allocRefCell). Deferred to Finalize so the block
+// isn't mutated while being iterated, mirroring CastLoweringPass.
+// =============================================================================
+
+type boxToLower struct {
+	instr *Instr
+	block *BasicBlock
+}
+
+// =============================================================================
+// StringTemplateLoweringPass — expands each STRING_TEMPLATE (a template literal kept whole through
+// type checking) into the left-to-right `+` concat over its now-all-string parts, then rewrites the
+// template instruction into a COERCE of that result (so its output var, referenced downstream, holds
+// the final string). Static chunks are materialized with buildLiteralString; StringOperatorLoweringPass
+// (which runs after) turns the emitted `+` into string.concat.
+// =============================================================================
+
+type templateToLower struct {
+	instr *Instr
+	block *BasicBlock
+}
+
+type StringTemplateLoweringPass struct {
+	templates []templateToLower
+}
+
+func NewStringTemplateLoweringPass() *StringTemplateLoweringPass { return &StringTemplateLoweringPass{} }
+
+func (p *StringTemplateLoweringPass) GetName() string { return "StringTemplateLowering" }
+
+func (p *StringTemplateLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type == InstrTypeStringTemplate {
+		p.templates = append(p.templates, templateToLower{instr: instr, block: l.GetCurrentBlock()})
+	}
+}
+
+func (p *StringTemplateLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, t := range p.templates {
+		p.lowerTemplate(builder, t.instr, t.block)
+	}
+}
+
+func (p *StringTemplateLoweringPass) lowerTemplate(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsStringTemplateInstrInput(instr.Input)
+	span := instr.Span
+	stringClass := getStringClass(builder)
+	u8ArrayClass := getU8ArrayClass(builder)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+	stringType := zeus_value.NewObjectType(stringClass)
+
+	// Emit the concat chain before the template instr; each part is already a string after type check
+	// (static chunks are built here as literals).
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionBefore(instr)
+	}
+
+	var acc zeus_value.Value
+	for _, part := range input.Parts {
+		var s zeus_value.Value
+		if part.IsExpr {
+			s = part.Value
+		} else {
+			s = buildLiteralString(builder, part.Str, stringClass, u8ArrayClass, i32Type, span)
+		}
+		if acc == nil {
+			acc = s
+		} else {
+			acc = builder.BuildBinaryOp(acc, s, InstrTypeAdd, span) // string + string -> concat (lowered next)
+			// Type the result string so a chained concat's next operand is recognized as a string by
+			// StringOperatorLoweringPass (the type checker no longer runs on these lowering-emitted adds).
+			if v := zeus_value.AsVar(acc); v != nil {
+				v.ValueType = stringType
+			}
+		}
+	}
+	if acc == nil {
+		acc = buildLiteralString(builder, "", stringClass, u8ArrayClass, i32Type, span) // empty template
+	}
+
+	// Rewrite the template instruction into COERCE(acc) so its output var == the final string.
+	instr.Type = InstrTypeCoerce
+	instr.Input = NewCoerceInstrInput(acc, stringType)
+	instr.Output.ValueType = stringType
+}
+
+type BoxLoweringPass struct {
+	boxes []boxToLower
+}
+
+func NewBoxLoweringPass() *BoxLoweringPass { return &BoxLoweringPass{} }
+
+func (p *BoxLoweringPass) GetName() string { return "BoxLowering" }
+
+func (p *BoxLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type == InstrTypeBox || instr.Type == InstrTypeUnbox {
+		// block is nil for a module-level box (e.g. a global `let n: Number = 5`), handled below.
+		p.boxes = append(p.boxes, boxToLower{instr: instr, block: l.GetCurrentBlock()})
+	}
+}
+
+func (p *BoxLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, b := range p.boxes {
+		// Dispatch on the original type; lowerBox/lowerUnbox mutate the instruction in place.
+		switch b.instr.Type {
+		case InstrTypeBox:
+			p.lowerBox(builder, b.instr, b.block)
+		case InstrTypeUnbox:
+			p.lowerUnbox(builder, b.instr, b.block)
+		}
+	}
+}
+
+func (p *BoxLoweringPass) lowerUnbox(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsUnboxInstrInput(instr.Input)
+	box := input.Value
+	objType := zeus_value.AsObjectType(zeus_value.GetValueType(box))
+	// The type checker only emits UNBOX for a boxed-object operand; assert rather than silently
+	// leaving an unlowered UNBOX, which codegen has no case for (it would hit the default panic).
+	zeus_error.Assert(objType != nil, "UNBOX operand must be a boxed-object type at lowering")
+	fieldType := boxFieldType(objType.Class)
+	span := instr.Span
+
+	// Emit the property access just before the unbox, then rewrite the unbox in place into the LOAD
+	// that reads it — so the unbox's output var keeps naming the loaded scalar.
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionBefore(instr)
+	}
+	propPtr := builder.BuildObjectPropertyAccess(box, zeus_value.ZEUS_BOX_VALUE_PROPERTY, false, span)
+	if propVar := zeus_value.AsVar(propPtr); propVar != nil {
+		propVar.ValueType = fieldType
+	}
+	instr.Type = InstrTypeLoad
+	instr.Input = NewLoadInstrInput(zeus_value.AsVar(propPtr))
+	instr.Output.ValueType = fieldType
+}
+
+func (p *BoxLoweringPass) lowerBox(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsBoxInstrInput(instr.Input)
+	class := input.TargetClass
+	span := instr.Span
+
+	// Rewrite BOX in place into ALLOC_OBJ; its output var now names the freshly allocated box.
+	instr.Type = InstrTypeAllocObj
+	instr.Input = NewAllocObjInstrInput(class)
+	instr.Output.ValueType = zeus_value.NewObjectType(class)
+
+	// Store the scalar into box.value, immediately after the alloc. The instr pointer is unchanged
+	// by the in-place rewrite, so it is still locatable in its block (or the global list).
+	if block != nil {
+		builder.SetBlockInsertionAfter(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionAfter(instr)
+	}
+	propPtr := builder.BuildObjectPropertyAccess(instr.Output, zeus_value.ZEUS_BOX_VALUE_PROPERTY, true, span)
+	if propVar := zeus_value.AsVar(propPtr); propVar != nil {
+		propVar.ValueType = boxFieldType(class)
+	}
+	builder.BuildStore(zeus_value.AsVar(propPtr), input.Value, span)
 }
 
 // =============================================================================

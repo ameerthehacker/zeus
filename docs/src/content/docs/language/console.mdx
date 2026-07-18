@@ -1,64 +1,161 @@
 ---
 title: Console
-description: Print to standard output and standard error with the global console object.
+description: Print and debug any value with the global console object — variadic, TS-style, with automatic reflection.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-The global `console` object is available in every program without an import. Each method prints a
-string followed by a newline.
-
-## console.log
-
-Writes a string to standard output.
+The global `console` object is available in every program without an import. Every method takes any
+number of arguments of **any type**, converts each to a string, joins them with a single space, and
+writes the result followed by a newline.
 
 ```zeus
 console.log("Hello, World!");
+console.log("x =", 42, "ok?", true);
 console.log("Zeus supports UTF-8 🚀");
-
-let greeting: string = "Welcome to Zeus!";
-console.log(greeting);
 ```
-
-Output:
 
 ```
 Hello, World!
+x = 42 ok? true
 Zeus supports UTF-8 🚀
-Welcome to Zeus!
 ```
 
-<Aside type="tip">
-  `console.log` fully supports UTF-8 — emojis and international characters included — and appends a
-  newline to every call.
-</Aside>
+## Methods
 
-## console.error and console.info
+All five methods behave identically except for where they write:
 
-`console.error` writes to standard error; `console.info` writes to standard output. Both otherwise
-behave like `console.log`.
+| Method            | Stream          |
+| ----------------- | --------------- |
+| `console.log`     | standard output |
+| `console.info`    | standard output |
+| `console.debug`   | standard output |
+| `console.warn`    | standard error  |
+| `console.error`   | standard error  |
 
 ```zeus
-console.log("normal output");    // stdout
-console.info("informational");   // stdout
-console.error("went wrong");     // stderr
+console.log("normal output");     // stdout
+console.info("informational");    // stdout
+console.debug("debug detail");    // stdout
+console.warn("heads up");         // stderr
+console.error("went wrong");      // stderr
 ```
 
-## Logging byte arrays
+## Any number of arguments
 
-A `u8[]` converts implicitly to `string`, so you can print raw bytes by assigning them to a string
-first:
+Each argument is converted to a string and the results are joined by a single space. Calling a method
+with no arguments prints an empty line.
+
+```zeus
+console.log("a", "b", "c");   // a b c
+console.log(1, 2, 3);         // 1 2 3
+console.log();                // (blank line)
+```
+
+## Any value prints
+
+You never have to convert a value before logging it — numbers, booleans, `null`, objects, and arrays
+all print directly.
+
+```zeus
+console.log(42);          // 42
+console.log(3.14);        // 3.14
+console.log(true);        // true
+console.log(null);        // null
+```
+
+### Objects and arrays
+
+An object with no custom `toString` prints its class name and fields; an array prints its elements.
+This works recursively — nested objects and arrays are expanded, and string values are quoted inside
+them.
+
+```zeus
+class Point {
+    x: i32;
+    y: i32;
+    constructor(x: i32, y: i32) { this.x = x; this.y = y; }
+}
+
+class Person {
+    name: string;
+    age: i32;
+    constructor(name: string, age: i32) { this.name = name; this.age = age; }
+}
+
+console.log(new Point(1, 2));            // Point { x: 1, y: 2 }
+console.log(new Person("bob", 30));      // Person { name: "bob", age: 30 }
+console.log([1, 2, 3]);                  // [1, 2, 3]
+console.log(["a", "b"]);                 // ["a", "b"]
+console.log([new Point(1, 2), new Point(3, 4)]);
+// [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
+```
+
+Inherited fields are included (base fields first), and deeply self-referential graphs are printed to a
+bounded depth so cyclic data never loops forever.
+
+<Aside type="note">
+  This structural rendering is powered by runtime reflection — the compiler emits each class's field
+  metadata and a single runtime printer walks it. There is nothing to opt into.
+</Aside>
+
+## Customizing output with `toString`
+
+Give a class a public `toString(): string` method to control exactly how it prints. Your `toString`
+is used everywhere a value becomes a string: `console.log`, string concatenation, template strings,
+and an explicit `.toString()` call.
+
+```zeus
+class Money {
+    cents: i32;
+    constructor(cents: i32) { this.cents = cents; }
+    toString(): string { return "$" + this.cents; }
+}
+
+let price: Money = new Money(500);
+console.log(price);              // $500
+console.log("total:", price);    // total: $500
+console.log(`price is ${price}`); // price is $500
+```
+
+A custom `toString` is honored for **nested** values too — a field whose type defines `toString`
+renders through it instead of structurally:
+
+```zeus
+class Cart {
+    item: Money;
+    qty: i32;
+    constructor(item: Money) { this.item = item; this.qty = 3; }
+}
+
+console.log(new Cart(new Money(500)));   // Cart { item: $500, qty: 3 }
+```
+
+## `toString` on any value
+
+Because reflection provides a default, `toString()` is callable on **every** value — override it or
+not:
+
+```zeus
+console.log((new Point(1, 2)).toString());  // Point { x: 1, y: 2 }  (default)
+console.log((new Money(500)).toString());   // $500                  (custom)
+console.log([1, 2, 3].toString());          // [1, 2, 3]
+console.log((42).toString());               // 42
+```
+
+## Byte arrays
+
+A `u8[]` is Zeus's raw byte string, so it decodes to text rather than printing as a list of numbers:
 
 ```zeus
 let bytes: u8[] = new u8[];
 bytes[0] = 'H';
 bytes[1] = 'i';
 
-let text: string = bytes;   // u8[] -> string
-console.log(text);          // "Hi"
+console.log(bytes);   // Hi
 ```
 
-<Aside type="note">
-  `console` methods accept a **string** only. To print a number, convert it to a string first — see
-  [Strings](/language/strings/).
+<Aside type="tip">
+  `console` fully supports UTF-8 — emojis and international characters included — and appends a newline
+  to every call.
 </Aside>

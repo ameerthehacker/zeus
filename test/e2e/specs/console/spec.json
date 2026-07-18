@@ -16,5 +16,12 @@
         "entry": "info.zs",
         "exit": "0",
         "stdout": "hello from console.info\n"
+    },
+    {
+        "name": "variadic console methods (multi-arg join, empty log, stdout vs stderr)",
+        "entry": "variadic.zs",
+        "exit": "0",
+        "stdout": "a 5 true\n\nsingle\ndbg 1\ninfo\nafter-warn\n",
+        "stderr": "to-stderr\n"
     }
 ]

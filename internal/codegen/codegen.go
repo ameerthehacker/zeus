@@ -235,6 +235,10 @@ type CodegenModule struct {
 	// can never be reused with a mismatched fat-ABI signature, and vice versa.
 	cExternDecls           map[string]GlobalLLVMFunction
 	zeusObjectTypeInfoType llvm.Type
+	// zeusFieldInfoType is the reflection field-descriptor struct {name:i8*, offset:u32, tag:u8,
+	// signed:u8}; per-class field tables (emitted in genClass) are arrays of it, pointed to by
+	// ZeusObjectTypeInfo.field_table for the runtime reflection printer.
+	zeusFieldInfoType llvm.Type
 	// Debug info
 	diBuilder         *llvm.DIBuilder
 	diCompileUnit     llvm.Metadata
@@ -269,6 +273,16 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 	builder := c.cxt.NewBuilder()
 	globalLLVMFunctions := c.setupGlobalLLVMFunctions(module)
 
+	// Reflection field descriptor: one entry per instance field in a class's field table.
+	// Must match runtime/abi.zig ZeusFieldInfo (field order + widths).
+	zeusFieldInfoStructType := c.cxt.StructCreateNamed("ZeusFieldInfo")
+	zeusFieldInfoStructType.StructSetBody([]llvm.Type{
+		llvm.PointerType(c.cxt.Int8Type(), 0), // name (NUL-terminated char*)
+		c.cxt.Int32Type(),                     // offset (bytes within the object struct)
+		c.cxt.Int8Type(),                      // type_tag (ZeusRuntimeType)
+		c.cxt.Int8Type(),                      // is_signed (1 for signed ints, else 0)
+	}, false)
+
 	zeusObjectInfoStructType := c.cxt.StructCreateNamed(ZeusObjectTypeInfoStructName)
 	zeusObjectInfoStructType.StructSetBody([]llvm.Type{
 		// type id — i32 so the class-id space isn't capped at 255 (interface dispatch keys on
@@ -280,6 +294,14 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		c.cxt.Int8Type(),
 		// parent type info pointer
 		llvm.PointerType(zeusObjectInfoStructType, 0),
+		// class_name — NUL-terminated string for the runtime reflection printer
+		llvm.PointerType(c.cxt.Int8Type(), 0),
+		// field_table — array of ZeusFieldInfo (null for arrays/field-less classes)
+		llvm.PointerType(zeusFieldInfoStructType, 0),
+		// num_fields
+		c.cxt.Int32Type(),
+		// tostring_slot — vtable slot of a Stringify-conforming toString, or -1
+		c.cxt.Int32Type(),
 	}, false)
 
 	// Extract directory and filename from path
@@ -343,6 +365,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		globalLLVMFunctions:    globalLLVMFunctions,
 		cExternDecls:           make(map[string]GlobalLLVMFunction),
 		zeusObjectTypeInfoType: zeusObjectInfoStructType,
+		zeusFieldInfoType:      zeusFieldInfoStructType,
 		diBuilder:              diBuilder,
 		diCompileUnit:          diCompileUnit,
 		diFile:                 diFile,
@@ -589,6 +612,33 @@ func (c *CodegenModule) emitExternMethodBody(classFunction llvm.Value, method *z
 	} else {
 		c.builder.CreateRetVoid()
 	}
+}
+
+// genReflectToString renders a reference value (object/array/interface/function/null) to its debug
+// `string` by calling the runtime reflection printer zeus_reflect_to_string, which walks the value's
+// emitted type-info metadata. The value flows through the standard extern-call ABI (a pointer to the
+// object pointer + a return-buffer-ptr-ptr); the returned string object is read back out of the
+// wrapper. All formatting lives in the runtime — codegen stays a dumb translator.
+func (c *CodegenModule) genReflectToString(input ir.ReflectToStringInstrInput, output zeus_value.Var) {
+	voidPtrType := llvm.PointerType(c.cxt.VoidType(), 0)
+	runtimeFn, runtimeFnType := c.genExternalRuntimeFunction("zeus_reflect_to_string", 1, true)
+
+	// Runtime ABI: [this_ptr(null), return_buffer_ptr_ptr, obj_ptr_ptr]. The object is passed by
+	// pointer-to-value (matching how extern method args are packed), so the alloca must carry the
+	// value's own LLVM type (a GC object pointer), not void*.
+	objValue := c.toLLVMValue(input.Value)
+	objAlloca := c.builder.CreateAlloca(objValue.Type(), "reflect_obj_alloca")
+	c.builder.CreateStore(objValue, objAlloca)
+	returnBufferPtrPtr := c.builder.CreateAlloca(voidPtrType, "reflect_return_buffer_ptr_ptr")
+
+	nullThis := llvm.ConstNull(voidPtrType)
+	c.builder.CreateCall(runtimeFnType, runtimeFn, []llvm.Value{nullThis, returnBufferPtrPtr, objAlloca}, "")
+
+	returnWrapperPtr := c.builder.CreateLoad(voidPtrType, returnBufferPtrPtr, "reflect_wrapper_ptr")
+	returnType := c.toLLVMType(output.ValueType)
+	zeusObjPtr, zeusObjType := c.deserializeZeusObj(returnWrapperPtr, []llvm.Type{returnType}, "reflect_wrapper")
+	resultFieldPtr := c.builder.CreateStructGEP(zeusObjType, zeusObjPtr, 1, "reflect_result_ptr")
+	c.llvmValues[output.Name] = c.builder.CreateLoad(returnType, resultFieldPtr, "reflect_result")
 }
 
 func (c *CodegenModule) getLLVMStructType(name string) llvm.Type {
@@ -1443,11 +1493,16 @@ func (c *CodegenModule) genObjectArrayTypeHandle(class zeus_value.Class) *ZeusCl
 	// size is identical to Object[]'s regardless of the element type).
 	typeInfo := llvm.AddGlobal(c.module, c.zeusObjectTypeInfoType, GetObjectTypeInfoStructPtrName(class.Name))
 	typeInfo.SetLinkage(llvm.InternalLinkage)
+	arrClassName, arrFieldTable, arrNumFields := c.genReflectionMetadata(class, shared.LLVMStructType, true)
 	typeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
 		llvm.ConstInt(c.cxt.Int32Type(), uint64(class.Id), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(ZeusRuntimeObjectTypeArray), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(toZeusRuntimeType(class.ArrayElementType)), false),
 		llvm.ConstNull(llvm.PointerType(c.zeusObjectTypeInfoType, 0)),
+		arrClassName,
+		arrFieldTable,
+		arrNumFields,
+		c.constI32(-1), // arrays render as [..]; no toString dispatch
 	}, false))
 
 	// Own header sharing Object[]'s vtable, so method calls dispatch to the shared code.
@@ -1477,6 +1532,84 @@ func (c *CodegenModule) getOrDeclareGlobal(name string, t llvm.Type) llvm.Value 
 		return g
 	}
 	return llvm.AddGlobal(c.module, t, name)
+}
+
+// genCStringGlobal emits a private constant NUL-terminated char array and returns an i8* to its
+// first byte. Used for the reflection printer's class/field name strings.
+func (c *CodegenModule) genCStringGlobal(symbol, text string) llvm.Value {
+	str := llvm.ConstString(text, true) // NUL-terminated
+	g := llvm.AddGlobal(c.module, str.Type(), symbol)
+	g.SetInitializer(str)
+	g.SetLinkage(llvm.InternalLinkage)
+	g.SetGlobalConstant(true)
+	i32 := c.cxt.Int32Type()
+	zero := llvm.ConstInt(i32, 0, false)
+	return llvm.ConstInBoundsGEP(str.Type(), g, []llvm.Value{zero, zero})
+}
+
+// genReflectionMetadata emits the class-name string and the per-field reflection table for `class`
+// and returns the three trailing ZeusObjectTypeInfo operands (class_name i8*, field_table
+// *ZeusFieldInfo, num_fields i32) consumed by the runtime reflection printer. Arrays and field-less
+// classes get a null table (arrays render via length/element type, not fields). Field entries cover
+// instance fields base-first incl. inherited (Layout().Fields), keyed by their byte offset.
+func (c *CodegenModule) genReflectionMetadata(class zeus_value.Class, llvmStructType llvm.Type, isArray bool) (llvm.Value, llvm.Value, llvm.Value) {
+	i32 := c.cxt.Int32Type()
+	i8 := c.cxt.Int8Type()
+	nullFieldTable := llvm.ConstNull(llvm.PointerType(c.zeusFieldInfoType, 0))
+
+	// Arrays render as `[e0, e1, ...]`; the printer reads neither class_name nor field_table for them,
+	// so emit null for both rather than a dead class-name string global.
+	if isArray {
+		return llvm.ConstNull(llvm.PointerType(i8, 0)), nullFieldTable, llvm.ConstInt(i32, 0, false)
+	}
+
+	classNamePtr := c.genCStringGlobal("zeus_class_name."+class.Name, class.Name)
+	fields := class.Layout().Fields
+	if len(fields) == 0 {
+		return classNamePtr, nullFieldTable, llvm.ConstInt(i32, 0, false)
+	}
+
+	entries := make([]llvm.Value, 0, len(fields))
+	for idx, field := range fields {
+		namePtr := c.genCStringGlobal("zeus_field_name."+class.Name+"."+field.Property.Name, field.Property.Name)
+		offset := c.constFieldOffset(llvmStructType, idx+1) // +1: the object header occupies slot 0
+		isSigned := uint64(0)
+		if it, ok := field.Property.ValueType.(zeus_value.IntType); ok && it.Signed {
+			isSigned = 1
+		}
+		entries = append(entries, llvm.ConstNamedStruct(c.zeusFieldInfoType, []llvm.Value{
+			namePtr,
+			offset,
+			llvm.ConstInt(i8, uint64(toZeusRuntimeType(field.Property.ValueType)), false),
+			llvm.ConstInt(i8, isSigned, false),
+		}))
+	}
+
+	arrType := llvm.ArrayType(c.zeusFieldInfoType, len(entries))
+	tableGlobal := llvm.AddGlobal(c.module, arrType, "zeus_field_table."+class.Name)
+	tableGlobal.SetInitializer(llvm.ConstArray(c.zeusFieldInfoType, entries))
+	tableGlobal.SetLinkage(llvm.InternalLinkage)
+	tableGlobal.SetGlobalConstant(true)
+	zero := llvm.ConstInt(i32, 0, false)
+	tablePtr := llvm.ConstInBoundsGEP(arrType, tableGlobal, []llvm.Value{zero, zero})
+	return classNamePtr, tablePtr, llvm.ConstInt(i32, uint64(len(entries)), false)
+}
+
+// tostringVtableSlot returns the vtable slot of a class's Stringify-conforming public
+// toString(): string so the runtime reflection printer can dispatch to it for a nested value, or -1
+// if the class has none (no toString, or a private/wrong-signature one). Uses the same conformance
+// predicate as the type checker's emitToString, so top-level and nested rendering stay consistent.
+func (c *CodegenModule) tostringVtableSlot(class zeus_value.Class) int {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	if stringify == nil || !zeus_value.ClassConformsToInterface(&class, stringify) {
+		return -1
+	}
+	return util.GetMethodIndex(&class, "toString")
+}
+
+// constI32 builds an i32 constant that round-trips a possibly-negative Go int (e.g. a -1 vtable slot).
+func (c *CodegenModule) constI32(v int) llvm.Value {
+	return llvm.ConstInt(c.cxt.Int32Type(), uint64(uint32(int32(v))), false)
 }
 
 // genClass generates LLVM code for a Zeus class including struct types, vtable, and object header
@@ -1520,6 +1653,11 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		zeusRuntimeObjectType = ZeusRuntimeObjectTypeArray
 		zeusRuntimeArrayElementType = toZeusRuntimeType(class.ArrayElementType)
 	}
+	// The string primordial is a distinct runtime kind so the reflection printer renders it as
+	// quoted text rather than walking its internal {data, length} fields.
+	if class.PrimordialName == zeus_value.ZEUS_PRIMORDIAL_STRING {
+		zeusRuntimeObjectType = ZeusRuntimeObjectTypeString
+	}
 
 	// parent_type_info points at the base class's type info so the runtime can walk the
 	// inheritance chain (downcast checks + catch-by-base-type matching). Null at the root.
@@ -1528,11 +1666,16 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		parentTypeInfo = c.getOrDeclareGlobal(GetObjectTypeInfoStructPtrName(class.ParentClass.Name), c.zeusObjectTypeInfoType)
 	}
 
+	className, fieldTable, numFields := c.genReflectionMetadata(class, llvmStructType, class.ArrayElementType != nil)
 	llvmObjectTypeInfo.SetInitializer(llvm.ConstStruct([]llvm.Value{
 		llvm.ConstInt(c.cxt.Int32Type(), uint64(class.Id), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeObjectType), false),
 		llvm.ConstInt(c.cxt.Int8Type(), uint64(zeusRuntimeArrayElementType), false),
 		parentTypeInfo,
+		className,
+		fieldTable,
+		numFields,
+		c.constI32(c.tostringVtableSlot(class)),
 	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))
@@ -2888,6 +3031,9 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			// Zero-cost type annotation: output maps to the same LLVM value as input.
 			input := ir.AsCoerceInstrInput(instr.Input)
 			c.llvmValues[instr.Output.Name] = c.toLLVMValue(input.Value)
+		case ir.InstrTypeReflectToString:
+			c.setDebugLocation(instr.Span)
+			c.genReflectToString(*ir.AsReflectToStringInstrInput(instr.Input), *instr.Output)
 		default:
 			panic(fmt.Sprintf("codegen for instruction %s is not implemented", instr.Type))
 		}

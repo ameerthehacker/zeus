@@ -12,6 +12,10 @@ var default_object_type_info: abi.ZeusObjectTypeInfo = abi.ZeusObjectTypeInfo{
     .object_type = abi.ZeusObjectType.object,
     .array_element_type = abi.ZeusType._null,
     .parent_type_info = null,
+    .class_name = "Object",
+    .field_table = null,
+    .num_fields = 0,
+    .tostring_slot = -1,
 };
 
 // Dummy vtable for default object header

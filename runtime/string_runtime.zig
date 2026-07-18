@@ -155,6 +155,15 @@ export fn zeus_string_equals(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyo
     }
 }
 
+/// toString(): returns the receiver unchanged (a string is already a string). Lets `string` satisfy
+/// the Stringify interface used by the implicit `-> string` conversion.
+export fn zeus_string_toString(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque) callconv(.C) void {
+    if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(*anyopaque))) |result_bytes| {
+        const result_ptr = @as(**anyopaque, @ptrCast(@alignCast(result_bytes.ptr)));
+        result_ptr.* = this_ptr;
+    }
+}
+
 /// Concatenate two strings and return a new string
 /// Returns: A new string containing this + other
 export fn zeus_string_concat(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyopaque, other_ptr_ptr: *anyopaque) callconv(.C) void {

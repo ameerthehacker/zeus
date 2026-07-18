@@ -147,6 +147,15 @@ func loadPreludes() {
 			}
 			zeus_value.Registry.RegisterClass(class)
 		}
+
+		// Interfaces emit no IR (VisitInterfaceDeclExpr only declares them in the symbol table), so
+		// harvest them from the compiled prelude's symbol table. Register only interfaces not already
+		// registered, so a primordial injected into a later prelude's symbol table isn't re-added.
+		builder.symbolTable.Walk(func(_ string, value zeus_value.Value) {
+			if iface := zeus_value.AsInterface(value); iface != nil && zeus_value.Registry.GetInterface(iface.Name) == nil {
+				zeus_value.Registry.RegisterInterface(iface)
+			}
+		})
 	}
 
 	// Seed the ambient-global registry with globals.zs's console/Math (resolved to concrete object
@@ -221,6 +230,12 @@ func (b *IRBuilder) initializePrimordials() {
 	// Register primordial functions in symbol table (DECL_PRIMORDIAL_FUNC is emitted in Generate)
 	for _, fn := range registry.GetAllFunctions() {
 		b.symbolTable.DeclareGlobalSymbol(fn.Name, fn)
+	}
+
+	// Inject primordial interfaces harvested from preludes (e.g. the umbrella `Number`) so
+	// `let n: Number` resolves in every module. Interfaces are type-level only (no IR).
+	for _, iface := range registry.GetAllInterfaces() {
+		b.symbolTable.DeclareGlobalSymbol(iface.Name, iface)
 	}
 }
 
@@ -888,6 +903,78 @@ func (b *IRBuilder) BuildAllocObj(class *zeus_value.Class, span *token.Span) zeu
 		Type:   InstrTypeAllocObj,
 		Output: result,
 		Input:  NewAllocObjInstrInput(class),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildBox emits a BOX autoboxing value into targetClass (Number/Bool). The output is typed as an
+// object of that class here (rather than by the type checker) because BOX is emitted while type
+// checking is already in progress and the result is used immediately by the consuming instruction.
+func (b *IRBuilder) BuildBox(value zeus_value.Value, targetClass *zeus_value.Class, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = zeus_value.NewObjectType(targetClass)
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeBox,
+		Output: result,
+		Input:  NewBoxInstrInput(value, targetClass),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildUnbox emits an UNBOX reading the scalar `value` out of boxValue (a Number/Bool). fieldType is
+// the box's field type (f64/boolean) and becomes the output type; the type checker sets it here for
+// the same reason as BuildBox (the result is consumed immediately).
+func (b *IRBuilder) BuildUnbox(boxValue zeus_value.Value, fieldType zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	result.ValueType = fieldType
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeUnbox,
+		Output: result,
+		Input:  NewUnboxInstrInput(boxValue),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildStringTemplate emits a STRING_TEMPLATE node holding the template's parts (static chunks +
+// interpolated values). The result is always a `string`; StringTemplateLoweringPass rewrites it to
+// the concat chain after type checking (so interpolation errors stay template-specific).
+func (b *IRBuilder) BuildStringTemplate(parts []*StringTemplatePart, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		result.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeStringTemplate,
+		Output: result,
+		Input:  NewStringTemplateInstrInput(parts),
+		Span:   span,
+	})
+
+	return result
+}
+
+// BuildReflectToString emits a REFLECT_TO_STRING converting value (a reference type with no
+// user-defined toString) to its debug `string` via the runtime reflection printer. The result is
+// always a `string`; codegen calls zeus_reflect_to_string directly (no lowering pass).
+func (b *IRBuilder) BuildReflectToString(value zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		result.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeReflectToString,
+		Output: result,
+		Input:  NewReflectToStringInstrInput(value),
 		Span:   span,
 	})
 

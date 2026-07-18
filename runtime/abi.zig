@@ -11,6 +11,19 @@ pub const ZeusObjectType = enum(u8) {
 
 pub const ZeusType = enum(u8) { _i8 = 0, _i16 = 1, _i32 = 2, _i64 = 3, _f32 = 4, _f64 = 5, _bool = 6, object = 7, _null = 8 };
 
+// One entry in a class's reflection field table. Must match codegen's ZeusFieldInfo (field order +
+// widths): {name: i8*, offset: u32, type_tag: u8, is_signed: u8}.
+pub const ZeusFieldInfo = extern struct {
+    // NUL-terminated field name
+    name: [*:0]const u8,
+    // byte offset of the field within the object struct
+    offset: u32,
+    // ZeusType tag describing how to read/format the field
+    type_tag: u8,
+    // 1 if the field is a signed integer, else 0 (ZeusType has no signed/unsigned distinction)
+    is_signed: u8,
+};
+
 pub const ZeusObjectTypeInfo = extern struct {
     // unique id given to every class in the program
     // primordial classes with have a known fixed id
@@ -22,6 +35,15 @@ pub const ZeusObjectTypeInfo = extern struct {
     // if it is not an array then this will have _null type
     array_element_type: ZeusType,
     parent_type_info: ?*anyopaque,
+    // Reflection metadata (consumed by zeus_reflect_to_string). class_name is always set; field_table
+    // is null for arrays and field-less classes (arrays render via length/array_element_type).
+    class_name: [*:0]const u8,
+    field_table: ?[*]const ZeusFieldInfo,
+    num_fields: u32,
+    // vtable slot of a Stringify-conforming public toString(): string, or -1 if the class has none.
+    // The reflection printer dispatches to it for nested values instead of walking fields (so a nested
+    // Number/Bool box renders as 5/true and a user object via its toString).
+    tostring_slot: i32,
 
     pub fn getParentTypeInfo(self: *const ZeusObjectTypeInfo) *ZeusObjectTypeInfo {
         return @as(*ZeusObjectTypeInfo, @ptrCast(@alignCast(self.parent_type_info)));
