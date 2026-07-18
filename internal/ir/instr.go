@@ -654,6 +654,32 @@ func AsStringTemplateInstrInput(input InstrInput) *StringTemplateInstrInput {
 	return nil
 }
 
+// ReflectToStringInstrInput converts Value (a reference — object/array/interface/function/null) to
+// its debug `string` via the runtime reflection printer. Codegen emits the zeus_reflect_to_string
+// runtime call directly; there is no lowering pass.
+type ReflectToStringInstrInput struct {
+	Value zeus_value.Value
+}
+
+func NewReflectToStringInstrInput(value zeus_value.Value) *ReflectToStringInstrInput {
+	return &ReflectToStringInstrInput{Value: value}
+}
+
+func (i ReflectToStringInstrInput) String() string {
+	return fmt.Sprintf("reflect_to_string %s", i.Value)
+}
+
+func AsReflectToStringInstrInput(input InstrInput) *ReflectToStringInstrInput {
+	switch input := input.(type) {
+	case *ReflectToStringInstrInput:
+		return input
+	default:
+		panicInvalidInputType("ReflectToStringInstrInput", input)
+	}
+
+	return nil
+}
+
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
@@ -1219,6 +1245,11 @@ const (
 	// type checking so interpolation errors are template-specific; StringTemplateLoweringPass rewrites
 	// it to the `+`/concat chain. Output is always `string`.
 	InstrTypeStringTemplate
+	// convert a reference value (object/array/interface/function/null) to its `string` debug
+	// representation via the runtime reflection printer (zeus_reflect_to_string), which walks the
+	// value's emitted type-info metadata. Emitted by the type checker's emitToString when the value
+	// has no user-defined toString; codegen calls the runtime fn directly (no lowering pass).
+	InstrTypeReflectToString
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1346,6 +1377,8 @@ func (i InstrType) String() string {
 		return "UNBOX"
 	case InstrTypeStringTemplate:
 		return "STRING_TEMPLATE"
+	case InstrTypeReflectToString:
+		return "REFLECT_TO_STRING"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

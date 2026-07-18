@@ -53,14 +53,17 @@ function f(p: P): void {
 	}
 }
 
-// TestPrivateToStringDoesNotSatisfyStringify: a private toString cannot satisfy Stringify — the
-// conversion calls it from outside the class, so it must be public.
-func TestPrivateToStringDoesNotSatisfyStringify(t *testing.T) {
-	runTCExpectError(t, `
+// TestPrivateToStringFallsBackToReflection: a private toString cannot satisfy Stringify (it's called
+// from outside the class), so string conversion falls back to the runtime reflection printer rather
+// than erroring — emitting a REFLECT_TO_STRING.
+func TestPrivateToStringFallsBackToReflection(t *testing.T) {
+	if got := funcReflectCount(t, `
 class C { private toString(): string { return "c"; } }
 function f(c: C): void {
     let s: string = c;
-}`, "assignable")
+}`, "f"); got != 1 {
+		t.Errorf("expected 1 REFLECT_TO_STRING for a non-Stringify object, got %d", got)
+	}
 }
 
 // TestPrivateMethodDoesNotSatisfyInterface: the public-method requirement is general to interface
@@ -84,13 +87,16 @@ function f(c: C): void {
 }`, "assignable")
 }
 
-// TestNonStringifyToStringFails: a value whose type has no toString() cannot convert to string.
-func TestNonStringifyToStringFails(t *testing.T) {
-	runTCExpectError(t, `
+// TestNonStringifyReflects: a value whose type has no toString() still converts to string — via the
+// runtime reflection printer (universal debug rendering), emitting a REFLECT_TO_STRING.
+func TestNonStringifyReflects(t *testing.T) {
+	if got := funcReflectCount(t, `
 class Bare { public x: i32; }
 function f(b: Bare): void {
     let s: string = b;
-}`, "assignable")
+}`, "f"); got != 1 {
+		t.Errorf("expected 1 REFLECT_TO_STRING for a non-Stringify object, got %d", got)
+	}
 }
 
 // TestPureNumericAddNotCoerced: numeric addition of two non-strings is untouched by the concat path.

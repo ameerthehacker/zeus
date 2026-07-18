@@ -102,6 +102,9 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 				markValueAsUsed(part.Value)
 			}
 		}
+	case InstrTypeReflectToString:
+		// The reflected value is used (rendered to its debug string by the runtime printer).
+		markValueAsUsed(AsReflectToStringInstrInput(instr.Input).Value)
 	case InstrTypeInstanceOf:
 		input := AsInstanceOfInstrInput(instr.Input)
 		markValueAsUsed(input.Value)

@@ -34,14 +34,17 @@ function f(): void {
 	}
 }
 
-// TestTemplateInterpolationErrorIsTemplateSpecific: interpolating a value without toString yields a
-// template-specific error (NOT the generic "binary operation" message).
-func TestTemplateInterpolationErrorIsTemplateSpecific(t *testing.T) {
-	runTCExpectError(t, `
+// TestTemplateInterpolationReflectsNonStringify: interpolating a value without toString renders it
+// via the runtime reflection printer (universal debug), emitting a REFLECT_TO_STRING rather than an
+// error.
+func TestTemplateInterpolationReflectsNonStringify(t *testing.T) {
+	if got := funcInstrCount(t, `
 class Bare { public x: i32; }
 function f(o: Bare): void {
     let s: string = `+"`val ${o} ff`"+`;
-}`, "cannot interpolate")
+}`, "f", ir.InstrTypeReflectToString); got != 1 {
+		t.Errorf("expected 1 REFLECT_TO_STRING for the interpolated non-Stringify value, got %d", got)
+	}
 }
 
 // TestEmptyAndStaticTemplatesLower: the empty template (0-part / acc==nil branch) and a static-only

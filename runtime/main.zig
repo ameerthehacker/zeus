@@ -8,6 +8,7 @@ const timers_runtime = @import("timers_runtime.zig");
 const math_runtime = @import("math_runtime.zig");
 const c_ffi_runtime = @import("c_ffi_runtime.zig");
 const process_runtime = @import("process_runtime.zig");
+const reflect_runtime = @import("reflect_runtime.zig");
 
 // Anchor the xev module import so Zig's module-declaration checker is satisfied.
 // timers_runtime.zig is the actual consumer of xev.
@@ -24,5 +25,6 @@ comptime {
     _ = math_runtime;
     _ = c_ffi_runtime;
     _ = process_runtime;
+    _ = reflect_runtime;
     _ = xev;
 }

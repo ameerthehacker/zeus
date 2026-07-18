@@ -23,6 +23,11 @@ func funcBoxCount(t *testing.T, source, funcName string) int {
 	return funcInstrCount(t, source, funcName, ir.InstrTypeBox)
 }
 
+func funcReflectCount(t *testing.T, source, funcName string) int {
+	t.Helper()
+	return funcInstrCount(t, source, funcName, ir.InstrTypeReflectToString)
+}
+
 // TestAutoboxMethodCallEmitsBox: calling a method on a primitive receiver autoboxes it, so a BOX
 // appears at the call site.
 func TestAutoboxMethodCallEmitsBox(t *testing.T) {

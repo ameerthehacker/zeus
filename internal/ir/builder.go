@@ -962,6 +962,25 @@ func (b *IRBuilder) BuildStringTemplate(parts []*StringTemplatePart, span *token
 	return result
 }
 
+// BuildReflectToString emits a REFLECT_TO_STRING converting value (a reference type with no
+// user-defined toString) to its debug `string` via the runtime reflection printer. The result is
+// always a `string`; codegen calls zeus_reflect_to_string directly (no lowering pass).
+func (b *IRBuilder) BuildReflectToString(value zeus_value.Value, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		result.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeReflectToString,
+		Output: result,
+		Input:  NewReflectToStringInstrInput(value),
+		Span:   span,
+	})
+
+	return result
+}
+
 func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.Value, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 

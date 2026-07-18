@@ -399,6 +399,10 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcUnbox(instr)
 	case InstrTypeStringTemplate:
 		p.tcStringTemplate(tc, instr)
+	case InstrTypeReflectToString:
+		// Emitted by emitToString mid-pass with its output type (string) already set; the input is any
+		// reference value, so there is nothing to validate. A case is still required so a REFLECT_TO_STRING
+		// never reaches the default panic if a future path revisits it (mirrors Box/Unbox/StringTemplate).
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
@@ -828,6 +832,23 @@ func isStringType(valueType zeus_value.ValueType) bool {
 	return false
 }
 
+// isReflectable reports whether a value of this type can be rendered to `string` by the runtime
+// reflection printer — every heap reference (object/array/interface/function) plus null. Primitives
+// never reach the reflection fallback (they stringify through their box); void and the like are not
+// reflectable. This is the universal "log anything" fallback used by emitToString.
+func isReflectable(valueType zeus_value.ValueType) bool {
+	// u8[] has a dedicated byte→string decode (it backs `string`); it converts to its text, never a
+	// reflected `[104, 105]` dump — so let it fall through to that cast path.
+	if isU8ArrayType(valueType) {
+		return false
+	}
+	switch valueType.(type) {
+	case zeus_value.ObjectType, zeus_value.ArrayType, zeus_value.InterfaceType, zeus_value.FunctionType, zeus_value.NullType:
+		return true
+	}
+	return false
+}
+
 // isU8ArrayType checks if a type is u8[] (array of unsigned 8-bit integers)
 func isU8ArrayType(valueType zeus_value.ValueType) bool {
 	arrayType, ok := valueType.(zeus_value.ArrayType)
@@ -948,6 +969,13 @@ func (p *TypeCheckingPass) emitToString(tc *TypeChecker, value zeus_value.Value,
 		receiverType = zeus_value.NewObjectType(boxClass)
 	}
 	if !zeus_value.CmpValueType(zeus_value.NewInterfaceType(stringify), receiverType) {
+		// No user-defined toString and not a Stringify box: fall back to the runtime reflection
+		// printer for any reference value (object/array/interface/function/null). This is what lets
+		// `console.log`/concat/templates render *anything* (TS-style debug), driven by the type-info
+		// metadata codegen emits per class. Primitives never reach here — they stringify via their box.
+		if isReflectable(valueType) {
+			return tc.builder.BuildReflectToString(value, span), true
+		}
 		return value, false
 	}
 	receiver := value

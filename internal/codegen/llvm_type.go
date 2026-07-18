@@ -14,6 +14,10 @@ type ZeusRuntimeObjectType int
 const (
 	ZeusRuntimeObjectTypeObject ZeusRuntimeObjectType = 0
 	ZeusRuntimeObjectTypeArray  ZeusRuntimeObjectType = 1
+	// ZeusRuntimeObjectTypeString marks the string primordial so the runtime reflection printer
+	// renders it as quoted text instead of walking its {data, length} fields. Matches
+	// runtime/abi.zig ZeusObjectType.string.
+	ZeusRuntimeObjectTypeString ZeusRuntimeObjectType = 2
 )
 
 type ZeusRuntimeType int

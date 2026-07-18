@@ -24,7 +24,7 @@ inline fn castToBoolObj(ptr: *anyopaque) *ZeusBoolObj {
 
 /// Build a Zeus string object from raw bytes, mirroring zeus_string_concat: allocate a u8[] of the
 /// right length, copy the bytes in, then wrap it in a string via the codegen-synthesized factory.
-fn makeString(text: []const u8) *anyopaque {
+pub fn makeString(text: []const u8) *anyopaque {
     const len: i32 = @intCast(text.len);
     const array_ptr = zeus_new_u8_array(len);
     const array = runtime_util.castToArrayObj(array_ptr);
@@ -37,7 +37,7 @@ fn makeString(text: []const u8) *anyopaque {
 }
 
 /// Write a returned string-object pointer through the Zeus return-wrapper ABI.
-inline fn writeStringResult(return_buffer_ptr_ptr: ?*anyopaque, str_ptr: *anyopaque) void {
+pub inline fn writeStringResult(return_buffer_ptr_ptr: ?*anyopaque, str_ptr: *anyopaque) void {
     if (runtime_util.allocateReturnBuffer(return_buffer_ptr_ptr, @sizeOf(*anyopaque))) |result_bytes| {
         const result_ptr = @as(**anyopaque, @ptrCast(@alignCast(result_bytes.ptr)));
         result_ptr.* = str_ptr;
@@ -56,7 +56,7 @@ inline fn writeF64Result(return_buffer_ptr_ptr: ?*anyopaque, v: f64) void {
 /// (T), NOT widened to f64 — so an f32 prints its shortest f32 form (0.1 -> "0.1", not the f64
 /// expansion 0.10000000149...). An extreme magnitude whose positional decimal would overflow buf
 /// falls back to scientific notation, which is always short.
-fn formatFloat(comptime T: type, buf: []u8, value: T) []const u8 {
+pub fn formatFloat(comptime T: type, buf: []u8, value: T) []const u8 {
     if (std.math.isNan(value)) {
         return std.fmt.bufPrint(buf, "NaN", .{}) catch unreachable;
     }
@@ -72,7 +72,7 @@ fn formatFloat(comptime T: type, buf: []u8, value: T) []const u8 {
 }
 
 /// Format a scalar of type T. Integers are exact ({d}); floats format at their native width.
-fn formatScalar(comptime T: type, buf: []u8, value: T) []const u8 {
+pub fn formatScalar(comptime T: type, buf: []u8, value: T) []const u8 {
     return switch (@typeInfo(T)) {
         .Int => std.fmt.bufPrint(buf, "{d}", .{value}) catch unreachable,
         .Float => formatFloat(T, buf, value),
