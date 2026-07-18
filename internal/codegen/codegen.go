@@ -230,6 +230,10 @@ type CodegenModule struct {
 	interfacePropDispatch  map[int]*interfacePropDispatchInfo
 	targetDataLayout       llvm.TargetData
 	globalLLVMFunctions    map[string]GlobalLLVMFunction
+	// cExternDecls dedups the real C symbols declared for extern("C"/"zeus",...) bindings, keyed by
+	// symbol. Kept separate from globalLLVMFunctions (the fat-ABI runtime-function map) so a C symbol
+	// can never be reused with a mismatched fat-ABI signature, and vice versa.
+	cExternDecls           map[string]GlobalLLVMFunction
 	zeusObjectTypeInfoType llvm.Type
 	// Debug info
 	diBuilder         *llvm.DIBuilder
@@ -337,6 +341,7 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		interfacePropDispatch:  make(map[int]*interfacePropDispatchInfo),
 		targetDataLayout:       targetDataLayout,
 		globalLLVMFunctions:    globalLLVMFunctions,
+		cExternDecls:           make(map[string]GlobalLLVMFunction),
 		zeusObjectTypeInfoType: zeusObjectInfoStructType,
 		diBuilder:              diBuilder,
 		diCompileUnit:          diCompileUnit,
@@ -1207,6 +1212,28 @@ func (c *CodegenModule) genImport(input ir.ImportInstrInput) {
 	}
 }
 
+// cNumericUnderlying maps a C numeric type to the Zeus scalar it is represented as, so genCast can
+// treat cint like i32, clong like i64, csize like u64, cdouble like f64. Non-C types (and cptr/cstr,
+// which never reach genCast) pass through unchanged.
+func cNumericUnderlying(v zeus_value.ValueType) zeus_value.ValueType {
+	ct, ok := v.(zeus_value.CType)
+	if !ok {
+		return v
+	}
+	switch ct.Kind {
+	case zeus_value.CInt:
+		return zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: ct.Span}
+	case zeus_value.CLong:
+		return zeus_value.IntType{Size: zeus_value.I64, Signed: true, Span: ct.Span}
+	case zeus_value.CSize:
+		return zeus_value.IntType{Size: zeus_value.I64, Signed: false, Span: ct.Span}
+	case zeus_value.CDouble:
+		return zeus_value.FloatType{Size: zeus_value.F64, Span: ct.Span}
+	default:
+		return v
+	}
+}
+
 func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) {
 	var result llvm.Value
 	valueType := zeus_value.GetValueType(input.Value)
@@ -1223,13 +1250,27 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 		}
 	}
 
+	// cptr <-> cstr: both are raw addrspace(0) pointers, so the cast is a no-op identity.
+	if _, ok := valueType.(zeus_value.CType); ok {
+		if _, ok2 := input.CastType.(zeus_value.CType); ok2 && !zeus_value.IsCNumericType(valueType) && !zeus_value.IsCNumericType(input.CastType) {
+			c.llvmValues[output.Name] = c.toLLVMValue(input.Value)
+			return
+		}
+	}
+
+	// C-numeric types (cint/clong/csize/cdouble) cast exactly like their underlying Zeus scalar
+	// (i32/i64/u64/f64). Normalize both sides so the int/float matrix below handles them uniformly.
+	// cptr/cstr are strict (rejected in tcCast) and never reach here.
+	valueType = cNumericUnderlying(valueType)
+	castType := cNumericUnderlying(input.CastType)
+
 	src := c.toLLVMValue(input.Value)
-	dstLLVMType := c.toLLVMType(input.CastType)
+	dstLLVMType := c.toLLVMType(castType)
 	name := fmt.Sprintf("%s_cast", input.CastType)
 
 	switch valueType := valueType.(type) {
 	case zeus_value.IntType:
-		switch castType := input.CastType.(type) {
+		switch castType := castType.(type) {
 		case zeus_value.FloatType:
 			// Signedness of the *source* selects signed vs unsigned int→float.
 			if valueType.Signed {
@@ -1260,7 +1301,7 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 			panic(castErrorMsg)
 		}
 	case zeus_value.FloatType:
-		switch castType := input.CastType.(type) {
+		switch castType := castType.(type) {
 		case zeus_value.IntType:
 			// Truncates toward zero; out-of-range is unchecked (LLVM poison) by design.
 			if castType.Signed {
@@ -1285,7 +1326,7 @@ func (c *CodegenModule) genCast(input ir.CastInstrInput, output zeus_value.Var) 
 			panic(castErrorMsg)
 		}
 	case zeus_value.BoolType:
-		switch input.CastType.(type) {
+		switch castType.(type) {
 		case zeus_value.IntType:
 			// bool → int gives 0/1 (i1 zero-extended).
 			result = c.builder.CreateZExt(src, dstLLVMType, name)
@@ -1357,7 +1398,11 @@ func (c *CodegenModule) createClassStructTypes(class zeus_value.Class) (llvm.Typ
 
 func (c *CodegenModule) genObjArrayClass() *ZeusClassLLVMStruct {
 	span := token.NewSpan(*token.NewPosition(0, 0), *token.NewPosition(0, 0))
-	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, nil, "", nil, span)
+	// Mark the synthetic base Object class as primordial so its vtable/header/type-info globals get
+	// INTERNAL linkage (emitted identically per translation unit). It is never user-referenced or
+	// exported, so external linkage only caused duplicate-symbol errors when an object array (e.g. a
+	// string[] returned across modules) forced two TUs to emit it. See genDeclClass isPrimordial.
+	objectClass := zeus_value.NewClass(ZeusObjectClassName, []*zeus_value.ClassProperty{}, []*zeus_value.ClassMethod{}, nil, ZeusObjectClassName, nil, span)
 	objectArrayClass := zeus_value.GetArrayPrimordialClassDefinition(zeus_value.NewArrayType(zeus_value.NewObjectType(objectClass), span))
 	// This array class is built outside the registry, so mark its runtime-backed methods extern
 	// (as the registry does for the classes it creates) — see emitExternMethods.
@@ -2512,8 +2557,57 @@ func (c *CodegenModule) genSuperConstructorCall(input ir.SuperConstructorCallIns
 	c.builder.CreateCall(constructorType, *llvmConstructor, args, "")
 }
 
+// genDeclCExternFunc emits a function declared via extern("C","sym"). It declares the real C symbol
+// with its native C-ABI signature and calls it directly — LLVM's default calling convention IS the
+// C convention, so a plain CreateCall is a C-ABI call. A thin internal wrapper forwards its arguments
+// by value; their LLVM types already match the C ABI (cint->i32, cptr->ptr addrspace(0), ...), so
+// there is no marshalling (honoring the "dumb codegen" principle). The wrapper is renamed to
+// __zeus_cext_<sym> so it never collides with the C symbol itself (e.g. extern("C","abs") abs()).
+func (c *CodegenModule) genDeclCExternFunc(input ir.DeclPrimordialFuncInstrInput) {
+	function := input.Function
+	functionType := zeus_value.ToFunctionType(*function)
+	symbol := function.ExternRuntimeName
+
+	// The wrapper's LLVM signature equals the C signature (same Zeus C-typed params/return).
+	cFuncType := c.toLLVMFunctionType(functionType)
+
+	// Build the internal Zeus-facing wrapper. genFunc names it function.Name and registers it in
+	// llvmFunctions under that name (so callers resolve to it); rename its LLVM symbol so the real C
+	// decl below can own the C symbol. InternalLinkage + alwaysinline so it collapses at call sites.
+	wrapper := c.genFunc(*function)
+	wrapper.SetName("__zeus_cext_" + symbol)
+	wrapper.SetLinkage(llvm.InternalLinkage)
+	alwaysInlineKind := llvm.AttributeKindID("alwaysinline")
+	wrapper.AddAttributeAtIndex(-1, c.cxt.CreateEnumAttribute(alwaysInlineKind, 0))
+
+	// Declare (dedup) the real C symbol with external linkage; LLVM's default calling convention is C.
+	// Deduped in its own map so it can't be confused with a fat-ABI runtime function of the same name.
+	var cFunc llvm.Value
+	if existing, ok := c.cExternDecls[symbol]; ok {
+		cFunc = existing.Function
+	} else {
+		cFunc = llvm.AddFunction(c.module, symbol, cFuncType)
+		cFunc.SetLinkage(llvm.ExternalLinkage)
+		c.cExternDecls[symbol] = GlobalLLVMFunction{cFunc, cFuncType}
+	}
+
+	entryBlock := llvm.AddBasicBlock(wrapper, "entry")
+	c.builder.SetInsertPointAtEnd(entryBlock)
+	result := c.builder.CreateCall(cFuncType, cFunc, wrapper.Params(), "")
+	if functionType.ReturnType == nil || zeus_value.IsVoidType(functionType.ReturnType) {
+		c.builder.CreateRetVoid()
+	} else {
+		c.builder.CreateRet(result)
+	}
+}
+
 func (c *CodegenModule) genDeclPrimordialFunc(input ir.DeclPrimordialFuncInstrInput) {
 	function := input.Function
+	// extern("C","sym") functions take the direct C-ABI path, not the fat runtime ABI below.
+	if function.IsCExtern {
+		c.genDeclCExternFunc(input)
+		return
+	}
 	functionType := zeus_value.ToFunctionType(*function)
 
 	// The runtime symbol is the function's ExternRuntimeName when set (extern prelude functions),
@@ -2580,6 +2674,17 @@ func (c *CodegenModule) getDefaultLLVMValue(value zeus_value.ValueType) llvm.Val
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
 	case zeus_value.FunctionType:
 		return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+	case zeus_value.CType:
+		switch value.Kind {
+		case zeus_value.CInt:
+			return llvm.ConstInt(c.cxt.Int32Type(), 0, false)
+		case zeus_value.CLong, zeus_value.CSize:
+			return llvm.ConstInt(c.cxt.Int64Type(), 0, false)
+		case zeus_value.CDouble:
+			return llvm.ConstFloat(c.cxt.DoubleType(), 0.0)
+		default:
+			return llvm.ConstNull(llvm.PointerType(c.cxt.VoidType(), 0))
+		}
 	default:
 		panic(fmt.Sprintf("cannot get default llvm value for type: %T", value))
 	}
@@ -2606,7 +2711,16 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 		switch instr.Type {
 		case ir.InstrTypeDeclFunc:
 			input := ir.AsDeclFuncInstrInput(instr.Input)
-			c.genFunc(*input.Function)
+			llvmFunc := c.genFunc(*input.Function)
+			// Apply the exported function's module-scoped name at creation time (genDeclFunc also does
+			// this, idempotently, during the Phase 3 walk). Doing it here means an exported function is
+			// never left transiently squatting on its bare source name — which would otherwise collide
+			// with a C-extern's real symbol of the same name (e.g. an exported `exit` vs libc `exit`),
+			// forcing LLVM to rename the C decl to `exit.1` and breaking the link.
+			if input.Function.ExportModulePath != "" {
+				llvmFunc.SetName(module.GetModuleScopedName(input.Function.ExportModulePath, input.Function.Name))
+				llvmFunc.SetLinkage(llvm.ExternalLinkage)
+			}
 		case ir.InstrTypeDeclClassMethod:
 			input := ir.AsDeclClassMethodInstrInput(instr.Input)
 			c.genFunc(c.appendThisParamToFunction(*input.Method, *input.Class))

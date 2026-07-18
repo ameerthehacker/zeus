@@ -1,0 +1,17 @@
+[
+    {
+        "name": "process.setEnv/getEnv/hasEnv round-trip and unset handling",
+        "exit": "0",
+        "entry": "env.zs"
+    },
+    {
+        "name": "process.cwd returns a non-empty path",
+        "exit": "0",
+        "entry": "cwd.zs"
+    },
+    {
+        "name": "process.exit terminates with the given code",
+        "exit": "7",
+        "entry": "exit.zs"
+    }
+]

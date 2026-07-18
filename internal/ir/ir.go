@@ -1519,6 +1519,7 @@ func (g *IRModule) VisitFunctionDeclExpr(expr *ast.FunctionDeclExprNode) zeus_va
 		}
 		fn := zeus_value.NewFunction(expr.Name.Name.Value, params, returnType, expr.Name.GetSpan())
 		fn.ExternRuntimeName = expr.ExternSymbol
+		fn.IsCExtern = expr.IsCExtern
 		zeus_value.Registry.RegisterFunction(fn)
 		return fn
 	}

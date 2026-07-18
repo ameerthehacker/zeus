@@ -109,6 +109,21 @@ func (c *CodegenModule) toLLVMBuiltInType(_type zeus_value.ValueType) llvm.Type 
 		return c.cxt.VoidType()
 	case zeus_value.OpaqueType:
 		return llvm.PointerType(c.cxt.VoidType(), 1)
+	case zeus_value.CType:
+		// C-ABI types. Numeric kinds map to native scalars; pointer kinds (cptr/cstr) map to a RAW
+		// addrspace(0) pointer — never a GC root — distinguishing them from OpaqueType (addrspace 1).
+		switch _type.Kind {
+		case zeus_value.CInt:
+			return c.cxt.Int32Type()
+		case zeus_value.CLong, zeus_value.CSize:
+			return c.cxt.Int64Type()
+		case zeus_value.CDouble:
+			return c.cxt.DoubleType()
+		case zeus_value.CPtr, zeus_value.CStr:
+			return llvm.PointerType(c.cxt.VoidType(), 0)
+		default:
+			panic(fmt.Sprintf("cannot convert C type to llvm type: %v", _type))
+		}
 	default:
 		panic(fmt.Sprintf("cannot convert zeus type to llvm type: %T", _type))
 	}

@@ -1,0 +1,7 @@
+[
+    {
+        "name": "os.platform/arch/hostname/tmpdir/totalmem return sane values",
+        "exit": "0",
+        "entry": "os_info.zs"
+    }
+]

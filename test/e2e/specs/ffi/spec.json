@@ -1,0 +1,17 @@
+[
+    {
+        "name": "Direct C-ABI call to libc getpid() via extern(\"C\")",
+        "exit": "0",
+        "entry": "ffi_getpid.zs"
+    },
+    {
+        "name": "cint<->i32 numeric bridge round-trip via libc abs()",
+        "exit": "0",
+        "entry": "ffi_cast.zs"
+    },
+    {
+        "name": "generic FFI marshalling: malloc/read/write/free + string<->cstr",
+        "exit": "0",
+        "entry": "ffi_marshal.zs"
+    }
+]

@@ -1393,7 +1393,30 @@ func (p *Parser) handlePanic() {
 func (p *Parser) parseExternFunctionStmt() ast.StmtNode {
 	externKw := p.consume() // 'extern'
 	p.consumeToken(token.TokenTypeLeftParen, "after 'extern'")
-	symbolToken := p.consumeToken(token.TokenTypeString, "extern runtime symbol")
+	firstToken := p.consumeToken(token.TokenTypeString, "extern runtime symbol")
+
+	// A two-argument extern selects a direct C-ABI binding via an ABI marker:
+	//   extern("C", "sym")     -> the raw C symbol `sym` (e.g. libc `open`)
+	//   extern("zeus", "sym")  -> the Zeus runtime symbol `zeus_sym` (prefix added automatically)
+	// A single string is the legacy fat-ABI Zig runtime symbol (used verbatim).
+	externSymbol := firstToken.Value
+	isCExtern := false
+	if p.peek().Type == token.TokenTypeComma {
+		p.consume() // ','
+		nameToken := p.consumeToken(token.TokenTypeString, "extern symbol name")
+		switch firstToken.Value {
+		case "C":
+			externSymbol = nameToken.Value
+			isCExtern = true
+		case "zeus":
+			externSymbol = "zeus_" + nameToken.Value
+			isCExtern = true
+		default:
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError,
+				fmt.Sprintf("unknown extern ABI %q; expected \"C\" or \"zeus\"", firstToken.Value), firstToken.Span))
+		}
+	}
+
 	p.consumeToken(token.TokenTypeRightParen, "after extern symbol")
 	p.consumeToken(token.TokenTypeFunction, "'function' after extern(...)")
 
@@ -1406,7 +1429,8 @@ func (p *Parser) parseExternFunctionStmt() ast.StmtNode {
 		Params:       params,
 		Body:         nil,
 		ReturnType:   returnType,
-		ExternSymbol: symbolToken.Value,
+		ExternSymbol: externSymbol,
+		IsCExtern:    isCExtern,
 		Span:         &token.Span{Start: externKw.Span.Start, End: semi.Span.End},
 	}}
 }

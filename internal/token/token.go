@@ -133,6 +133,13 @@ const (
 	TokenTypeBoolean
 	// null type
 	TokenTypeNull
+	// C ABI types (FFI boundary; see internal/zeus_value CType)
+	TokenTypeCInt
+	TokenTypeCLong
+	TokenTypeCSize
+	TokenTypeCPtr
+	TokenTypeCStr
+	TokenTypeCDouble
 	datatype_end
 	// template literal markers
 	TokenTypeTemplateLiteralStr       // static segment (always emitted, possibly "")
@@ -299,6 +306,18 @@ func (t TokenType) String() string {
 		return "f64"
 	case TokenTypeBoolean:
 		return "boolean"
+	case TokenTypeCInt:
+		return "cint"
+	case TokenTypeCLong:
+		return "clong"
+	case TokenTypeCSize:
+		return "csize"
+	case TokenTypeCPtr:
+		return "cptr"
+	case TokenTypeCStr:
+		return "cstr"
+	case TokenTypeCDouble:
+		return "cdouble"
 	case TokenTypeClass:
 		return "class"
 	case TokenTypePrivate:
@@ -391,6 +410,12 @@ var DataTypes = map[string]TokenType{
 	TokenTypeBoolean.String(): TokenTypeBoolean,
 	TokenTypeVoid.String():    TokenTypeVoid,
 	TokenTypeNull.String():    TokenTypeNull,
+	TokenTypeCInt.String():    TokenTypeCInt,
+	TokenTypeCLong.String():   TokenTypeCLong,
+	TokenTypeCSize.String():   TokenTypeCSize,
+	TokenTypeCPtr.String():    TokenTypeCPtr,
+	TokenTypeCStr.String():    TokenTypeCStr,
+	TokenTypeCDouble.String(): TokenTypeCDouble,
 }
 
 type Position struct {

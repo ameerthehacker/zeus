@@ -491,6 +491,20 @@ func (f *formatter) printTemplate(e *ast.TemplateStringExprNode) Doc {
 	return concat(parts...)
 }
 
+// externCallText reconstructs the extern(...) call for a binding, choosing the cleanest form:
+//   direct C-ABI to a zeus_ runtime symbol -> extern("zeus", "<rest>")
+//   direct C-ABI to any other C symbol     -> extern("C", "<symbol>")
+//   fat-ABI Zig runtime symbol (legacy)    -> extern("<symbol>")
+func externCallText(symbol string, isCExtern bool) string {
+	if isCExtern {
+		if strings.HasPrefix(symbol, "zeus_") {
+			return "extern(\"zeus\", \"" + strings.TrimPrefix(symbol, "zeus_") + "\")"
+		}
+		return "extern(\"C\", \"" + symbol + "\")"
+	}
+	return "extern(\"" + symbol + "\")"
+}
+
 func (f *formatter) printFunction(e *ast.FunctionDeclExprNode) Doc {
 	// Anonymous functions come from fat-arrow syntax (`(params) => { body }`) and
 	// are rendered back as arrows; named ones use the `function` keyword. The AST
@@ -505,7 +519,7 @@ func (f *formatter) printFunction(e *ast.FunctionDeclExprNode) Doc {
 
 	sig := concat(text("function "+e.Name.Name.Value), f.paramList(e.Params), f.returnType(e.ReturnType))
 	if e.ExternSymbol != "" {
-		return concat(text("extern(\""+e.ExternSymbol+"\") "), sig, f.semi())
+		return concat(text(externCallText(e.ExternSymbol, e.IsCExtern)+" "), sig, f.semi())
 	}
 	if e.Body == nil {
 		return concat(sig, f.semi())

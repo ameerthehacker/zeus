@@ -153,10 +153,13 @@ type Function struct {
 	Class        *Class // non-nil when this function is a class method
 	// IsVariadic is true when the final parameter is a rest parameter (`...args: T[]`).
 	IsVariadic bool
-	// ExternRuntimeName, when non-empty, is the Zig runtime symbol this method's body
-	// forwards to (see ClassMethod.IsExtern). It makes an extern method self-describing —
-	// codegen no longer needs the primordial name to derive the runtime symbol.
+	// ExternRuntimeName, when non-empty, is the symbol this function/method forwards to. When
+	// IsCExtern is false it is a Zig runtime symbol called via the fat ABI (see ClassMethod.IsExtern);
+	// when IsCExtern is true it is a raw C symbol called directly via the C ABI (extern("C","sym")).
 	ExternRuntimeName string
+	// IsCExtern marks a direct C-ABI binding (extern("C","sym")). Codegen emits genDeclCExternFunc:
+	// a declaration of the real C symbol plus a thin internal wrapper that forwards args by value.
+	IsCExtern bool
 	// ExportModulePath, when non-empty, is the path of the module that `export`s this function.
 	// Codegen gives it the module-scoped external symbol name so importers link to it. Recorded
 	// on the Function (not just the EXPORT instruction) so genDeclFunc can apply the linkage
