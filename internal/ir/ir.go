@@ -30,12 +30,14 @@ type LoopContext struct {
 }
 
 type IRModule struct {
-	irBuilder        *IRBuilder
-	isLValueExpr     bool
-	errors           []*zeus_error.ZeusError
-	modulePath       string
-	exportedSymbols  map[string]zeus_value.Value
-	getModule        func(modulePath string) *IRModule
+	irBuilder       *IRBuilder
+	isLValueExpr    bool
+	errors          []*zeus_error.ZeusError
+	modulePath      string
+	exportedSymbols map[string]zeus_value.Value
+	getModule       func(modulePath string) *IRModule
+	// importedNames: names already imported into this module, to reject a duplicate import.
+	importedNames    map[string]bool
 	tryContextStack  []*TryContext  // Stack of try contexts for nested try blocks
 	loopContextStack []*LoopContext // Stack of loop contexts for nested loops
 	// usedIRNames tracks every IR-level name ever emitted in this module (functions,
@@ -163,6 +165,7 @@ func NewIRModule(ir_builder *IRBuilder, modulePath string, isEntryPoint bool, ge
 		exportedSymbols: map[string]zeus_value.Value{},
 		getModule:       getIRModule,
 		usedIRNames:     map[string]bool{},
+		importedNames:   map[string]bool{},
 		isEntryPoint:    isEntryPoint,
 	}
 }
@@ -700,7 +703,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			if op == InstrTypePower {
 				newValue = g.buildPowerOp(currentValue, right, nil, expr.GetSpan())
 			} else {
-				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+				newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 
 			g.irBuilder.BuildSetIndex(arrayRef.ArrayObject, arrayRef.Index, newValue, expr.GetSpan())
@@ -715,7 +718,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 			if op == InstrTypePower {
 				newValue = g.buildPowerOp(currentValue, right, nil, expr.GetSpan())
 			} else {
-				newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+				newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 			}
 			return g.irBuilder.BuildSetAccessor(accLVal.Object, accLVal.AccessorName, newValue, expr.GetSpan())
 		}
@@ -737,7 +740,7 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 		if op == InstrTypePower {
 			newValue = g.buildPowerOp(currentValue, right, addr.ValueType, expr.GetSpan())
 		} else {
-			newValue = g.irBuilder.BuildBinaryOp(currentValue, right, op, expr.GetSpan())
+			newValue = g.buildArithBinaryOp(currentValue, right, op, expr.GetSpan())
 		}
 		g.irBuilder.BuildStore(addr, newValue, expr.GetSpan())
 		return g.irBuilder.BuildLoad(addr, expr.GetSpan())
@@ -774,9 +777,9 @@ func (g *IRModule) VisitBinaryExpr(expr *ast.BinaryExprNode) zeus_value.Value {
 	case token.TokenTypeStar:
 		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMul, expr.GetSpan())
 	case token.TokenTypeSlash:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
+		return g.buildArithBinaryOp(left, right, InstrTypeDiv, expr.GetSpan())
 	case token.TokenTypePercent:
-		return g.irBuilder.BuildBinaryOp(left, right, InstrTypeMod, expr.GetSpan())
+		return g.buildArithBinaryOp(left, right, InstrTypeMod, expr.GetSpan())
 	case token.TokenTypeDoubleStar:
 		return g.buildPowerOp(left, right, nil, expr.GetSpan())
 	case token.TokenTypeBangEqual:
@@ -836,6 +839,45 @@ func (g *IRModule) VisitGroupingExpr(expr *ast.GroupingExprNode) zeus_value.Valu
 	return expr.Expr.Accept(g)
 }
 
+// ternaryUnifiedType returns the type both ternary branches should widen to for a numeric
+// int/float (or float/float) mismatch — the exact case that first-store inference gets wrong
+// (e.g. `cond ? 1 : 2.0` must be f64, not i32). It returns nil for every other combination
+// (equal types, int/int widening, object/null), leaving those to the type checker's existing
+// inference, which already handles them correctly.
+// ternaryUnifiedType returns the type both ternary branches should widen to for a float-involved
+// numeric mismatch (e.g. `cond ? 1 : 2.0` -> f64), or nil to leave it to first-store inference.
+func ternaryUnifiedType(a, b zeus_value.ValueType) zeus_value.ValueType {
+	if a == nil || b == nil || zeus_value.IsUndefinedType(a) || zeus_value.IsUndefinedType(b) {
+		return nil
+	}
+	// Only a float-involved numeric mismatch needs unifying here; equal/int-int/object types already
+	// resolve via first-store inference (nil). Reuse GetBiggerType so ternaries widen like arithmetic.
+	if zeus_value.CmpValueType(a, b) {
+		return nil
+	}
+	if (zeus_value.IsFloatType(a) || zeus_value.IsFloatType(b)) &&
+		zeus_value.IsNumberType(a) && zeus_value.IsNumberType(b) {
+		return zeus_value.GetBiggerType(a, b)
+	}
+	return nil
+}
+
+// inheritanceReaches reports whether `parent`'s ancestor chain reaches the class being declared
+// (matched by name — that class object doesn't exist yet); i.e. an inheritance cycle.
+func inheritanceReaches(parent *zeus_value.Class, sourceName, irName string) bool {
+	seen := map[*zeus_value.Class]bool{}
+	for c := parent; c != nil; c = c.ParentClass {
+		if seen[c] {
+			return true
+		}
+		seen[c] = true
+		if c.Name == sourceName || c.OriginalName == sourceName || c.Name == irName {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value {
 	span := expr.GetSpan()
 
@@ -847,30 +889,48 @@ func (g *IRModule) VisitTernaryExpr(expr *ast.TernaryExprNode) zeus_value.Value 
 	thenBlock := g.irBuilder.BuildSuccessorBlock()
 	elseBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// Evaluate the then-branch first (in thenBlock) to discover the result type.
-	// The type checker will later resolve any unresolved types from the stores.
+	// Evaluate both branches up front to unify their result type. Capture where each branch *ends*
+	// (a nested ternary moves the insertion point) so the store/jmp lands where the value is live.
 	g.irBuilder.SetInsertionBlock(thenBlock)
 	thenValue := expr.Then.Accept(g)
+	thenEndBlock := g.irBuilder.GetInsertionBlock()
+	g.irBuilder.SetInsertionBlock(elseBlock)
+	elseValue := expr.Else.Accept(g)
+	elseEndBlock := g.irBuilder.GetInsertionBlock()
+
+	var resultDeclType zeus_value.ValueType = zeus_value.UndefinedType{Span: span}
+	unified := ternaryUnifiedType(zeus_value.GetValueType(thenValue), zeus_value.GetValueType(elseValue))
+	if unified != nil {
+		resultDeclType = unified
+	}
 
 	// Return to parentBlock to declare the result variable and emit the conditional jump.
 	g.irBuilder.SetInsertionBlock(parentBlock)
-	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", zeus_value.UndefinedType{Span: span}, false, nil, span))
+	resultVar := g.irBuilder.BuildVarDecl(NewVarDecl("ternary", resultDeclType, false, nil, span))
 	g.irBuilder.BuildCondJmp(thenBlock, elseBlock, condition, span)
 
-	// Finish the then-block: store the then-value and jump to merge.
-	g.irBuilder.SetInsertionBlock(thenBlock)
+	g.irBuilder.SetInsertionBlock(thenEndBlock)
 	mergeBlock := g.irBuilder.BuildSuccessorBlock()
-	g.irBuilder.BuildStore(resultVar, thenValue, span)
+	g.irBuilder.BuildStore(resultVar, g.widenTernaryBranch(thenValue, unified, span), span)
 	g.irBuilder.BuildJmp(mergeBlock, span)
 
-	// Else-block: evaluate else-branch, store, and jump to merge.
-	g.irBuilder.SetInsertionBlock(elseBlock)
-	elseValue := expr.Else.Accept(g)
-	g.irBuilder.BuildStore(resultVar, elseValue, span)
+	g.irBuilder.SetInsertionBlock(elseEndBlock)
+	g.irBuilder.BuildStore(resultVar, g.widenTernaryBranch(elseValue, unified, span), span)
 	g.irBuilder.BuildJmp(mergeBlock, span)
 
 	g.irBuilder.SetInsertionBlock(mergeBlock)
 	return g.irBuilder.BuildLoad(resultVar, span)
+}
+
+// widenTernaryBranch casts a branch value to the unified type; no-op when target is nil or matches.
+func (g *IRModule) widenTernaryBranch(value zeus_value.Value, target zeus_value.ValueType, span *token.Span) zeus_value.Value {
+	if target == nil || value == nil {
+		return value
+	}
+	if vt := zeus_value.GetValueType(value); vt != nil && !zeus_value.CmpValueType(vt, target) {
+		return g.irBuilder.BuildCast(value, target, span)
+	}
+	return value
 }
 
 // VisitCastExpr emits an explicit `expr as Type` cast. Numeric/bool casts are unchecked
@@ -899,12 +959,14 @@ func (g *IRModule) maybeEmitDowncastCheck(value zeus_value.Value, targetType zeu
 	if !ok || dstObj.Class == nil {
 		return
 	}
-	srcObj, ok := zeus_value.GetValueType(value).(zeus_value.ObjectType)
-	if !ok {
-		return // non-object source; tcCast reports any illegal cast
+	srcType := zeus_value.GetValueType(value)
+	srcObj, isObj := srcType.(zeus_value.ObjectType)
+	if !isObj && !zeus_value.IsInterfaceType(srcType) {
+		return // non-object, non-interface source; tcCast reports any illegal cast
 	}
-	// Upcast or same type: no runtime check needed.
-	if srcObj.Class != nil && zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) {
+	// Upcast or same type: no runtime check needed. (Interface sources always need the check —
+	// the concrete runtime class is unknown statically.)
+	if isObj && srcObj.Class != nil && zeus_value.IsSubclassOf(srcObj.Class, dstObj.Class) {
 		return
 	}
 	// Downcast (or statically-unrelated, which tcCast rejects — the guard is harmless): verify the
@@ -2069,8 +2131,26 @@ func (g *IRModule) VisitIndexingExpression(expr *ast.IndexingExprNode) zeus_valu
 		g.emitBoundsCheck(currentValue, indices[0], expr.GetSpan())
 	}
 
-	// Emit GET_INDEX with all indices (lowering pass will handle the .get() calls)
-	return g.irBuilder.BuildGetIndex(currentValue, indices, expr.GetSpan())
+	result := g.irBuilder.BuildGetIndex(currentValue, indices, expr.GetSpan())
+
+	// Type the result with the element type now (peeling one dim per index) so a following member
+	// access like `arr[i].getter` can resolve accessors/fields; otherwise it's untyped until later.
+	if resultVar := zeus_value.AsVar(result); resultVar != nil {
+		elemType := zeus_value.GetValueType(currentValue)
+		for range indices {
+			peeled := arrayElementTypeOf(elemType)
+			if peeled == nil {
+				elemType = nil
+				break
+			}
+			elemType = peeled
+		}
+		if elemType != nil {
+			resultVar.ValueType = elemType
+		}
+	}
+
+	return result
 }
 
 func (g *IRModule) VisitBoolean(expr *ast.BooleanExprNode) zeus_value.Value {
@@ -2464,6 +2544,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 				initValue = property.Initializer.Accept(g)
 			}
 			varDecl := NewVarDecl(globalName, propType, false, initValue, property.Name.GetSpan())
+			varDecl.IsStatic = true
 			emittedGlobal := g.irBuilder.BuildGlobalVarDecl(varDecl)
 			emittedGlobal.OriginalName = property.Name.Name.Value
 			cp := zeus_value.NewClassProperty(propVar, property.AccessModifier, property.IsReadonly, true, emittedGlobal)
@@ -2610,6 +2691,14 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	if expr.ParentClass != nil {
 		if parentVal, ok := g.symbolTable().GetSymbol(expr.ParentClass.Name.Value); ok {
 			parentClass = zeus_value.AsClass(parentVal)
+		}
+		// Reject inheritance cycles — otherwise they compile and recurse forever at construction.
+		if parentClass != nil && inheritanceReaches(parentClass, sourceName, irClassName) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("circular inheritance: class '%s' cannot extend itself, directly or indirectly", sourceName),
+				Span:    expr.ParentClass.Name.Span,
+			})
+			parentClass = nil // break the cycle so later passes/codegen don't loop
 		}
 	}
 
@@ -2785,7 +2874,15 @@ func (g *IRModule) VisitInterfaceDeclExpr(expr *ast.InterfaceDeclExprNode) zeus_
 }
 
 func (g *IRModule) VisitObjectPropertyAccessExpr(expr *ast.ObjectPropertyAccessExprNode) zeus_value.Value {
+	// A member receiver is always an rvalue, even in `arr[i].prop = x`. For a subscript receiver,
+	// clear isLValueExpr so it loads the typed element instead of an untyped element-ref (which
+	// defeats accessor/field resolution).
+	savedLValue := g.isLValueExpr
+	if g.isLValueExpr && ast.AsIndexingExpr(expr.Object) != nil {
+		g.isLValueExpr = false
+	}
 	object := expr.Object.Accept(g)
+	g.isLValueExpr = savedLValue
 	// The object sub-expression failed to resolve (e.g. undefined identifier); the
 	// underlying error was already reported. Bail out instead of dereferencing nil.
 	if object == nil {
@@ -3034,6 +3131,63 @@ func (g *IRModule) emitBoundsCheck(array zeus_value.Value, index zeus_value.Valu
 	g.irBuilder.SetInsertionBlock(continueBlock)
 }
 
+// emitIntDivByZeroCheck throws a catchable ArithmeticException before an integer div/mod by zero
+// (otherwise UB). Float div-by-zero is well-defined (Infinity) and left unchecked.
+func (g *IRModule) emitIntDivByZeroCheck(divisor zeus_value.Value, span *token.Span) {
+	divisorType := zeus_value.GetValueType(divisor)
+	if _, isInt := divisorType.(zeus_value.IntType); !isInt {
+		return // only integer division needs the guard
+	}
+
+	// Constant divisor: literal 0 is a compile error, any non-zero literal needs no guard.
+	if c := zeus_value.AsConstant(divisor); c != nil {
+		if isZeroIntLiteral(c.Value) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: "division by zero",
+				Span:    span,
+			})
+		}
+		return
+	}
+
+	throwBlock := g.irBuilder.BuildSuccessorBlock()
+	continueBlock := g.irBuilder.BuildSuccessorBlock()
+
+	zero := zeus_value.NewConstant("0", divisorType, span)
+	isZero := g.irBuilder.BuildBinaryOp(divisor, zero, InstrTypeEqEq, span)
+	g.irBuilder.BuildCondJmp(throwBlock, continueBlock, isZero, span)
+
+	g.irBuilder.SetInsertionBlock(throwBlock)
+	g.emitThrowError("ArithmeticException", "division by zero", span)
+
+	g.irBuilder.SetInsertionBlock(continueBlock)
+}
+
+// maybeEmitDivByZeroCheck emits the divide-by-zero guard only for the div/modulo operators.
+func (g *IRModule) maybeEmitDivByZeroCheck(op InstrType, divisor zeus_value.Value, span *token.Span) {
+	if op == InstrTypeDiv || op == InstrTypeMod {
+		g.emitIntDivByZeroCheck(divisor, span)
+	}
+}
+
+// buildArithBinaryOp is the single emit path for arithmetic ops in VisitBinaryExpr, so the
+// div-by-zero guard (a no-op for non-div/mod) can't be forgotten at any site.
+func (g *IRModule) buildArithBinaryOp(left, right zeus_value.Value, op InstrType, span *token.Span) zeus_value.Value {
+	g.maybeEmitDivByZeroCheck(op, right, span)
+	return g.irBuilder.BuildBinaryOp(left, right, op, span)
+}
+
+// isZeroIntLiteral reports whether an integer literal string denotes zero in any radix.
+func isZeroIntLiteral(s string) bool {
+	if v, err := strconv.ParseInt(s, 0, 64); err == nil {
+		return v == 0
+	}
+	if v, err := strconv.ParseUint(s, 0, 64); err == nil {
+		return v == 0
+	}
+	return false
+}
+
 // emitThrowError creates an Error object with the given name and message and throws it
 func (g *IRModule) emitThrowError(errorName string, errorMessage string, span *token.Span) {
 	// Get the Error class from symbol table
@@ -3100,6 +3254,13 @@ func (g *IRModule) VisitImportStmt(stmt *ast.ImportStmtNode) {
 	}
 
 	for _, _import := range stmt.Imports {
+		// One import per name per module (previously the last silently won).
+		if g.importedNames[_import.Name.Value] {
+			g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, fmt.Sprintf("duplicate import of '%s'", _import.Name.Value), _import.Name.Span))
+			continue
+		}
+		g.importedNames[_import.Name.Value] = true
+
 		importedValue, ok := irModule.GetExportedSymbol(_import.Name.Value)
 
 		if !ok {

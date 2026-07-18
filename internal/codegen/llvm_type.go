@@ -137,10 +137,19 @@ func (c *CodegenModule) toLLVMConstant(value zeus_value.Constant) llvm.Value {
 	switch value.ValueType.(type) {
 	case zeus_value.IntType:
 		intType := value.ValueType.(zeus_value.IntType)
-		intValue, err := strconv.ParseInt(value.Value, 0, 64)
-		zeus_error.Assert(err == nil, fmt.Sprintf("cannot convert int constant string to int: %d", intValue))
+		// u64 literals can exceed int64 max, so unsigned parses with ParseUint.
+		var bits uint64
+		if intType.Signed {
+			intValue, err := strconv.ParseInt(value.Value, 0, 64)
+			zeus_error.Assert(err == nil, fmt.Sprintf("cannot convert int constant string to int: %s", value.Value))
+			bits = uint64(intValue)
+		} else {
+			uintValue, err := strconv.ParseUint(value.Value, 0, 64)
+			zeus_error.Assert(err == nil, fmt.Sprintf("cannot convert unsigned int constant string to uint: %s", value.Value))
+			bits = uintValue
+		}
 
-		return llvm.ConstInt(c.toLLVMIntType(intType), uint64(intValue), intType.Signed)
+		return llvm.ConstInt(c.toLLVMIntType(intType), bits, intType.Signed)
 	case zeus_value.FloatType:
 		floatType := value.ValueType.(zeus_value.FloatType)
 		floatValue, err := strconv.ParseFloat(value.Value, 64)

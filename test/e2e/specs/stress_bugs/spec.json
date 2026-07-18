@@ -1,0 +1,166 @@
+[
+    {
+        "name": "REGRESSION (fixed): same-named sibling-scope locals no longer collide/crash codegen",
+        "exit": "0",
+        "entry": "objfield_arrayindex_crash.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): object-element array type across modules links (weak Object symbols)",
+        "exit": "0",
+        "entry": "crossmod_array_dup.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): cross-module static member access compiles",
+        "exit": "0",
+        "entry": "crossmod_static_ice.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): throw inside a catch no longer loops (propagates to outer handler)",
+        "exit": "0",
+        "entry": "throw_in_catch.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): duplicate same-name import is now a compile error",
+        "exit": "1",
+        "entry": "duplicate_import.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "duplicate import of 'val'"
+        ]
+    },
+    {
+        "name": "REGRESSION (fixed): import order no longer triggers a false circular dependency",
+        "exit": "0",
+        "entry": "import_order_circular.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): accessor (get/set) on an array-subscript receiver resolves",
+        "exit": "0",
+        "entry": "accessor_on_subscript.zs"
+    },
+    {
+        "name": "INTENDED: arrays are invariant (C[] not assignable to Interface[])",
+        "exit": "1",
+        "entry": "array_not_covariant.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "does not match expected type"
+        ]
+    },
+    {
+        "name": "KNOWN GAP: no number->string yet (console.log is string-only) - use itoa",
+        "exit": "1",
+        "entry": "cannot_print_number.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "does not match expected type 'string'"
+        ]
+    },
+    {
+        "name": "INTENDED (docs fixed): fields default to private; use `public` to expose",
+        "exit": "1",
+        "entry": "field_default_private.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "not accessible in class Person"
+        ]
+    },
+    {
+        "name": "REGRESSION (fixed): scientific-notation float literal (6.022e23) parses",
+        "exit": "0",
+        "entry": "scientific_notation.zs"
+    },
+    {
+        "name": "INTENDED (docs fixed): function-type syntax is (T,T) => R, not function(...)",
+        "exit": "1",
+        "entry": "fntype_docs_syntax.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "expected data type in variable declaration"
+        ]
+    },
+    {
+        "name": "REGRESSION (fixed): unsigned literal >= 2^63 compiles (ParseUint)",
+        "exit": "0",
+        "entry": "u64_literal_ice.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): f32 arithmetic with a float literal compiles (literal adopts f32)",
+        "exit": "0",
+        "entry": "f32_literal_arith.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): interface value can be downcast to a concrete implementer",
+        "exit": "0",
+        "entry": "iface_downcast_rejected.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): integer divide-by-zero throws a catchable ArithmeticException",
+        "exit": "2",
+        "entry": "divzero_uncaught.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): Array.slice clamps start/end to [0,length] (no over-read/segfault)",
+        "exit": "0",
+        "entry": "slice_no_clamp.zs"
+    },
+    {
+        "name": "REGRESSION (fixed): self/circular inheritance is rejected at compile time",
+        "exit": "1",
+        "entry": "self_inheritance.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "circular inheritance"
+        ]
+    },
+    {
+        "name": "REGRESSION (fixed): ternary unifies branches (flag ? int : float is f64)",
+        "exit": "0",
+        "entry": "ternary_first_branch.zs"
+    },
+    {
+        "name": "INTENDED: ** always yields f64; integer power needs a cast",
+        "exit": "1",
+        "entry": "pow_returns_f64.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "not assignable"
+        ]
+    },
+    {
+        "name": "KNOWN GAP: no number->string, so template ${number} is rejected (skipped by design)",
+        "exit": "1",
+        "entry": "template_number.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "binary operation"
+        ]
+    },
+    {
+        "name": "KNOWN GAP: finally is not supported yet (planned)",
+        "exit": "1",
+        "entry": "finally_block.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "expected ;"
+        ]
+    },
+    {
+        "name": "FIXED: calling a non-function field now reports it is not callable",
+        "exit": "1",
+        "entry": "call_nonfn_field.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "is not callable"
+        ]
+    },
+    {
+        "name": "FIXED: arg-count error now anchors to the call site",
+        "exit": "1",
+        "entry": "argcount_at_definition.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "expected 2 arguments"
+        ]
+    }
+]

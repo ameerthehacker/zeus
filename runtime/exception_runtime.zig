@@ -102,8 +102,10 @@ export fn zeus_throw(class_id: u32, object_ptr: *anyopaque, source_file: [*:0]co
         // Check if any class ID in handler matches exception
         for (handler.class_ids) |handler_class_id| {
             if (checkClassHierarchy(class_id, object_ptr, handler_class_id)) {
-                // Found matching handler - longjmp to it
-                // longjmp will transfer control to the setjmp call in zeus_push_handler
+                // Pop this handler (and inner ones unwound past) before jumping, so a re-throw in
+                // the catch body goes to the next outer handler instead of looping on this one.
+                handler_stack.shrinkRetainingCapacity(i);
+                // longjmp transfers control to the setjmp call in zeus_try_begin
                 c.longjmp(handler.jmp_buf, 1);
             }
         }

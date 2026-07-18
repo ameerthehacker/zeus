@@ -1,5 +1,11 @@
 # Zeus Compiler — Developer Reference
 
+## Code style
+
+Keep comments crisp and only where they earn their place: explain *why* (non-obvious intent, a
+gotcha, an invariant), never *what* the code already says. Prefer one tight line over a paragraph;
+delete comments that restate the code.
+
 ## Quick orientation
 
 Zeus is a compiled language that emits native binaries via LLVM. The pipeline is:

@@ -111,6 +111,9 @@ type Var struct {
 	// IsExtern marks a module-local *reference* to an ambient global defined in
 	// another module (external declaration only; no storage/initializer here).
 	IsExtern bool
+	// IsStatic marks a class's static-member backing global (external linkage; extern-referenced
+	// from other modules).
+	IsStatic bool
 }
 
 func NewVar(name string, valueType ValueType, isPtr bool, span *token.Span, isVariadic ...bool) *Var {
@@ -943,7 +946,12 @@ func GetSignedIntSize(number string) IntSize {
 }
 
 func IsFloat(number string) bool {
-	return strings.Contains(number, ".")
+	// Radix-prefixed literals are ints even though hex includes 'e'/'f'.
+	lower := strings.ToLower(number)
+	if strings.HasPrefix(lower, "0x") || strings.HasPrefix(lower, "0b") || strings.HasPrefix(lower, "0o") {
+		return false
+	}
+	return strings.Contains(lower, ".") || strings.ContainsRune(lower, 'e') // fraction or exponent
 }
 
 // DefaultLiteralIntType returns the type for a context-less integer literal: signed, and at least

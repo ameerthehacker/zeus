@@ -617,6 +617,7 @@ func (b *IRBuilder) BuildGlobalVarDecl(v *VarDecl) *zeus_value.Var {
 	variable.OriginalName = v.Name
 	variable.IsConst = v.IsConst
 	variable.IsAmbient = v.IsAmbient
+	variable.IsStatic = v.IsStatic
 
 	b.symbolTable.DeclareSymbol(symbolKey, variable)
 

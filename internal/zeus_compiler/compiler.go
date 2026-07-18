@@ -65,6 +65,12 @@ type SourceFileDependency struct {
 	SourceFile *SourceFile
 }
 
+// importEdge (module -> dependency); map key to report each cycle edge at most once.
+type importEdge struct {
+	from string
+	to   string
+}
+
 type SourceFileErrorType int
 
 const (
@@ -584,45 +590,77 @@ func (c *Compiler) preludeGlobalsSourceFile() *SourceFile {
 }
 
 func (c *Compiler) CollectDependencies(entry *SourceFile) []*SourceFile {
-	sourceFiles := []*SourceFile{}
-	queue := []*SourceFileDependency{{
-		Span:       nil,
-		SourceFile: entry,
-	}}
-	visited := map[string]bool{}
-	inProgress := map[string]bool{}
+	// Phase 1 — compile every reachable module (order irrelevant) and record the dependency graph.
+	queue := []*SourceFileDependency{{Span: nil, SourceFile: entry}}
+	compiled := map[string]bool{}
+	graphDeps := map[string][]*SourceFileDependency{}
+	fileByPath := map[string]*SourceFile{}
 
-	// BFS traversal so that we can generate the source files in the order they are imported
 	for len(queue) > 0 {
 		current := queue[0]
 		queue = queue[1:]
-		if visited[current.SourceFile.Path] {
+		if compiled[current.SourceFile.Path] {
 			continue
 		}
+		compiled[current.SourceFile.Path] = true
 
-		inProgress[current.SourceFile.Path] = true
 		sourceFile := c.CompileFile(current.SourceFile)
-		sourceFiles = append([]*SourceFile{sourceFile}, sourceFiles...)
+		fileByPath[sourceFile.Path] = sourceFile
 
 		if sourceFile.Program != nil {
 			dependencies, errors := c.GetDependencies(sourceFile.Program, sourceFile.Path)
-
-			for _, dependency := range dependencies {
-				if inProgress[dependency.SourceFile.Path] {
-					sourceFile.Errors = append(sourceFile.Errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "circular dependency detected", dependency.Span))
-					continue
-				}
-			}
-
-			// append the module resolution errors
+			graphDeps[sourceFile.Path] = dependencies
 			sourceFile.Errors = append(sourceFile.Errors, errors...)
 			queue = append(queue, dependencies...)
 		}
-
-		visited[current.SourceFile.Path] = true
 	}
 
-	return sourceFiles
+	// Phase 2 — one 3-colour DFS from the entry: detect real cycles (back-edge to a gray node) and
+	// emit a topological order (post-order = deps before dependents, entry last). Independent of
+	// import order, unlike the old BFS+prepend which mis-ordered and mis-reported cycles.
+	const (
+		white = 0 // unvisited
+		gray  = 1 // on the current DFS stack
+		black = 2 // fully explored
+	)
+	color := map[string]int{}
+	reported := map[importEdge]bool{}
+	ordered := []*SourceFile{}
+
+	var dfs func(path string)
+	dfs = func(path string) {
+		color[path] = gray
+		for _, dep := range graphDeps[path] {
+			depPath := dep.SourceFile.Path
+			switch color[depPath] {
+			case gray:
+				// back-edge to a module still being explored -> genuine cycle
+				edge := importEdge{from: path, to: depPath}
+				if !reported[edge] {
+					reported[edge] = true
+					if sf := fileByPath[path]; sf != nil {
+						sf.Errors = append(sf.Errors, zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "circular dependency detected", dep.Span))
+					}
+				}
+			case white:
+				dfs(depPath)
+			}
+		}
+		color[path] = black
+		if sf := fileByPath[path]; sf != nil {
+			ordered = append(ordered, sf) // post-order: dependencies first, this module after
+		}
+	}
+
+	dfs(entry.Path)
+	// defensively include any compiled module not reachable from the entry (shouldn't happen)
+	for path, sf := range fileByPath {
+		if color[path] == white {
+			ordered = append(ordered, sf)
+		}
+	}
+
+	return ordered
 }
 
 func (c *Compiler) CompileFile(input *SourceFile) *SourceFile {

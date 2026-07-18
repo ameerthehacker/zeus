@@ -379,7 +379,7 @@ Fat arrow syntax (`=>`) is a compact alternative to `function` for writing anony
 let double = (x: i32): i32 => { return x * 2; }
 
 // Void (no return type annotation = void, same as regular functions)
-let log_value = (x: i32) => { log(x); }
+let noop = (x: i32) => { let unused: i32 = x; }
 ```
 
 Fat arrows are especially useful for inline callbacks:
@@ -404,7 +404,7 @@ Return type annotation comes between `)` and `=>`:
 | Syntax | Return type |
 |--------|-------------|
 | `(x: i32): i32 => { return x; }` | `i32` |
-| `(x: i32) => { log(x); }` | `void` (default) |
+| `(x: i32) => { /* no return */ }` | `void` (default) |
 
 <Aside type="note">
   Fat arrows only support block bodies (`{ ... }`). There is no implicit-return expression body — always use an explicit `return` statement.

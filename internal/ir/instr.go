@@ -25,6 +25,8 @@ type VarDecl struct {
 	// IsAmbient marks a `global` definition — the built Var gets the stable, un-mangled ambient
 	// symbol name and external linkage instead of a per-module unique name (see BuildGlobalVarDecl).
 	IsAmbient bool
+	// IsStatic marks a class's static-member backing global; propagated onto the built Var.
+	IsStatic bool
 }
 
 func NewVarDecl(name string, valueType zeus_value.ValueType, isConst bool, initializer zeus_value.Value, span *token.Span) *VarDecl {

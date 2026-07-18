@@ -205,6 +205,26 @@ func (l *Lexer) eatNumber() {
 		}
 	}
 
+	// Exponent: e/E [+/-] digits, decimal only (in hex 'e' is a digit).
+	if isRadix10 && (l.matchRune('e') || l.matchRune('E')) {
+		signed := l.matchNextRune('+') || l.matchNextRune('-')
+		firstExpDigit := 1
+		if signed {
+			firstExpDigit = 2
+		}
+		if !l.isEOF(firstExpDigit) && unicode.IsDigit(l.source[l.cursor+firstExpDigit]) {
+			isFloat = true
+			l.advance() // consume 'e'/'E'
+			if signed {
+				l.advance() // consume the sign
+			}
+			for !l.isEOF(0) && unicode.IsDigit(l.source[l.cursor]) {
+				endPosition = l.getCurrentPosition()
+				l.advance()
+			}
+		}
+	}
+
 	literal := string(l.source[start:l.cursor])
 
 	// A radix-prefixed literal (0x / 0b / 0o) must have at least one digit after
