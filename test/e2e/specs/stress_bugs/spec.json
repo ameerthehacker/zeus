@@ -48,13 +48,10 @@
         ]
     },
     {
-        "name": "KNOWN GAP: no number->string yet (console.log is string-only) - use itoa",
-        "exit": "1",
+        "name": "FIXED: console.log converts numbers via universal toString",
+        "exit": "0",
         "entry": "cannot_print_number.zs",
-        "compile_error": true,
-        "stderr_contains": [
-            "does not match expected type 'string'"
-        ]
+        "stdout": "1\n2\n3\n4\n5\n"
     },
     {
         "name": "INTENDED (docs fixed): fields default to private; use `public` to expose",
@@ -128,13 +125,10 @@
         ]
     },
     {
-        "name": "KNOWN GAP: no number->string, so template ${number} is rejected (skipped by design)",
-        "exit": "1",
+        "name": "FIXED: template ${number} converts via universal toString",
+        "exit": "0",
         "entry": "template_number.zs",
-        "compile_error": true,
-        "stderr_contains": [
-            "binary operation"
-        ]
+        "stdout": "value is 42\n"
     },
     {
         "name": "FIXED: finally is supported; a return in finally overrides try/catch",

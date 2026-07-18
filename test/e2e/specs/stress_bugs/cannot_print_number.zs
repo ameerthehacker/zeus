@@ -1,6 +1,5 @@
-// BUG (wiki/compiler-bugs.md "You cannot print a number or boolean"): console.log accepts
-// only string, and there is no number->string conversion, so this beginner program (print
-// 1..5) does not compile. FizzBuzz is impossible without a hand-written u8[] itoa.
+// FIXED: console.log is variadic and converts any value via universal toString, so printing
+// numbers works — this beginner program (print 1..5) compiles and runs.
 function main(): i32 {
   for (let i: i32 = 1; i <= 5; i++) {
     console.log(i);
