@@ -1,0 +1,19 @@
+[
+    {
+        "name": "@std/readline readLine() returns \"\" at end-of-input (no stdin)",
+        "exit": "0",
+        "entry": "readline_eof.zs"
+    },
+    {
+        "name": "@std/readline readLine() reads a piped line, newline stripped",
+        "exit": "0",
+        "entry": "readline_read.zs",
+        "stdin": "hello from stdin\n"
+    },
+    {
+        "name": "@std/readline multiple readLine() + addHistory() over one stdin stream",
+        "exit": "0",
+        "entry": "readline_history.zs",
+        "stdin": "first\nsecond\n"
+    }
+]

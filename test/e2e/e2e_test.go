@@ -16,6 +16,7 @@ type TestSpec struct {
 	Name           string   `json:"name"`
 	Exit           string   `json:"exit"`
 	Entry          string   `json:"entry"`
+	Stdin          string   `json:"stdin,omitempty"`           // Fed to the program's stdin
 	Stdout         string   `json:"stdout,omitempty"`
 	Stderr         string   `json:"stderr,omitempty"`          // Expected exact stderr output
 	StderrContains []string `json:"stderr_contains,omitempty"` // Strings that must be present in stderr
@@ -136,6 +137,11 @@ func runTestSpec(t *testing.T, compilerPath, suiteDir, outputDir string, spec Te
 
 	// Execute the compiled program and capture stdout/stderr
 	execCmd := exec.Command(outputFile)
+
+	// Feed stdin if the spec provides it (else the program reads EOF immediately)
+	if spec.Stdin != "" {
+		execCmd.Stdin = strings.NewReader(spec.Stdin)
+	}
 
 	// Set NO_COLOR environment variable if specified
 	if spec.NoColor {
