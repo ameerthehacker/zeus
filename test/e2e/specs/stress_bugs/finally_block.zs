@@ -1,6 +1,5 @@
-// BUG (wiki/compiler-bugs.md "finally produces a cryptic parse error"):
-// `finally` is unsupported but yields `expected ;, but found {` with no hint that finally
-// is the unsupported construct.
+// FIXED: `finally` is supported. It runs on every exit path, and a return in the finally overrides
+// the pending returns from the try and catch — so this program returns 3.
 function main(): i32 {
   try {
     return 1;

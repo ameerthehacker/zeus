@@ -2,6 +2,7 @@ package ir
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"unicode/utf8"
 
@@ -17,16 +18,19 @@ import (
 
 const anonymousName = "anonymous"
 
-// TryContext holds information about the current try block being processed
+// TryContext describes a try-body or catch-body region whose finally (if any) and handlers must
+// be run/popped when control-flow (return/break/continue) escapes it.
 type TryContext struct {
-	HandlerBlock *BasicBlock // The exception handler block
-	ClassIds     []int       // Class IDs of catch clauses
+	FinallyBody   *ast.BlockStmtNode // finally block to inline on escape, or nil
+	HandlersToPop int                // POP_HANDLER count before escaping this region
+	Seq           int                // monotonic nesting sequence (see controlSeq)
 }
 
 // LoopContext holds the break/continue targets for the current loop
 type LoopContext struct {
 	BreakTarget    *BasicBlock // merge block — where break jumps
 	ContinueTarget *BasicBlock // condition block (while) or update block (for)
+	Seq            int         // monotonic nesting sequence (see controlSeq)
 }
 
 type IRModule struct {
@@ -40,6 +44,7 @@ type IRModule struct {
 	importedNames    map[string]bool
 	tryContextStack  []*TryContext  // Stack of try contexts for nested try blocks
 	loopContextStack []*LoopContext // Stack of loop contexts for nested loops
+	controlSeq       int            // monotonic counter stamped on each loop/try context push
 	// usedIRNames tracks every IR-level name ever emitted in this module (functions,
 	// class methods, locals) so generateUniqueName can guarantee global uniqueness.
 	usedIRNames map[string]bool
@@ -196,7 +201,8 @@ func (g *IRModule) pushError(err *zeus_error.ZeusError) {
 }
 
 func (g *IRModule) pushLoopContext(brk, cont *BasicBlock) {
-	g.loopContextStack = append(g.loopContextStack, &LoopContext{BreakTarget: brk, ContinueTarget: cont})
+	g.controlSeq++
+	g.loopContextStack = append(g.loopContextStack, &LoopContext{BreakTarget: brk, ContinueTarget: cont, Seq: g.controlSeq})
 }
 
 func (g *IRModule) popLoopContext() {
@@ -451,11 +457,17 @@ func (g *IRModule) VisitExprStmt(stmt *ast.ExprStmtNode) {
 }
 
 func (g *IRModule) VisitReturnStmt(stmt *ast.ReturnStmtNode) {
-	if stmt.Expr == nil {
-		g.irBuilder.BuildReturn(nil, stmt.GetSpan())
-	} else {
-		g.irBuilder.BuildReturn(stmt.Expr.Accept(g), stmt.GetSpan())
+	// Evaluate the return value first (Java-style: finallys observe the already-computed value), then
+	// run every enclosing finally + pop its handlers before actually returning. A finally that itself
+	// returns overrides this one (runEscapeFinallys returns true → skip the pending return).
+	var value zeus_value.Value
+	if stmt.Expr != nil {
+		value = stmt.Expr.Accept(g)
 	}
+	if g.runEscapeFinallys(0, stmt.GetSpan()) {
+		return
+	}
+	g.irBuilder.BuildReturn(value, stmt.GetSpan())
 }
 
 func (g *IRModule) VisitIfStmt(stmt *ast.IfStmtNode) {
@@ -563,6 +575,9 @@ func (g *IRModule) VisitBreakStmt(stmt *ast.BreakStmtNode) {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "break statement outside of loop", stmt.Span))
 		return
 	}
+	if g.runEscapeFinallys(g.firstTryContextInside(ctx.Seq), stmt.Span) {
+		return
+	}
 	g.irBuilder.BuildJmp(ctx.BreakTarget, stmt.Span)
 }
 
@@ -570,6 +585,9 @@ func (g *IRModule) VisitContinueStmt(stmt *ast.ContinueStmtNode) {
 	ctx := g.currentLoopContext()
 	if ctx == nil {
 		g.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "continue statement outside of loop", stmt.Span))
+		return
+	}
+	if g.runEscapeFinallys(g.firstTryContextInside(ctx.Seq), stmt.Span) {
 		return
 	}
 	g.irBuilder.BuildJmp(ctx.ContinueTarget, stmt.Span)
@@ -1410,14 +1428,23 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	prevEscapedVarNames := g.escapedVarNames
 	prevFuncTypeEnv := g.funcTypeEnv
 	prevIsInModuleScope := g.isInModuleScope
+	// A nested function is its own control-flow scope: its return/break/continue must not see the
+	// enclosing function's try/loop contexts (else they'd inline the outer finally or pop a handler
+	// that was never pushed in this frame).
+	prevTryContextStack := g.tryContextStack
+	prevLoopContextStack := g.loopContextStack
 	g.irBuilder.BeginFunctionNameScope()
 	g.escapedVarNames = escapedNames
 	g.funcTypeEnv = funcTypeEnv
 	g.isInModuleScope = false
+	g.tryContextStack = nil
+	g.loopContextStack = nil
 	fnBody.Accept(g)
 	g.escapedVarNames = prevEscapedVarNames
 	g.funcTypeEnv = prevFuncTypeEnv
 	g.isInModuleScope = prevIsInModuleScope
+	g.tryContextStack = prevTryContextStack
+	g.loopContextStack = prevLoopContextStack
 	g.irBuilder.EndFunctionNameScope()
 
 	g.irBuilder.SetInsertionBlock(current_block)
@@ -3372,11 +3399,14 @@ func (g *IRModule) VisitValueType(expr *ast.ValueTypeNode) zeus_value.Value {
 	return nil
 }
 
-// pushTryContext pushes a new try context onto the stack
-func (g *IRModule) pushTryContext(handlerBlock *BasicBlock, classIds []int) {
+// pushTryContext pushes a try/catch-body region whose finally + handlers must be run/popped on
+// an escaping return/break/continue.
+func (g *IRModule) pushTryContext(finallyBody *ast.BlockStmtNode, handlersToPop int) {
+	g.controlSeq++
 	g.tryContextStack = append(g.tryContextStack, &TryContext{
-		HandlerBlock: handlerBlock,
-		ClassIds:     classIds,
+		FinallyBody:   finallyBody,
+		HandlersToPop: handlersToPop,
+		Seq:           g.controlSeq,
 	})
 }
 
@@ -3417,103 +3447,182 @@ func (g *IRModule) getClassIdFromType(valueType zeus_value.ValueType) int {
 	}
 }
 
-// VisitTryCatchStmt generates IR for try-catch statements
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// popHandlers emits n POP_HANDLER instructions.
+func (g *IRModule) popHandlers(n int, span *token.Span) {
+	for i := 0; i < n; i++ {
+		g.irBuilder.BuildPopHandler(span)
+	}
+}
+
+// emitFinallyBody inlines a finally block in a fresh scope; no-op if body is nil. Called on every
+// exit path of a try, so it may run several times across the emitted IR (only one path runs at
+// runtime).
+func (g *IRModule) emitFinallyBody(body *ast.BlockStmtNode) {
+	if body == nil {
+		return
+	}
+	g.symbolTable().EnterScope()
+	body.Accept(g)
+	g.symbolTable().ExitScope()
+}
+
+// jmpIfOpen / rethrowIfOpen emit a terminator only when the block is still open. An inlined finally
+// can end in its own return/break/continue/throw, which already terminates the block; emitting a
+// trailing jmp/rethrow after that would produce two terminators (invalid LLVM).
+func (g *IRModule) jmpIfOpen(target *BasicBlock, span *token.Span) {
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.irBuilder.BuildJmp(target, span)
+	}
+}
+
+func (g *IRModule) rethrowIfOpen(span *token.Span) {
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.irBuilder.BuildRethrow(span)
+	}
+}
+
+// runEscapeFinallys runs the finally bodies and pops the handlers of the enclosing try contexts at
+// index >= from (innermost first) when a return/break/continue leaves them. While a context's finally
+// runs, the active stack is narrowed to the outer contexts so a transfer inside that finally routes
+// correctly and never re-enters the same finally. Returns true if a finally performed its own
+// transfer (terminated the block) — the caller must then not emit the pending transfer.
+func (g *IRModule) runEscapeFinallys(from int, span *token.Span) bool {
+	original := g.tryContextStack
+	defer func() { g.tryContextStack = original }()
+	for i := len(original) - 1; i >= from; i-- {
+		ctx := original[i]
+		g.tryContextStack = slices.Clone(original[:i]) // finally sees only outer contexts
+		g.popHandlers(ctx.HandlersToPop, span)
+		g.emitFinallyBody(ctx.FinallyBody)
+		if g.irBuilder.CurrentBlockTerminated() {
+			return true
+		}
+	}
+	return false
+}
+
+// firstTryContextInside returns the index of the innermost-outward try context that lies inside the
+// loop with the given sequence (i.e. was pushed after it). Contexts at or below this index enclose
+// the loop and must not run when a break/continue jumps out of it.
+func (g *IRModule) firstTryContextInside(loopSeq int) int {
+	i := 0
+	for i < len(g.tryContextStack) && g.tryContextStack[i].Seq <= loopSeq {
+		i++
+	}
+	return i
+}
+
+// VisitTryCatchStmt lowers `try B catch C1..Cn finally F`. When a finally is present it desugars to
+// an OUTER catch-all handler (so F runs on the uncaught / catch-throws paths) wrapping the INNER
+// multi-catch handler, with F inlined on every exit path. The inner handler dispatches to the first
+// clause whose type matches the caught object; no match rethrows outward.
 func (g *IRModule) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
-	// 1. Create blocks for try body, handler (catch dispatch), and merge (after try-catch)
-	tryBodyBlock := g.irBuilder.BuildSuccessorBlock()
-	handlerBlock := g.irBuilder.BuildSuccessorBlock()
+	hasFinally := stmt.FinallyBody != nil
+	hasCatch := len(stmt.CatchClauses) > 0
+
 	mergeBlock := g.irBuilder.BuildSuccessorBlock()
 
-	// 2. Collect class IDs from all catch clauses
-	classIds := []int{}
-	for _, clause := range stmt.CatchClauses {
-		// The type checker should have validated that this is an Error class or subclass
-		classId := g.getClassIdFromType(clause.ErrorType.ValueType)
-		classIds = append(classIds, classId)
-	}
-
-	// 3. Push handler at try block entry - this emits setjmp and conditional branch
-	// Will branch to tryBodyBlock if setjmp returns 0, handlerBlock if returns 1
-	g.irBuilder.BuildPushHandler(handlerBlock, tryBodyBlock, classIds, stmt.GetSpan())
-
-	// 4. Switch to try body block
-	g.irBuilder.SetInsertionBlock(tryBodyBlock)
-
-	// 5. Mark that we're in a try block (affects call generation)
-	g.pushTryContext(handlerBlock, classIds)
-
-	// 6. Generate try body
-	stmt.TryBody.Accept(g)
-
-	// 7. Pop handler and jump to merge block at end of try block (if no exception)
-	g.irBuilder.BuildPopHandler(stmt.GetSpan())
-	g.irBuilder.BuildJmp(mergeBlock, stmt.GetSpan())
-
-	// 7. Exit try context
-	g.popTryContext()
-
-	// 8. Generate exception handler block
-	g.irBuilder.SetInsertionBlock(handlerBlock)
-
-	// Generate catch clause matching logic
-	// For now, we only support a single catch clause per try block
-	// Multiple catch clauses would need proper instanceof checking
+	classIds := make([]int, len(stmt.CatchClauses))
 	for i, clause := range stmt.CatchClauses {
-		classId := classIds[i]
-		_ = classId // Will be used for instanceof check in future
-
-		// Create block for this catch clause body
-		catchBodyBlock := g.irBuilder.BuildSuccessorBlock()
-
-		// For now, jump directly to the catch body
-		// TODO: Add instanceof check for multiple catch clauses
-		g.irBuilder.BuildJmp(catchBodyBlock, clause.GetSpan())
-
-		// Generate catch body
-		g.irBuilder.SetInsertionBlock(catchBodyBlock)
-
-		// Enter a new scope for the catch variable
-		g.symbolTable().EnterScope()
-
-		// Get the exception with the expected type
-		catchType := g.resolveTypeForIRGen(clause.ErrorType.ValueType, false)
-		exception := g.irBuilder.BuildGetException(catchType, clause.GetSpan())
-
-		// Declare the catch variable (e.g., 'e' in catch (e: Error))
-		errorVar := zeus_value.NewVar(
-			clause.ErrorVar.Name.Value,
-			catchType,
-			true,
-			clause.GetSpan(),
-		)
-		g.symbolTable().DeclareSymbol(clause.ErrorVar.Name.Value, errorVar)
-
-		// Store the exception object in the catch variable
-		declInput := NewDeclareVarInstrInput(errorVar, exception, false)
-		g.irBuilder.pushInstr(&Instr{
-			Type:  InstrTypeDeclVar,
-			Input: declInput,
-			Span:  clause.GetSpan(),
-		})
-
-		// Clear the exception (it's been caught)
-		g.irBuilder.BuildClearException(clause.GetSpan())
-
-		// Generate catch body statements
-		clause.Body.Accept(g)
-
-		// Exit catch variable scope
-		g.symbolTable().ExitScope()
-
-		// Jump to merge block after catch body
-		g.irBuilder.BuildJmp(mergeBlock, clause.GetSpan())
-
-		// Note: For multiple catch clauses, we'd need instanceof checks here
-		// For now, we only support a single catch clause
-		break
+		classIds[i] = g.getClassIdFromType(clause.ErrorType.ValueType)
 	}
 
-	// 9. Continue at merge block
+	tryBodyBlock := g.irBuilder.BuildSuccessorBlock()
+
+	// Outer catch-all handler catches everything so the finally runs even when no clause matches
+	// (case 3) or a catch body itself throws (case 4). Pushed before the inner handler.
+	var outerHandlerBlock *BasicBlock
+	if hasFinally {
+		outerHandlerBlock = g.irBuilder.BuildSuccessorBlock()
+		errorClassId := 0
+		if errorClass := g.getOrCreateErrorClass(); errorClass != nil {
+			errorClassId = errorClass.Id
+		}
+		if hasCatch {
+			innerEntry := g.irBuilder.BuildSuccessorBlock()
+			g.irBuilder.BuildPushHandler(outerHandlerBlock, innerEntry, []int{errorClassId}, stmt.GetSpan())
+			g.irBuilder.SetInsertionBlock(innerEntry)
+		} else {
+			g.irBuilder.BuildPushHandler(outerHandlerBlock, tryBodyBlock, []int{errorClassId}, stmt.GetSpan())
+		}
+	}
+
+	var innerHandlerBlock *BasicBlock
+	if hasCatch {
+		innerHandlerBlock = g.irBuilder.BuildSuccessorBlock()
+		g.irBuilder.BuildPushHandler(innerHandlerBlock, tryBodyBlock, classIds, stmt.GetSpan())
+	}
+
+	// --- try body ---
+	g.irBuilder.SetInsertionBlock(tryBodyBlock)
+	tryHandlersToPop := boolToInt(hasCatch) + boolToInt(hasFinally)
+	g.pushTryContext(stmt.FinallyBody, tryHandlersToPop)
+	stmt.TryBody.Accept(g)
+	g.popTryContext()
+	// normal completion: pop handlers, run finally, merge. Skipped when the body already exited via
+	// throw/return (an escaping return runs the finally through the TryContext, not here). jmpIfOpen
+	// guards the case where the finally itself ends in a return/break/continue.
+	if !g.irBuilder.CurrentBlockTerminated() {
+		g.popHandlers(tryHandlersToPop, stmt.GetSpan())
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.jmpIfOpen(mergeBlock, stmt.GetSpan())
+	}
+
+	// --- inner handler: multi-catch dispatch (inner already popped on landing, outer still live) ---
+	if hasCatch {
+		g.irBuilder.SetInsertionBlock(innerHandlerBlock)
+		// Fetch the caught object once for instanceof dispatch; static type is irrelevant here.
+		excObj := g.irBuilder.BuildGetException(g.resolveTypeForIRGen(stmt.CatchClauses[0].ErrorType.ValueType, false), stmt.GetSpan())
+		catchHandlersToPop := boolToInt(hasFinally) // only the outer handler remains
+
+		for i, clause := range stmt.CatchClauses {
+			bodyBlock := g.irBuilder.BuildSuccessorBlock()
+			nextBlock := g.irBuilder.BuildSuccessorBlock()
+			cond := g.irBuilder.BuildInstanceOf(excObj, classIds[i], clause.GetSpan())
+			g.irBuilder.BuildCondJmp(bodyBlock, nextBlock, cond, clause.GetSpan())
+
+			g.irBuilder.SetInsertionBlock(bodyBlock)
+			g.symbolTable().EnterScope()
+			catchType := g.resolveTypeForIRGen(clause.ErrorType.ValueType, false)
+			exception := g.irBuilder.BuildGetException(catchType, clause.GetSpan())
+			errorVar := zeus_value.NewVar(clause.ErrorVar.Name.Value, catchType, true, clause.GetSpan())
+			g.symbolTable().DeclareSymbol(clause.ErrorVar.Name.Value, errorVar)
+			g.irBuilder.pushInstr(&Instr{Type: InstrTypeDeclVar, Input: NewDeclareVarInstrInput(errorVar, exception, false), Span: clause.GetSpan()})
+			g.irBuilder.BuildClearException(clause.GetSpan())
+			g.pushTryContext(stmt.FinallyBody, catchHandlersToPop)
+			clause.Body.Accept(g)
+			g.popTryContext()
+			g.symbolTable().ExitScope()
+			// catch body completed normally: pop outer, run finally, merge. Skipped when the body
+			// already exited via throw/return.
+			if !g.irBuilder.CurrentBlockTerminated() {
+				g.popHandlers(catchHandlersToPop, clause.GetSpan())
+				g.emitFinallyBody(stmt.FinallyBody)
+				g.jmpIfOpen(mergeBlock, clause.GetSpan())
+			}
+
+			g.irBuilder.SetInsertionBlock(nextBlock)
+		}
+		// No clause matched (defensive: the inner handler only catches its clause ids).
+		g.popHandlers(catchHandlersToPop, stmt.GetSpan())
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.rethrowIfOpen(stmt.GetSpan())
+	}
+
+	// --- outer handler: uncaught by any clause, or a catch body threw (both handlers popped) ---
+	if hasFinally {
+		g.irBuilder.SetInsertionBlock(outerHandlerBlock)
+		g.emitFinallyBody(stmt.FinallyBody)
+		g.rethrowIfOpen(stmt.GetSpan())
+	}
+
 	g.irBuilder.SetInsertionBlock(mergeBlock)
 }
 

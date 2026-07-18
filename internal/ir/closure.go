@@ -279,6 +279,9 @@ func (f *freeVarCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 		}
 		f.walkStmt(clause.Body)
 	}
+	if stmt.FinallyBody != nil {
+		f.walkStmt(stmt.FinallyBody)
+	}
 }
 
 func (f *freeVarCollector) VisitIdentifier(node *ast.IdentifierExprNode) zeus_value.Value {
@@ -430,6 +433,9 @@ func (c *escapedNameCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 			}
 		}
 		c.walkStmt(clause.Body)
+	}
+	if stmt.FinallyBody != nil {
+		c.walkStmt(stmt.FinallyBody)
 	}
 }
 

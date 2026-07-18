@@ -29,7 +29,7 @@ workaround for history):
 **Kept as intended (docs updated, not compiler bugs):** fields default to private (write `public`);
 arrays are invariant (`C[]` ≠ `Interface[]`); `**` always yields `f64`. **Known gaps (by design, this
 pass):** no `number → string` conversion yet (so `console.log(n)` / `` `${n}` `` need a hand-written
-`itoa`); `finally` is not supported yet.
+`itoa`).
 
 ---
 
@@ -281,21 +281,6 @@ bad call.
 
 **Workaround:** ignore the reported line for arg-count mismatches and look for the call with the
 wrong number of arguments.
-
----
-
-## `finally` produces a cryptic parse error — **bad-error**
-
-```zeus
-try { return 1; } catch (e: Error) { return 2; } finally { return 3; }
-// error: expected ;, but found {
-```
-
-`finally` is a documented "coming soon" feature, but a user who tries it gets
-`expected ;, but found {` pointing at the `{` after `finally`, with no hint that `finally` itself is
-the unsupported construct.
-
-**Workaround:** run cleanup code after the `try`/`catch` block instead of in a `finally`.
 
 ---
 

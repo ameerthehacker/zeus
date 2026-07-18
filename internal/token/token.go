@@ -103,6 +103,7 @@ const (
 	TokenTypeTry        // try keyword
 	TokenTypeCatch      // catch keyword
 	TokenTypeThrow      // throw keyword
+	TokenTypeFinally    // finally keyword
 	TokenTypeExtends    // extends keyword for class inheritance
 	TokenTypeBreak      // break keyword
 	TokenTypeContinue   // continue keyword
@@ -333,6 +334,8 @@ func (t TokenType) String() string {
 		return "catch"
 	case TokenTypeThrow:
 		return "throw"
+	case TokenTypeFinally:
+		return "finally"
 	case TokenTypeExtends:
 		return "extends"
 	case TokenTypeBreak:
@@ -386,6 +389,7 @@ var Keywords = map[string]TokenType{
 	TokenTypeTry.String():       TokenTypeTry,
 	TokenTypeCatch.String():     TokenTypeCatch,
 	TokenTypeThrow.String():     TokenTypeThrow,
+	TokenTypeFinally.String():   TokenTypeFinally,
 	TokenTypeExtends.String():   TokenTypeExtends,
 	TokenTypeNull.String():      TokenTypeNull,
 	TokenTypeBreak.String():      TokenTypeBreak,

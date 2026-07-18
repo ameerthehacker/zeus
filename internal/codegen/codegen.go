@@ -415,6 +415,12 @@ func (c *Codegen) setupGlobalLLVMFunctions(module llvm.Module) map[string]Global
 	zeusPopHandlerFunc := llvm.AddFunction(module, "zeus_pop_handler", zeusPopHandlerType)
 	globalFunctions["zeus_pop_handler"] = GlobalLLVMFunction{zeusPopHandlerFunc, zeusPopHandlerType}
 
+	// zeus_rethrow() - re-propagate the current exception (noreturn)
+	zeusRethrowType := llvm.FunctionType(c.cxt.VoidType(), []llvm.Type{}, false)
+	zeusRethrowFunc := llvm.AddFunction(module, "zeus_rethrow", zeusRethrowType)
+	zeusRethrowFunc.AddFunctionAttr(c.cxt.CreateEnumAttribute(llvm.AttributeKindID("noreturn"), 0))
+	globalFunctions["zeus_rethrow"] = GlobalLLVMFunction{zeusRethrowFunc, zeusRethrowType}
+
 	// zeus_get_current_exception() -> ptr - get current exception (or null)
 	zeusGetCurrentExceptionType := llvm.FunctionType(llvm.PointerType(c.cxt.VoidType(), 0), []llvm.Type{}, false)
 	zeusGetCurrentExceptionFunc := llvm.AddFunction(module, "zeus_get_current_exception", zeusGetCurrentExceptionType)
@@ -3039,6 +3045,8 @@ func (c *CodegenModule) Generate(irBuilder ir.IRBuilder) {
 			c.genPushHandler(*input, currentFunction)
 		case ir.InstrTypePopHandler:
 			c.genPopHandler()
+		case ir.InstrTypeRethrow:
+			c.genRethrow()
 		case ir.InstrTypeCheckException:
 			c.genCheckException(*ir.AsCheckExceptionInstrInput(instr.Input))
 		case ir.InstrTypeGetException:
@@ -3188,6 +3196,11 @@ func (c *CodegenModule) genPushHandler(input ir.PushHandlerInstrInput, currentFu
 // genPopHandler generates LLVM code for unregistering an exception handler
 func (c *CodegenModule) genPopHandler() {
 	c.callGlobalLLVMFunction("zeus_pop_handler")
+}
+
+func (c *CodegenModule) genRethrow() {
+	c.callGlobalLLVMFunction("zeus_rethrow")
+	c.builder.CreateUnreachable() // zeus_rethrow is noreturn
 }
 
 // genCheckException generates LLVM code for checking if an exception is pending

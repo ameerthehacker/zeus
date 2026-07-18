@@ -449,6 +449,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		// This will be resolved when binding to catch variable
 	case InstrTypeClearException:
 		// Clear exception doesn't require type checking
+	case InstrTypeRethrow:
+		// Rethrow doesn't require type checking
 	default:
 		panic(fmt.Sprintf("type checking not handled for instruction: %s", instr.Type))
 	}

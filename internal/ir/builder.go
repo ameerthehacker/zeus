@@ -370,6 +370,24 @@ func (b *IRBuilder) GetInsertionBlock() *BasicBlock {
 	return b.currentBlock
 }
 
+// CurrentBlockTerminated reports whether the instruction just before the insertion point is a block
+// terminator (jmp/return/throw/rethrow). Emitting fall-through code past one produces dead
+// instructions after an `unreachable` — invalid LLVM — so callers guard on this.
+func (b *IRBuilder) CurrentBlockTerminated() bool {
+	if b.currentBlock == nil {
+		return false
+	}
+	idx := b.blockIdInsetionIndexMap[b.currentBlock.Id]
+	if idx == 0 {
+		return false
+	}
+	switch b.currentBlock.Instrs[idx-1].Type {
+	case InstrTypeJmp, InstrTypeCondJmp, InstrTypeReturn, InstrTypeThrow, InstrTypeRethrow:
+		return true
+	}
+	return false
+}
+
 func (b *IRBuilder) pushInstr(instr *Instr) {
 	instr.Id = b.instrIdCount
 	b.instrIdCount += 1
@@ -1314,6 +1332,14 @@ func (b *IRBuilder) BuildPushHandler(handlerBlock *BasicBlock, tryBodyBlock *Bas
 func (b *IRBuilder) BuildPopHandler(span *token.Span) {
 	b.pushInstr(&Instr{
 		Type: InstrTypePopHandler,
+		Span: span,
+	})
+}
+
+// BuildRethrow re-propagates the current exception to the next outer handler (noreturn).
+func (b *IRBuilder) BuildRethrow(span *token.Span) {
+	b.pushInstr(&Instr{
+		Type: InstrTypeRethrow,
 		Span: span,
 	})
 }

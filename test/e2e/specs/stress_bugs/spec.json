@@ -137,13 +137,9 @@
         ]
     },
     {
-        "name": "KNOWN GAP: finally is not supported yet (planned)",
-        "exit": "1",
-        "entry": "finally_block.zs",
-        "compile_error": true,
-        "stderr_contains": [
-            "expected ;"
-        ]
+        "name": "FIXED: finally is supported; a return in finally overrides try/catch",
+        "exit": "3",
+        "entry": "finally_block.zs"
     },
     {
         "name": "FIXED: calling a non-function field now reports it is not callable",

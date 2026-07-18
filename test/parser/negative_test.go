@@ -363,7 +363,7 @@ func TestNegativeTryCatchStatement(t *testing.T) {
 			// Error span is the tryBody block span (from { to }).
 			name:   "try without any catch clause",
 			input:  "try { }",
-			errors: parseErr("try statement must have at least one catch clause", 1, 5, 7),
+			errors: parseErr("try statement must have at least one catch clause or a finally block", 1, 5, 7),
 		},
 		{
 			name:   "catch missing ( after keyword",

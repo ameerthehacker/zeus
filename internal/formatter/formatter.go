@@ -401,6 +401,9 @@ func (f *formatter) printTryCatch(s *ast.TryCatchStmtNode) Doc {
 			f.printBlockFor(clause.Body),
 		)
 	}
+	if s.FinallyBody != nil {
+		d = concat(d, text(" finally "), f.printBlockFor(s.FinallyBody))
+	}
 	return d
 }
 

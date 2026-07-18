@@ -100,10 +100,11 @@ type CatchClause struct {
 	Span      *token.Span
 }
 
-// TryCatchStmtNode represents a try { } catch (e: Type) { } statement
+// TryCatchStmtNode represents a try { } catch (e: Type) { } finally { } statement
 type TryCatchStmtNode struct {
 	TryBody      *BlockStmtNode // The try block
-	CatchClauses []*CatchClause // One or more catch clauses
+	CatchClauses []*CatchClause // Zero or more catch clauses (>= 1 unless FinallyBody is set)
+	FinallyBody  *BlockStmtNode // The finally block, or nil if absent
 	Span         *token.Span
 }
 
@@ -416,7 +417,11 @@ func (t *TryCatchStmtNode) String() string {
 	for _, clause := range t.CatchClauses {
 		catchClauses = append(catchClauses, clause.String())
 	}
-	return fmt.Sprintf("{ type: TryCatchStmtNode, TryBody: %s, CatchClauses: [%s], Span: %s }", t.TryBody.String(), strings.Join(catchClauses, ", "), t.Span)
+	finally := "<nil>"
+	if t.FinallyBody != nil {
+		finally = t.FinallyBody.String()
+	}
+	return fmt.Sprintf("{ type: TryCatchStmtNode, TryBody: %s, CatchClauses: [%s], FinallyBody: %s, Span: %s }", t.TryBody.String(), strings.Join(catchClauses, ", "), finally, t.Span)
 }
 
 func (t *TryCatchStmtNode) PrettyString() string {
@@ -424,7 +429,11 @@ func (t *TryCatchStmtNode) PrettyString() string {
 	for _, clause := range t.CatchClauses {
 		catchClauses = append(catchClauses, clause.PrettyString())
 	}
-	return fmt.Sprintf("try %s %s", t.TryBody.PrettyString(), strings.Join(catchClauses, " "))
+	out := fmt.Sprintf("try %s %s", t.TryBody.PrettyString(), strings.Join(catchClauses, " "))
+	if t.FinallyBody != nil {
+		out += fmt.Sprintf(" finally %s", t.FinallyBody.PrettyString())
+	}
+	return out
 }
 
 func (t *TryCatchStmtNode) GetSpan() *token.Span {

@@ -132,9 +132,68 @@ function main(): i32 {
 }
 ```
 
+## Multiple Catch Clauses
+
+A `try` can have several `catch` clauses. They are tried top-to-bottom and the **first** whose type
+matches the thrown exception runs; the rest are skipped. Order specific subclasses before their base
+class, since a `catch (e: Error)` matches everything.
+
+```zeus
+class NetworkError extends Error {
+  constructor() {
+    super("NetworkError", "the connection dropped");
+  }
+}
+
+function main(): i32 {
+  try {
+    throw new NetworkError();
+  } catch (e: NetworkError) {
+    console.log("network problem: " + e.message);
+    return 1;
+  } catch (e: Error) {
+    console.log("some other error: " + e.message);
+    return 2;
+  }
+  return 0;
+}
+```
+
+If no clause matches, the exception propagates to the next enclosing `try` (or terminates the program
+as an unhandled exception).
+
+## The `finally` Block
+
+A `finally` block runs on **every** exit path from the `try`/`catch` — normal completion, a caught
+exception, an uncaught one on its way out, and a `return`, `break`, or `continue` that leaves the
+block. Use it for cleanup that must always happen.
+
+```zeus
+function main(): i32 {
+  try {
+    console.log("working");
+    return 1;
+  } finally {
+    console.log("cleanup always runs");
+  }
+}
+```
+
+`catch` is optional when a `finally` is present — `try { … } finally { … }` is valid on its own. A
+`return` inside the `finally` overrides a pending `return` from the `try` or `catch`:
+
+```zeus
+function main(): i32 {
+  try {
+    return 1;
+  } finally {
+    return 2; // wins — main returns 2
+  }
+}
+```
+
 <Aside type="note">
-  Zeus catches the built-in `Error` type today. Custom exception types that subclass `Error` — along
-  with the features listed below — are on the roadmap.
+  Custom exception types that subclass `Error` are matched by type in `catch` clauses, as shown above.
 </Aside>
 
 ## Best Practices
@@ -192,8 +251,5 @@ function safeGetElement(arr: i32[], index: i32): i32 {
 
 | Feature | Status |
 |---------|--------|
-| `finally` blocks | Planned |
-| Custom exception classes (extends Error) | Planned |
-| Multiple catch blocks | Planned |
-| Rethrowing exceptions | Planned |
+| Explicit rethrow (`throw;`) | Planned |
 
