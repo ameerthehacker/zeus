@@ -520,6 +520,9 @@ func (l *Lexer) Lex() ([]*token.Token, []*zeus_error.ZeusError) {
 		case char == ',':
 			l.pushToken(token.NewToken(token.TokenTypeComma, token.NewSpan(*position, *position)))
 			l.advance()
+		case char == '@':
+			l.pushToken(token.NewToken(token.TokenTypeAt, token.NewSpan(*position, *position)))
+			l.advance()
 		case char == '+':
 			startPosition := position
 			if l.matchNextRune('+') {

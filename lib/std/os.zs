@@ -12,7 +12,7 @@ const ENV_TMPDIR: string = "TMPDIR";
 const DEFAULT_TMPDIR: string = "/tmp";
 
 // ---- raw libc bindings ----
-extern("C", "gethostname") function c_gethostname(buf: cptr, len: csize): cint;
+@extern("C", "gethostname") function c_gethostname(buf: cptr, len: csize): cint;
 
 // platform returns a Node-style OS string ("darwin", "linux").
 export function platform(): string {

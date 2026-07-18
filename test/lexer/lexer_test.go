@@ -83,11 +83,11 @@ func TestZeusLexer(t *testing.T) {
 		},
 		{
 			name:  "unknown token error",
-			input: "@",
+			input: "#",
 			expected: []*token.Token{
 				token.NewToken(token.TokenTypeEOF, token.NewSpan(*token.NewPosition(1, 2), *token.NewPosition(1, 2))),
 			},
-			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unknown token '@'", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
+			errors: []*zeus_error.ZeusError{zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "unknown token '#'", token.NewSpan(*token.NewPosition(1, 1), *token.NewPosition(1, 1)))},
 		},
 		{
 			name:  "identifier",

@@ -93,9 +93,10 @@ func (w *astWalker) VisitForStmt(stmt *ast.ForStmtNode) {
 func (w *astWalker) VisitThrowStmt(stmt *ast.ThrowStmtNode) { w.walkExpr(stmt.Expr) }
 
 func (w *astWalker) VisitImportStmt(*ast.ImportStmtNode)     {}
-func (w *astWalker) VisitExportStmt(*ast.ExportStmtNode)     {}
-func (w *astWalker) VisitBreakStmt(*ast.BreakStmtNode)       {}
-func (w *astWalker) VisitContinueStmt(*ast.ContinueStmtNode) {}
+func (w *astWalker) VisitExportStmt(*ast.ExportStmtNode)                {}
+func (w *astWalker) VisitBreakStmt(*ast.BreakStmtNode)                  {}
+func (w *astWalker) VisitContinueStmt(*ast.ContinueStmtNode)            {}
+func (w *astWalker) VisitAnnotationDirective(*ast.AnnotationStmtNode)   {}
 
 // ---- ast.ExprVisitor[zeus_value.Value] defaults ----
 

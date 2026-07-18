@@ -1,5 +1,5 @@
 // Bind libc abs() and round-trip the cint<->i32 numeric bridge in both directions.
-extern("C", "abs") function c_abs(x: cint): cint;
+@extern("C", "abs") function c_abs(x: cint): cint;
 
 function main(): i32 {
   let n: cint = -42 as cint;     // i32 -> cint

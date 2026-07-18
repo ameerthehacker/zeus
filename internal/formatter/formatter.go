@@ -258,6 +258,9 @@ func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 
 	case *ast.ContinueStmtNode:
 		return text("continue;")
+
+	case *ast.AnnotationStmtNode:
+		return concat(text(s.Annotation.PrettyString()), f.semi())
 	}
 
 	panic("formatter: unhandled statement node")
@@ -491,18 +494,18 @@ func (f *formatter) printTemplate(e *ast.TemplateStringExprNode) Doc {
 	return concat(parts...)
 }
 
-// externCallText reconstructs the extern(...) call for a binding, choosing the cleanest form:
-//   direct C-ABI to a zeus_ runtime symbol -> extern("zeus", "<rest>")
-//   direct C-ABI to any other C symbol     -> extern("C", "<symbol>")
-//   fat-ABI Zig runtime symbol (legacy)    -> extern("<symbol>")
+// externCallText reconstructs the @extern(...) decorator for a binding:
+//   direct C-ABI to a zeus_ runtime symbol -> @extern("zeus", "<rest>")
+//   direct C-ABI to any other C symbol     -> @extern("C", "<symbol>")
+//   fat-ABI Zig runtime symbol             -> @extern("<symbol>")
 func externCallText(symbol string, isCExtern bool) string {
 	if isCExtern {
 		if strings.HasPrefix(symbol, "zeus_") {
-			return "extern(\"zeus\", \"" + strings.TrimPrefix(symbol, "zeus_") + "\")"
+			return "@extern(\"zeus\", \"" + strings.TrimPrefix(symbol, "zeus_") + "\")"
 		}
-		return "extern(\"C\", \"" + symbol + "\")"
+		return "@extern(\"C\", \"" + symbol + "\")"
 	}
-	return "extern(\"" + symbol + "\")"
+	return "@extern(\"" + symbol + "\")"
 }
 
 func (f *formatter) printFunction(e *ast.FunctionDeclExprNode) Doc {
@@ -590,14 +593,14 @@ func (f *formatter) printProperty(p *ast.ClassProperty) Doc {
 
 func (f *formatter) printMethod(m *ast.ClassMethod) Doc {
 	parts := []Doc{}
+	if m.ExternSymbol != "" {
+		parts = append(parts, text(externCallText(m.ExternSymbol, false)+" "))
+	}
 	if m.AccessModifier != nil {
 		parts = append(parts, text(m.AccessModifier.Type.String()+" "))
 	}
 	if m.IsStatic {
 		parts = append(parts, text("static "))
-	}
-	if m.ExternSymbol != "" {
-		parts = append(parts, text("extern(\""+m.ExternSymbol+"\") "))
 	}
 	switch m.Accessor {
 	case ast.AccessorKindGetter:

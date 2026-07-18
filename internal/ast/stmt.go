@@ -113,6 +113,19 @@ type ThrowStmtNode struct {
 	Span *token.Span
 }
 
+// Annotation is a parsed `@name(args)`. Used as a decorator on a declaration (`@extern`) or as a
+// standalone directive (`@link`). Args are string-literal tokens, interpreted per annotation.
+type Annotation struct {
+	Name string
+	Args []*token.Token
+	Span *token.Span
+}
+
+// AnnotationStmtNode is a standalone `@name(...)` directive (e.g. @link). Emits no code.
+type AnnotationStmtNode struct {
+	Annotation *Annotation
+}
+
 type BreakStmtNode struct {
 	Span *token.Span
 }
@@ -135,6 +148,7 @@ type StmtVisitor interface {
 	VisitThrowStmt(stmt *ThrowStmtNode)
 	VisitBreakStmt(stmt *BreakStmtNode)
 	VisitContinueStmt(stmt *ContinueStmtNode)
+	VisitAnnotationDirective(stmt *AnnotationStmtNode)
 }
 
 type ExprStmtNode struct {
@@ -452,3 +466,19 @@ func (c *ContinueStmtNode) String() string {
 }
 func (c *ContinueStmtNode) PrettyString() string { return "continue" }
 func (c *ContinueStmtNode) Accept(v StmtVisitor) { v.VisitContinueStmt(c) }
+
+func (a *AnnotationStmtNode) GetSpan() *token.Span { return a.Annotation.Span }
+func (a *AnnotationStmtNode) String() string {
+	return fmt.Sprintf("{ type: AnnotationStmtNode, %s }", a.Annotation.PrettyString())
+}
+func (a *AnnotationStmtNode) PrettyString() string { return a.Annotation.PrettyString() }
+func (a *AnnotationStmtNode) Accept(v StmtVisitor)  { v.VisitAnnotationDirective(a) }
+
+// PrettyString renders `@name("a", "b")`.
+func (a *Annotation) PrettyString() string {
+	args := make([]string, len(a.Args))
+	for i, arg := range a.Args {
+		args[i] = fmt.Sprintf("%q", arg.Value)
+	}
+	return fmt.Sprintf("@%s(%s)", a.Name, strings.Join(args, ", "))
+}

@@ -3,11 +3,11 @@
 // The singleton is constructed in globals.zs, so `process` is available in every module without an
 // import — matching Node, where `process` is a global (unlike fs/os, which are imported modules).
 class Process {
-    public extern("zeus_process_cwd")    cwd(): string;
-    public extern("zeus_process_getenv") getEnv(name: string): string;
-    public extern("zeus_process_hasenv") hasEnv(name: string): boolean;
-    public extern("zeus_process_setenv") setEnv(name: string, value: string): void;
-    public extern("zeus_process_chdir")  chdir(path: string): boolean;
-    public extern("zeus_process_pid")    pid(): i32;
-    public extern("zeus_process_exit")   exit(code: i32): void;
+    @extern("zeus_process_cwd") public    cwd(): string;
+    @extern("zeus_process_getenv") public getEnv(name: string): string;
+    @extern("zeus_process_hasenv") public hasEnv(name: string): boolean;
+    @extern("zeus_process_setenv") public setEnv(name: string, value: string): void;
+    @extern("zeus_process_chdir") public  chdir(path: string): boolean;
+    @extern("zeus_process_pid") public    pid(): i32;
+    @extern("zeus_process_exit") public   exit(code: i32): void;
 }

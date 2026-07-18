@@ -1,0 +1,93 @@
+---
+title: File System (@std/fs)
+description: Synchronous file I/O — read, write, stat, and directory operations.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@std/fs` provides synchronous file I/O, bound directly to libc/POSIX. Import the functions you need:
+
+```zeus
+import { readFileSync, writeFileSync, existsSync } from "@std/fs";
+
+function main(): i32 {
+  writeFileSync("/tmp/note.txt", "hello");
+  if (existsSync("/tmp/note.txt")) {
+    console.log(readFileSync("/tmp/note.txt"));  // "hello"
+  }
+  return 0;
+}
+```
+
+<Aside type="note">
+Every operation is synchronous (blocking). Functions throw an `Error` on failure — wrap calls that
+can fail in `try`/`catch`.
+</Aside>
+
+## Reading & writing
+
+```zeus
+readFileSync(path: string): string
+writeFileSync(path: string, data: string): void
+```
+
+`readFileSync` reads the whole file (streaming in chunks, so pipes and `/proc` files work too) and
+throws on an open/read error. `writeFileSync` creates or truncates the file (mode `0644`), writing all
+bytes, and throws if the write fails.
+
+## Existence & metadata
+
+```zeus
+existsSync(path: string): boolean
+statSync(path: string): Stats
+```
+
+`statSync` returns a `Stats` object:
+
+```zeus
+import { statSync, Stats } from "@std/fs";
+
+let s: Stats = statSync("/tmp/note.txt");
+console.log(s.size);            // size in bytes (i64)
+console.log(s.mtime);           // modification time, unix seconds (i64)
+if (s.isFile()) { /* ... */ }
+if (s.isDirectory()) { /* ... */ }
+```
+
+## Directories
+
+```zeus
+mkdirSync(path: string): void            // create a directory (mode 0755)
+readdirSync(path: string): string[]      // entry names, excluding "." and ".."
+```
+
+```zeus
+import { readdirSync } from "@std/fs";
+
+let entries: string[] = readdirSync("/tmp");
+let i: i32 = 0;
+while (i < entries.length) {
+  console.log(entries[i]);
+  i = i + 1;
+}
+```
+
+## Removing & moving
+
+```zeus
+unlinkSync(path: string): void                       // delete a file
+renameSync(oldPath: string, newPath: string): void   // rename / move
+```
+
+## Full reference
+
+| Function | Returns | Throws on |
+|---|---|---|
+| `readFileSync(path)` | `string` | open/read error |
+| `writeFileSync(path, data)` | `void` | create/write error |
+| `existsSync(path)` | `boolean` | — |
+| `statSync(path)` | `Stats` | stat error |
+| `readdirSync(path)` | `string[]` | open/read error |
+| `mkdirSync(path)` | `void` | mkdir error |
+| `unlinkSync(path)` | `void` | unlink error |
+| `renameSync(old, new)` | `void` | rename error |

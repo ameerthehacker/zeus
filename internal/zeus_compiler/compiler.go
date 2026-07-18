@@ -405,7 +405,7 @@ func (c *Compiler) compileDebug(sourceFiles []*SourceFile, outDir string, output
 		os.Exit(1)
 	}
 
-	if linkError := linkObjFiles(objFiles, outputPath); linkError != nil {
+	if linkError := linkObjFiles(objFiles, collectLinkSpecs(sourceFiles), outputPath); linkError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
 		os.Exit(1)
 	}
@@ -440,7 +440,7 @@ func (c *Compiler) compileRelease(sourceFiles []*SourceFile, outputDir string, o
 		os.Exit(1)
 	}
 
-	if linkError := linkObjFiles([]string{objPath}, outputPath); linkError != nil {
+	if linkError := linkObjFiles([]string{objPath}, collectLinkSpecs(sourceFiles), outputPath); linkError != nil {
 		logger.Log(zeus_error.ErrorSeverityError, fmt.Sprintf("failed to link object files: %s", linkError.Error()))
 		os.Exit(1)
 	}
@@ -782,7 +782,40 @@ func getBDWGCLibDir() string {
 	return filepath.Join(zeusHome, "third_party", "bdwgc", "lib")
 }
 
-func linkObjFiles(objFiles []string, outputPath string) error {
+// LinkSpec is a native library dependency declared by a @link directive.
+type LinkSpec struct {
+	Lib        string // -> -l<Lib>
+	SearchPath string // optional -> -L<SearchPath>
+}
+
+// collectLinkSpecs gathers @link directives across all modules, deduped in first-seen order.
+func collectLinkSpecs(sourceFiles []*SourceFile) []LinkSpec {
+	var specs []LinkSpec
+	seen := map[string]bool{}
+	for _, sf := range sourceFiles {
+		if sf.Program == nil {
+			continue
+		}
+		for _, stmt := range sf.Program.Statements {
+			ann, ok := stmt.(*ast.AnnotationStmtNode)
+			if !ok || ann.Annotation.Name != "link" || len(ann.Annotation.Args) == 0 {
+				continue
+			}
+			spec := LinkSpec{Lib: ann.Annotation.Args[0].Value}
+			if len(ann.Annotation.Args) >= 2 {
+				spec.SearchPath = ann.Annotation.Args[1].Value
+			}
+			key := spec.Lib + "\x00" + spec.SearchPath
+			if !seen[key] {
+				seen[key] = true
+				specs = append(specs, spec)
+			}
+		}
+	}
+	return specs
+}
+
+func linkObjFiles(objFiles []string, linkSpecs []LinkSpec, outputPath string) error {
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -831,6 +864,15 @@ func linkObjFiles(objFiles []string, outputPath string) error {
 		}
 		linkerArgs = append(linkerArgs, objFiles...)
 		linkerArgs = append(linkerArgs, "-L"+getBDWGCLibDir(), "-lgc")
+		// @link libraries: search paths (-L) first so the -l lookups below can find them.
+		for _, spec := range linkSpecs {
+			if spec.SearchPath != "" {
+				linkerArgs = append(linkerArgs, "-L"+spec.SearchPath)
+			}
+		}
+		for _, spec := range linkSpecs {
+			linkerArgs = append(linkerArgs, "-l"+spec.Lib)
+		}
 		// The program's OS entry point is `main` (the entry module's user main, or a synthesized one).
 		// On macOS, LLVM prepends '_' to all symbol names in the object file, so the linker must
 		// reference the symbol with the '_' prefix.

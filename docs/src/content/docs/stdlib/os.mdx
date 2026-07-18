@@ -1,0 +1,41 @@
+---
+title: Operating System (@std/os)
+description: Platform, architecture, hostname, and system information.
+---
+
+`@std/os` exposes basic information about the host system.
+
+```zeus
+import { platform, arch, hostname } from "@std/os";
+
+function main(): i32 {
+  console.log(platform());  // "darwin" or "linux"
+  console.log(arch());      // "arm64" or "x64"
+  console.log(hostname());
+  return 0;
+}
+```
+
+## Reference
+
+```zeus
+platform(): string    // OS: "darwin", "linux"
+arch(): string        // CPU: "arm64", "x64"
+hostname(): string    // system hostname
+homedir(): string     // current user's home directory ($HOME)
+tmpdir(): string      // temp directory ($TMPDIR, else "/tmp")
+totalmem(): i64       // total physical memory, in bytes
+```
+
+## Example
+
+```zeus
+import { homedir, tmpdir, totalmem } from "@std/os";
+
+function main(): i32 {
+  console.log("home: " + homedir());
+  console.log("tmp:  " + tmpdir());
+  console.log("mem:  " + (totalmem() as i32) + " bytes");
+  return 0;
+}
+```

@@ -1,6 +1,6 @@
 [
     {
-        "name": "Direct C-ABI call to libc getpid() via extern(\"C\")",
+        "name": "Direct C-ABI call to libc getpid() via @extern(\"C\")",
         "exit": "0",
         "entry": "ffi_getpid.zs"
     },
