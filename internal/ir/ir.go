@@ -2387,6 +2387,44 @@ func spliceFieldInits(body []ast.StmtNode, initStmts []ast.StmtNode, superRequir
 	return result
 }
 
+// accessLevel maps an access modifier to an ordinal (public=2 > protected=1 > private=0); a nil
+// modifier is public (the default).
+func accessLevel(am *token.Token) int {
+	if am == nil {
+		return 2
+	}
+	switch am.Type {
+	case token.TokenTypePrivate:
+		return 0
+	case token.TokenTypeProtected:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// checkOverrideVisibility errors when an instance method reduces the visibility of a same-named
+// method inherited from a base class. A private/protected override of a public method is still
+// reached by dynamic dispatch through a base reference (and via interface itables), so narrowing it
+// would let external code call an inaccessible method — bypassing access control.
+func (g *IRModule) checkOverrideVisibility(class, parentClass *zeus_value.Class) {
+	for _, m := range class.Methods {
+		if m.IsStatic || m.IsAccessor {
+			continue
+		}
+		parentM := zeus_value.LookupMethod(parentClass, m.Method.SourceName())
+		if parentM == nil {
+			continue
+		}
+		if accessLevel(m.AccessModifier) < accessLevel(parentM.AccessModifier) {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("method '%s' cannot reduce the visibility of the method it overrides from base class '%s'", m.Method.SourceName(), parentClass.SourceName()),
+				Span:    m.Method.GetSpan(),
+			})
+		}
+	}
+}
+
 func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Value {
 	// Rewrite instance-property initializers into the constructor before any processing so the
 	// synthesized/modified constructor flows through the normal method-emission machinery.
@@ -2585,6 +2623,9 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 	g.buildClass(class, regularMethodASTs)
 	g.buildStaticMethods(class, staticMethodASTs, len(regularMethodASTs))
 	g.buildAccessors(class, accessorMethodASTs)
+	if parentClass != nil {
+		g.checkOverrideVisibility(class, parentClass)
+	}
 	g.symbolTable().ExitScope()
 
 	// Register by source name so VisitIdentifier resolves correctly.
@@ -3113,32 +3154,23 @@ func (g *IRModule) getOrCreateStringClass() *zeus_value.Class {
 func (g *IRModule) VisitTemplateString(expr *ast.TemplateStringExprNode) zeus_value.Value {
 	span := expr.GetSpan()
 
-	var acc zeus_value.Value
+	// Keep the template as one STRING_TEMPLATE node (static chunks + evaluated interpolated values)
+	// instead of desugaring to `+` here, so the type checker can give template-specific interpolation
+	// errors. StringTemplateLoweringPass rewrites it to the concat chain after type checking.
+	parts := make([]*StringTemplatePart, 0, len(expr.Parts))
 	for _, part := range expr.Parts {
-		var val zeus_value.Value
 		if part.IsExpr {
-			val = part.Expr.Accept(g)
+			val := part.Expr.Accept(g)
+			if val == nil {
+				continue // interpolated expression failed to resolve; error already reported
+			}
+			parts = append(parts, &StringTemplatePart{IsExpr: true, Value: val})
 		} else if part.Str != "" {
-			val = g.VisitStringConstant(&ast.StringConstantExprNode{
-				Value: &token.Token{Value: part.Str, Span: span},
-			})
-		} else {
-			continue
-		}
-		if acc == nil {
-			acc = val
-		} else {
-			acc = g.irBuilder.BuildBinaryOp(acc, val, InstrTypeAdd, span)
+			parts = append(parts, &StringTemplatePart{IsExpr: false, Str: part.Str})
 		}
 	}
 
-	if acc == nil {
-		// All parts were empty static strings — return an empty string.
-		return g.VisitStringConstant(&ast.StringConstantExprNode{
-			Value: &token.Token{Value: "", Span: span},
-		})
-	}
-	return acc
+	return g.irBuilder.BuildStringTemplate(parts, span)
 }
 
 func (g *IRModule) VisitStringConstant(expr *ast.StringConstantExprNode) zeus_value.Value {

@@ -66,6 +66,12 @@ func (s *Server) convertToLSPDiagnostics(errors []*zeus_error.ZeusError) []proto
 			endChar = uint32(err.Span.End.Column)
 		}
 
+		message := err.Message
+		if err.Hint != "" {
+			// Fold the hint into the message so editors (which render only the message) still show it.
+			message += "\nhelp: " + err.Hint
+		}
+
 		diagnostics = append(diagnostics, protocol.Diagnostic{
 			Range: protocol.Range{
 				Start: protocol.Position{Line: startLine, Character: startChar},
@@ -73,7 +79,7 @@ func (s *Server) convertToLSPDiagnostics(errors []*zeus_error.ZeusError) []proto
 			},
 			Severity: severity,
 			Source:   "zeus",
-			Message:  err.Message,
+			Message:  message,
 		})
 	}
 

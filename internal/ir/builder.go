@@ -943,6 +943,25 @@ func (b *IRBuilder) BuildUnbox(boxValue zeus_value.Value, fieldType zeus_value.V
 	return result
 }
 
+// BuildStringTemplate emits a STRING_TEMPLATE node holding the template's parts (static chunks +
+// interpolated values). The result is always a `string`; StringTemplateLoweringPass rewrites it to
+// the concat chain after type checking (so interpolation errors stay template-specific).
+func (b *IRBuilder) BuildStringTemplate(parts []*StringTemplatePart, span *token.Span) zeus_value.Value {
+	result := b.createTempVariable(span)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		result.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+
+	b.pushInstr(&Instr{
+		Type:   InstrTypeStringTemplate,
+		Output: result,
+		Input:  NewStringTemplateInstrInput(parts),
+		Span:   span,
+	})
+
+	return result
+}
+
 func (b *IRBuilder) BuildGetIndex(array zeus_value.Value, indices []zeus_value.Value, span *token.Span) zeus_value.Value {
 	result := b.createTempVariable(span)
 

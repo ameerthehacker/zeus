@@ -53,6 +53,37 @@ function f(p: P): void {
 	}
 }
 
+// TestPrivateToStringDoesNotSatisfyStringify: a private toString cannot satisfy Stringify — the
+// conversion calls it from outside the class, so it must be public.
+func TestPrivateToStringDoesNotSatisfyStringify(t *testing.T) {
+	runTCExpectError(t, `
+class C { private toString(): string { return "c"; } }
+function f(c: C): void {
+    let s: string = c;
+}`, "assignable")
+}
+
+// TestPrivateMethodDoesNotSatisfyInterface: the public-method requirement is general to interface
+// conformance, not special-cased for Stringify.
+func TestPrivateMethodDoesNotSatisfyInterface(t *testing.T) {
+	runTCExpectError(t, `
+interface Speaker { speak(): string; }
+class Dog { private speak(): string { return "woof"; } }
+function need(s: Speaker): void {}
+function f(d: Dog): void { need(d); }`, "does not match")
+}
+
+// TestPrivateFieldDoesNotSatisfyInterfaceProperty: a private field cannot back a public interface
+// property (else the interface would read private state externally).
+func TestPrivateFieldDoesNotSatisfyInterfaceProperty(t *testing.T) {
+	runTCExpectError(t, `
+interface Named { name: string; }
+class C { private name: string; public constructor() { this.name = "x"; } }
+function f(c: C): void {
+    let n: Named = c;
+}`, "assignable")
+}
+
 // TestNonStringifyToStringFails: a value whose type has no toString() cannot convert to string.
 func TestNonStringifyToStringFails(t *testing.T) {
 	runTCExpectError(t, `

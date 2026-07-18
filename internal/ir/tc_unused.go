@@ -95,6 +95,13 @@ func (p *UnusedWarningPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 	case InstrTypeUnbox:
 		// The unboxed box object is used (its `value` field is read out).
 		markValueAsUsed(AsUnboxInstrInput(instr.Input).Value)
+	case InstrTypeStringTemplate:
+		// Each interpolated part value is used (concatenated into the result string).
+		for _, part := range AsStringTemplateInstrInput(instr.Input).Parts {
+			if part.IsExpr {
+				markValueAsUsed(part.Value)
+			}
+		}
 	case InstrTypeInstanceOf:
 		input := AsInstanceOfInstrInput(instr.Input)
 		markValueAsUsed(input.Value)

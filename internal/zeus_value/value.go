@@ -233,6 +233,11 @@ func NewClassAccessor(name string, getter *Function, setter *Function, accessMod
 	}
 }
 
+// IsPublic reports whether the accessor is public (the default when no access modifier is written).
+func (a *ClassAccessor) IsPublic() bool {
+	return a.AccessModifier == nil || a.AccessModifier.Type == token.TokenTypePublic
+}
+
 func (a *ClassAccessor) String() string {
 	parts := []string{}
 	if a.Getter != nil {
@@ -276,6 +281,11 @@ func (p *ClassProperty) String() string {
 	return fmt.Sprintf("%s %s%s", p.AccessModifier, readonly, p.Property)
 }
 
+// IsPublic reports whether the property is public (the default when no access modifier is written).
+func (p *ClassProperty) IsPublic() bool {
+	return p.AccessModifier == nil || p.AccessModifier.Type == token.TokenTypePublic
+}
+
 type ClassMethod struct {
 	Method         *Function
 	AccessModifier *token.Token
@@ -291,6 +301,11 @@ type ClassMethod struct {
 	// runtime (codegen emits it via emitExternMethodBody). This is how primordial classes
 	// are built — they are ordinary classes whose methods happen to be extern.
 	IsExtern bool
+}
+
+// IsPublic reports whether the method is public (the default when no access modifier is written).
+func (m *ClassMethod) IsPublic() bool {
+	return m.AccessModifier == nil || m.AccessModifier.Type == token.TokenTypePublic
 }
 
 func NewClassMethod(method *Function, accessModifier *token.Token) *ClassMethod {
@@ -534,7 +549,9 @@ func ResolveInterfacePropertyBacking(class *Class, prop *ClassProperty, writable
 	// Field first (fast path): a real data field, base-first index (what codegen offsets from).
 	for i, field := range layout.Fields {
 		if field.Property.Name == name {
-			if !CmpValueType(wantType, field.Property.ValueType) {
+			// A private/protected field cannot satisfy a public interface property — the interface
+			// reads it from outside the class, so only a public field conforms.
+			if !field.IsPublic() || !CmpValueType(wantType, field.Property.ValueType) {
 				return PropertyBacking{}, false
 			}
 			return PropertyBacking{Kind: PropertyBackingField, FieldIndex: i}, true
@@ -543,7 +560,7 @@ func ResolveInterfacePropertyBacking(class *Class, prop *ClassProperty, writable
 
 	// Else a get/set accessor (already a first-class vtable method).
 	acc := LookupAccessor(class, name)
-	if acc == nil || acc.Getter == nil || !CmpValueType(wantType, acc.Getter.ReturnType) {
+	if acc == nil || !acc.IsPublic() || acc.Getter == nil || !CmpValueType(wantType, acc.Getter.ReturnType) {
 		return PropertyBacking{}, false
 	}
 	setterSlot := -1

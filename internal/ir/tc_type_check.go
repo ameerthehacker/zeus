@@ -397,6 +397,8 @@ func (p *TypeCheckingPass) HandleInstruction(tc *TypeChecker, instr *Instr) {
 		p.tcBox(instr)
 	case InstrTypeUnbox:
 		p.tcUnbox(instr)
+	case InstrTypeStringTemplate:
+		p.tcStringTemplate(tc, instr)
 	case InstrTypeObjectPropertyAccess:
 		p.tcObjectPropertyAccess(tc, instr)
 	case InstrTypeMethodCall:
@@ -529,6 +531,7 @@ func (p *TypeCheckingPass) cmpValueWithImplicitCast(tc *TypeChecker, instr *Inst
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("type '%s' is not assignable to type '%s'", bType.String(), targetType.String()),
 				Span:    instr.Span,
+				Hint:    stringMismatchHint(targetType, bType),
 			})
 		}
 	}
@@ -554,6 +557,81 @@ func (p *TypeCheckingPass) tcUnbox(instr *Instr) {
 			instr.Output.ValueType = boxFieldType(objType.Class)
 		}
 	}
+}
+
+// tcStringTemplate type-checks a template literal as a whole (before it lowers to a concat chain),
+// converting each interpolated part to a string via toString(). A part that does not implement
+// Stringify produces a template-specific error anchored at the interpolated expression, instead of
+// the generic "invalid operands for binary operation".
+func (p *TypeCheckingPass) tcStringTemplate(tc *TypeChecker, instr *Instr) {
+	input := AsStringTemplateInstrInput(instr.Input)
+	for _, part := range input.Parts {
+		if !part.IsExpr {
+			continue
+		}
+		partType := tc.getValueType(part.Value)
+		if isStringType(partType) {
+			continue // already a string
+		}
+		tc.builder.SetInsertionBeforeInstr(tc.currentBlock, instr)
+		if converted, ok := p.emitToString(tc, part.Value, partType, part.Value.GetSpan()); ok {
+			part.Value = converted
+		} else {
+			tc.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("cannot interpolate a value of type '%s' in a template string", partType),
+				Span:    part.Value.GetSpan(),
+				Hint:    stringifyHint(partType),
+			})
+		}
+	}
+	// A template is always a string (set by BuildStringTemplate); ensure it if the class was late-bound.
+	if instr.Output != nil && instr.Output.ValueType == nil {
+		if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+			instr.Output.ValueType = zeus_value.NewObjectType(stringClass)
+		}
+	}
+}
+
+// stringifyHint suggests how to make a user-definable type (object/interface) satisfy Stringify when
+// it fails to convert to string. It explains the specific reason — missing / private / wrong-signature
+// toString. Returns "" for other types (primitives always convert, so they never fail).
+func stringifyHint(sourceType zeus_value.ValueType) string {
+	objType := zeus_value.AsObjectType(sourceType)
+	if objType == nil {
+		if zeus_value.IsInterfaceType(sourceType) {
+			return fmt.Sprintf("declare a `toString(): string` method on interface '%s' so it satisfies Stringify", sourceType)
+		}
+		return ""
+	}
+	m := zeus_value.LookupMethod(objType.Class, "toString")
+	switch {
+	case m == nil:
+		return fmt.Sprintf("implement Stringify by adding a public `toString(): string` method to '%s'", sourceType)
+	case !m.IsPublic():
+		return fmt.Sprintf("make '%s.toString' public so it satisfies Stringify", sourceType)
+	default:
+		// toString exists and is public but has a non-conforming signature.
+		return fmt.Sprintf("'%s.toString' must have the signature `toString(): string` to satisfy Stringify", sourceType)
+	}
+}
+
+// stringMismatchHint returns the Stringify hint when a value fails to convert to a `string` target.
+func stringMismatchHint(targetType, sourceType zeus_value.ValueType) string {
+	if isStringType(targetType) {
+		return stringifyHint(sourceType)
+	}
+	return ""
+}
+
+// binaryOpStringHint returns the Stringify hint for a failed `string + X` (or `X + string`) concat.
+func binaryOpStringHint(leftType, rightType zeus_value.ValueType) string {
+	if isStringType(leftType) && !isStringType(rightType) {
+		return stringifyHint(rightType)
+	}
+	if isStringType(rightType) && !isStringType(leftType) {
+		return stringifyHint(leftType)
+	}
+	return ""
 }
 
 // emitBox autoboxes value (a scalar) into boxClass (Number/Bool), inserting the scalar→field cast
@@ -943,10 +1021,15 @@ func (p *TypeCheckingPass) tcBinaryOp(tc *TypeChecker, instr *Instr, resultTypeF
 	}
 
 	if !cmpTypeFn(tc.getValueType(input.Left), tc.getValueType(input.Right)) {
-		tc.pushError(&zeus_error.ZeusError{
+		binErr := &zeus_error.ZeusError{
 			Message: fmt.Sprintf("invalid operands of type '%s' and '%s' for binary operation", tc.getValueType(input.Left), tc.getValueType(input.Right)),
 			Span:    instr.Span,
-		})
+		}
+		// For string concatenation (`"x" + o`), suggest Stringify on the non-string operand.
+		if instr.Type == InstrTypeAdd {
+			binErr.Hint = binaryOpStringHint(tc.getValueType(input.Left), tc.getValueType(input.Right))
+		}
+		tc.pushError(binErr)
 	} else {
 		left, right := p.doImplicitCastToSameType(tc, instr, input.Left, input.Right)
 		input.Left = left
@@ -1100,6 +1183,7 @@ func (p *TypeCheckingPass) tcFunctionCall(tc *TypeChecker, instr *Instr, functio
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), functionType.ParamTypes[i]),
 				Span:    args[i].GetSpan(),
+				Hint:    stringMismatchHint(functionType.ParamTypes[i], tc.getValueType(args[i])),
 			})
 		}
 	}
@@ -1141,6 +1225,7 @@ func (p *TypeCheckingPass) tcVariadicFunctionCall(tc *TypeChecker, instr *Instr,
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("argument %d of type '%s' does not match expected type '%s'", i+1, tc.getValueType(args[i]), expected),
 				Span:    args[i].GetSpan(),
+				Hint:    stringMismatchHint(expected, tc.getValueType(args[i])),
 			})
 		}
 	}

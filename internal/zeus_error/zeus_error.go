@@ -31,6 +31,8 @@ type ZeusError struct {
 	Message  string
 	Severity ErrorSeverity
 	Span     *token.Span
+	// Hint is an optional suggestion rendered as a `help:` line under the error (empty = none).
+	Hint string
 }
 
 func NewZeusError(severity ErrorSeverity, message string, span *token.Span) *ZeusError {

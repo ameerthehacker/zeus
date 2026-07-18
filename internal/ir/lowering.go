@@ -53,6 +53,9 @@ func NewLowerer(builder *IRBuilder) *Lowerer {
 		// Expands autobox BOX instructions into ALLOC_OBJ + field store early, so later passes and
 		// codegen only ever see ordinary object-construction instructions.
 		NewBoxLoweringPass(),
+		// Expands STRING_TEMPLATE into the `+`/concat chain (must run before StringOperatorLoweringPass,
+		// which lowers those `+` to string.concat).
+		NewStringTemplateLoweringPass(),
 		// Folds interface property access (OBJECT_PROPERTY_ACCESS + LOAD/STORE) into
 		// INTERFACE_PROP_GET/SET early, so later passes and codegen see a self-contained instr.
 		NewInterfacePropertyLoweringPass(),
@@ -1784,6 +1787,86 @@ func (p *CastLoweringPass) createFuncWrapperClass(builder *IRBuilder, fn *zeus_v
 type boxToLower struct {
 	instr *Instr
 	block *BasicBlock
+}
+
+// =============================================================================
+// StringTemplateLoweringPass — expands each STRING_TEMPLATE (a template literal kept whole through
+// type checking) into the left-to-right `+` concat over its now-all-string parts, then rewrites the
+// template instruction into a COERCE of that result (so its output var, referenced downstream, holds
+// the final string). Static chunks are materialized with buildLiteralString; StringOperatorLoweringPass
+// (which runs after) turns the emitted `+` into string.concat.
+// =============================================================================
+
+type templateToLower struct {
+	instr *Instr
+	block *BasicBlock
+}
+
+type StringTemplateLoweringPass struct {
+	templates []templateToLower
+}
+
+func NewStringTemplateLoweringPass() *StringTemplateLoweringPass { return &StringTemplateLoweringPass{} }
+
+func (p *StringTemplateLoweringPass) GetName() string { return "StringTemplateLowering" }
+
+func (p *StringTemplateLoweringPass) HandleInstruction(l *Lowerer, instr *Instr) {
+	if instr.Type == InstrTypeStringTemplate {
+		p.templates = append(p.templates, templateToLower{instr: instr, block: l.GetCurrentBlock()})
+	}
+}
+
+func (p *StringTemplateLoweringPass) Finalize(l *Lowerer) {
+	builder := l.GetBuilder()
+	for _, t := range p.templates {
+		p.lowerTemplate(builder, t.instr, t.block)
+	}
+}
+
+func (p *StringTemplateLoweringPass) lowerTemplate(builder *IRBuilder, instr *Instr, block *BasicBlock) {
+	input := AsStringTemplateInstrInput(instr.Input)
+	span := instr.Span
+	stringClass := getStringClass(builder)
+	u8ArrayClass := getU8ArrayClass(builder)
+	i32Type := zeus_value.IntType{Size: zeus_value.I32, Signed: true, Span: span}
+	stringType := zeus_value.NewObjectType(stringClass)
+
+	// Emit the concat chain before the template instr; each part is already a string after type check
+	// (static chunks are built here as literals).
+	if block != nil {
+		builder.SetBlockInsertionBefore(block, instr)
+	} else {
+		builder.SetInsertionBlock(nil)
+		builder.SetInsertionBefore(instr)
+	}
+
+	var acc zeus_value.Value
+	for _, part := range input.Parts {
+		var s zeus_value.Value
+		if part.IsExpr {
+			s = part.Value
+		} else {
+			s = buildLiteralString(builder, part.Str, stringClass, u8ArrayClass, i32Type, span)
+		}
+		if acc == nil {
+			acc = s
+		} else {
+			acc = builder.BuildBinaryOp(acc, s, InstrTypeAdd, span) // string + string -> concat (lowered next)
+			// Type the result string so a chained concat's next operand is recognized as a string by
+			// StringOperatorLoweringPass (the type checker no longer runs on these lowering-emitted adds).
+			if v := zeus_value.AsVar(acc); v != nil {
+				v.ValueType = stringType
+			}
+		}
+	}
+	if acc == nil {
+		acc = buildLiteralString(builder, "", stringClass, u8ArrayClass, i32Type, span) // empty template
+	}
+
+	// Rewrite the template instruction into COERCE(acc) so its output var == the final string.
+	instr.Type = InstrTypeCoerce
+	instr.Input = NewCoerceInstrInput(acc, stringType)
+	instr.Output.ValueType = stringType
 }
 
 type BoxLoweringPass struct {

@@ -621,6 +621,39 @@ func AsUnboxInstrInput(input InstrInput) *UnboxInstrInput {
 	return nil
 }
 
+// StringTemplatePart is one segment of a template literal instruction — either a static string
+// chunk (IsExpr=false, Str) or an interpolated value (IsExpr=true, Value). Mirrors ast.TemplateStringPart
+// but holds the already-evaluated interpolated Value; the type checker replaces it with its stringified form.
+type StringTemplatePart struct {
+	IsExpr bool
+	Str    string
+	Value  zeus_value.Value
+}
+
+// StringTemplateInstrInput is a template literal kept whole through type checking (see InstrTypeStringTemplate).
+type StringTemplateInstrInput struct {
+	Parts []*StringTemplatePart
+}
+
+func NewStringTemplateInstrInput(parts []*StringTemplatePart) *StringTemplateInstrInput {
+	return &StringTemplateInstrInput{Parts: parts}
+}
+
+func (i StringTemplateInstrInput) String() string {
+	return fmt.Sprintf("string_template(%d parts)", len(i.Parts))
+}
+
+func AsStringTemplateInstrInput(input InstrInput) *StringTemplateInstrInput {
+	switch input := input.(type) {
+	case *StringTemplateInstrInput:
+		return input
+	default:
+		panicInvalidInputType("StringTemplateInstrInput", input)
+	}
+
+	return nil
+}
+
 type ObjectPropertyAccessInstrInput struct {
 	Object   zeus_value.Value
 	Property string
@@ -1182,6 +1215,10 @@ const (
 	// into a primitive slot or an arithmetic operand; BoxLoweringPass rewrites it to
 	// OBJECT_PROPERTY_ACCESS + LOAD. Output is the box's field type (f64/boolean).
 	InstrTypeUnbox
+	// a template literal `a ${x} b` kept as one node (static chunks + interpolated values) through
+	// type checking so interpolation errors are template-specific; StringTemplateLoweringPass rewrites
+	// it to the `+`/concat chain. Output is always `string`.
+	InstrTypeStringTemplate
 	// object property access
 	InstrTypeObjectPropertyAccess
 	// object method call (explicit receiver + method name + args)
@@ -1307,6 +1344,8 @@ func (i InstrType) String() string {
 		return "BOX"
 	case InstrTypeUnbox:
 		return "UNBOX"
+	case InstrTypeStringTemplate:
+		return "STRING_TEMPLATE"
 	case InstrTypeIndirectFuncCall:
 		return "CALL_INDIRECT_FUNC"
 	case InstrTypeObjectPropertyAccess:

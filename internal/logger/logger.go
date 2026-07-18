@@ -20,6 +20,7 @@ var (
 	colorMessage = color.New(color.FgYellow, color.Bold)
 	colorGutter  = color.New(color.FgHiBlack)
 	colorArrow   = color.New(color.FgHiBlack)
+	colorHelp    = color.New(color.FgHiCyan, color.Bold)
 )
 
 func severityColor(severity zeus_error.ErrorSeverity) *color.Color {
@@ -71,6 +72,9 @@ func PrettyPrintError(filePath string, source string, errors []*zeus_error.ZeusE
 	for _, err := range errors {
 		if err.Span == nil {
 			fmt.Fprintln(os.Stderr, formatError(err.Severity, filePath, err.Message))
+			if err.Hint != "" {
+				fmt.Fprintf(os.Stderr, "  %s %s\n", colorHelp.Sprint("help:"), err.Hint)
+			}
 			continue
 		}
 
@@ -149,5 +153,8 @@ func PrettyPrintError(filePath string, source string, errors []*zeus_error.ZeusE
 		}
 
 		fmt.Fprintf(os.Stderr, "%s %s\n", gutterPad, pipe)
+		if err.Hint != "" {
+			fmt.Fprintf(os.Stderr, "%s %s %s\n", gutterPad, colorHelp.Sprint("help:"), err.Hint)
+		}
 	}
 }

@@ -1,5 +1,46 @@
 [
-    { "name": "console.log accepts all primitives + Number via Stringify", "entry": "log_all.zs", "exit": "0", "stdout": "5\ntrue\n3.14\n9007199254740993\n7\n" },
-    { "name": "string concat + template interpolation convert via toString", "entry": "concat.zs", "exit": "0", "stdout": "count: 42\nhello world\nn=3\nbool: true\n" },
-    { "name": "user class toString + string as Stringify", "entry": "user_class.zs", "exit": "0", "stdout": "Point(9)\nhi\n42\n" }
+    {
+        "name": "console.log accepts all primitives + Number via Stringify",
+        "entry": "log_all.zs",
+        "exit": "0",
+        "stdout": "5\ntrue\n3.14\n9007199254740993\n7\n"
+    },
+    {
+        "name": "string concat + template interpolation convert via toString",
+        "entry": "concat.zs",
+        "exit": "0",
+        "stdout": "count: 42\nhello world\nn=3\nbool: true\n"
+    },
+    {
+        "name": "user class toString + string as Stringify",
+        "entry": "user_class.zs",
+        "exit": "0",
+        "stdout": "Point(9)\nhi\n42\n"
+    },
+    {
+        "name": "non-Stringify value cannot convert to string (help hint)",
+        "entry": "no_tostring_err.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "does not match expected type 'string'",
+            "Stringify"
+        ]
+    },
+    {
+        "name": "private toString hint (make public)",
+        "entry": "private_tostring_err.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "make",
+            "public"
+        ]
+    },
+    {
+        "name": "wrong-signature toString hint",
+        "entry": "wrong_sig_err.zs",
+        "compile_error": true,
+        "stderr_contains": [
+            "signature"
+        ]
+    }
 ]

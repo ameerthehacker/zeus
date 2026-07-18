@@ -846,6 +846,12 @@ func lookupMethodType(source ValueType, name string) (ValueType, bool) {
 		for cls := src.Class; cls != nil; cls = cls.ParentClass {
 			for _, method := range cls.Methods {
 				if method.Method.SourceName() == name {
+					// A private/protected method cannot satisfy an interface's public contract — the
+					// interface is called from outside the class (e.g. the Stringify -> string
+					// conversion invokes toString externally), so only a public method conforms.
+					if !method.IsPublic() {
+						return nil, false
+					}
 					return ToFunctionType(*method.Method), true
 				}
 			}
