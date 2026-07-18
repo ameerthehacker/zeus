@@ -1606,6 +1606,30 @@ func (p *TypeCheckingPass) tcObjectPropertyAccess(tc *TypeChecker, instr *Instr)
 	}
 }
 
+// classConformsToStringify reports whether class has a public toString(): string (the Stringify
+// contract) — an explicit user/box toString that should be dispatched, rather than reflected.
+func classConformsToStringify(class *zeus_value.Class) bool {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	return stringify != nil && zeus_value.ClassConformsToInterface(class, stringify)
+}
+
+// rewriteMethodCallAsReflect turns an `x.toString()` CALL_METHOD (on a receiver with no conforming
+// toString) into a REFLECT_TO_STRING in place, so reflection — the value's structural debug string —
+// is callable on ANY value, keeping the same output var. Nothing else re-visits this instruction.
+func (p *TypeCheckingPass) rewriteMethodCallAsReflect(instr *Instr, obj zeus_value.Value) {
+	instr.Type = InstrTypeReflectToString
+	instr.Input = NewReflectToStringInstrInput(obj)
+	if stringClass := zeus_value.Registry.GetClass(zeus_value.ZEUS_PRIMORDIAL_STRING); stringClass != nil {
+		instr.Output.ValueType = zeus_value.NewObjectType(stringClass)
+	}
+}
+
+// isToStringCall reports whether a method call is a no-arg `x.toString()` (the universal stringify
+// entry point) not going through an explicit super dispatch.
+func isToStringCall(input *MethodCallInstrInput) bool {
+	return input.MethodName == "toString" && len(input.Args) == 0 && input.StaticClass == nil
+}
+
 func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	input := AsMethodCallInstrInput(instr.Input)
 
@@ -1628,6 +1652,12 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 			}
 		}
 		if ifaceMethod == nil {
+			// Universal toString: an interface value reflects (via its concrete runtime type) when the
+			// interface itself doesn't declare toString.
+			if isToStringCall(input) {
+				p.rewriteMethodCallAsReflect(instr, input.Object)
+				return
+			}
 			tc.pushError(&zeus_error.ZeusError{
 				Message: fmt.Sprintf("interface '%s' has no method '%s'", iface.Name, input.MethodName),
 				Span:    instr.Output.Span,
@@ -1662,6 +1692,13 @@ func (p *TypeCheckingPass) tcMethodCall(tc *TypeChecker, instr *Instr) {
 	// super.method() resolves non-virtually on the base class, not the receiver's dynamic class.
 	if input.StaticClass != nil {
 		class = input.StaticClass
+	}
+	// Universal toString: every value is stringifiable. `x.toString()` on a class with no public
+	// Stringify-conforming toString reflects (its structural debug string) instead of erroring, so
+	// reflection is callable on ANY value. A user/box toString (conforming) dispatches normally below.
+	if isToStringCall(input) && !classConformsToStringify(class) {
+		p.rewriteMethodCallAsReflect(instr, input.Object)
+		return
 	}
 	// Walk the inheritance chain so an inherited (or overridden) method is found; a derived
 	// method shadows a same-named base method.

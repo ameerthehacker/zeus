@@ -10,5 +10,17 @@
         "entry": "arrays.zs",
         "exit": "0",
         "stdout": "[10, 20, 30]\n[1.5, 2]\n[\"a\", \"b\"]\n[true, false]\n[]\n[Point { x: 1 }, Point { x: 2 }]\n[[1, 2], [3]]\n"
+    },
+    {
+        "name": "nested values render via their own toString (Money/Number box), not structurally",
+        "entry": "nested.zs",
+        "exit": "0",
+        "stdout": "Wallet { amount: $500, count: 5, ok: true }\n[$1, $2]\n"
+    },
+    {
+        "name": "x.toString() callable on any value (reflect default, overridable, arrays/primitives)",
+        "entry": "tostring.zs",
+        "exit": "0",
+        "stdout": "Bare { x: 42 }\nN(hi)\n[1, 2, 3]\n5\ntrue\n"
     }
 ]

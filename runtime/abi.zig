@@ -40,6 +40,10 @@ pub const ZeusObjectTypeInfo = extern struct {
     class_name: [*:0]const u8,
     field_table: ?[*]const ZeusFieldInfo,
     num_fields: u32,
+    // vtable slot of a Stringify-conforming public toString(): string, or -1 if the class has none.
+    // The reflection printer dispatches to it for nested values instead of walking fields (so a nested
+    // Number/Bool box renders as 5/true and a user object via its toString).
+    tostring_slot: i32,
 
     pub fn getParentTypeInfo(self: *const ZeusObjectTypeInfo) *ZeusObjectTypeInfo {
         return @as(*ZeusObjectTypeInfo, @ptrCast(@alignCast(self.parent_type_info)));

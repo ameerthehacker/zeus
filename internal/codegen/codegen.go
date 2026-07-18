@@ -300,6 +300,8 @@ func (c *Codegen) NewModule(name string, isEntryPoint bool, targetDataLayout llv
 		llvm.PointerType(zeusFieldInfoStructType, 0),
 		// num_fields
 		c.cxt.Int32Type(),
+		// tostring_slot — vtable slot of a Stringify-conforming toString, or -1
+		c.cxt.Int32Type(),
 	}, false)
 
 	// Extract directory and filename from path
@@ -1500,6 +1502,7 @@ func (c *CodegenModule) genObjectArrayTypeHandle(class zeus_value.Class) *ZeusCl
 		arrClassName,
 		arrFieldTable,
 		arrNumFields,
+		c.constI32(-1), // arrays render as [..]; no toString dispatch
 	}, false))
 
 	// Own header sharing Object[]'s vtable, so method calls dispatch to the shared code.
@@ -1592,6 +1595,23 @@ func (c *CodegenModule) genReflectionMetadata(class zeus_value.Class, llvmStruct
 	return classNamePtr, tablePtr, llvm.ConstInt(i32, uint64(len(entries)), false)
 }
 
+// tostringVtableSlot returns the vtable slot of a class's Stringify-conforming public
+// toString(): string so the runtime reflection printer can dispatch to it for a nested value, or -1
+// if the class has none (no toString, or a private/wrong-signature one). Uses the same conformance
+// predicate as the type checker's emitToString, so top-level and nested rendering stay consistent.
+func (c *CodegenModule) tostringVtableSlot(class zeus_value.Class) int {
+	stringify := zeus_value.Registry.GetInterface(zeus_value.ZEUS_STRINGIFY_INTERFACE)
+	if stringify == nil || !zeus_value.ClassConformsToInterface(&class, stringify) {
+		return -1
+	}
+	return util.GetMethodIndex(&class, "toString")
+}
+
+// constI32 builds an i32 constant that round-trips a possibly-negative Go int (e.g. a -1 vtable slot).
+func (c *CodegenModule) constI32(v int) llvm.Value {
+	return llvm.ConstInt(c.cxt.Int32Type(), uint64(uint32(int32(v))), false)
+}
+
 // genClass generates LLVM code for a Zeus class including struct types, vtable, and object header
 func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 	if c.zeusClassLLVMStructMap[class.Name] != nil {
@@ -1655,6 +1675,7 @@ func (c *CodegenModule) genClass(class zeus_value.Class) *ZeusClassLLVMStruct {
 		className,
 		fieldTable,
 		numFields,
+		c.constI32(c.tostringVtableSlot(class)),
 	}, false))
 	// create the obj header global
 	llvmObjectHeader := llvm.AddGlobal(c.module, objectHeaderStructType, GetObjectHeaderStructPtrName(structName))

@@ -15,6 +15,7 @@ var default_object_type_info: abi.ZeusObjectTypeInfo = abi.ZeusObjectTypeInfo{
     .class_name = "Object",
     .field_table = null,
     .num_fields = 0,
+    .tostring_slot = -1,
 };
 
 // Dummy vtable for default object header
