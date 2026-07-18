@@ -344,21 +344,33 @@ let emojiLen = emoji.length;  // 4
 
 ## Template String Literals
 
-Template string literals use backticks and `${expression}` placeholders to embed string values inline:
+Template string literals use backticks and `${expression}` placeholders to embed values inline:
 
 ```zeus
 let name = "Zeus";
-let version = "1.0";
+let count = 3;
 
 let greeting = `Hello, ${name}!`;         // "Hello, Zeus!"
-let info = `${name} v${version}`;         // "Zeus v1.0"
+let stats = `${name} has ${count} fans`;  // "Zeus has 3 fans"
 let plain = `no interpolation here`;      // "no interpolation here"
 ```
 
-Each `${...}` expression must be of type `string`. Segments are concatenated left-to-right using the same `+` operator as explicit string concatenation, so all the same type rules apply.
+Any value can be interpolated — numbers, booleans, objects, and arrays are converted to a string
+automatically (via their `toString`, structural reflection for objects/arrays otherwise). The same
+conversion powers `+` string concatenation:
 
-<Aside type="caution" title="String expressions only">
-  Interpolated expressions must be of type `string`. To embed a number, convert it to a string first using a method or format it via another string variable.
+```zeus
+class Point { x: i32; constructor(x: i32) { this.x = x; } }
+
+let n = 42;
+let p = new Point(7);
+let msg = `n=${n}, p=${p}`;   // "n=42, p=Point { x: 7 }"
+let sum = "value: " + n;      // "value: 42"
+```
+
+<Aside type="tip">
+  Define a public `toString(): string` on a class to control how it renders inside templates,
+  concatenation, and `console.log` — see [Console](/language/console/).
 </Aside>
 
 ## Future Features
