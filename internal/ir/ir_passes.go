@@ -366,6 +366,9 @@ func (p *DeclCheckPass) registerFunctionStub(g *IRModule, expr *ast.FunctionDecl
 	}
 	fn := zeus_value.NewFunction(name, params, returnType, expr.Name.Name.Span)
 	fn.OriginalName = name
+	// Populate defaults on the stub so forward calls (parsed before the definition) can substitute
+	// them; BuildFuncDecl reuses this same Function object, so backward calls see them too.
+	fn.ParamDefaults = paramDefaults(expr.Params)
 
 	// A user extern("C",...) is a body-less, module-level function whose wrapper must be emitted at
 	// module scope (currentBlock == nil). IREmitPass emits every registered primordial function at

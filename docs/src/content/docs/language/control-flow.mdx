@@ -152,6 +152,92 @@ function main(): i32 {
 
 ---
 
+## For…of Loops
+
+A `for…of` loop iterates directly over the elements of an array — no index bookkeeping required. Declare the element binding with `const` (or `let`) and name the array to iterate over:
+
+```zeus
+function main(): i32 {
+  let nums: i32[] = new i32[];
+  nums.push(10);
+  nums.push(20);
+  nums.push(30);
+
+  let sum = 0;
+  for (const n of nums) {
+    sum += n;
+  }
+
+  return sum; // 60
+}
+```
+
+### Syntax
+
+```
+for (const element of array) {
+    // body
+}
+```
+
+- **element** — a fresh binding for each iteration; its type is inferred from the array's element type
+- **array** — the array (any `T[]` expression) to iterate; it is evaluated **once**, before the loop starts
+
+Use `let` instead of `const` when you want to reassign the element binding inside the loop body:
+
+```zeus
+for (let n of nums) {
+  n = n * 2; // mutate the loop-local copy
+  // ...
+}
+```
+
+### Break and Continue
+
+`break` and `continue` behave exactly as they do in a regular `for` loop:
+
+```zeus
+function firstEven(nums: i32[]): i32 {
+  for (const n of nums) {
+    if (n % 2 != 0) {
+      continue; // skip odd numbers
+    }
+    return n;   // return the first even one
+  }
+  return -1;
+}
+```
+
+### Iterating Objects
+
+`for…of` works over arrays of any element type, including class instances:
+
+```zeus
+class Point {
+  public x: i32;
+  constructor(x: i32) { this.x = x; }
+}
+
+function main(): i32 {
+  let pts: Point[] = new Point[];
+  pts.push(new Point(3));
+  pts.push(new Point(4));
+
+  let sum = 0;
+  for (const p of pts) {
+    sum += p.x;
+  }
+
+  return sum; // 7
+}
+```
+
+<Aside type="note">
+  `of` is a contextual keyword — it is only special inside a `for (...)` header, so you can still use `of` as a variable name elsewhere. `for…of` currently iterates arrays; other iterable types (such as strings) are not yet supported.
+</Aside>
+
+---
+
 ## While Loops
 
 Repeat while a condition holds:

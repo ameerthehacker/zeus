@@ -154,6 +154,22 @@ func TestFormatGolden(t *testing.T) {
 `,
 		},
 		{
+			name:  "function with default parameter",
+			input: "function add(a:i32,b:i32=10):i32{return a+b;}",
+			expected: `function add(a: i32, b: i32 = 10): i32 {
+    return a + b;
+}
+`,
+		},
+		{
+			name:  "for-of loop",
+			input: "for(const x of xs){sum+=x;}",
+			expected: `for (const x of xs) {
+    sum += x;
+}
+`,
+		},
+		{
 			name:  "if else",
 			input: "if(x>0){return 1;}else{return 2;}",
 			expected: `if (x > 0) {

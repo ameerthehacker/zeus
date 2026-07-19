@@ -569,6 +569,62 @@ func (g *IRModule) VisitForStmt(stmt *ast.ForStmtNode) {
 	g.symbolTable().ExitScope()
 }
 
+// VisitForOfStmt desugars `for (const elem of arr) { body }` into an index-based for loop over
+// the array, reusing the existing for-loop, array-length, and indexing machinery:
+//
+//	{
+//	  let $forof_arr = arr;
+//	  for (let $forof_i = 0; $forof_i < $forof_arr.length; $forof_i++) {
+//	    const elem = $forof_arr[$forof_i];
+//	    body
+//	  }
+//	}
+func (g *IRModule) VisitForOfStmt(stmt *ast.ForOfStmtNode) {
+	span := stmt.Span
+
+	// Fresh, collision-proof names for the array snapshot and index temporaries.
+	arrName := g.generateUniqueName("$forof_arr")
+	idxName := g.generateUniqueName("$forof_i")
+
+	ident := func(name string) *ast.IdentifierExprNode {
+		return &ast.IdentifierExprNode{Name: token.NewTokenWithValue(token.TokenTypeIdentifier, name, span)}
+	}
+	varDeclStmt := func(declType ast.VarDeclType, name *ast.IdentifierExprNode, init ast.ExprNode) *ast.VarDeclStmtNode {
+		return &ast.VarDeclStmtNode{
+			Decls: []ast.VarDeclNode{{DeclType: declType, Identifier: name, Initializer: init}},
+			Span:  span,
+		}
+	}
+
+	// let $forof_arr = <Iterable>;  — evaluate the iterable exactly once.
+	arrDecl := varDeclStmt(ast.VarDeclTypeLet, ident(arrName), stmt.Iterable)
+
+	// for (let $forof_i = 0; $forof_i < $forof_arr.length; $forof_i++) { const elem = $forof_arr[$forof_i]; body }
+	initDecl := varDeclStmt(ast.VarDeclTypeLet, ident(idxName),
+		&ast.NumberExprNode{Value: token.NewTokenWithValue(token.TokenTypeNumber, "0", span)})
+	condition := &ast.BinaryExprNode{
+		Left:     ident(idxName),
+		Operator: token.NewToken(token.TokenTypeLessThan, span),
+		Right:    &ast.ObjectPropertyAccessExprNode{Object: ident(arrName), Property: ident("length"), Span: span},
+	}
+	update := &ast.PostfixExprNode{Expr: ident(idxName), Operator: token.NewToken(token.TokenTypePlusPlus, span)}
+	elemDecl := varDeclStmt(stmt.DeclType, stmt.Variable, &ast.IndexingExprNode{
+		Array:        ident(arrName),
+		IndexingMeta: ast.IndexingMeta{IndexingExprs: []ast.ExprNode{ident(idxName)}},
+		Span:         span,
+	})
+	forStmt := &ast.ForStmtNode{
+		Init:      initDecl,
+		Condition: condition,
+		Update:    update,
+		Body:      &ast.BlockStmtNode{Statements: []ast.StmtNode{elemDecl, stmt.Body}, Span: span},
+		Span:      span,
+	}
+
+	// Scope the array snapshot to the loop.
+	(&ast.BlockStmtNode{Statements: []ast.StmtNode{arrDecl, forStmt}, Span: span}).Accept(g)
+}
+
 func (g *IRModule) VisitBreakStmt(stmt *ast.BreakStmtNode) {
 	ctx := g.currentLoopContext()
 	if ctx == nil {
@@ -1066,6 +1122,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 						if !ok {
 							return nil
 						}
+						args = g.appendDefaultArgs(m.Method, args, expr.GetSpan())
 						return g.irBuilder.BuildCallFunc(m.Method, args, expr.GetSpan())
 					}
 				}
@@ -1100,6 +1157,11 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 		if !ok {
 			return nil
 		}
+		if objType := zeus_value.AsObjectType(zeus_value.GetValueType(object)); objType != nil {
+			if m := g.lookupMethod(objType.Class, propAccess.Property.Name.Value); m != nil {
+				args = g.appendDefaultArgs(m, args, expr.GetSpan())
+			}
+		}
 		return g.irBuilder.BuildMethodCall(object, propAccess.Property.Name.Value, args, nil, nil, expr.GetSpan())
 	}
 
@@ -1111,6 +1173,7 @@ func (g *IRModule) VisitFunctionCallExpr(expr *ast.FunctionCallExprNode) zeus_va
 
 	if zeus_value.IsFunction(callee) {
 		fn := zeus_value.AsFunction(callee)
+		params = g.appendDefaultArgs(fn, params, expr.GetSpan())
 		return g.irBuilder.BuildCallFunc(fn, params, expr.GetSpan())
 	} else if zeus_value.IsVar(callee) {
 		addr := zeus_value.AsVar(callee)
@@ -1261,11 +1324,106 @@ func (g *IRModule) emitModuleInitDispatch(span *token.Span) {
 	}
 }
 
+// paramDefaults extracts each parameter's default-value initializer (or nil when absent) as a
+// []any suitable for zeus_value.Function.ParamDefaults. Returns nil when no param has a default.
+func paramDefaults(params []*ast.VarDeclNode) []any {
+	hasDefault := false
+	defaults := make([]any, len(params))
+	for i, p := range params {
+		if p.Initializer != nil {
+			defaults[i] = p.Initializer
+			hasDefault = true
+		}
+	}
+	if !hasDefault {
+		return nil
+	}
+	return defaults
+}
+
+// checkParamDefaults rejects default-parameter expressions that reference another parameter or
+// `this`/`super`. Defaults are substituted at the call site, not evaluated in the callee's scope,
+// so such a reference would silently bind to a same-named caller variable (wrong value) or fail
+// to resolve. Referencing module globals or free functions is fine — they resolve identically at
+// every call site.
+func (g *IRModule) checkParamDefaults(fnParams []*ast.VarDeclNode) {
+	paramNames := make(map[string]bool, len(fnParams))
+	for _, p := range fnParams {
+		paramNames[p.Identifier.Name.Value] = true
+	}
+	for _, p := range fnParams {
+		if p.Initializer == nil {
+			continue
+		}
+		c := newDefaultRefCollector()
+		p.Initializer.Accept(c)
+
+		offender := ""
+		switch {
+		case c.names[token.THIS_KEYWORD]:
+			offender = "'this'"
+		case c.names[token.SUPER_KEYWORD]:
+			offender = "'super'"
+		default:
+			for name := range c.names {
+				if paramNames[name] {
+					offender = "another parameter"
+					break
+				}
+			}
+		}
+		if offender != "" {
+			g.pushError(&zeus_error.ZeusError{
+				Message: fmt.Sprintf("default value of parameter '%s' cannot reference %s; default parameter values are evaluated at the call site", p.Identifier.Name.Value, offender),
+				Span:    p.Initializer.GetSpan(),
+			})
+		}
+	}
+}
+
+// appendDefaultArgs pads args with call-site-evaluated default values for omitted trailing
+// parameters. Each default (an ast.ExprNode stored on the Function) is emitted in the caller's
+// current block. A missing argument with no default stops the fill and is left for the type
+// checker's arity check to report.
+func (g *IRModule) appendDefaultArgs(fn *zeus_value.Function, args []zeus_value.Value, span *token.Span) []zeus_value.Value {
+	if fn == nil {
+		return args
+	}
+	for i := len(args); i < len(fn.Params) && i < len(fn.ParamDefaults); i++ {
+		def, ok := fn.ParamDefaults[i].(ast.ExprNode)
+		if !ok {
+			break
+		}
+		val := def.Accept(g)
+		if val == nil {
+			break
+		}
+		args = append(args, val)
+	}
+	return args
+}
+
+// lookupMethod finds a method Function by source name on a class or any of its ancestors.
+func (g *IRModule) lookupMethod(class *zeus_value.Class, name string) *zeus_value.Function {
+	for cur := class; cur != nil; cur = cur.ParentClass {
+		for _, m := range cur.Methods {
+			if m.Method != nil && m.Method.SourceName() == name {
+				return m.Method
+			}
+		}
+	}
+	return nil
+}
+
 func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, returnType zeus_value.ValueType, fnBody *ast.BlockStmtNode, class *zeus_value.Class, capturedVars []*CapturedVar, span *token.Span) zeus_value.Value {
 	// The entry module's top-level `main` is the program's OS entry point: give it external linkage
 	// and inject the module-init dispatch as its first statements (captured now, before
 	// isInModuleScope is reset for the body below).
 	isEntryMain := g.isEntryPoint && g.isInModuleScope && class == nil && name == token.MAIN_FUNCTION_NAME
+
+	// Validate default-parameter expressions once, at the single body-emission point for every
+	// function/method/constructor.
+	g.checkParamDefaults(fnParams)
 
 	params := []*VarDecl{}
 
@@ -1301,6 +1459,7 @@ func (g *IRModule) emitFunction(name string, fnParams []*ast.VarDeclNode, return
 	// Vars and the Function, so both direct and forward references observe variadic-ness
 	// by the time type checking runs.
 	fn := g.irBuilder.BuildFuncDecl(name, params, body, returnType, class, span)
+	fn.ParamDefaults = paramDefaults(fnParams)
 	g.symbolTable().EnterScope()
 
 	// Declare params; for escaped params, immediately promote to a ref cell.
@@ -2269,6 +2428,11 @@ func (g *IRModule) VisitNewExpr(expr *ast.NewExprNode) zeus_value.Value {
 		// A constructor argument failed to resolve; the error was already reported.
 		return nil
 	}
+	if class := zeus_value.AsClass(calleeValue); class != nil {
+		if ctor := g.lookupMethod(class, token.CONSTRUCTOR_METHOD_NAME); ctor != nil {
+			args = g.appendDefaultArgs(ctor, args, expr.GetSpan())
+		}
+	}
 
 	result := g.irBuilder.BuildNewObj(calleeValue, args, expr.GetSpan())
 	// Type the result eagerly from the instantiated class so IR-gen consumers (e.g. module-scope
@@ -2641,6 +2805,7 @@ func (g *IRModule) VisitClassDeclExpr(expr *ast.ClassDeclExprNode) zeus_value.Va
 			method.Span,
 		)
 		function.IsVariadic = len(params) > 0 && params[len(params)-1].IsVariadic
+		function.ParamDefaults = paramDefaults(method.Params)
 		cm := zeus_value.NewClassMethod(function, method.AccessModifier)
 		cm.IsStatic = method.IsStatic
 		// Extern methods forward to a Zig runtime symbol; codegen emits their body via the shared

@@ -81,6 +81,16 @@ type ForStmtNode struct {
 	Span      *token.Span
 }
 
+// ForOfStmtNode represents `for (const elem of arr) { ... }`. It iterates the elements of an
+// array; IR gen desugars it to an index-based for loop over `arr.length`.
+type ForOfStmtNode struct {
+	DeclType VarDeclType         // const or let, preserved for the desugared element binding
+	Variable *IdentifierExprNode // loop variable (e.g. elem)
+	Iterable ExprNode            // the array expression
+	Body     StmtNode
+	Span     *token.Span
+}
+
 type ImportStmtNode struct {
 	Source  *token.Token
 	Imports []*IdentifierExprNode
@@ -143,6 +153,7 @@ type StmtVisitor interface {
 	VisitIfStmt(stmt *IfStmtNode)
 	VisitWhileStmt(stmt *WhileStmtNode)
 	VisitForStmt(stmt *ForStmtNode)
+	VisitForOfStmt(stmt *ForOfStmtNode)
 	VisitImportStmt(stmt *ImportStmtNode)
 	VisitExportStmt(stmt *ExportStmtNode)
 	VisitTryCatchStmt(stmt *TryCatchStmtNode)
@@ -356,6 +367,22 @@ func (f *ForStmtNode) PrettyString() string {
 		updateStr = f.Update.PrettyString()
 	}
 	return fmt.Sprintf("for (%s; %s; %s) {\n%s\n}", initStr, condStr, updateStr, f.Body.PrettyString())
+}
+
+func (f *ForOfStmtNode) GetSpan() *token.Span {
+	return f.Span
+}
+
+func (f *ForOfStmtNode) Accept(visitor StmtVisitor) {
+	visitor.VisitForOfStmt(f)
+}
+
+func (f *ForOfStmtNode) String() string {
+	return fmt.Sprintf("{ type: ForOfStmtNode, DeclType: %s, Variable: %s, Iterable: %s, Body: %s, Span: %s }", f.DeclType, f.Variable.String(), f.Iterable.String(), f.Body.String(), f.Span)
+}
+
+func (f *ForOfStmtNode) PrettyString() string {
+	return fmt.Sprintf("for (%s %s of %s) {\n%s\n}", f.DeclType, f.Variable.PrettyString(), f.Iterable.PrettyString(), f.Body.PrettyString())
 }
 
 func (i *ImportStmtNode) GetSpan() *token.Span {

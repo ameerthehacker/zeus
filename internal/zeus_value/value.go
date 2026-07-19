@@ -156,6 +156,10 @@ type Function struct {
 	Class        *Class // non-nil when this function is a class method
 	// IsVariadic is true when the final parameter is a rest parameter (`...args: T[]`).
 	IsVariadic bool
+	// ParamDefaults holds each parameter's default-value expression (an ast.ExprNode) or nil when
+	// the parameter has none. Typed `any` because zeus_value cannot import ast (ast imports
+	// zeus_value). Call sites read these to substitute defaults for omitted trailing arguments.
+	ParamDefaults []any
 	// ExternRuntimeName, when non-empty, is the symbol this function/method forwards to. When
 	// IsCExtern is false it is a Zig runtime symbol called via the fat ABI (see ClassMethod.IsExtern);
 	// when IsCExtern is true it is a raw C symbol called directly via the C ABI (extern("C","sym")).

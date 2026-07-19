@@ -236,6 +236,9 @@ func (f *formatter) printStmt(stmt ast.StmtNode) Doc {
 	case *ast.ForStmtNode:
 		return f.printFor(s)
 
+	case *ast.ForOfStmtNode:
+		return f.printForOf(s)
+
 	case *ast.ImportStmtNode:
 		return f.printImport(s)
 
@@ -361,6 +364,16 @@ func (f *formatter) printFor(s *ast.ForStmtNode) Doc {
 		update = f.printExpr(s.Update)
 	}
 	header := concat(text("for ("), init, text("; "), cond, text("; "), update, text(") "))
+	return concat(header, f.printBlockOf(s.Body))
+}
+
+func (f *formatter) printForOf(s *ast.ForOfStmtNode) Doc {
+	header := concat(
+		text("for ("),
+		text(s.DeclType.String()+" "+s.Variable.Name.Value+" of "),
+		f.printExpr(s.Iterable),
+		text(") "),
+	)
 	return concat(header, f.printBlockOf(s.Body))
 }
 
