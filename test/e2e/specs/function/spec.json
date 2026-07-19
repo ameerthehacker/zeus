@@ -38,5 +38,58 @@
         "name": "Function names may match primordial parameter names",
         "exit": "0",
         "entry": "reserved-primordial-names.zs"
+    },
+    {
+        "name": "Default parameter is used when omitted and overridden when provided",
+        "exit": "0",
+        "entry": "default-basic.zs"
+    },
+    {
+        "name": "Multiple default parameters fill omitted trailing args",
+        "exit": "0",
+        "entry": "default-multiple.zs"
+    },
+    {
+        "name": "Non-constant default is evaluated at the call site",
+        "exit": "0",
+        "entry": "default-nonconstant.zs"
+    },
+    {
+        "name": "Default parameter works for a forward-declared function",
+        "exit": "0",
+        "entry": "default-forward.zs"
+    },
+    {
+        "name": "Default parameters on constructor, method, and static method",
+        "exit": "0",
+        "entry": "default-class.zs"
+    },
+    {
+        "name": "A required parameter cannot follow an optional one",
+        "exit": "1",
+        "entry": "default-required-after-optional.zs",
+        "compile_error": true,
+        "stderr_contains": ["a required parameter cannot follow an optional parameter"]
+    },
+    {
+        "name": "A default value cannot reference another parameter",
+        "exit": "1",
+        "entry": "default-ref-param.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot reference another parameter"]
+    },
+    {
+        "name": "A method default cannot reference this",
+        "exit": "1",
+        "entry": "default-ref-this.zs",
+        "compile_error": true,
+        "stderr_contains": ["cannot reference 'this'"]
+    },
+    {
+        "name": "A rest parameter cannot have a default value",
+        "exit": "1",
+        "entry": "default-rest.zs",
+        "compile_error": true,
+        "stderr_contains": ["a rest parameter cannot have a default value"]
     }
 ]

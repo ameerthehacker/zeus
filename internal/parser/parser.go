@@ -139,14 +139,29 @@ func (p *Parser) parseFunctionSignature(functionName *ast.IdentifierExprNode, is
 	p.consumeToken(token.TokenTypeLeftParen, "after function name")
 
 	dataType := &ast.ValueTypeNode{ValueType: zeus_value.VoidType{}, Span: previousToken.Span}
+	sawOptional := false
 	for !p.isEOF() && p.peek().Type != token.TokenTypeRightParen {
-		param := p.parseVarDecl(false, false, ast.VarDeclTypeLet, "function parameter")
+		param := p.parseVarDecl(true, false, ast.VarDeclTypeLet, "function parameter")
 		params = append(params, param)
 		p.consumeOptionalToken(token.TokenTypeComma)
 
 		// A rest parameter must be the final parameter.
 		if param.IsVariadic && p.peek().Type != token.TokenTypeRightParen {
 			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "rest parameter must be the last parameter", param.Identifier.GetSpan()))
+		}
+
+		// A rest parameter cannot have a default value — it already defaults to an empty array
+		// when omitted, and a default would be injected as a single element by the call-site fill.
+		if param.IsVariadic && param.Initializer != nil {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "a rest parameter cannot have a default value", param.Identifier.GetSpan()))
+		}
+
+		// A required parameter cannot follow an optional (defaulted) one. The rest parameter is
+		// exempt — it is always last and is implicitly optional.
+		if param.Initializer != nil {
+			sawOptional = true
+		} else if sawOptional && !param.IsVariadic {
+			p.pushError(zeus_error.NewZeusError(zeus_error.ErrorSeverityError, "a required parameter cannot follow an optional parameter", param.Identifier.GetSpan()))
 		}
 	}
 
@@ -1040,9 +1055,14 @@ func (p *Parser) parseWhileStmt() *ast.WhileStmtNode {
 	return &ast.WhileStmtNode{Condition: condition, Body: body, Span: span}
 }
 
-func (p *Parser) parseForStmt() *ast.ForStmtNode {
+func (p *Parser) parseForStmt() ast.StmtNode {
 	forKeyword := p.consumeToken(token.TokenTypeFor)
 	p.consumeToken(token.TokenTypeLeftParen, "after for")
+
+	// `for (const elem of arr)` — iterate an array's elements.
+	if p.looksLikeForOf() {
+		return p.parseForOfStmt(forKeyword)
+	}
 
 	// Parse init (optional: can be var decl or expression)
 	var init ast.StmtNode
@@ -1096,6 +1116,45 @@ func (p *Parser) parseForStmt() *ast.ForStmtNode {
 	span := &token.Span{Start: forKeyword.Span.Start, End: body.GetSpan().End}
 
 	return &ast.ForStmtNode{Init: init, Condition: condition, Update: update, Body: body, Span: span}
+}
+
+// looksLikeForOf reports whether the tokens just after `for (` form `(const|let) IDENT of`,
+// i.e. a for-of loop rather than a C-style for. `of` is a contextual keyword recognized only
+// here, so it stays a normal identifier elsewhere.
+func (p *Parser) looksLikeForOf() bool {
+	kw := p.tokenAt(p.current)
+	if kw.Type != token.TokenTypeLet && kw.Type != token.TokenTypeConst {
+		return false
+	}
+	if p.tokenAt(p.current+1).Type != token.TokenTypeIdentifier {
+		return false
+	}
+	next := p.tokenAt(p.current + 2)
+	return next.Type == token.TokenTypeIdentifier && next.Value == "of"
+}
+
+// parseForOfStmt parses `for (const elem of arr) { ... }`. The opening `for (` is already
+// consumed by parseForStmt.
+func (p *Parser) parseForOfStmt(forKeyword *token.Token) ast.StmtNode {
+	declTypeToken := p.consume() // let or const (guaranteed by looksLikeForOf)
+	declType := ast.VarDeclTypeLet
+	if declTypeToken.Type == token.TokenTypeConst {
+		declType = ast.VarDeclTypeConst
+	}
+
+	variable := p.consumeIdentifier("in for-of loop variable")
+	p.consume() // the contextual `of` identifier
+
+	iterable := p.ParseExpr("in for-of loop iterable")
+	p.consumeToken(token.TokenTypeRightParen, "after for-of loop iterable")
+
+	body := p.ParseStmt()
+	if body == nil {
+		return nil
+	}
+	span := &token.Span{Start: forKeyword.Span.Start, End: body.GetSpan().End}
+
+	return &ast.ForOfStmtNode{DeclType: declType, Variable: variable, Iterable: iterable, Body: body, Span: span}
 }
 
 func (p *Parser) parseVarDeclStmt() *ast.VarDeclStmtNode {

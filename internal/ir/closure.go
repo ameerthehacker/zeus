@@ -90,6 +90,11 @@ func (w *astWalker) VisitForStmt(stmt *ast.ForStmtNode) {
 	w.walkStmt(stmt.Body)
 }
 
+func (w *astWalker) VisitForOfStmt(stmt *ast.ForOfStmtNode) {
+	w.walkExpr(stmt.Iterable)
+	w.walkStmt(stmt.Body)
+}
+
 func (w *astWalker) VisitThrowStmt(stmt *ast.ThrowStmtNode) { w.walkExpr(stmt.Expr) }
 
 func (w *astWalker) VisitImportStmt(*ast.ImportStmtNode)     {}
@@ -271,6 +276,15 @@ func (f *freeVarCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	}
 }
 
+// VisitForOfStmt declares the loop variable as a local so a closure nested in the body does not
+// mistake it for a free var to capture from an enclosing scope. The iterable is evaluated in the
+// enclosing scope, so walk it before the binding exists.
+func (f *freeVarCollector) VisitForOfStmt(stmt *ast.ForOfStmtNode) {
+	f.walkExpr(stmt.Iterable)
+	f.declareLocal(stmt.Variable.Name.Value)
+	f.walkStmt(stmt.Body)
+}
+
 func (f *freeVarCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 	f.walkStmt(stmt.TryBody)
 	for _, clause := range stmt.CatchClauses {
@@ -421,6 +435,21 @@ func (c *escapedNameCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
 	}
 }
 
+// VisitForOfStmt records the loop variable as a binding at the current depth (like a var decl),
+// so that a nested closure capturing it triggers promotion to a ref cell — matching how a C-style
+// `for (let i ...)` variable is handled. Without this the for-of variable is invisible to escape
+// analysis (its desugaring into a var decl happens later, during IR gen).
+func (c *escapedNameCollector) VisitForOfStmt(stmt *ast.ForOfStmtNode) {
+	c.walkExpr(stmt.Iterable)
+	name := stmt.Variable.Name.Value
+	if c.depth == 0 {
+		c.topLevelNames[name] = true
+	} else {
+		c.declareNestedLocal(name)
+	}
+	c.walkStmt(stmt.Body)
+}
+
 func (c *escapedNameCollector) VisitTryCatchStmt(stmt *ast.TryCatchStmtNode) {
 	c.walkStmt(stmt.TryBody)
 	for _, clause := range stmt.CatchClauses {
@@ -471,3 +500,41 @@ func collectEscapedVarNames(params []*ast.VarDeclNode, body *ast.BlockStmtNode) 
 	}
 	return escaped
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// defaultRefCollector — records the identifier names referenced by a default-parameter
+// expression, so checkParamDefaults can reject defaults that reference another parameter or
+// `this`/`super` (they are substituted at the call site, not evaluated in the callee's scope).
+// ─────────────────────────────────────────────────────────────────────────────
+
+type defaultRefCollector struct {
+	astWalker
+	names map[string]bool
+}
+
+func newDefaultRefCollector() *defaultRefCollector {
+	c := &defaultRefCollector{names: make(map[string]bool)}
+	c.astWalker.self = c
+	return c
+}
+
+func (c *defaultRefCollector) VisitIdentifier(node *ast.IdentifierExprNode) zeus_value.Value {
+	c.names[node.Name.Value] = true
+	return nil
+}
+
+// A default expression is not expected to contain a nested function; if it does, don't descend —
+// the check only concerns the default's own scope-level references.
+func (c *defaultRefCollector) VisitFunctionDeclExpr(*ast.FunctionDeclExprNode) zeus_value.Value {
+	return nil
+}
+
+func (c *defaultRefCollector) VisitVarDeclStmt(stmt *ast.VarDeclStmtNode) {
+	for _, decl := range stmt.Decls {
+		if decl.Initializer != nil {
+			c.walkExpr(decl.Initializer)
+		}
+	}
+}
+
+func (c *defaultRefCollector) VisitTryCatchStmt(*ast.TryCatchStmtNode) {}

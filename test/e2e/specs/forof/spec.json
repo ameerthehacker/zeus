@@ -1,0 +1,47 @@
+[
+    {
+        "name": "for-of sums array elements",
+        "exit": "0",
+        "entry": "basic.zs"
+    },
+    {
+        "name": "break exits a for-of loop",
+        "exit": "0",
+        "entry": "break.zs"
+    },
+    {
+        "name": "continue skips for-of iterations",
+        "exit": "0",
+        "entry": "continue.zs"
+    },
+    {
+        "name": "nested for-of loops",
+        "exit": "0",
+        "entry": "nested.zs"
+    },
+    {
+        "name": "for-of over empty array runs zero times",
+        "exit": "0",
+        "entry": "empty.zs"
+    },
+    {
+        "name": "for-of over an array of objects",
+        "exit": "0",
+        "entry": "objects.zs"
+    },
+    {
+        "name": "for-of with a let binding",
+        "exit": "0",
+        "entry": "let-binding.zs"
+    },
+    {
+        "name": "of is still a valid identifier outside for-of",
+        "exit": "0",
+        "entry": "of-as-identifier.zs"
+    },
+    {
+        "name": "closure captures the for-of element binding",
+        "exit": "0",
+        "entry": "closure-capture.zs"
+    }
+]

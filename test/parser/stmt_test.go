@@ -775,3 +775,78 @@ func TestParserStmt(t *testing.T) {
 		})
 	}
 }
+
+// TestParserForOf asserts the shape of a for-of loop without matching exact spans.
+func TestParserForOf(t *testing.T) {
+	l := lexer.NewLexer("for (const elem of arr) { sum += elem; }")
+	tokens, _ := l.Lex()
+	program, errors := parser.NewParser(tokens).ParseProgram()
+
+	if len(errors) != 0 {
+		t.Fatalf("unexpected parse errors: %v", errors)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+	forOf, ok := program.Statements[0].(*ast.ForOfStmtNode)
+	if !ok {
+		t.Fatalf("expected *ast.ForOfStmtNode, got %T", program.Statements[0])
+	}
+	if forOf.DeclType != ast.VarDeclTypeConst {
+		t.Errorf("expected const decl type, got %s", forOf.DeclType)
+	}
+	if forOf.Variable.Name.Value != "elem" {
+		t.Errorf("expected loop variable 'elem', got %q", forOf.Variable.Name.Value)
+	}
+	if _, ok := forOf.Iterable.(*ast.IdentifierExprNode); !ok {
+		t.Errorf("expected identifier iterable, got %T", forOf.Iterable)
+	}
+	if forOf.Body == nil {
+		t.Error("expected non-nil body")
+	}
+}
+
+// TestParserDefaultParam asserts a function parameter carries its default initializer, and that a
+// required parameter after an optional one is rejected.
+func TestParserDefaultParam(t *testing.T) {
+	l := lexer.NewLexer("function f(a: i32, b: i32 = 10): i32 { return a + b; }")
+	tokens, _ := l.Lex()
+	program, errors := parser.NewParser(tokens).ParseProgram()
+
+	if len(errors) != 0 {
+		t.Fatalf("unexpected parse errors: %v", errors)
+	}
+	exprStmt, ok := program.Statements[0].(*ast.ExprStmtNode)
+	if !ok {
+		t.Fatalf("expected *ast.ExprStmtNode, got %T", program.Statements[0])
+	}
+	fn, ok := exprStmt.Expr.(*ast.FunctionDeclExprNode)
+	if !ok {
+		t.Fatalf("expected *ast.FunctionDeclExprNode, got %T", exprStmt.Expr)
+	}
+	if len(fn.Params) != 2 {
+		t.Fatalf("expected 2 params, got %d", len(fn.Params))
+	}
+	if fn.Params[0].Initializer != nil {
+		t.Errorf("expected first param to have no default")
+	}
+	if fn.Params[1].Initializer == nil {
+		t.Errorf("expected second param to carry a default initializer")
+	}
+
+	// Required-after-optional is a parse error.
+	l2 := lexer.NewLexer("function bad(a: i32 = 1, b: i32): i32 { return a + b; }")
+	tokens2, _ := l2.Lex()
+	_, errs2 := parser.NewParser(tokens2).ParseProgram()
+	if len(errs2) == 0 {
+		t.Fatal("expected an error for a required parameter following an optional one")
+	}
+
+	// A default on a rest parameter is a parse error.
+	l3 := lexer.NewLexer("function bad(a: i32, ...rest: i32[] = []): i32 { return a; }")
+	tokens3, _ := l3.Lex()
+	_, errs3 := parser.NewParser(tokens3).ParseProgram()
+	if len(errs3) == 0 {
+		t.Fatal("expected an error for a default value on a rest parameter")
+	}
+}

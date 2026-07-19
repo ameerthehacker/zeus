@@ -602,6 +602,65 @@ function test(): void {
 	}
 }
 
+func TestForOfLoop(t *testing.T) {
+	builder, _ := generateHIR(t, `
+function test(): void {
+    let xs: i32[] = new i32[]
+    let sum: i32 = 0
+    for (const x of xs) {
+        sum = sum + x
+    }
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	all := allBlockInstrs(entry)
+	// for-of desugars to an index loop: it declares the element variable 'x'.
+	decls := findInstrs(all, ir.InstrTypeDeclVar)
+	foundElem := false
+	for _, d := range decls {
+		if ir.AsDeclVarInstrInput(d.Input).Variable.Name == "x" {
+			foundElem = true
+			break
+		}
+	}
+	if !foundElem {
+		t.Error("expected DECLARE_VAR for the for-of element variable 'x'")
+	}
+	// The desugared bound check `$forof_i < xs.length` is a LESS_THAN.
+	if len(findInstrs(all, ir.InstrTypeLessThan)) == 0 {
+		t.Error("expected LESS_THAN instruction for the for-of bound check")
+	}
+	// And the loop is driven by a conditional jump.
+	if len(findInstrs(all, ir.InstrTypeCondJmp)) == 0 {
+		t.Error("expected COND_JMP instruction for the for-of loop")
+	}
+}
+
+func TestDefaultParamFillsCallArgs(t *testing.T) {
+	builder, _ := generateHIR(t, `
+function add(a: i32, b: i32 = 10): i32 {
+    return a + b
+}
+function test(): void {
+    add(5)
+}`)
+	entry := getFuncEntryBlock(builder, "test")
+	if entry == nil {
+		t.Fatal("function 'test' not found")
+	}
+	calls := findInstrs(allBlockInstrs(entry), ir.InstrTypeCallFunc)
+	if len(calls) == 0 {
+		t.Fatal("expected a CALL_FUNC instruction for add(5)")
+	}
+	// The omitted default argument is filled at the call site, so the call carries both args.
+	args := ir.AsCallFuncInstrInput(calls[0].Input).Args
+	if len(args) != 2 {
+		t.Errorf("expected 2 args after default fill, got %d", len(args))
+	}
+}
+
 // ---- Function Declaration and Call Tests ----
 
 func TestFunctionDecl(t *testing.T) {

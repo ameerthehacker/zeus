@@ -49,6 +49,67 @@ function calculate(x: f64, y: f64, z: f64): f64 {
   All parameters require explicit type annotations.
 </Aside>
 
+## Default Parameters
+
+A parameter can specify a default value with `= expression`. When the caller omits that argument, the default is used in its place:
+
+```zeus
+function greet(name: string, greeting: string = "Hello"): string {
+  return greeting + ", " + name;
+}
+
+function main(): i32 {
+  greet("Zeus");        // "Hello, Zeus"
+  greet("Zeus", "Hi");  // "Hi, Zeus"  — default overridden
+  return 0;
+}
+```
+
+Only trailing parameters may have defaults: once a parameter has one, every parameter after it must have one too (a rest parameter is the sole exception, since it is always optional).
+
+```zeus
+function box(width: i32, height: i32 = 10, depth: i32 = 1): i32 {
+  return width * height * depth;
+}
+
+function main(): i32 {
+  box(2);        // 2 * 10 * 1 = 20
+  box(2, 3);     // 2 *  3 * 1 = 6
+  box(2, 3, 4);  // 2 *  3 * 4 = 24
+  return 0;
+}
+```
+
+Defaults are not limited to literals — any expression works, and it is evaluated **at the call site** each time the argument is omitted.
+
+Default parameters work on free functions, class methods, static methods, and constructors:
+
+```zeus
+class Counter {
+  public count: i32;
+
+  constructor(start: i32 = 0) {
+    this.count = start;
+  }
+
+  add(by: i32 = 1): i32 {
+    this.count += by;
+    return this.count;
+  }
+}
+
+function main(): i32 {
+  let c = new Counter();  // start defaults to 0
+  c.add();                // by defaults to 1  → count = 1
+  c.add(5);               // count = 6
+  return c.count;         // 6
+}
+```
+
+<Aside type="caution">
+  Because a default is substituted at the call site, it cannot reference another parameter or `this` — those are not in scope where the call is made. `function f(a: i32, b: i32 = a)` and a method default like `y: i32 = this.base` are compile errors. Reference module-level values or free functions instead.
+</Aside>
+
 ## Rest Parameters
 
 A rest parameter collects a variable number of trailing arguments into an array. Prefix the final parameter with `...` and give it an array type:
@@ -115,7 +176,7 @@ function main(): i32 {
 ```
 
 <Aside type="note">
-  A rest parameter must be the **last** parameter, and its type must be an array (`T[]`).
+  A rest parameter must be the **last** parameter, its type must be an array (`T[]`), and it cannot have a default value (an omitted rest parameter is already an empty array).
 </Aside>
 
 ## Return Types
