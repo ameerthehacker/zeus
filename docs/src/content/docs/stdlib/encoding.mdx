@@ -1,0 +1,32 @@
+---
+title: Encoding (@std/encoding)
+description: Hex and base64 conversion between byte arrays and strings.
+---
+
+`@std/encoding` converts between `u8[]` bytes and hex / base64 strings.
+
+```zeus
+import { hexEncode, base64Encode, base64Decode } from "@std/encoding";
+
+function main(): i32 {
+  console.log(hexEncode("abc"));       // 616263  (a string coerces to u8[])
+  console.log(base64Encode("hello"));  // aGVsbG8=
+
+  let bytes: u8[] = base64Decode("YWJj");
+  let s: string = bytes;               // "abc"
+  console.log(s);
+  return 0;
+}
+```
+
+## Reference
+
+```zeus
+hexEncode(bytes: u8[]): string       // lowercase hex
+hexDecode(s: string): u8[]           // throws on odd length / non-hex
+base64Encode(bytes: u8[]): string    // standard, padded
+base64Decode(s: string): u8[]        // throws on malformed input
+```
+
+A `string` coerces to `u8[]` (its UTF-8 bytes), so `hexEncode("abc")` works directly. Decoders return
+a `u8[]`, which coerces back to a `string` when you need text.

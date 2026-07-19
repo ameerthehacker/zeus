@@ -1,0 +1,55 @@
+---
+title: Buffer (@std/buffer)
+description: A Buffer type over u8[] — hex/base64/utf8 conversions and little-endian integer access.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@std/buffer` wraps Zeus's native `u8[]` with a `Buffer` type offering encodings and fixed-width
+integer accessors, a subset of Node's `Buffer`.
+
+```zeus
+import { Buffer, fromString, alloc } from "@std/buffer";
+
+function main(): i32 {
+  let b: Buffer = fromString("hello");
+  console.log(b.toHex());      // 68656c6c6f
+  console.log(b.toBase64());   // aGVsbG8=
+  return 0;
+}
+```
+
+<Aside type="note">
+Zeus cannot call a static method across module boundaries yet, so Node's `Buffer.alloc` / `Buffer.from`
+are the free functions `alloc` / `fromString` / `fromHex` / `fromBase64`. `new Buffer(bytes)` wraps a
+`u8[]` directly.
+</Aside>
+
+## Constructing
+
+```zeus
+new Buffer(data: u8[])
+alloc(size: i32): Buffer          // `size` zero bytes
+fromString(s: string): Buffer     // UTF-8 bytes of s
+fromHex(s: string): Buffer
+fromBase64(s: string): Buffer
+concat(a: Buffer, b: Buffer): Buffer
+```
+
+## Instance methods
+
+```zeus
+b.length(): i32
+b.get(index: i32): u8
+b.set(index: i32, value: u8): void
+b.bytes(): u8[]                   // underlying array (not a copy)
+b.toString(): string             // decode as UTF-8
+b.toHex(): string
+b.toBase64(): string
+b.slice(start: i32, end: i32): Buffer
+b.equals(other: Buffer): boolean
+
+b.readUInt8(offset): i32          b.writeUInt8(value, offset)
+b.readUInt16LE(offset): i32       b.writeUInt16LE(value, offset)
+b.readUInt32LE(offset): i64       b.writeUInt32LE(value, offset)
+```

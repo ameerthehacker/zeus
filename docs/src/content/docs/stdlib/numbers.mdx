@@ -1,0 +1,38 @@
+---
+title: Number Parsing
+description: Global parseInt, parseFloat, isNaN, and isFinite.
+---
+
+Zeus exposes JavaScript's global number helpers. They are **ambient** — available in every module with
+no import, like `console` and `Math`.
+
+```zeus
+function main(): i32 {
+  console.log(parseInt("42"));        // 42
+  console.log(parseInt("  -17px"));   // -17  (leading numeric prefix)
+  console.log(parseInt("0xFF"));      // 255  (0x prefix -> base 16)
+  console.log(parseFloat("3.14abc")); // 3.14
+  console.log(parseFloat("1e3"));     // 1000
+
+  if (isNaN(parseInt("hello"))) {
+    console.log("not a number");
+  }
+  return 0;
+}
+```
+
+## Reference
+
+```zeus
+parseInt(s: string): f64      // JS-lenient; 0x prefix -> hex; NaN if no digits
+parseFloat(s: string): f64    // JS-lenient leading numeric prefix; NaN if none
+isNaN(x: f64): boolean
+isFinite(x: f64): boolean
+```
+
+Both parsers return `f64` (JavaScript's `Number`) so a failed parse can be represented as `NaN`:
+
+```zeus
+let n: f64 = parseInt("nope");
+if (isNaN(n)) { /* handle */ }
+```

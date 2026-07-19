@@ -85,9 +85,23 @@ renameSync(oldPath: string, newPath: string): void   // rename / move
 |---|---|---|
 | `readFileSync(path)` | `string` | open/read error |
 | `writeFileSync(path, data)` | `void` | create/write error |
+| `appendFileSync(path, data)` | `void` | open/write error |
+| `copyFileSync(src, dest)` | `void` | read/write error |
 | `existsSync(path)` | `boolean` | — |
+| `accessSync(path)` | `void` | not accessible |
 | `statSync(path)` | `Stats` | stat error |
+| `lstatSync(path)` | `Stats` | stat error (does not follow symlinks) |
+| `realpathSync(path)` | `string` | resolve error |
 | `readdirSync(path)` | `string[]` | open/read error |
+| `readdirTypesSync(path)` | `Dirent[]` | open/read error |
 | `mkdirSync(path)` | `void` | mkdir error |
+| `mkdirpSync(path)` | `void` | mkdir error (recursive; no-op if it exists) |
+| `rmSync(path, recursive)` | `void` | remove error |
+| `rmdirSync(path)` | `void` | rmdir error (must be empty) |
 | `unlinkSync(path)` | `void` | unlink error |
 | `renameSync(old, new)` | `void` | rename error |
+| `chmodSync(path, mode)` | `void` | chmod error (mode e.g. `420` = 0o644) |
+| `truncateSync(path, length)` | `void` | truncate error |
+
+`readdirTypesSync` returns `Dirent[]`, each with `.name`, `.isFile()`, and `.isDirectory()` (Node's
+`withFileTypes` option). `rmSync(path, true)` removes a directory tree recursively.

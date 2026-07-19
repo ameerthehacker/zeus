@@ -134,3 +134,97 @@ export fn zeus_Math_random(this_ptr: ?*anyopaque, rb: ?*anyopaque) callconv(.C) 
     // Uniform in [0, 1), matching JS Math.random().
     writeF64(rb, std.crypto.random.float(f64));
 }
+
+// ---- Inverse & hyperbolic trig -------------------------------------------
+
+export fn zeus_Math_asin(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.asin(readF64(x_ptr)));
+}
+
+export fn zeus_Math_acos(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.acos(readF64(x_ptr)));
+}
+
+export fn zeus_Math_atan(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.atan(readF64(x_ptr)));
+}
+
+export fn zeus_Math_atan2(this_ptr: ?*anyopaque, rb: ?*anyopaque, y_ptr: *anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.atan2(readF64(y_ptr), readF64(x_ptr)));
+}
+
+export fn zeus_Math_sinh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.sinh(readF64(x_ptr)));
+}
+
+export fn zeus_Math_cosh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.cosh(readF64(x_ptr)));
+}
+
+export fn zeus_Math_tanh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.tanh(readF64(x_ptr)));
+}
+
+export fn zeus_Math_asinh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.asinh(readF64(x_ptr)));
+}
+
+export fn zeus_Math_acosh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.acosh(readF64(x_ptr)));
+}
+
+export fn zeus_Math_atanh(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.atanh(readF64(x_ptr)));
+}
+
+// ---- Precision helpers ----------------------------------------------------
+
+export fn zeus_Math_log1p(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.log1p(readF64(x_ptr)));
+}
+
+export fn zeus_Math_expm1(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, std.math.expm1(readF64(x_ptr)));
+}
+
+/// fround: round to the nearest 32-bit float, matching JS Math.fround.
+export fn zeus_Math_fround(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    writeF64(rb, @as(f64, @as(f32, @floatCast(readF64(x_ptr)))));
+}
+
+/// clz32: leading-zero count of the value coerced to uint32 (JS Math.clz32).
+export fn zeus_Math_clz32(this_ptr: ?*anyopaque, rb: ?*anyopaque, x_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    const u: u32 = @bitCast(toInt32(readF64(x_ptr)));
+    writeF64(rb, @floatFromInt(@clz(u)));
+}
+
+/// imul: 32-bit integer multiplication with wraparound (JS Math.imul).
+export fn zeus_Math_imul(this_ptr: ?*anyopaque, rb: ?*anyopaque, a_ptr: *anyopaque, b_ptr: *anyopaque) callconv(.C) void {
+    _ = this_ptr;
+    const product: i32 = toInt32(readF64(a_ptr)) *% toInt32(readF64(b_ptr));
+    writeF64(rb, @floatFromInt(product));
+}
+
+/// JS ToInt32: truncate toward zero, then take the low 32 bits (modulo 2^32).
+fn toInt32(x: f64) i32 {
+    if (std.math.isNan(x) or std.math.isInf(x)) return 0;
+    const truncated = @trunc(x);
+    // Reduce modulo 2^32 into i64 range, then bitcast the low 32 bits.
+    const m = @mod(truncated, 4294967296.0);
+    const as_i64: i64 = @intFromFloat(m);
+    return @bitCast(@as(u32, @truncate(@as(u64, @bitCast(as_i64)))));
+}

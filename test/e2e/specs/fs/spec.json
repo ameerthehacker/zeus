@@ -23,5 +23,10 @@
         "name": "fs.readFileSync grow-and-read loop handles a large multi-chunk file",
         "exit": "0",
         "entry": "large_read.zs"
+    },
+    {
+        "name": "fs extended (append/copy/truncate/chmod/lstat/realpath/mkdirp/rm -r/withFileTypes)",
+        "exit": "0",
+        "entry": "fs_extended.zs"
     }
 ]

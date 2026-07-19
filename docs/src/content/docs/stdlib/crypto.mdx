@@ -1,0 +1,61 @@
+---
+title: Crypto (@std/crypto)
+description: Synchronous hashing, HMAC, PBKDF2, secure random, and constant-time compare.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@std/crypto` provides synchronous cryptography with no external dependencies.
+
+```zeus
+import { sha256, createHash, hmacSha256, randomUUID } from "@std/crypto";
+
+function main(): i32 {
+  console.log(sha256("hello"));                        // hex digest
+  console.log(createHash("sha512").update("a").update("b").digestHex());
+  console.log(hmacSha256("key", "message"));
+  console.log(randomUUID());
+  return 0;
+}
+```
+
+Digest / HMAC / PBKDF2 inputs are `u8[]` (a `string` coerces to its UTF-8 bytes). One-shot helpers
+return a lowercase **hex** string; the `Hash` type also offers raw-bytes and base64 forms.
+
+## Hashing
+
+```zeus
+md5(data: u8[]): string
+sha1(data: u8[]): string
+sha256(data: u8[]): string
+sha512(data: u8[]): string
+
+createHash(algorithm: string): Hash   // "md5","sha1","sha224","sha256","sha384","sha512"
+hash.update(data: u8[]): Hash         // chainable
+hash.digestHex(): string
+hash.digestBase64(): string
+hash.digestBytes(): u8[]
+```
+
+## HMAC & PBKDF2
+
+```zeus
+hmacSha256(key: u8[], data: u8[]): string
+hmacSha512(key: u8[], data: u8[]): string
+pbkdf2Sync(password: string, salt: string, iterations: i32, keylen: i32, digest: string): u8[]
+```
+
+## Randomness & comparison
+
+```zeus
+randomBytes(n: i32): u8[]              // CSPRNG
+randomInt(min: i32, max: i32): i32     // uniform in [min, max)
+randomUUID(): string                   // RFC 4122 v4
+timingSafeEqual(a: u8[], b: u8[]): boolean   // constant-time
+```
+
+<Aside type="note">
+Ciphers (`createCipheriv`), asymmetric signing (RSA/ECDSA), and key exchange are not yet exposed.
+AEAD (AES-GCM, ChaCha20-Poly1305), Ed25519, and X25519 are planned; RSA, AES-CBC, and classic DH
+require additional work.
+</Aside>

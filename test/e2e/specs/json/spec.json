@@ -1,0 +1,7 @@
+[
+    {
+        "name": "@std/json parse/stringify JsonValue tree (objects, arrays, escaping, nesting)",
+        "entry": "json_basic.zs",
+        "exit": "0"
+    }
+]

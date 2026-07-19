@@ -21,10 +21,27 @@ function main(): i32 {
 ```zeus
 platform(): string    // OS: "darwin", "linux"
 arch(): string        // CPU: "arm64", "x64"
+type(): string        // kernel name: "Darwin", "Linux"
+release(): string     // kernel release (uname -r)
+version(): string     // kernel version (uname -v)
+machine(): string     // hardware name: "arm64", "x86_64"
 hostname(): string    // system hostname
 homedir(): string     // current user's home directory ($HOME)
 tmpdir(): string      // temp directory ($TMPDIR, else "/tmp")
 totalmem(): i64       // total physical memory, in bytes
+freemem(): i64        // free physical memory, in bytes (best-effort)
+availableParallelism(): i32   // number of logical CPUs
+endianness(): string  // "LE" on Zeus's targets
+EOL(): string         // "\n"
+loadavg(): LoadAvg    // { one, five, fifteen } load averages
+```
+
+```zeus
+import { loadavg, LoadAvg, availableParallelism } from "@std/os";
+
+let la: LoadAvg = loadavg();
+console.log(la.one);                   // 1-minute load average
+console.log(availableParallelism());   // e.g. 10
 ```
 
 ## Example

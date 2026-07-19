@@ -1,0 +1,82 @@
+---
+title: JSON
+description: Parse and serialize JSON through the global JSON object and a JsonValue tree.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`JSON` is a **global** object — available in every module with no import, like `console` and `Math`,
+matching TypeScript. Because Zeus has no `any` type, a JSON document is modeled as an explicit
+**`JsonValue` tree** (also global) rather than native objects.
+
+```zeus
+function main(): i32 {
+  let v: JsonValue = JSON.parse("{\"name\":\"zeus\",\"stars\":[1,2,3]}");
+  console.log(v.get("name").asString());        // zeus
+  console.log(v.get("stars").at(0).asInt());     // 1
+  console.log(JSON.stringify(v));                 // {"name":"zeus","stars":[1,2,3]}
+  return 0;
+}
+```
+
+## Reading a JsonValue
+
+```zeus
+value.kind(): i32                 // 0 null,1 bool,2 number,3 string,4 array,5 object
+value.isNull() / isBool() / isNumber() / isString() / isArray() / isObject(): boolean
+value.asBool(): boolean
+value.asNumber(): f64
+value.asInt(): i32
+value.asString(): string
+value.length(): i32               // array length
+value.at(index: i32): JsonValue   // array element
+value.has(key: string): boolean   // object
+value.get(key: string): JsonValue // object value, or JSON null if absent
+value.objectKeys(): string[]
+```
+
+## Building & writing
+
+Since there is no `any` type, `JSON.stringify` serializes a `JsonValue` you build with the `JSON.new*`
+factories (rather than an arbitrary native object):
+
+```zeus
+let obj: JsonValue = JSON.newObject();
+obj.set("id", JSON.newNumber(42.0));
+let tags: JsonValue = JSON.newArray();
+tags.push(JSON.newString("cli"));
+obj.set("tags", tags);
+
+console.log(JSON.stringify(obj));   // {"id":42,"tags":["cli"]}
+```
+
+```zeus
+JSON.parse(text: string): JsonValue
+JSON.stringify(value: JsonValue): string
+JSON.newObject(): JsonValue
+JSON.newArray(): JsonValue
+JSON.newString(s: string): JsonValue
+JSON.newNumber(n: f64): JsonValue
+JSON.newBool(b: boolean): JsonValue
+JSON.newNull(): JsonValue
+```
+
+<Aside type="note">
+`JSON.parse` is best-effort: malformed input yields a partial tree rather than throwing. Validate with
+the `isX()` accessors when strictness matters. Serializing arbitrary **native** objects (TypeScript's
+`JSON.stringify(anyObject)`) needs an `any` type and is not yet supported.
+</Aside>
+
+## Planned: typed, ergonomic access
+
+The `JsonValue` tree API is deliberately explicit. Once **generics** and **union types** land, JSON
+will gain a JS-like typed form so you can read fields directly instead of walking the tree:
+
+```ts
+// Planned — not yet available
+let v: JSONValue<{ name: string }> = JSON.parse(str);
+v.name;       // typed field access
+v["name"];    // or bracket access
+```
+
+Track this on the [roadmap](/roadmap/).

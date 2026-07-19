@@ -52,9 +52,21 @@ const ARCH_ARM64: string = "arm64";
 @extern("C", "unlink") function c_unlink(path: cstr): cint;
 @extern("C", "rename") function c_rename(oldPath: cstr, newPath: cstr): cint;
 @extern("C", "stat")     function c_stat(path: cstr, buf: cptr): cint;
+@extern("C", "lstat")    function c_lstat(path: cstr, buf: cptr): cint;
 @extern("C", "opendir")  function c_opendir(path: cstr): cptr;
 @extern("C", "readdir")  function c_readdir(dir: cptr): cptr;
 @extern("C", "closedir") function c_closedir(dir: cptr): cint;
+@extern("C", "rmdir")    function c_rmdir(path: cstr): cint;
+@extern("C", "chmod")    function c_chmod(path: cstr, mode: cint): cint;
+@extern("C", "truncate") function c_truncate(path: cstr, length: clong): cint;
+@extern("C", "realpath") function c_realpath(path: cstr, resolved: cptr): cptr;
+// Append uses the FILE* API (fopen "a") to sidestep the platform-specific O_APPEND flag value and
+// the variadic open() ABI.
+@extern("C", "fopen")    function c_fopen(path: cstr, mode: cstr): cptr;
+@extern("C", "fwrite")   function c_fwrite(ptr: cptr, size: csize, nmemb: csize, stream: cptr): csize;
+@extern("C", "fclose")   function c_fclose(stream: cptr): cint;
+
+const PATH_MAX_BUF: csize = 4096 as csize;
 
 // readFileSync reads an entire file and returns its contents as a string. Throws on open/read error.
 // A grow-and-read loop (rather than lseek-sizing + one read) correctly handles short reads, pipes
@@ -185,17 +197,10 @@ export class Stats {
   }
 }
 
-// statSync returns metadata for a path. The C `struct stat` is read field-by-field using per-target
-// byte offsets. The low 16 bits of st_mode carry the S_IF* type bits on both macOS and Linux, so a
-// 16-bit read at the mode offset is portable.
-export function statSync(path: string): Stats {
-  let buf: cptr = cMalloc(STAT_BUF_SIZE);
-  let rc: i32 = c_stat(cStrFromString(path), buf) as i32;
-  if (rc != 0) {
-    cFree(buf);
-    throw new Error("FileError", "cannot stat: " + path);
-  }
-
+// statBufToStats reads a filled `struct stat` buffer field-by-field using per-target byte offsets.
+// The low 16 bits of st_mode carry the S_IF* type bits on both macOS and Linux, so a 16-bit read at
+// the mode offset is portable. Does not free the buffer (the caller owns it).
+function statBufToStats(buf: cptr): Stats {
   let sizeOff: clong = STAT_SIZE_OFFSET_DARWIN;
   let modeOff: clong = STAT_MODE_OFFSET_DARWIN;
   let mtimeOff: clong = STAT_MTIME_OFFSET_DARWIN;
@@ -212,8 +217,33 @@ export function statSync(path: string): Stats {
   let size: i64 = cReadI64(buf, sizeOff) as i64;
   let mtime: i64 = cReadI64(buf, mtimeOff) as i64;
   let modeBits: i32 = cReadI16(buf, modeOff) as i32;
-  cFree(buf);
   return new Stats(size, mtime, modeBits);
+}
+
+// statSync returns metadata for a path, following symlinks.
+export function statSync(path: string): Stats {
+  let buf: cptr = cMalloc(STAT_BUF_SIZE);
+  let rc: i32 = c_stat(cStrFromString(path), buf) as i32;
+  if (rc != 0) {
+    cFree(buf);
+    throw new Error("FileError", "cannot stat: " + path);
+  }
+  let s: Stats = statBufToStats(buf);
+  cFree(buf);
+  return s;
+}
+
+// lstatSync is like statSync but does not follow symlinks (it stats the link itself).
+export function lstatSync(path: string): Stats {
+  let buf: cptr = cMalloc(STAT_BUF_SIZE);
+  let rc: i32 = c_lstat(cStrFromString(path), buf) as i32;
+  if (rc != 0) {
+    cFree(buf);
+    throw new Error("FileError", "cannot lstat: " + path);
+  }
+  let s: Stats = statBufToStats(buf);
+  cFree(buf);
+  return s;
 }
 
 // readdirSync returns the entries of a directory (excluding "." and ".."). The char[] d_name is an
@@ -246,4 +276,141 @@ export function readdirSync(path: string): string[] {
     throw new Error("FileError", "error reading directory: " + path);
   }
   return names;
+}
+
+// Dirent is a directory entry with its type, as returned by readdirTypesSync (Node's
+// readdirSync(path, { withFileTypes: true })). The type is resolved with an lstat per entry.
+export class Dirent {
+  public name: string;
+  private dir: boolean;
+  private file: boolean;
+
+  public constructor(name: string, dir: boolean, file: boolean) {
+    this.name = name;
+    this.dir = dir;
+    this.file = file;
+  }
+
+  public isDirectory(): boolean {
+    return this.dir;
+  }
+
+  public isFile(): boolean {
+    return this.file;
+  }
+}
+
+// readdirTypesSync returns directory entries with their type (Node's withFileTypes option).
+export function readdirTypesSync(path: string): Dirent[] {
+  let names: string[] = readdirSync(path);
+  let out: Dirent[] = new Dirent[];
+  let i: i32 = 0;
+  while (i < names.length) {
+    let st: Stats = lstatSync(path + "/" + names[i]);
+    out.push(new Dirent(names[i], st.isDirectory(), st.isFile()));
+    i = i + 1;
+  }
+  return out;
+}
+
+// appendFileSync appends a string to a file, creating it if needed (mode 0644 via fopen "a").
+export function appendFileSync(path: string, data: string): void {
+  let f: cptr = c_fopen(cStrFromString(path), cStrFromString("a"));
+  if (cIsNull(f) as i32 != 0) {
+    throw new Error("FileError", "cannot open for append: " + path);
+  }
+  let len: i64 = data.length as i64;
+  let failed: boolean = false;
+  if (len > 0) {
+    let cbuf: cstr = cStrFromString(data);
+    let n: i64 = c_fwrite(cbuf as cptr, 1 as csize, len as csize, f) as i64;
+    failed = n != len;
+  }
+  c_fclose(f);
+  if (failed) {
+    throw new Error("FileError", "cannot append to file: " + path);
+  }
+}
+
+// copyFileSync copies src to dest, creating or truncating dest.
+export function copyFileSync(src: string, dest: string): void {
+  writeFileSync(dest, readFileSync(src));
+}
+
+// accessSync throws if the path does not exist / is not accessible.
+export function accessSync(path: string): void {
+  if ((c_access(cStrFromString(path), F_OK) as i32) != 0) {
+    throw new Error("FileError", "cannot access: " + path);
+  }
+}
+
+// rmdirSync removes an empty directory. Throws on failure.
+export function rmdirSync(path: string): void {
+  if ((c_rmdir(cStrFromString(path)) as i32) != 0) {
+    throw new Error("FileError", "cannot rmdir: " + path);
+  }
+}
+
+// rmSync removes a file or directory. With recursive=true it removes a directory tree (like Node's
+// rmSync(path, { recursive: true })); otherwise a directory must be empty. Symlinks are unlinked,
+// not followed, so lstat drives the file-vs-directory decision.
+export function rmSync(path: string, recursive: boolean): void {
+  let st: Stats = lstatSync(path);
+  if (st.isDirectory()) {
+    if (recursive) {
+      let entries: string[] = readdirSync(path);
+      let i: i32 = 0;
+      while (i < entries.length) {
+        rmSync(path + "/" + entries[i], true);
+        i = i + 1;
+      }
+    }
+    rmdirSync(path);
+  } else {
+    unlinkSync(path);
+  }
+}
+
+// realpathSync returns the canonical absolute path, resolving symlinks and "."/"..".
+export function realpathSync(path: string): string {
+  let buf: cptr = cMalloc(PATH_MAX_BUF);
+  let res: cptr = c_realpath(cStrFromString(path), buf);
+  if (cIsNull(res) as i32 != 0) {
+    cFree(buf);
+    throw new Error("FileError", "cannot resolve path: " + path);
+  }
+  let s: string = cStrToString(buf as cstr);
+  cFree(buf);
+  return s;
+}
+
+// chmodSync changes a file's permission bits (e.g. 0o644 = 420). Throws on failure.
+export function chmodSync(path: string, mode: i32): void {
+  if ((c_chmod(cStrFromString(path), mode as cint) as i32) != 0) {
+    throw new Error("FileError", "cannot chmod: " + path);
+  }
+}
+
+// truncateSync sets a file's length (padding with zeros or cutting it short). Throws on failure.
+export function truncateSync(path: string, length: i64): void {
+  if ((c_truncate(cStrFromString(path), length as clong) as i32) != 0) {
+    throw new Error("FileError", "cannot truncate: " + path);
+  }
+}
+
+// mkdirpSync creates a directory and any missing parents (like `mkdir -p`), a no-op if it exists.
+export function mkdirpSync(path: string): void {
+  if (existsSync(path)) {
+    return;
+  }
+  let idx: i32 = path.lastIndexOf("/");
+  if (idx > 0) {
+    let parent: string = path.slice(0, idx);
+    if (!existsSync(parent)) {
+      mkdirpSync(parent);
+    }
+  }
+  if (!existsSync(path)) {
+    mkdirSync(path);
+  }
 }

@@ -1,0 +1,47 @@
+---
+title: Path (@std/path)
+description: POSIX path manipulation — join, resolve, normalize, dirname, basename, extname.
+---
+
+`@std/path` manipulates filesystem paths as strings (POSIX `/` separators). It performs no I/O.
+
+```zeus
+import { join, basename, extname } from "@std/path";
+
+function main(): i32 {
+  console.log(join(["usr", "local", "bin"]));   // usr/local/bin
+  console.log(basename("/etc/hosts"));          // hosts
+  console.log(extname("archive.tar.gz"));       // .gz
+  return 0;
+}
+```
+
+Node's variadic `join(...parts)` / `resolve(...parts)` take a `string[]` here, since Zeus free
+functions are not variadic.
+
+## Reference
+
+```zeus
+join(parts: string[]): string          // join + normalize
+resolve(parts: string[]): string       // to an absolute path, using process.cwd()
+normalize(p: string): string           // collapse "."/".."/duplicate slashes
+dirname(p: string): string             // directory portion
+basename(p: string): string            // final segment
+extname(p: string): string             // extension incl. dot, or ""
+isAbsolute(p: string): boolean
+relative(fromPath: string, toPath: string): string
+parse(p: string): ParsedPath           // { root, dir, base, ext, name }
+format(pp: ParsedPath): string         // inverse of parse
+sep(): string                          // "/"
+delimiter(): string                    // ":"
+```
+
+```zeus
+import { parse, ParsedPath } from "@std/path";
+
+let pp: ParsedPath = parse("/usr/local/zeus.tar.gz");
+console.log(pp.dir);   // /usr/local
+console.log(pp.base);  // zeus.tar.gz
+console.log(pp.ext);   // .gz
+console.log(pp.name);  // zeus.tar
+```

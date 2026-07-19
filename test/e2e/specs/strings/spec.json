@@ -56,5 +56,15 @@
         "entry": "template-edge.zs",
         "exit": "0",
         "stdout": "12\n\nstatic only\n>1<\n"
+    },
+    {
+        "name": "string methods (slice/case/trim/pad/replace/indexOf/...)",
+        "entry": "string-methods.zs",
+        "exit": "0"
+    },
+    {
+        "name": "string split -> string[]",
+        "entry": "string-split.zs",
+        "exit": "0"
     }
 ]

@@ -1,0 +1,8 @@
+[
+    {
+        "name": "@std/path basics (join/normalize/dirname/basename/extname/relative/parse/format)",
+        "entry": "path-basics.zs",
+        "exit": "0",
+        "stdout": "usr/local/bin\n/a/c\n/a/c/d\n/usr/local\nzeus\n.gz\n\n/\npath-ok\n"
+    }
+]

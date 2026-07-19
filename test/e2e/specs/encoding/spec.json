@@ -1,0 +1,7 @@
+[
+    {
+        "name": "@std/encoding hex + base64 encode/decode round-trips",
+        "entry": "encoding_basic.zs",
+        "exit": "0"
+    }
+]

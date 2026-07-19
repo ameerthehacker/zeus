@@ -23,6 +23,12 @@ if (Math.sqrt(16.0) == 4.0) {
 | --------- | ------------------- | ------------------------- |
 | `Math.PI` | 3.141592653589793   | Ratio of a circle's circumference to its diameter. |
 | `Math.E`  | 2.718281828459045   | Euler's number, the base of natural logarithms.    |
+| `Math.LN2`  | 0.6931471805599453 | Natural log of 2. |
+| `Math.LN10` | 2.302585092994046  | Natural log of 10. |
+| `Math.LOG2E`  | 1.4426950408889634 | Base-2 log of E. |
+| `Math.LOG10E` | 0.4342944819032518 | Base-10 log of E. |
+| `Math.SQRT2`   | 1.4142135623730951 | Square root of 2. |
+| `Math.SQRT1_2` | 0.7071067811865476 | Square root of ½. |
 
 ```zeus
 if (Math.PI > 3.14 && Math.PI < 3.15) {
@@ -70,12 +76,27 @@ Math.log2(8.0);        // 3.0
 Math.sin(x: f64): f64   // sine of x (radians)
 Math.cos(x: f64): f64   // cosine of x (radians)
 Math.tan(x: f64): f64   // tangent of x (radians)
+Math.asin(x: f64): f64  Math.acos(x: f64): f64  Math.atan(x: f64): f64
+Math.atan2(y: f64, x: f64): f64   // angle of the point (x, y)
+Math.sinh(x: f64): f64  Math.cosh(x: f64): f64  Math.tanh(x: f64): f64
+Math.asinh(x: f64): f64 Math.acosh(x: f64): f64 Math.atanh(x: f64): f64
 ```
 
 ```zeus
 Math.sin(0.0);         // 0.0
 Math.cos(0.0);         // 1.0
 Math.cos(Math.PI);     // -1.0
+Math.atan2(1.0, 1.0);  // 0.7853... (π/4)
+```
+
+## Bit & precision helpers
+
+```zeus
+Math.log1p(x: f64): f64   // log(1 + x), accurate near 0
+Math.expm1(x: f64): f64   // exp(x) - 1, accurate near 0
+Math.fround(x: f64): f64  // round to the nearest 32-bit float
+Math.clz32(x: f64): f64   // leading-zero count of x as a uint32
+Math.imul(a: f64, b: f64): f64   // 32-bit integer multiplication
 ```
 
 ## Sign, absolute value, and comparison

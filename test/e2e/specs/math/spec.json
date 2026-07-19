@@ -8,5 +8,10 @@
         "name": "Math constants and transcendental methods",
         "exit": "0",
         "entry": "math_transcendental.zs"
+    },
+    {
+        "name": "Math gaps (inverse/hyperbolic/clz32/imul/fround/constants) + parseInt/parseFloat/isNaN/isFinite",
+        "exit": "0",
+        "entry": "math_extended.zs"
     }
 ]
