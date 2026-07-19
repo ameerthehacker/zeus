@@ -1,24 +1,24 @@
 ---
 const features = [
   {
-    title: 'TypeScript-Inspired',
-    body: 'Familiar syntax for millions of developers. If you know TypeScript, you already know 80% of Zeus.',
+    title: 'Familiar TypeScript syntax',
+    body: 'Classes, interfaces, generics, and type annotations that read like TypeScript. If you know TS, you already know most of Zeus.',
     icon: 'ts',
   },
   {
-    title: 'Native Compilation',
-    body: 'LLVM-powered compilation to native machine code. No interpreter, no runtime overhead.',
+    title: 'Native LLVM binaries',
+    body: 'Compiles straight to a small, self-contained native executable via LLVM. No interpreter, no VM, instant startup.',
     icon: 'bolt',
   },
   {
-    title: 'Automatic GC',
-    body: 'Focus on your logic, not memory management. Precise garbage collection handles the rest.',
-    icon: 'gc',
+    title: 'Batteries-included stdlib',
+    body: 'fs, os, path, json, crypto, datetime, and a test runner ship in the box — Node/TS parity without the npm sprawl.',
+    icon: 'stdlib',
   },
   {
-    title: 'IDE Ready',
-    body: 'First-class Language Server Protocol support. Real-time diagnostics and completions in VS Code.',
-    icon: 'ide',
+    title: 'Approachable by design',
+    body: 'A rich type system with no borrow checker to fight and no ceremony to wade through — the sweet spot between Rust and Go.',
+    icon: 'approach',
   },
 ];
 ---
@@ -27,10 +27,11 @@ const features = [
   <div class="container">
     <div class="section-head">
       <p class="kicker">Why Zeus?</p>
-      <h2 class="section-title">The developer experience of TypeScript, the speed of native.</h2>
+      <h2 class="section-title">TypeScript's ergonomics, compiled to a native binary.</h2>
       <p class="section-sub">
-        Zeus bridges the gap between developer experience and performance. Write code that feels
-        like TypeScript, but compiles to blazing-fast native binaries.
+        Zeus is a new language that keeps what's great about TypeScript, drops JavaScript's
+        dynamism, and compiles to native code — an approachable systems language that sits
+        between Rust's power and Go's simplicity.
       </p>
     </div>
 
@@ -50,15 +51,16 @@ const features = [
                   <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" />
                 </svg>
               )}
-              {f.icon === 'gc' && (
+              {f.icon === 'stdlib' && (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  <path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12" />
                 </svg>
               )}
-              {f.icon === 'ide' && (
+              {f.icon === 'approach' && (
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="2" y="3" width="20" height="14" rx="2" />
-                  <path d="M8 21h8M12 17v4M7 8l3 2-3 2M13 12h4" />
+                  <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z" />
+                  <path d="M2 21c0-3 1.85-5.36 5.08-6" />
                 </svg>
               )}
             </span>

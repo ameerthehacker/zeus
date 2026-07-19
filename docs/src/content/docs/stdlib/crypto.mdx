@@ -10,13 +10,10 @@ import { Aside } from '@astrojs/starlight/components';
 ```zeus
 import { sha256, createHash, hmacSha256, randomUUID } from "@std/crypto";
 
-function main(): i32 {
-  console.log(sha256("hello"));                        // hex digest
-  console.log(createHash("sha512").update("a").update("b").digestHex());
-  console.log(hmacSha256("key", "message"));
-  console.log(randomUUID());
-  return 0;
-}
+console.log(sha256("hello"));                        // hex digest
+console.log(createHash("sha512").update("a").update("b").digestHex());
+console.log(hmacSha256("key", "message"));
+console.log(randomUUID());
 ```
 
 Digest / HMAC / PBKDF2 inputs are `u8[]` (a `string` coerces to its UTF-8 bytes). One-shot helpers

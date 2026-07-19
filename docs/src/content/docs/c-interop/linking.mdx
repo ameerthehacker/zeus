@@ -30,11 +30,8 @@ picks up the link automatically — the user writes nothing extra.
 
 @extern("C", "sqlite3_libversion") function sqlite3Version(): cstr;
 
-function main(): i32 {
-  let version: string = cStrToString(sqlite3Version());
-  console.log(version);  // e.g. "3.43.2"
-  return 0;
-}
+let version: string = cStrToString(sqlite3Version());
+console.log(version);  // e.g. "3.43.2"
 ```
 
 ## How it works

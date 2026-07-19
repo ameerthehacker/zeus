@@ -55,10 +55,8 @@ function describe(s: Shape): i32 {
   return 0;
 }
 
-function main(): i32 {
-  let c: Circle = new Circle(42);
-  return describe(c);   // Circle is accepted as a Shape
-}
+let c: Circle = new Circle(42);
+describe(c);   // Circle is accepted as a Shape
 ```
 
 If a class is missing a required member, passing it where the interface is expected is
@@ -104,11 +102,9 @@ parameters, and return types. At runtime an interface value is represented exact
 any object (a single pointer), so passing a conforming object is free:
 
 ```zeus
-function main(): i32 {
-  let c: Circle = new Circle(42);
-  let s: Shape = c;   // a conforming object may be stored in an interface variable
-  return c.radius;
-}
+let c: Circle = new Circle(42);
+let s: Shape = c;   // a conforming object may be stored in an interface variable
+console.log(c.radius);   // 42
 ```
 
 ## Dynamic Method Dispatch
@@ -138,9 +134,7 @@ function areaOf(s: Shape): i32 {
   return s.area();
 }
 
-function main(): i32 {
-  return areaOf(new Circle(5)) + areaOf(new Square(4)); // 25 + 16 = 41
-}
+console.log(areaOf(new Circle(5)) + areaOf(new Square(4))); // 25 + 16 = 41
 ```
 
 Dispatch works for methods declared directly on the interface and for methods inherited
@@ -247,10 +241,8 @@ function sizeOf(s: Sized): i32 {
   return s.length;
 }
 
-function main(): i32 {
-  let xs: i32[] = [10, 20];
-  return sizeOf(xs);   // 2 — an array satisfies Sized
-}
+let xs: i32[] = [10, 20];
+console.log(sizeOf(xs));   // 2 — an array satisfies Sized
 ```
 
 <Aside type="note" title="Not yet supported">

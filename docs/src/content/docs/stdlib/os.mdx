@@ -8,12 +8,9 @@ description: Platform, architecture, hostname, and system information.
 ```zeus
 import { platform, arch, hostname } from "@std/os";
 
-function main(): i32 {
-  console.log(platform());  // "darwin" or "linux"
-  console.log(arch());      // "arm64" or "x64"
-  console.log(hostname());
-  return 0;
-}
+console.log(platform());  // "darwin" or "linux"
+console.log(arch());      // "arm64" or "x64"
+console.log(hostname());
 ```
 
 ## Reference
@@ -49,10 +46,7 @@ console.log(availableParallelism());   // e.g. 10
 ```zeus
 import { homedir, tmpdir, totalmem } from "@std/os";
 
-function main(): i32 {
-  console.log("home: " + homedir());
-  console.log("tmp:  " + tmpdir());
-  console.log("mem:  " + (totalmem() as i32) + " bytes");
-  return 0;
-}
+console.log("home: " + homedir());
+console.log("tmp:  " + tmpdir());
+console.log("mem:  " + (totalmem() as i32) + " bytes");
 ```

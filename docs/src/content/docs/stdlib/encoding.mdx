@@ -8,15 +8,12 @@ description: Hex and base64 conversion between byte arrays and strings.
 ```zeus
 import { hexEncode, base64Encode, base64Decode } from "@std/encoding";
 
-function main(): i32 {
-  console.log(hexEncode("abc"));       // 616263  (a string coerces to u8[])
-  console.log(base64Encode("hello"));  // aGVsbG8=
+console.log(hexEncode("abc"));       // 616263  (a string coerces to u8[])
+console.log(base64Encode("hello"));  // aGVsbG8=
 
-  let bytes: u8[] = base64Decode("YWJj");
-  let s: string = bytes;               // "abc"
-  console.log(s);
-  return 0;
-}
+let bytes: u8[] = base64Decode("YWJj");
+let s: string = bytes;               // "abc"
+console.log(s);
 ```
 
 ## Reference

@@ -8,12 +8,9 @@ description: POSIX path manipulation — join, resolve, normalize, dirname, base
 ```zeus
 import { join, basename, extname } from "@std/path";
 
-function main(): i32 {
-  console.log(join(["usr", "local", "bin"]));   // usr/local/bin
-  console.log(basename("/etc/hosts"));          // hosts
-  console.log(extname("archive.tar.gz"));       // .gz
-  return 0;
-}
+console.log(join(["usr", "local", "bin"]));   // usr/local/bin
+console.log(basename("/etc/hosts"));          // hosts
+console.log(extname("archive.tar.gz"));       // .gz
 ```
 
 Node's variadic `join(...parts)` / `resolve(...parts)` take a `string[]` here, since Zeus free

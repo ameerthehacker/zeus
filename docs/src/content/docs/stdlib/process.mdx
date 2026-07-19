@@ -9,12 +9,9 @@ import { Aside } from '@astrojs/starlight/components';
 `console`. It exposes synchronous access to the running process, backed by libc.
 
 ```zeus
-function main(): i32 {
-  console.log("running in: " + process.cwd());
-  process.setEnv("GREETING", "hi");
-  console.log(process.getEnv("GREETING"));  // "hi"
-  return 0;
-}
+console.log("running in: " + process.cwd());
+process.setEnv("GREETING", "hi");
+console.log(process.getEnv("GREETING"));  // "hi"
 ```
 
 <Aside type="note">
@@ -74,11 +71,8 @@ process.exit(code: i32): void   // terminate immediately with an exit code
 readings.
 
 ```zeus
-function main(): i32 {
-  if (!process.hasEnv("REQUIRED_TOKEN")) {
-    console.error("REQUIRED_TOKEN is not set");
-    process.exit(1);
-  }
-  return 0;
+if (!process.hasEnv("REQUIRED_TOKEN")) {
+  console.error("REQUIRED_TOKEN is not set");
+  process.exit(1);
 }
 ```

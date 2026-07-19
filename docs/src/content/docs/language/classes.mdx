@@ -42,10 +42,8 @@ class Point {
   }
 }
 
-function main(): i32 {
-  let p: Point = new Point(10, 20);
-  return p.x + p.y;   // => 30
-}
+let p: Point = new Point(10, 20);
+console.log(p.x + p.y);   // 30
 ```
 
 ## Methods
@@ -143,11 +141,9 @@ class Counter {
   }
 }
 
-function main(): i32 {
-  let c: Counter = new Counter(41);
-  c.increment();
-  return c.getValue();   // => 42
-}
+let c: Counter = new Counter(41);
+c.increment();
+console.log(c.getValue());   // 42
 ```
 
 ## Object references
@@ -164,11 +160,9 @@ function modifyBox(box: Box): void {
   box.value = 999;
 }
 
-function main(): i32 {
-  let myBox: Box = new Box(10);
-  modifyBox(myBox);
-  return myBox.value;   // => 999
-}
+let myBox: Box = new Box(10);
+modifyBox(myBox);
+console.log(myBox.value);   // 999
 ```
 
 ## Nested objects
@@ -201,10 +195,8 @@ class Line {
   }
 }
 
-function main(): i32 {
-  let line: Line = new Line(new Point(0, 0), new Point(10, 20));
-  return line.length();   // => 30
-}
+let line: Line = new Line(new Point(0, 0), new Point(10, 20));
+console.log(line.length());   // 30
 ```
 
 ## Null and null-safety
@@ -267,13 +259,11 @@ class Team {
   }
 }
 
-function main(): i32 {
-  let team: Team = new Team();
-  team.addScore(10);
-  team.addScore(20);
-  team.addScore(30);
-  return team.getScore(1);   // => 20
-}
+let team: Team = new Team();
+team.addScore(10);
+team.addScore(20);
+team.addScore(30);
+console.log(team.getScore(1));   // 20
 ```
 
 ## Anonymous classes
@@ -284,53 +274,47 @@ objects.
 Assign it to a `const` and use that name as the type:
 
 ```zeus
-function main(): i32 {
-  const Counter = class {
-    public n: i32;
-    constructor(start: i32) { this.n = start; }
+const Counter = class {
+  public n: i32;
+  constructor(start: i32) { this.n = start; }
 
-    inc(): i32 {
-      this.n = this.n + 1;
-      return this.n;
-    }
+  inc(): i32 {
+    this.n = this.n + 1;
+    return this.n;
   }
-
-  let c = new Counter(9);
-  return c.inc();   // => 10
 }
+
+let c = new Counter(9);
+console.log(c.inc());   // 10
 ```
 
 You can also give the expression an internal name — both the variable and the class name are then
 usable:
 
 ```zeus
-function main(): i32 {
-  const Vec = class Vector {
-    public x: i32;
-    public y: i32;
-    constructor(x: i32, y: i32) {
-      this.x = x;
-      this.y = y;
-    }
-    sum(): i32 { return this.x + this.y; }
+const Vec = class Vector {
+  public x: i32;
+  public y: i32;
+  constructor(x: i32, y: i32) {
+    this.x = x;
+    this.y = y;
   }
-
-  let a = new Vec(3, 4);     // via the const
-  let b = new Vector(1, 2);  // via the class name
-  return a.sum() + b.sum();  // => 10
+  sum(): i32 { return this.x + this.y; }
 }
+
+let a = new Vec(3, 4);     // via the const
+let b = new Vector(1, 2);  // via the class name
+console.log(a.sum() + b.sum());  // 10
 ```
 
 Or define and instantiate in a single expression — the class equivalent of an IIFE:
 
 ```zeus
-function main(): i32 {
-  let obj = new (class {
-    public v: i32;
-    constructor(v: i32) { this.v = v; }
-    get(): i32 { return this.v; }
-  })(42);
+let obj = new (class {
+  public v: i32;
+  constructor(v: i32) { this.v = v; }
+  get(): i32 { return this.v; }
+})(42);
 
-  return obj.get();   // => 42
-}
+console.log(obj.get());   // 42
 ```

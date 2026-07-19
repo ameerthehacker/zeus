@@ -12,9 +12,7 @@ annotation and call it like any Zeus function.
 ```zeus
 @extern("C", "abs") function cAbs(x: cint): cint;
 
-function main(): i32 {
-  return cAbs(-42) as i32;  // 42
-}
+console.log(cAbs(-42) as i32);  // 42
 ```
 
 ## The `@` annotation system
@@ -112,10 +110,7 @@ cIsNull(p: cptr): cint  // 1 if the pointer is NULL
 ```zeus
 @extern("C", "puts") function cPuts(s: cstr): cint;
 
-function main(): i32 {
-  cPuts(cStrFromString("hello from C"));
-  return 0;
-}
+cPuts(cStrFromString("hello from C"));
 ```
 
 Reading a value back out — here, a string returned by C:

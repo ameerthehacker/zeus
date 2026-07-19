@@ -34,10 +34,8 @@ class Fancy extends Counter {
   }
 }
 
-function main(): i32 {
-  let f: Fancy = new Fancy();
-  return f.bump();    // base method mutates the inherited field => 42
-}
+let f: Fancy = new Fancy();
+console.log(f.bump());    // base method mutates the inherited field => 42
 ```
 
 `Fancy` carries the inherited `count` field and `bump` method alongside its own `tag` field. A
@@ -64,10 +62,8 @@ class Dog extends Animal {
   public sound(): i32 { return 42; }
 }
 
-function main(): i32 {
-  let a: Animal = new Dog();
-  return a.sound();   // Dog.sound() via dynamic dispatch => 42
-}
+let a: Animal = new Dog();
+console.log(a.sound());   // Dog.sound() via dynamic dispatch => 42
 ```
 
 ## Polymorphism
@@ -90,10 +86,8 @@ function describe(sh: Shape): i32 {
   return sh.area();   // runs the concrete override
 }
 
-function main(): i32 {
-  let sq: Square = new Square(6);
-  return describe(sq) + 6;   // 36 + 6 => 42
-}
+let sq: Square = new Square(6);
+console.log(describe(sq) + 6);   // 36 + 6 => 42
 ```
 
 ## Calling the base with `super`
@@ -111,10 +105,8 @@ class Dog extends Animal {
   public sound(): i32 { return super.sound() + 32; }
 }
 
-function main(): i32 {
-  let a: Animal = new Dog();
-  return a.sound();   // Dog.sound (virtual) -> super.sound (base) + 32 => 42
-}
+let a: Animal = new Dog();
+console.log(a.sound());   // Dog.sound (virtual) -> super.sound (base) + 32 => 42
 ```
 
 ## Constructors and `super(...)`
@@ -136,10 +128,8 @@ class Dog extends Animal {
   }
 }
 
-function main(): i32 {
-  let d: Dog = new Dog(40, 2);
-  return d.legs + d.tail;   // => 42
-}
+let d: Dog = new Dog(40, 2);
+console.log(d.legs + d.tail);   // 42
 ```
 
 <Aside type="caution" title="Call super() before using this">
@@ -160,10 +150,8 @@ class Base {
 
 class Derived extends Base { }
 
-function main(): i32 {
-  let d: Derived = new Derived(42);
-  return d.v;   // => 42
-}
+let d: Derived = new Derived(42);
+console.log(d.v);   // 42
 ```
 
 ## Multi-level inheritance
@@ -183,10 +171,8 @@ class B extends A {
 
 class C extends B { }               // inherits B.who and A.gift
 
-function main(): i32 {
-  let c: A = new C();
-  return c.who() + c.gift();   // 2 (from B) + 40 (from A) => 42
-}
+let c: A = new C();
+console.log(c.who() + c.gift());   // 2 (from B) + 40 (from A) => 42
 ```
 
 Constructors chain the same way — each level calls `super(...)` on the level above it. Static

@@ -25,10 +25,8 @@ function add(a: i32, b: i32): i32 {
   return a + b;
 }
 
-function main(): i32 {
-  let result = add(10, 20);
-  return result;  // Returns 30
-}
+let result = add(10, 20);
+console.log(result);  // 30
 ```
 
 ## Parameters
@@ -58,11 +56,8 @@ function greet(name: string, greeting: string = "Hello"): string {
   return greeting + ", " + name;
 }
 
-function main(): i32 {
-  greet("Zeus");        // "Hello, Zeus"
-  greet("Zeus", "Hi");  // "Hi, Zeus"  — default overridden
-  return 0;
-}
+console.log(greet("Zeus"));        // "Hello, Zeus"
+console.log(greet("Zeus", "Hi"));  // "Hi, Zeus"  — default overridden
 ```
 
 Only trailing parameters may have defaults: once a parameter has one, every parameter after it must have one too (a rest parameter is the sole exception, since it is always optional).
@@ -72,12 +67,9 @@ function box(width: i32, height: i32 = 10, depth: i32 = 1): i32 {
   return width * height * depth;
 }
 
-function main(): i32 {
-  box(2);        // 2 * 10 * 1 = 20
-  box(2, 3);     // 2 *  3 * 1 = 6
-  box(2, 3, 4);  // 2 *  3 * 4 = 24
-  return 0;
-}
+console.log(box(2));        // 2 * 10 * 1 = 20
+console.log(box(2, 3));     // 2 *  3 * 1 = 6
+console.log(box(2, 3, 4));  // 2 *  3 * 4 = 24
 ```
 
 Defaults are not limited to literals — any expression works, and it is evaluated **at the call site** each time the argument is omitted.
@@ -98,12 +90,10 @@ class Counter {
   }
 }
 
-function main(): i32 {
-  let c = new Counter();  // start defaults to 0
-  c.add();                // by defaults to 1  → count = 1
-  c.add(5);               // count = 6
-  return c.count;         // 6
-}
+let c = new Counter();  // start defaults to 0
+c.add();                // by defaults to 1  → count = 1
+c.add(5);               // count = 6
+console.log(c.count);   // 6
 ```
 
 <Aside type="caution">
@@ -123,9 +113,7 @@ function sum(...nums: i32[]): i32 {
   return total;
 }
 
-function main(): i32 {
-  return sum(1, 2, 3, 4, 5);  // 15
-}
+console.log(sum(1, 2, 3, 4, 5));  // 15
 ```
 
 Inside the function the rest parameter is an ordinary array, so `.length`, indexing, and the other array methods are all available. Each argument you pass is type-checked against the array's element type.
@@ -141,9 +129,7 @@ function sumFrom(base: i32, ...rest: i32[]): i32 {
   return total;
 }
 
-function main(): i32 {
-  return sumFrom(100, 1, 2, 3);  // 106
-}
+console.log(sumFrom(100, 1, 2, 3));  // 106
 ```
 
 Calling with no trailing arguments produces an empty array:
@@ -153,9 +139,7 @@ function count(...items: i32[]): i32 {
   return items.length;
 }
 
-function main(): i32 {
-  return count();  // 0
-}
+console.log(count());  // 0
 ```
 
 Rest parameters work everywhere functions do — including class methods, anonymous functions, fat arrows, and function references. For example, calling a variadic function through a function-typed value:
@@ -169,10 +153,8 @@ function sum(...nums: i32[]): i32 {
   return total;
 }
 
-function main(): i32 {
-  let f: (...nums: i32[]) => i32 = sum;
-  return f(2, 4, 6);  // 12
-}
+let f: (...nums: i32[]) => i32 = sum;
+console.log(f(2, 4, 6));  // 12
 ```
 
 <Aside type="note">
@@ -240,13 +222,11 @@ function multiply(a: i32, b: i32): i32 {
   return a * b;
 }
 
-function main(): i32 {
-  let x = multiply(6, 7);               // x = 42
-  let y = multiply(x, 2);               // y = 84
-  let z = multiply(multiply(2, 3), 4);  // z = 24
-  
-  return z;
-}
+let x = multiply(6, 7);               // x = 42
+let y = multiply(x, 2);               // y = 84
+let z = multiply(multiply(2, 3), 4);  // z = 24
+
+console.log(z);                       // 24
 ```
 
 ## Recursion
@@ -261,9 +241,7 @@ function factorial(n: i32): i32 {
   return n * factorial(n - 1);
 }
 
-function main(): i32 {
-  return factorial(5);  // Returns 120
-}
+console.log(factorial(5));  // 120
 ```
 
 ## Functions with Objects
@@ -289,13 +267,11 @@ function addPoints(p1: Point, p2: Point): Point {
   return new Point(p1.x + p2.x, p1.y + p2.y);
 }
 
-function main(): i32 {
-  let a = createPoint(1, 2);
-  let b = createPoint(3, 4);
-  let c = addPoints(a, b);
-  
-  return c.x + c.y;  // Returns 10
-}
+let a = createPoint(1, 2);
+let b = createPoint(3, 4);
+let c = addPoints(a, b);
+
+console.log(c.x + c.y);  // 10
 ```
 
 ## Multiple Return Paths
@@ -376,17 +352,15 @@ function apply(f: (a: i32, b: i32) => i32, x: i32, y: i32): i32 {
   return f(x, y);
 }
 
-function main(): i32 {
-  let op: (a: i32, b: i32) => i32 = add;
-  let result1 = op(10, 5);   // 15
+let op: (a: i32, b: i32) => i32 = add;
+let result1 = op(10, 5);   // 15
 
-  op = subtract;
-  let result2 = op(10, 5);   // 5
+op = subtract;
+let result2 = op(10, 5);   // 5
 
-  let result3 = apply(add, 3, 7);  // 10
+let result3 = apply(add, 3, 7);  // 10
 
-  return result1 + result2 + result3;  // 30
-}
+console.log(result1 + result2 + result3);  // 30
 ```
 
 ---
@@ -396,25 +370,21 @@ function main(): i32 {
 An anonymous function is a function expression without a top-level name. Assign it to a variable or pass it directly as an argument:
 
 ```zeus
-function main(): i32 {
-  // Assigned to a variable
-  let double = function(x: i32): i32 { return x * 2; };
-  let result = double(5);  // 10
+// Assigned to a variable
+let double = function(x: i32): i32 { return x * 2; };
+let result = double(5);  // 10
 
-  return result;
-}
+console.log(result);  // 10
 ```
 
 You can also give an anonymous function an internal name for recursion. The name is visible both inside the function body and in the enclosing scope:
 
 ```zeus
-function main(): i32 {
-  let fib = function fibonacci(n: i32): i32 {
-    if (n <= 1) { return n; }
-    return fibonacci(n - 1) + fibonacci(n - 2);
-  }
-  return fib(8);  // 21
+let fib = function fibonacci(n: i32): i32 {
+  if (n <= 1) { return n; }
+  return fibonacci(n - 1) + fibonacci(n - 2);
 }
+console.log(fib(8));  // 21
 ```
 
 Anonymous functions can be passed directly as arguments:
@@ -424,9 +394,7 @@ function apply(f: (x: i32) => i32, val: i32): i32 {
   return f(val);
 }
 
-function main(): i32 {
-  return apply(function(x: i32): i32 { return x * 3; }, 7);  // 21
-}
+console.log(apply(function(x: i32): i32 { return x * 3; }, 7));  // 21
 ```
 
 ---
@@ -450,10 +418,8 @@ function apply(f: (x: i32) => i32, val: i32): i32 {
   return f(val);
 }
 
-function main(): i32 {
-  let result = apply((x: i32): i32 => { return x + 1; }, 9);
-  return result;  // 10
-}
+let result = apply((x: i32): i32 => { return x + 1; }, 9);
+console.log(result);  // 10
 ```
 
 Return type annotation comes between `)` and `=>`:
@@ -478,25 +444,21 @@ Return type annotation comes between `)` and `=>`:
 A fat arrow function can be called immediately after it is defined by appending `(args)`. This creates and calls the function in a single expression:
 
 ```zeus
-function main(): i32 {
-  let result = (a: i32, b: i32): i32 => { return a + b; }(3, 7);
+let result = (a: i32, b: i32): i32 => { return a + b; }(3, 7);
 
-  return result;  // 10
-}
+console.log(result);  // 10
 ```
 
 IIFEs are useful for one-off computations you want to keep scoped:
 
 ```zeus
-function main(): i32 {
-  // Compute a value using local variables that don't pollute the outer scope
-  let offset = (): i32 => {
-    let base = 100;
-    let adjustment = 42;
-    return base - adjustment;
-  }();
+// Compute a value using local variables that don't pollute the outer scope
+let offset = (): i32 => {
+  let base = 100;
+  let adjustment = 42;
+  return base - adjustment;
+}();
 
-  return offset;  // 58
-}
+console.log(offset);  // 58
 ```
 

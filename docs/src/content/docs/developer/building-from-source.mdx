@@ -78,9 +78,9 @@ llvm-config --version   # 19.x.x
    Zig runtime, then compiles and runs a file from `playground/`:
 
    ```bash
-   echo 'function main(): i32 { return 42; }' > playground/test.zs
+   echo 'console.log("hello from zeus")' > playground/test.zs
    make run file=test
-   echo $?   # 42
+   # Output: hello from zeus
    ```
 
 </Steps>

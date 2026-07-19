@@ -12,28 +12,22 @@ Zeus provides standard control flow constructs for conditional execution and ite
 ### Basic If
 
 ```zeus
-function main(): i32 {
-  let age = 20;
+let age = 20;
 
-  if (age >= 18) {
-    return 1; // adult
-  }
-
-  return 0; // minor
+if (age >= 18) {
+  console.log("adult"); // age is 18 or over
 }
 ```
 
 ### If-Else
 
 ```zeus
-function main(): i32 {
-  let score = 75;
+let score = 75;
 
-  if (score >= 60) {
-    return 1; // pass
-  } else {
-    return 0; // fail
-  }
+if (score >= 60) {
+  console.log("pass");
+} else {
+  console.log("fail");
 }
 ```
 
@@ -91,15 +85,13 @@ if (x > 0 || y > 0) { } // logical OR
 The `for` loop is ideal for counted iteration:
 
 ```zeus
-function main(): i32 {
-  let sum = 0;
+let sum = 0;
 
-  for (let i: i32 = 0; i < 10; i++) {
-    sum += i;
-  }
-
-  return sum; // 45  (0+1+2+…+9)
+for (let i: i32 = 0; i < 10; i++) {
+  sum += i;
 }
+
+console.log(sum); // 45  (0+1+2+…+9)
 ```
 
 ### Syntax
@@ -137,17 +129,15 @@ for (let i: i32 = 0; i < 10; i += 2) {
 Nested loops:
 
 ```zeus
-function main(): i32 {
-  let sum = 0;
+let sum = 0;
 
-  for (let i: i32 = 0; i < 3; i++) {
-    for (let j: i32 = 0; j < 3; j++) {
-      sum += i * j;
-    }
+for (let i: i32 = 0; i < 3; i++) {
+  for (let j: i32 = 0; j < 3; j++) {
+    sum += i * j;
   }
-
-  return sum;
 }
+
+console.log(sum); // 9
 ```
 
 ---
@@ -157,19 +147,17 @@ function main(): i32 {
 A `for…of` loop iterates directly over the elements of an array — no index bookkeeping required. Declare the element binding with `const` (or `let`) and name the array to iterate over:
 
 ```zeus
-function main(): i32 {
-  let nums: i32[] = new i32[];
-  nums.push(10);
-  nums.push(20);
-  nums.push(30);
+let nums: i32[] = new i32[];
+nums.push(10);
+nums.push(20);
+nums.push(30);
 
-  let sum = 0;
-  for (const n of nums) {
-    sum += n;
-  }
-
-  return sum; // 60
+let sum = 0;
+for (const n of nums) {
+  sum += n;
 }
+
+console.log(sum); // 60
 ```
 
 ### Syntax
@@ -218,18 +206,16 @@ class Point {
   constructor(x: i32) { this.x = x; }
 }
 
-function main(): i32 {
-  let pts: Point[] = new Point[];
-  pts.push(new Point(3));
-  pts.push(new Point(4));
+let pts: Point[] = new Point[];
+pts.push(new Point(3));
+pts.push(new Point(4));
 
-  let sum = 0;
-  for (const p of pts) {
-    sum += p.x;
-  }
-
-  return sum; // 7
+let sum = 0;
+for (const p of pts) {
+  sum += p.x;
 }
+
+console.log(sum); // 7
 ```
 
 <Aside type="note">
@@ -243,17 +229,15 @@ function main(): i32 {
 Repeat while a condition holds:
 
 ```zeus
-function main(): i32 {
-  let i = 0;
-  let sum = 0;
+let i = 0;
+let sum = 0;
 
-  while (i < 10) {
-    sum = sum + i;
-    i = i + 1;
-  }
-
-  return sum; // 45
+while (i < 10) {
+  sum = sum + i;
+  i = i + 1;
 }
+
+console.log(sum); // 45
 ```
 
 ### Factorial
@@ -279,18 +263,16 @@ function factorial(n: i32): i32 {
 `break` exits the innermost loop immediately. Code after `break` in the same iteration is skipped, and execution continues after the loop.
 
 ```zeus
-function main(): i32 {
-  let found = -1;
+let found = -1;
 
-  for (let i: i32 = 0; i < 100; i++) {
-    if (i * i > 50) {
-      found = i;
-      break; // stop searching once the condition is met
-    }
+for (let i: i32 = 0; i < 100; i++) {
+  if (i * i > 50) {
+    found = i;
+    break; // stop searching once the condition is met
   }
-
-  return found; // 8  (8*8 = 64 > 50)
 }
+
+console.log(found); // 8  (8*8 = 64 > 50)
 ```
 
 ### Break in a While Loop
@@ -315,21 +297,19 @@ function findFactor(n: i32): i32 {
 `break` only exits the **innermost** loop. The outer loop continues normally:
 
 ```zeus
-function main(): i32 {
-  let total = 0;
+let total = 0;
 
-  for (let i: i32 = 0; i < 5; i++) {
-    for (let j: i32 = 0; j < 10; j++) {
-      if (j == 3) {
-        break; // exits only the inner loop
-      }
-      total += 1;
+for (let i: i32 = 0; i < 5; i++) {
+  for (let j: i32 = 0; j < 10; j++) {
+    if (j == 3) {
+      break; // exits only the inner loop
     }
-    // outer loop continues here
+    total += 1;
   }
-
-  return total; // 15  (5 outer iters × 3 inner iters each)
+  // outer loop continues here
 }
+
+console.log(total); // 15  (5 outer iters × 3 inner iters each)
 ```
 
 <Aside type="caution">
@@ -343,19 +323,17 @@ function main(): i32 {
 `continue` skips the rest of the current iteration and moves to the next one. In a `for` loop the update expression (`i++`) still runs before the next condition check.
 
 ```zeus
-function main(): i32 {
-  let sum = 0;
+let sum = 0;
 
-  // Sum only odd numbers 1..9
-  for (let i: i32 = 1; i <= 10; i++) {
-    if (i % 2 == 0) {
-      continue; // skip even numbers
-    }
-    sum += i;
+// Sum only odd numbers 1..9
+for (let i: i32 = 1; i <= 10; i++) {
+  if (i % 2 == 0) {
+    continue; // skip even numbers
   }
-
-  return sum; // 25  (1+3+5+7+9)
+  sum += i;
 }
+
+console.log(sum); // 25  (1+3+5+7+9)
 ```
 
 ### Continue in a While Loop
@@ -386,20 +364,18 @@ function sumOdd(limit: i32): i32 {
 Like `break`, `continue` only affects the **innermost** loop:
 
 ```zeus
-function main(): i32 {
-  let count = 0;
+let count = 0;
 
-  for (let i: i32 = 0; i < 3; i++) {
-    for (let j: i32 = 0; j < 3; j++) {
-      if (j == 1) {
-        continue; // skips j == 1 in inner loop only
-      }
-      count += 1;
+for (let i: i32 = 0; i < 3; i++) {
+  for (let j: i32 = 0; j < 3; j++) {
+    if (j == 1) {
+      continue; // skips j == 1 in inner loop only
     }
+    count += 1;
   }
-
-  return count; // 6  (3 outer × 2 inner where j ≠ 1)
 }
+
+console.log(count); // 6  (3 outer × 2 inner where j ≠ 1)
 ```
 
 <Aside type="caution">

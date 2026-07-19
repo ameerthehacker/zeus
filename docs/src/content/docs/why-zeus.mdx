@@ -1,52 +1,75 @@
 ---
 title: Why Zeus?
-description: The philosophy and motivation behind the Zeus programming language.
+description: The problem Zeus solves, and the sweet spot it aims for between Rust and Go.
 ---
 
 import { Aside, Card, CardGrid } from '@astrojs/starlight/components';
 
-Zeus exists to answer a simple question: **what if a language felt like TypeScript but compiled
-straight to a native binary?** It borrows the syntax you already know and runs it as machine code —
-no interpreter, no VM, no runtime tax.
+Zeus isn't "TypeScript, but faster." It's a **new language** that keeps the ergonomics you love
+about TypeScript, deliberately leaves behind JavaScript's runtime dynamism and footguns, and
+gives you a **rich, static type system that feels like a subset of TS** — then compiles straight
+to a **native binary** via LLVM.
 
-## The problem
+The goal is a specific one: **an approachable systems language.** Something that lands in the gap
+nobody quite fills — richer and friendlier than Go, far easier to pick up than Rust.
 
-Picking a language usually means trading ergonomics for performance:
+## The choice you shouldn't have to make
 
-- **JavaScript / TypeScript** give you familiar, expressive syntax and fast iteration — but you pay
-  with interpreter/JIT overhead, higher memory use, and no standalone binaries.
-- **Rust, Go, or C++** give you native speed and real compiled binaries — but with a steeper
-  learning curve and unfamiliar paradigms.
+Picking a language usually forces a trade between how it *feels* and what it *produces*:
 
-Zeus aims for the middle: the feel of TypeScript with the output of a systems language.
+- **JavaScript / TypeScript** — expressive, familiar, fast to iterate. But you inherit JS's
+  dynamism and mistakes, pay for an interpreter/JIT and a runtime, carry `node_modules`, and you
+  never get a standalone binary.
+- **Rust** — a genuinely rich type system and real native binaries. But a steep learning curve,
+  a borrow checker to satisfy, and slow compiles.
+- **Go** — fast, simple, and it ships a real binary. But it's verbose, has no inheritance, and
+  its type system is deliberately minimal.
 
-## The Zeus solution
+Each corner asks you to give something up. Zeus is an attempt to sit in the middle of all three.
+
+## Where Zeus fits
+
+Think of it as a spectrum. Rust maximizes power at the cost of approachability. Go maximizes
+simplicity and speed at the cost of expressiveness. Zeus aims for the point in between:
+
+> A rich, TypeScript-like type system with classes, interfaces, and inheritance — compiled to a
+> native binary — **without** Rust's complexity tax and **without** giving up the expressiveness
+> Go leaves on the table.
+
+It brings back what Go misses — inheritance, a fuller type system, and TS-grade ergonomics —
+while staying miles more approachable than Rust. The honest trade is on the other side: Zeus is
+**not chasing Go's raw throughput.** It gives up a little peak speed to buy a lot of
+expressiveness and a gentle learning curve. For CLIs, tools, servers, and everyday programs,
+that's a trade that pays off.
+
+## What Zeus gives you
 
 <CardGrid>
-  <Card title="Familiar Syntax" icon="seti:typescript">
-    If you know TypeScript, you already know most of Zeus. Classes, functions, and type
-    annotations work the way you expect.
+  <Card title="Familiar TypeScript syntax" icon="seti:typescript">
+    Classes, interfaces, generics, closures, and type annotations that read like TypeScript. If
+    you know TS, you already know most of Zeus — there's very little new to learn.
   </Card>
-  <Card title="Native Speed" icon="rocket">
-    Zeus compiles to native machine code via LLVM. No interpreter, no virtual machine, no JIT
-    warmup.
+  <Card title="Native LLVM binaries" icon="rocket">
+    Zeus compiles to a small, self-contained native executable through LLVM. No interpreter, no
+    VM, no JIT warmup, no runtime to install — just a binary that starts instantly.
   </Card>
-  <Card title="Simple Memory Model" icon="approve-check">
-    Automatic garbage collection means you focus on your logic — no ownership rules, no borrow
-    checker, no manual malloc/free.
+  <Card title="Batteries-included stdlib" icon="open-book">
+    `fs`, `os`, `path`, `json`, `crypto`, `datetime`, a test runner, and more ship in the box.
+    Node/TS-level breadth, without the `npm install` sprawl.
   </Card>
-  <Card title="Tooling First" icon="laptop">
-    The language server was built alongside the compiler, so you get real-time diagnostics and
-    completions from day one.
+  <Card title="Approachable by design" icon="approve-check">
+    A rich type system with no borrow checker to fight and no ceremony to wade through. You get
+    memory safety without ownership rules to memorize.
   </Card>
 </CardGrid>
 
 ## Design principles
 
-### 1. Familiarity over novelty
+### 1. Keep TypeScript's ergonomics, not JavaScript's baggage
 
-Zeus doesn't reinvent syntax that already works. If TypeScript's class and function syntax is
-good, why make you relearn it?
+Zeus borrows the syntax and feel that make TypeScript pleasant, and leaves behind the parts of
+JavaScript that cause pain — implicit coercions, `undefined`-vs-`null` confusion, and runtime
+type surprises. The result feels like a clean, statically-typed subset of TS.
 
 ```zeus
 // This should feel immediately familiar
@@ -63,53 +86,70 @@ class Rectangle {
     return this.width * this.height;
   }
 }
+
+let r = new Rectangle(3.0, 4.0);
+console.log(r.area()); // 12
 ```
 
-### 2. Static types, minimal ceremony
+### 2. A rich type system, minimal ceremony
 
-Every value has a type, but you don't have to spell it out when it's obvious — Zeus infers types
-from initializers and only asks for annotations where they add clarity.
+Every value has a static type, but you don't spell it out when it's obvious — Zeus infers types
+from initializers and only asks for annotations where they add clarity. Classes, interfaces, and
+inheritance are first-class, so you can model real programs without fighting the language.
 
-### 3. Tooling is not optional
+### 3. Native by default, honest about speed
+
+Every program compiles to optimized native code through LLVM, with no interpretation overhead at
+runtime. Zeus is fast — fast enough for real work — but it doesn't pretend to out-benchmark Go.
+The win is a real binary and predictable native performance *with* TypeScript-grade
+expressiveness.
+
+### 4. Memory safety without a borrow checker
+
+Zeus manages memory for you, so you focus on logic instead of lifetimes. You get the safety of
+automatic memory management without ownership rules, ceremony, or a borrow checker standing
+between you and your program.
+
+### 5. Tooling is not optional
 
 Great tooling shouldn't be a third-party add-on. Zeus ships a Language Server Protocol
-implementation built into the compiler, with real-time diagnostics, smart completions, and a VS
-Code extension.
-
-### 4. Performance by default
-
-Every program compiles to optimized native code through the LLVM backend. Static typing enables
-compile-time optimization, and there's no interpretation overhead at runtime.
+implementation built alongside the compiler, with real-time diagnostics, smart completions, and
+a VS Code extension from day one.
 
 ## Who is Zeus for?
 
 <CardGrid stagger>
-  <Card title="Web Developers" icon="document">
-    You love TypeScript but want to build CLI tools, games, or performance-critical apps without
-    learning a completely new language.
+  <Card title="TypeScript developers" icon="seti:typescript">
+    You love how TS feels but want a real binary and native performance — without switching to a
+    language that makes you relearn everything.
   </Card>
-  <Card title="Students & Learners" icon="open-book">
-    You want to understand how compiled languages work without the complexity of manual memory
-    management.
+  <Card title="Devs who bounced off Rust/Go" icon="rocket">
+    You wanted a compiled language but found Rust too heavy or Go too bare. Zeus aims for the
+    approachable middle.
   </Card>
-  <Card title="Curious Engineers" icon="magnifier">
-    You're interested in language design and compilers. Zeus is open source and approachable.
+  <Card title="Tool & CLI builders" icon="laptop">
+    You're shipping command-line tools, servers, and utilities where fast startup and a single
+    self-contained binary matter.
   </Card>
-  <Card title="Performance Seekers" icon="rocket">
-    You need more speed than JavaScript offers but don't want to invest months learning Rust or C++.
+  <Card title="Students & language fans" icon="open-book">
+    You want to understand compiled languages — or just enjoy trying new ones — without manual
+    memory management getting in the way.
   </Card>
 </CardGrid>
 
 ## How Zeus compares
 
-| Aspect | JavaScript / TypeScript | Zeus | Rust / Go |
-|--------|------------------------|------|-----------|
-| Syntax familiarity | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
-| Native performance | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| Memory management | Automatic (GC) | Automatic (GC) | Manual / ownership |
-| Learning curve | Low | Low | High |
-| Standalone binary | ❌ (needs runtime) | ✅ | ✅ |
-| IDE support | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+Zeus doesn't win every column — it's built to win the *balance* across them.
+
+| Aspect | TypeScript | Go | Rust | **Zeus** |
+|--------|------------|-----|------|----------|
+| Feels familiar to TS devs | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐ | **⭐⭐⭐⭐⭐** |
+| Rich / expressive types | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | **⭐⭐⭐⭐** |
+| Classes & inheritance | ✅ | ❌ | ⚠️ traits | **✅** |
+| Standalone native binary | ❌ | ✅ | ✅ | **✅** |
+| Runtime performance | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | **⭐⭐⭐⭐** |
+| Learning curve | Low | Low–Medium | High | **Low** |
+| Memory management | Automatic | Automatic | Ownership / borrow | **Automatic** |
 
 ## Where Zeus stands today
 
@@ -121,13 +161,14 @@ Zeus is in **alpha** and under active development.
 - Encapsulation (`public`/`private`) and `get`/`set` accessors
 - Static members and single inheritance with dynamic dispatch
 - Structural interfaces with dynamic method and property dispatch
-- Functions, closures, and variadic parameters
-- Control flow (`if`/`else`, `for`, `while`)
+- Functions, closures, default parameters, and variadic parameters
+- Control flow (`if`/`else`, `for`, `for...of`, `while`)
 - Dynamic arrays and UTF-8 strings (including template literals)
 - Modules (`import`/`export`) and exception handling
-- Automatic garbage collection
-- Timers and a growing set of built-ins
-- VS Code extension backed by the language server
+- A batteries-included standard library (`fs`, `os`, `path`, `json`, `crypto`, `datetime`, …)
+- C interop (FFI) for calling into existing native libraries
+- Automatic memory management
+- A VS Code extension backed by the language server
 
 **On the roadmap**
 
@@ -135,8 +176,8 @@ Generics, `Promise` with `async`/`await`, a Node-like HTTP server, and more — 
 [Roadmap](/roadmap/) for what's coming next.
 
 <Aside type="note">
-  Zeus is a labor of love and a learning project. It's not production-ready yet, but it grows every
-  day. [Star it on GitHub](https://github.com/ameerthehacker/zeus) to follow along.
+  Zeus is a labor of love and a learning project. It's not production-ready yet, but it grows
+  every day. [Star it on GitHub](https://github.com/ameerthehacker/zeus) to follow along.
 </Aside>
 
 <div style="text-align: center; margin-top: 2.5rem;">

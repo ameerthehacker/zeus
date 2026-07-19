@@ -41,10 +41,7 @@ The language server reports errors in real-time:
 Example error:
 
 ```zeus
-function main(): i32 {
-  let x: i32 = "hello";  // ❌ Error: type 'string' is not assignable to 'i32'
-  return x;
-}
+let x: i32 = "hello";  // ❌ Error: type 'string' is not assignable to 'i32'
 ```
 
 ### Code Completion
@@ -71,11 +68,9 @@ Press `Ctrl+Space` (or `Cmd+Space` on Mac) to see suggestions:
 The server warns about declarations that are never used:
 
 ```zeus
-function main(): i32 {
-  let unused: i32 = 5;  // ⚠️ Warning: 'unused' is declared but never used
-  let used: i32 = 10;
-  return used;
-}
+let unused: i32 = 5;  // ⚠️ Warning: 'unused' is declared but never used
+let used: i32 = 10;
+console.log(used);
 ```
 
 ### Formatting

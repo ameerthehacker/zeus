@@ -126,10 +126,7 @@ The extension automatically searches for the Zeus binary in this order:
 As you type, the extension shows errors immediately:
 
 ```zeus
-function main(): i32 {
-  let x: i32 = "hello";  // Error: type 'string' is not assignable to 'i32'
-  return x;
-}
+let x: i32 = "hello";  // Error: type 'string' is not assignable to 'i32'
 ```
 
 The error appears underlined in red with a descriptive message.
@@ -148,10 +145,7 @@ Start typing and press `Ctrl+Space` (or `Cmd+Space` on Mac) to see suggestions:
 The extension warns you about unused declarations:
 
 ```zeus
-function main(): i32 {
-  let unused: i32 = 5;  // Warning: 'unused' is declared but never used
-  return 0;
-}
+let unused: i32 = 5;  // Warning: 'unused' is declared but never used
 ```
 
 ---
