@@ -18,6 +18,14 @@ extern fn zeus_new_u8_array(capacity: i32) *anyopaque;
 /// The parameter is the direct array pointer (not a pointer to pointer)
 extern fn zeus_new_string(data: *anyopaque) *anyopaque;
 
+/// Factory for an empty object array. All object arrays (string[], Point[], ...) share the single
+/// "Object[]" layout/factory (see codegen ZeusObjectArrayClassName); pre-registering string[] in
+/// ir.loadPreludes forces this factory to be emitted in every module. Elements are pushed with
+/// zeus_array_push. Used by zeus_string_split. The array carries Object[]'s generic type header —
+/// fine for split, whose elements are accessed at the static string[] type.
+extern fn zeus_new_Object_array(capacity: i32) *anyopaque;
+extern fn zeus_array_push(this_ptr: *anyopaque, return_buffer_ptr: ?*anyopaque, value_ptr: *anyopaque) void;
+
 // ============================================================================
 // String Object ABI
 // ============================================================================
@@ -218,4 +226,290 @@ export fn zeus_string_concat(this_ptr: *anyopaque, return_buffer_ptr_ptr: ?*anyo
         const result_ptr = @as(**anyopaque, @ptrCast(@alignCast(result_bytes.ptr)));
         result_ptr.* = new_string_ptr;
     }
+}
+
+// ============================================================================
+// String methods — JS/TS parity. All are byte-oriented (matching Zeus's UTF-8
+// bytes semantics and `string` indexing). Backed by the extern decls in
+// internal/prelude/string.zs. Method ABI: (this_ptr, return_buffer_ptr_ptr,
+// ...arg_ptr_ptrs) — string args arrive as pointer-to-pointer, scalar args as
+// pointer-to-value; results go through allocateReturnBuffer.
+// ============================================================================
+
+const method_allocator = std.heap.c_allocator;
+
+/// Bytes of a string as a slice, empty for null/empty strings.
+inline fn bytesOf(s: *ZeusStringObj) []const u8 {
+    return getStringBytes(s) orelse &[_]u8{};
+}
+
+/// Public: bytes of a string object pointer (empty for null). For other runtime modules.
+pub fn zeusStringBytes(obj: ?*anyopaque) []const u8 {
+    if (obj) |o| return bytesOf(castToStringObj(o));
+    return &[_]u8{};
+}
+
+/// Dereference a string arg (passed as pointer-to-pointer) into its object.
+inline fn argString(ptr_ptr: *anyopaque) *ZeusStringObj {
+    return castToStringObj(@as(**anyopaque, @ptrCast(@alignCast(ptr_ptr))).*);
+}
+
+/// Read an i32 arg (passed as pointer-to-value).
+inline fn argI32(ptr: *anyopaque) i32 {
+    return @as(*i32, @ptrCast(@alignCast(ptr))).*;
+}
+
+/// Build a fresh Zeus string from a byte slice (copies the bytes).
+fn makeString(bytes: []const u8) *anyopaque {
+    const len: i32 = @intCast(bytes.len);
+    const arr_ptr = zeus_new_u8_array(len);
+    const arr = runtime_util.castToArrayObj(arr_ptr);
+    if (bytes.len > 0) {
+        if (arr.data) |dest_data| {
+            const dest = @as([*]u8, @ptrCast(@alignCast(dest_data)));
+            @memcpy(dest[0..bytes.len], bytes);
+        }
+    }
+    arr.length = @intCast(bytes.len);
+    return zeus_new_string(arr_ptr);
+}
+
+fn returnString(rb: ?*anyopaque, ptr: *anyopaque) void {
+    if (runtime_util.allocateReturnBuffer(rb, @sizeOf(*anyopaque))) |b| {
+        @as(**anyopaque, @ptrCast(@alignCast(b.ptr))).* = ptr;
+    }
+}
+
+fn returnI32(rb: ?*anyopaque, v: i32) void {
+    if (runtime_util.allocateReturnBuffer(rb, @sizeOf(i32))) |b| {
+        @as(*i32, @ptrCast(@alignCast(b.ptr))).* = v;
+    }
+}
+
+fn returnBool(rb: ?*anyopaque, v: bool) void {
+    if (runtime_util.allocateReturnBuffer(rb, @sizeOf(bool))) |b| {
+        b[0] = if (v) 1 else 0;
+    }
+}
+
+/// Clamp a possibly-negative JS index (negatives count from the end) into [0, len].
+fn clampIndex(idx: i32, len: usize) usize {
+    const ilen: i64 = @intCast(len);
+    var i: i64 = idx;
+    if (i < 0) i += ilen;
+    if (i < 0) i = 0;
+    if (i > ilen) i = ilen;
+    return @intCast(i);
+}
+
+/// slice(start, end): JS semantics — negatives count from the end, clamped, empty if start >= end.
+export fn zeus_string_slice(this_ptr: *anyopaque, rb: ?*anyopaque, start_ptr: *anyopaque, end_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const start = clampIndex(argI32(start_ptr), bytes.len);
+    const end = clampIndex(argI32(end_ptr), bytes.len);
+    const s = if (start < end) makeString(bytes[start..end]) else makeString(&[_]u8{});
+    returnString(rb, s);
+}
+
+/// substring(start, end): like slice but negatives clamp to 0 and start/end swap if start > end.
+export fn zeus_string_substring(this_ptr: *anyopaque, rb: ?*anyopaque, start_ptr: *anyopaque, end_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const ilen: i64 = @intCast(bytes.len);
+    var a: i64 = argI32(start_ptr);
+    var b: i64 = argI32(end_ptr);
+    if (a < 0) a = 0;
+    if (b < 0) b = 0;
+    if (a > ilen) a = ilen;
+    if (b > ilen) b = ilen;
+    if (a > b) {
+        const tmp = a;
+        a = b;
+        b = tmp;
+    }
+    returnString(rb, makeString(bytes[@intCast(a)..@intCast(b)]));
+}
+
+export fn zeus_string_indexOf(this_ptr: *anyopaque, rb: ?*anyopaque, needle_ptr: *anyopaque) callconv(.C) void {
+    const hay = bytesOf(castToStringObj(this_ptr));
+    const needle = bytesOf(argString(needle_ptr));
+    const idx = std.mem.indexOf(u8, hay, needle);
+    returnI32(rb, if (idx) |i| @intCast(i) else -1);
+}
+
+export fn zeus_string_lastIndexOf(this_ptr: *anyopaque, rb: ?*anyopaque, needle_ptr: *anyopaque) callconv(.C) void {
+    const hay = bytesOf(castToStringObj(this_ptr));
+    const needle = bytesOf(argString(needle_ptr));
+    const idx = std.mem.lastIndexOf(u8, hay, needle);
+    returnI32(rb, if (idx) |i| @intCast(i) else -1);
+}
+
+export fn zeus_string_includes(this_ptr: *anyopaque, rb: ?*anyopaque, needle_ptr: *anyopaque) callconv(.C) void {
+    const hay = bytesOf(castToStringObj(this_ptr));
+    const needle = bytesOf(argString(needle_ptr));
+    returnBool(rb, std.mem.indexOf(u8, hay, needle) != null);
+}
+
+export fn zeus_string_startsWith(this_ptr: *anyopaque, rb: ?*anyopaque, prefix_ptr: *anyopaque) callconv(.C) void {
+    const hay = bytesOf(castToStringObj(this_ptr));
+    const prefix = bytesOf(argString(prefix_ptr));
+    returnBool(rb, std.mem.startsWith(u8, hay, prefix));
+}
+
+export fn zeus_string_endsWith(this_ptr: *anyopaque, rb: ?*anyopaque, suffix_ptr: *anyopaque) callconv(.C) void {
+    const hay = bytesOf(castToStringObj(this_ptr));
+    const suffix = bytesOf(argString(suffix_ptr));
+    returnBool(rb, std.mem.endsWith(u8, hay, suffix));
+}
+
+fn mapCase(this_ptr: *anyopaque, rb: ?*anyopaque, comptime up: bool) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    if (bytes.len == 0) return returnString(rb, makeString(&[_]u8{}));
+    const buf = method_allocator.alloc(u8, bytes.len) catch return returnString(rb, makeString(bytes));
+    defer method_allocator.free(buf);
+    for (bytes, 0..) |c, i| buf[i] = if (up) std.ascii.toUpper(c) else std.ascii.toLower(c);
+    returnString(rb, makeString(buf));
+}
+
+export fn zeus_string_toUpperCase(this_ptr: *anyopaque, rb: ?*anyopaque) callconv(.C) void {
+    mapCase(this_ptr, rb, true);
+}
+
+export fn zeus_string_toLowerCase(this_ptr: *anyopaque, rb: ?*anyopaque) callconv(.C) void {
+    mapCase(this_ptr, rb, false);
+}
+
+const WS = " \t\n\r\x0B\x0C";
+
+export fn zeus_string_trim(this_ptr: *anyopaque, rb: ?*anyopaque) callconv(.C) void {
+    returnString(rb, makeString(std.mem.trim(u8, bytesOf(castToStringObj(this_ptr)), WS)));
+}
+
+export fn zeus_string_trimStart(this_ptr: *anyopaque, rb: ?*anyopaque) callconv(.C) void {
+    returnString(rb, makeString(std.mem.trimLeft(u8, bytesOf(castToStringObj(this_ptr)), WS)));
+}
+
+export fn zeus_string_trimEnd(this_ptr: *anyopaque, rb: ?*anyopaque) callconv(.C) void {
+    returnString(rb, makeString(std.mem.trimRight(u8, bytesOf(castToStringObj(this_ptr)), WS)));
+}
+
+export fn zeus_string_repeat(this_ptr: *anyopaque, rb: ?*anyopaque, count_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const count = argI32(count_ptr);
+    if (count <= 0 or bytes.len == 0) return returnString(rb, makeString(&[_]u8{}));
+    const total: usize = bytes.len * @as(usize, @intCast(count));
+    const buf = method_allocator.alloc(u8, total) catch return returnString(rb, makeString(bytes));
+    defer method_allocator.free(buf);
+    var i: usize = 0;
+    while (i < total) : (i += bytes.len) @memcpy(buf[i .. i + bytes.len], bytes);
+    returnString(rb, makeString(buf));
+}
+
+/// pad(targetLen, pad, atStart): repeat `pad` to fill (targetLen - len) on the chosen side.
+fn pad(this_ptr: *anyopaque, rb: ?*anyopaque, target_ptr: *anyopaque, pad_ptr: *anyopaque, comptime atStart: bool) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const padding = bytesOf(argString(pad_ptr));
+    const target = argI32(target_ptr);
+    if (target <= 0 or bytes.len >= @as(usize, @intCast(target)) or padding.len == 0) {
+        return returnString(rb, makeString(bytes));
+    }
+    const total: usize = @intCast(target);
+    const fill = total - bytes.len;
+    const buf = method_allocator.alloc(u8, total) catch return returnString(rb, makeString(bytes));
+    defer method_allocator.free(buf);
+    const pad_into = if (atStart) buf[0..fill] else buf[bytes.len..total];
+    var i: usize = 0;
+    while (i < fill) : (i += 1) pad_into[i] = padding[i % padding.len];
+    const text_into = if (atStart) buf[fill..total] else buf[0..bytes.len];
+    @memcpy(text_into, bytes);
+    returnString(rb, makeString(buf));
+}
+
+export fn zeus_string_padStart(this_ptr: *anyopaque, rb: ?*anyopaque, target_ptr: *anyopaque, pad_ptr: *anyopaque) callconv(.C) void {
+    pad(this_ptr, rb, target_ptr, pad_ptr, true);
+}
+
+export fn zeus_string_padEnd(this_ptr: *anyopaque, rb: ?*anyopaque, target_ptr: *anyopaque, pad_ptr: *anyopaque) callconv(.C) void {
+    pad(this_ptr, rb, target_ptr, pad_ptr, false);
+}
+
+/// replace(search, replacement, all): literal (non-regex) replacement.
+fn replace(this_ptr: *anyopaque, rb: ?*anyopaque, search_ptr: *anyopaque, repl_ptr: *anyopaque, comptime all: bool) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const search = bytesOf(argString(search_ptr));
+    const repl = bytesOf(argString(repl_ptr));
+    if (search.len == 0) return returnString(rb, makeString(bytes));
+
+    var out = std.ArrayList(u8).init(method_allocator);
+    defer out.deinit();
+    var i: usize = 0;
+    while (i < bytes.len) {
+        if (std.mem.startsWith(u8, bytes[i..], search)) {
+            out.appendSlice(repl) catch return returnString(rb, makeString(bytes));
+            i += search.len;
+            if (!all) {
+                out.appendSlice(bytes[i..]) catch return returnString(rb, makeString(bytes));
+                break;
+            }
+        } else {
+            out.append(bytes[i]) catch return returnString(rb, makeString(bytes));
+            i += 1;
+        }
+    }
+    returnString(rb, makeString(out.items));
+}
+
+export fn zeus_string_replace(this_ptr: *anyopaque, rb: ?*anyopaque, search_ptr: *anyopaque, repl_ptr: *anyopaque) callconv(.C) void {
+    replace(this_ptr, rb, search_ptr, repl_ptr, false);
+}
+
+export fn zeus_string_replaceAll(this_ptr: *anyopaque, rb: ?*anyopaque, search_ptr: *anyopaque, repl_ptr: *anyopaque) callconv(.C) void {
+    replace(this_ptr, rb, search_ptr, repl_ptr, true);
+}
+
+/// charAt(index): a 1-byte string, or "" if out of range (JS returns "").
+export fn zeus_string_charAt(this_ptr: *anyopaque, rb: ?*anyopaque, index_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const idx = argI32(index_ptr);
+    if (idx < 0 or idx >= @as(i32, @intCast(bytes.len))) return returnString(rb, makeString(&[_]u8{}));
+    returnString(rb, makeString(bytes[@intCast(idx) .. @as(usize, @intCast(idx)) + 1]));
+}
+
+/// charCodeAt(index): the byte value, or -1 if out of range (JS returns NaN; -1 is our sentinel).
+export fn zeus_string_charCodeAt(this_ptr: *anyopaque, rb: ?*anyopaque, index_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const idx = argI32(index_ptr);
+    if (idx < 0 or idx >= @as(i32, @intCast(bytes.len))) return returnI32(rb, -1);
+    returnI32(rb, bytes[@intCast(idx)]);
+}
+
+/// Push a string object pointer onto a Zeus string[] (the element is a pointer, passed by address).
+inline fn pushString(arr: *anyopaque, str: *anyopaque) void {
+    var slot: *anyopaque = str;
+    zeus_array_push(arr, null, @ptrCast(&slot));
+}
+
+/// split(separator): literal (non-regex) split into a string[]. Empty separator splits into
+/// single-byte pieces (JS splits into chars); "".split(sep) yields [""] for a non-empty sep.
+export fn zeus_string_split(this_ptr: *anyopaque, rb: ?*anyopaque, sep_ptr: *anyopaque) callconv(.C) void {
+    const bytes = bytesOf(castToStringObj(this_ptr));
+    const sep = bytesOf(argString(sep_ptr));
+    const arr = zeus_new_Object_array(0);
+
+    if (sep.len == 0) {
+        for (bytes) |c| pushString(arr, makeString(&[_]u8{c}));
+        return returnString(rb, arr);
+    }
+
+    var start: usize = 0;
+    while (true) {
+        const rest = bytes[start..];
+        if (std.mem.indexOf(u8, rest, sep)) |idx| {
+            pushString(arr, makeString(rest[0..idx]));
+            start += idx + sep.len;
+        } else {
+            pushString(arr, makeString(rest));
+            break;
+        }
+    }
+    returnString(rb, arr);
 }

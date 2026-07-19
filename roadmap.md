@@ -12,6 +12,13 @@ let array = [1,2,3]
 * Auto Boxing and Unboxing
 * Type Reflection operators
 * JSON objects
+  * Shipped: global `JSON` (`JSON.parse` / `JSON.stringify`) over a `JsonValue` tree.
+  * Planned (needs Generics + Union Types): ergonomic, typed access so JSON reads like JS —
+```ts
+let v: JSONValue<{ name: string }> = JSON.parse(str);
+v.name;       // typed field access
+v["name"];    // or bracket access
+```
 * Union Types
 * Basic Generics
 

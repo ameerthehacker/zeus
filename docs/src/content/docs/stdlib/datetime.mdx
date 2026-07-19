@@ -1,0 +1,52 @@
+---
+title: Date & Time (@std/datetime)
+description: A Date type backed by libc time — epoch millis, calendar fields, ISO strings.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@std/datetime` provides a `Date` type, a subset of JavaScript's `Date`.
+
+```zeus
+import { Date, now } from "@std/datetime";
+
+function main(): i32 {
+  let d: Date = new Date(now());
+  console.log(d.toISOString());
+  console.log(d.getFullYear());
+  return 0;
+}
+```
+
+<Aside type="note">
+Zeus has no overloaded constructors, so a `Date` is built from epoch **milliseconds**: `new Date(ms)`.
+Use the free `now()` for the current time (Node's `Date.now()`) — a static method cannot yet be
+called across module boundaries.
+</Aside>
+
+## Reference
+
+```zeus
+now(): i64                       // current time, ms since the Unix epoch
+
+new Date(ms: i64)
+d.getTime(): i64                 // the epoch ms it was built from
+d.getFullYear(): i32             // local time
+d.getMonth(): i32                // 0-based (January = 0)
+d.getDate(): i32                 // day of month, 1-31
+d.getHours(): i32
+d.getMinutes(): i32
+d.getSeconds(): i32
+d.getMilliseconds(): i32
+d.getDay(): i32                  // day of week, Sunday = 0
+d.getTimezoneOffset(): i32       // minutes, positive west of UTC
+d.toISOString(): string          // UTC, YYYY-MM-DDTHH:MM:SS.sssZ
+```
+
+`getX()` accessors report **local** time; `toISOString()` is **UTC**.
+
+```zeus
+let d: Date = new Date(1609459200123);   // 2021-01-01T00:00:00.123Z
+console.log(d.toISOString());            // 2021-01-01T00:00:00.123Z
+console.log(d.getMilliseconds());        // 123
+```

@@ -177,6 +177,50 @@ let greeting = hello.concat(" ").concat(world);
 console.log(greeting);  // "Hello World"
 ```
 
+### Search, slice, transform
+
+These byte-oriented methods mirror JavaScript's `String` methods:
+
+```zeus
+slice(start: i32, end: i32): string       // JS-style; negative indices count from the end
+substring(start: i32, end: i32): string   // clamps to 0; swaps if start > end
+indexOf(needle: string): i32              // first index, or -1
+lastIndexOf(needle: string): i32          // last index, or -1
+includes(needle: string): boolean
+startsWith(prefix: string): boolean
+endsWith(suffix: string): boolean
+toUpperCase(): string                     // ASCII
+toLowerCase(): string                     // ASCII
+trim(): string    trimStart(): string    trimEnd(): string
+repeat(count: i32): string
+padStart(targetLength: i32, pad: string): string
+padEnd(targetLength: i32, pad: string): string
+replace(search: string, replacement: string): string      // first occurrence (literal)
+replaceAll(search: string, replacement: string): string   // all occurrences (literal)
+charAt(index: i32): string                // 1-char string, or "" out of range
+charCodeAt(index: i32): i32               // byte value, or -1 out of range
+split(separator: string): string[]        // "" separator splits into single bytes
+```
+
+```zeus
+let s = "Hello, World";
+console.log(s.slice(7, s.length));         // "World"
+console.log(s.slice(-5, s.length));        // "World"
+console.log(s.toUpperCase());              // "HELLO, WORLD"
+console.log("  trim me  ".trim());         // "trim me"
+console.log("7".padStart(3, "0"));         // "007"
+console.log("a,b,c".replaceAll(",", "-")); // "a-b-c"
+
+let parts: string[] = "a,b,c".split(",");  // ["a", "b", "c"]
+console.log(parts.length);                 // 3
+```
+
+<Aside type="note">
+Indices and lengths are **byte** offsets (`slice`, `indexOf`, `charAt`, …), consistent with `string`
+indexing and `length`. `split("")` yields one entry per byte, so multi-byte UTF-8 characters are split
+into their bytes.
+</Aside>
+
 <Aside type="tip">
   You can also use the `+` operator for string concatenation. See [String Operators](#string-operators) below.
 </Aside>
@@ -379,9 +423,6 @@ let sum = "value: " + n;      // "value: 42"
   String interning (deduplicating identical strings in memory) is planned for a future release. This optimization will reduce memory usage when the same string value appears multiple times.
 </Aside>
 
-The following features are planned for future releases:
-
-- Substring extraction
-- Search and replace
-- Character iteration
+Regular-expression matching (`match`, regex-based `replace`/`split`) is planned once Zeus gains a
+regex engine.
 

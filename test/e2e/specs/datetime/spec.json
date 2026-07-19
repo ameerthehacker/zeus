@@ -1,0 +1,8 @@
+[
+    {
+        "name": "@std/datetime Date (toISOString/getTime/getMilliseconds/getTimezoneOffset/now)",
+        "entry": "datetime_basic.zs",
+        "exit": "0",
+        "stdout": "2021-01-01T00:00:00.123Z\n"
+    }
+]

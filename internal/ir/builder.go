@@ -158,6 +158,16 @@ func loadPreludes() {
 		})
 	}
 
+	// Pre-register string[] (like u8[] in registerBaseClasses) now that `string` exists, so its
+	// factory zeus_new_string_array is emitted in every module. The runtime calls it to return
+	// string arrays (string.split, process.argv) without depending on user code using string[].
+	if strClass := zeus_value.Registry.GetClass("string"); strClass != nil {
+		zeus_value.Registry.GetOrCreateArrayClass(zeus_value.ArrayType{
+			ElementType: zeus_value.NewObjectType(strClass),
+			Span:        strClass.GetSpan(),
+		})
+	}
+
 	// Seed the ambient-global registry with globals.zs's console/Math (resolved to concrete object
 	// types) into the never-reset prelude tier, so they resolve on every compile path — including the
 	// language server, which type-checks a single document and never injects/compiles globals.zs.

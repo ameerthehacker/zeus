@@ -43,12 +43,35 @@ process.cwd(): string           // current working directory
 process.chdir(path: string): boolean  // change directory; true on success
 ```
 
+## Command-line arguments & identity
+
+```zeus
+process.argv(): string[]        // [program path, ...user args]
+process.execPath(): string      // absolute path of the running executable
+process.platform(): string      // "darwin" | "linux"
+process.arch(): string          // "arm64" | "x64"
+```
+
+```zeus
+let args: string[] = process.argv();
+let i: i32 = 1;                  // argv[0] is the program path
+while (i < args.length) {
+  console.log("arg: " + args[i]);
+  i = i + 1;
+}
+```
+
 ## Process control
 
 ```zeus
 process.pid(): i32              // this process's id
+process.ppid(): i32             // parent process id
+process.hrtime(): i64           // high-resolution time in nanoseconds
 process.exit(code: i32): void   // terminate immediately with an exit code
 ```
+
+`process.hrtime()` is a monotonic nanosecond counter; measure elapsed time by subtracting two
+readings.
 
 ```zeus
 function main(): i32 {

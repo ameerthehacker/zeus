@@ -1,0 +1,7 @@
+[
+    {
+        "name": "@std/buffer Buffer (hex/base64/utf8, LE int accessors, concat/slice/equals)",
+        "entry": "buffer_basic.zs",
+        "exit": "0"
+    }
+]

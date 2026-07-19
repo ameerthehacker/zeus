@@ -3,5 +3,10 @@
         "name": "os.platform/arch/hostname/tmpdir/totalmem return sane values",
         "exit": "0",
         "entry": "os_info.zs"
+    },
+    {
+        "name": "os extended (freemem/type/release/version/machine/endianness/EOL/loadavg/cpus)",
+        "exit": "0",
+        "entry": "os_extended.zs"
     }
 ]

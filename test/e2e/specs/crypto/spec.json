@@ -1,0 +1,7 @@
+[
+    {
+        "name": "@std/crypto hashes/HMAC/PBKDF2 known vectors + random + timingSafeEqual",
+        "entry": "crypto_basic.zs",
+        "exit": "0"
+    }
+]

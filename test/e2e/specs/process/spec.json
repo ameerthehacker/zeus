@@ -13,5 +13,10 @@
         "name": "process.exit terminates with the given code",
         "exit": "7",
         "entry": "exit.zs"
+    },
+    {
+        "name": "process extended (argv/execPath/ppid/hrtime/platform/arch)",
+        "exit": "0",
+        "entry": "process_extended.zs"
     }
 ]

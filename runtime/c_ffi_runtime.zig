@@ -166,7 +166,7 @@ export fn zeus_clear_errno() callconv(.C) void {
 }
 
 /// Node-style platform string.
-export fn zeus_os_platform() callconv(.C) [*:0]const u8 {
+pub export fn zeus_os_platform() callconv(.C) [*:0]const u8 {
     return switch (builtin.os.tag) {
         .macos => "darwin",
         .linux => "linux",
@@ -175,7 +175,7 @@ export fn zeus_os_platform() callconv(.C) [*:0]const u8 {
 }
 
 /// Node-style architecture string.
-export fn zeus_os_arch() callconv(.C) [*:0]const u8 {
+pub export fn zeus_os_arch() callconv(.C) [*:0]const u8 {
     return switch (builtin.cpu.arch) {
         .aarch64 => "arm64",
         .x86_64 => "x64",
@@ -202,4 +202,35 @@ export fn zeus_os_totalmem() callconv(.C) i64 {
         },
         else => return 0,
     }
+}
+
+/// Free physical memory in bytes (0 on failure/unsupported). macOS counts free pages via sysctl;
+/// Linux uses the available-pages sysconf (sysconf is Linux-only in this libc binding). Both are
+/// best-effort snapshots.
+export fn zeus_os_freemem() callconv(.C) i64 {
+    switch (builtin.os.tag) {
+        .macos => {
+            var free_pages: u32 = 0;
+            var len: usize = @sizeOf(u32);
+            if (std.c.sysctlbyname("vm.page_free_count", &free_pages, &len, null, 0) != 0) return 0;
+            var page_size: u32 = 0;
+            len = @sizeOf(u32);
+            if (std.c.sysctlbyname("hw.pagesize", &page_size, &len, null, 0) != 0) return 0;
+            return @as(i64, @intCast(free_pages)) * @as(i64, @intCast(page_size));
+        },
+        .linux => {
+            const pages = std.c.sysconf(std.c._SC.AVPHYS_PAGES);
+            const page_size = std.c.sysconf(std.c._SC.PAGE_SIZE);
+            if (pages <= 0 or page_size <= 0) return 0;
+            return @as(i64, @intCast(pages)) * @as(i64, @intCast(page_size));
+        },
+        else => return 0,
+    }
+}
+
+/// Number of logical CPUs (>= 1). os.type/release/version/machine are read directly from libc
+/// uname() in @std/os; only freemem (sysctl null-pointer + sysconf split) and this cpu count stay
+/// here, where the macOS/Linux difference is cleaner to express.
+export fn zeus_os_cpu_count() callconv(.C) i64 {
+    return @intCast(std.Thread.getCpuCount() catch 1);
 }
