@@ -66,12 +66,10 @@ Use `import` to bring exported symbols into your file.
 // main.zs
 import { add, multiply } from "./math.zs";
 
-function main(): i32 {
-  let sum: i32 = add(5, 3);
-  let product: i32 = multiply(4, 2);
-  
-  return sum + product;  // 8 + 8 = 16
-}
+let sum: i32 = add(5, 3);
+let product: i32 = multiply(4, 2);
+
+console.log(sum + product);  // 8 + 8 = 16
 ```
 
 ### Importing Classes
@@ -80,12 +78,9 @@ function main(): i32 {
 // main.zs
 import { Rectangle } from "./shapes.zs";
 
-function main(): i32 {
-  let rect: Rectangle = new Rectangle(10.0, 5.0);
-  let area: f64 = rect.area();
-  
-  return 0;
-}
+let rect: Rectangle = new Rectangle(10.0, 5.0);
+let area: f64 = rect.area();
+console.log(area);  // 50.0
 ```
 
 ### Importing Multiple Items
@@ -136,10 +131,8 @@ export class Point {
 // main.zs
 import { Point } from "./models/point.zs";
 
-function main(): i32 {
-  let p: Point = new Point(3, 4);
-  return p.distanceFromOrigin();
-}
+let p: Point = new Point(3, 4);
+console.log(p.distanceFromOrigin());  // 7
 ```
 
 ## Path Resolution
@@ -161,10 +154,7 @@ Zeus includes a (growing) standard library at `@std/`:
 ```zeus
 import { red, bold } from "@std/console/colors";
 
-function main(): i32 {
-  console.log(bold(red("Hello from the standard library!")));
-  return 0;
-}
+console.log(bold(red("Hello from the standard library!")));
 ```
 
 <Aside type="note">
@@ -262,16 +252,14 @@ export class Line {
 import { Point, addPoints } from "./geometry/point.zs";
 import { Line } from "./geometry/line.zs";
 
-function main(): i32 {
-  let p1: Point = new Point(0, 0);
-  let p2: Point = new Point(10, 10);
-  
-  let line: Line = new Line(p1, p2);
-  
-  let p3: Point = addPoints(p1, p2);
-  
-  return line.length() + p3.x;  // 20 + 10 = 30
-}
+let p1: Point = new Point(0, 0);
+let p2: Point = new Point(10, 10);
+
+let line: Line = new Line(p1, p2);
+
+let p3: Point = addPoints(p1, p2);
+
+console.log(line.length() + p3.x);  // 20 + 10 = 30
 ```
 
 

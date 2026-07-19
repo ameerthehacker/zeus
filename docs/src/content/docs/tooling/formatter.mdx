@@ -94,15 +94,12 @@ When a call is short, it stays on one line. When it would exceed the print width
 the formatter breaks it — one argument per line, with a trailing comma:
 
 ```zeus
-function main(): i32 {
-    let result: i32 = computeSomething(
-        argumentNumberOne,
-        argumentNumberTwo,
-        argumentNumberThree,
-        argumentFour,
-    )
-    return result
-}
+let result: i32 = computeSomething(
+    argumentNumberOne,
+    argumentNumberTwo,
+    argumentNumberThree,
+    argumentFour,
+)
 ```
 
 ## Comments

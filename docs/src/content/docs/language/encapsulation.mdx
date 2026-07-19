@@ -41,12 +41,10 @@ class Account {
   }
 }
 
-function main(): i32 {
-  let a: Account = new Account(1);
-  a.deposit(42);
-  // a.balance = 0;   // error: 'balance' is private
-  return a.getBalance();   // => 42
-}
+let a: Account = new Account(1);
+a.deposit(42);
+// a.balance = 0;   // error: 'balance' is private
+console.log(a.getBalance());   // 42
 ```
 
 Keeping `balance` private means it can only change through `deposit`, so the class controls its own
@@ -72,11 +70,9 @@ class Dog extends Animal {
   }
 }
 
-function main(): i32 {
-  let d: Dog = new Dog();
-  // d.legs;   // error: 'legs' is not accessible from outside the hierarchy
-  return d.describe() * 10 + 2;   // => 42
-}
+let d: Dog = new Dog();
+// d.legs;   // error: 'legs' is not accessible from outside the hierarchy
+console.log(d.describe() * 10 + 2);   // 42
 ```
 
 If `legs` were `private`, the `this.legs` read inside `Dog` would be a compile error. See
@@ -102,10 +98,8 @@ class Circle {
   }
 }
 
-function main(): i32 {
-  let c: Circle = new Circle(5);
-  return c.area;   // read like a field, no parentheses => 25
-}
+let c: Circle = new Circle(5);
+console.log(c.area);   // read like a field, no parentheses => 25
 ```
 
 ## Setters
@@ -122,12 +116,10 @@ class Temp {
   set celsius(v: i32) { this.c = v; }
 }
 
-function main(): i32 {
-  let t: Temp = new Temp(20);
-  let a: i32 = t.celsius;   // getter => 20
-  t.celsius = 22;           // setter
-  return a + t.celsius;     // => 42
-}
+let t: Temp = new Temp(20);
+let a: i32 = t.celsius;   // getter => 20
+t.celsius = 22;           // setter
+console.log(a + t.celsius);   // 42
 ```
 
 ## Read-only properties
@@ -142,11 +134,9 @@ class Id {
   get id(): i32 { return this.n; }   // no setter
 }
 
-function main(): i32 {
-  let x: Id = new Id(1);
-  // x.id = 5;   // error: 'id' has no setter
-  return x.id;   // => 1
-}
+let x: Id = new Id(1);
+// x.id = 5;   // error: 'id' has no setter
+console.log(x.id);   // 1
 ```
 
 ## Accessors through references
@@ -165,10 +155,8 @@ function readIt(b: Box): i32 {
   return b.value;   // getter dispatched via the parameter's type
 }
 
-function main(): i32 {
-  let b: Box = new Box(42);
-  return readIt(b);   // => 42
-}
+let b: Box = new Box(42);
+console.log(readIt(b));   // 42
 ```
 
 <Aside type="note" title="Static accessors">

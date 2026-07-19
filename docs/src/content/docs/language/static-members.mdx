@@ -26,12 +26,10 @@ class Counter {
   }
 }
 
-function main(): i32 {
-  Counter.count = 0;
-  Counter.increment();
-  Counter.increment();
-  return Counter.getCount();   // => 2
-}
+Counter.count = 0;
+Counter.increment();
+Counter.increment();
+console.log(Counter.getCount());   // 2
 ```
 
 There is exactly one `Counter.count`, no matter how many `Counter` objects exist — static state is
@@ -58,12 +56,9 @@ class Foo {
   public value: i32;
 }
 
-function main(): i32 {
-  let f: Foo = new Foo();
-  // f.count;    // error: 'count' is static — use Foo.count
-  // Foo.value;  // error: 'value' is an instance member
-  return 0;
-}
+let f: Foo = new Foo();
+// f.count;    // error: 'count' is static — use Foo.count
+// Foo.value;  // error: 'value' is an instance member
 ```
 
 ## Private static members
@@ -83,10 +78,8 @@ class Config {
   }
 }
 
-function main(): i32 {
-  Config.value = 5;      // through the static setter
-  return Config.value;   // through the static getter => 5
-}
+Config.value = 5;      // through the static setter
+console.log(Config.value);   // through the static getter => 5
 ```
 
 This also shows **static accessors** — `get`/`set` work at the class level just as they do on
@@ -104,10 +97,8 @@ class Base {
 
 class Child extends Base { }
 
-function main(): i32 {
-  Base.value = 42;
-  return Child.value;   // same storage => 42
-}
+Base.value = 42;
+console.log(Child.value);   // same storage => 42
 ```
 
 ## When to use statics

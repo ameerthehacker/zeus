@@ -145,13 +145,6 @@ export default defineConfig({
           ],
         },
         {
-          label: 'C Interop',
-          items: [
-            { label: 'Foreign Function Interface', slug: 'c-interop/ffi' },
-            { label: 'Linking Libraries', slug: 'c-interop/linking' },
-          ],
-        },
-        {
           label: 'Standard Library',
           items: [
             { label: 'Console', slug: 'language/console' },
@@ -177,6 +170,13 @@ export default defineConfig({
             { label: 'Formatter', slug: 'tooling/formatter' },
             { label: 'Testing', slug: 'tooling/testing' },
             { label: 'Language Server', slug: 'tooling/lsp' },
+          ],
+        },
+        {
+          label: 'C Interop',
+          items: [
+            { label: 'Foreign Function Interface', slug: 'c-interop/ffi' },
+            { label: 'Linking Libraries', slug: 'c-interop/linking' },
           ],
         },
         {

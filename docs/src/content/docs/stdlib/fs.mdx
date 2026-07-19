@@ -10,12 +10,9 @@ import { Aside } from '@astrojs/starlight/components';
 ```zeus
 import { readFileSync, writeFileSync, existsSync } from "@std/fs";
 
-function main(): i32 {
-  writeFileSync("/tmp/note.txt", "hello");
-  if (existsSync("/tmp/note.txt")) {
-    console.log(readFileSync("/tmp/note.txt"));  // "hello"
-  }
-  return 0;
+writeFileSync("/tmp/note.txt", "hello");
+if (existsSync("/tmp/note.txt")) {
+  console.log(readFileSync("/tmp/note.txt"));  // "hello"
 }
 ```
 

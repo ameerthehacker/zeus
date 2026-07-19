@@ -32,14 +32,11 @@ function divide(a: i32, b: i32): i32 {
   return a / b;
 }
 
-function main(): i32 {
-  try {
-    let result: i32 = divide(10, 0);
-    return result;
-  } catch (e: Error) {
-    console.log("Caught " + e.name + ": " + e.message);
-    return -1;
-  }
+try {
+  let result: i32 = divide(10, 0);
+  console.log(result);
+} catch (e: Error) {
+  console.log("Caught " + e.name + ": " + e.message);
 }
 ```
 
@@ -74,11 +71,8 @@ class Person {
   }
 }
 
-function main(): i32 {
-  let person: Person;  // null by default
-  console.log(person.name);    // Throws NullReferenceException
-  return 0;
-}
+let person: Person;  // null by default
+console.log(person.name);    // Throws NullReferenceException
 ```
 
 ### IndexOutOfBoundsException
@@ -86,12 +80,10 @@ function main(): i32 {
 Thrown when accessing an array with an invalid index:
 
 ```zeus
-function main(): i32 {
-  let arr = [10, 20];
+let arr = [10, 20];
 
-  let value: i32 = arr[5];  // Throws IndexOutOfBoundsException
-  return value;
-}
+let value: i32 = arr[5];  // Throws IndexOutOfBoundsException
+console.log(value);
 ```
 
 ## Stack Traces
@@ -120,15 +112,11 @@ Stack Trace:
 The catch block receives the exception object:
 
 ```zeus
-function main(): i32 {
-  try {
-    throw new Error("TestError", "Something went wrong");
-  } catch (e: Error) {
-    // Access the error name and message
-    console.log("Caught " + e.name + ": " + e.message);
-    return 1;
-  }
-  return 0;
+try {
+  throw new Error("TestError", "Something went wrong");
+} catch (e: Error) {
+  // Access the error name and message
+  console.log("Caught " + e.name + ": " + e.message);
 }
 ```
 
@@ -144,14 +132,10 @@ class NotFoundError extends Error {
   }
 }
 
-function main(): i32 {
-  try {
-    throw new NotFoundError("user 42");
-  } catch (e: NotFoundError) {
-    console.log(e.name + ": " + e.message);
-    return 0;
-  }
-  return 1;
+try {
+  throw new NotFoundError("user 42");
+} catch (e: NotFoundError) {
+  console.log(e.name + ": " + e.message);
 }
 ```
 
@@ -171,17 +155,12 @@ class NetworkError extends Error {
   }
 }
 
-function main(): i32 {
-  try {
-    throw new NetworkError();
-  } catch (e: NetworkError) {
-    console.log("network problem: " + e.message);
-    return 1;
-  } catch (e: Error) {
-    console.log("some other error: " + e.message);
-    return 2;
-  }
-  return 0;
+try {
+  throw new NetworkError();
+} catch (e: NetworkError) {
+  console.log("network problem: " + e.message);
+} catch (e: Error) {
+  console.log("some other error: " + e.message);
 }
 ```
 
@@ -195,7 +174,7 @@ exception, an uncaught one on its way out, and a `return`, `break`, or `continue
 block. Use it for cleanup that must always happen.
 
 ```zeus
-function main(): i32 {
+function run(): i32 {
   try {
     console.log("working");
     return 1;
@@ -203,19 +182,23 @@ function main(): i32 {
     console.log("cleanup always runs");
   }
 }
+
+console.log(run());   // prints: working / cleanup always runs / 1
 ```
 
 `catch` is optional when a `finally` is present — `try { … } finally { … }` is valid on its own. A
 `return` inside the `finally` overrides a pending `return` from the `try` or `catch`:
 
 ```zeus
-function main(): i32 {
+function pick(): i32 {
   try {
     return 1;
   } finally {
-    return 2; // wins — main returns 2
+    return 2; // wins — the function returns 2
   }
 }
+
+console.log(pick());   // 2
 ```
 
 ## Best Practices

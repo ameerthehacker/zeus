@@ -10,12 +10,9 @@ import { Aside } from '@astrojs/starlight/components';
 ```zeus
 import { Date, now } from "@std/datetime";
 
-function main(): i32 {
-  let d: Date = new Date(now());
-  console.log(d.toISOString());
-  console.log(d.getFullYear());
-  return 0;
-}
+let d: Date = new Date(now());
+console.log(d.toISOString());
+console.log(d.getFullYear());
 ```
 
 <Aside type="note">

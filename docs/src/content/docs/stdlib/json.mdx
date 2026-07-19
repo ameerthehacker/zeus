@@ -10,13 +10,10 @@ matching TypeScript. Because Zeus has no `any` type, a JSON document is modeled 
 **`JsonValue` tree** (also global) rather than native objects.
 
 ```zeus
-function main(): i32 {
-  let v: JsonValue = JSON.parse("{\"name\":\"zeus\",\"stars\":[1,2,3]}");
-  console.log(v.get("name").asString());        // zeus
-  console.log(v.get("stars").at(0).asInt());     // 1
-  console.log(JSON.stringify(v));                 // {"name":"zeus","stars":[1,2,3]}
-  return 0;
-}
+let v: JsonValue = JSON.parse("{\"name\":\"zeus\",\"stars\":[1,2,3]}");
+console.log(v.get("name").asString());        // zeus
+console.log(v.get("stars").at(0).asInt());     // 1
+console.log(JSON.stringify(v));                 // {"name":"zeus","stars":[1,2,3]}
 ```
 
 ## Reading a JsonValue
